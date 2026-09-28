@@ -1,5 +1,5 @@
 // rig:tray — THE PEGBOARD TRAY (design-017 §10; K3), on the product desk in headless Chrome (rig.html, 1200 × 800 at dpr 2 = the
-// 2400 × 1600 the budget names). Open and close by `a`, by Esc and by a click on the dimmed desk; the drawer's rect; the
+// 2400 × 1600 the budget names). Open and close by `a`, by Esc and by a click on the dimmed desk (the lip retired — design-018 §5); the drawer's rect; the
 // slide on its curve (sampled on the frame clock at t ≈ 0 · 170 · 340 ms, and the motion's wall time); a scroll of Δ moves the
 // pattern by exactly Δ — the carry's uniforms and a screenshot shift-compare; exact 10⁶ rows down (the same carry fraction, the same
 // holes); the wheel over the drawer scrolls it and never moves the camera — nor does the rest of a flick shut mid-way (K9); the desk inert while open; 0 submits at rest open and
@@ -76,10 +76,10 @@ try {
   await settle();
   const cam0 = await q("window.__desk.camera()");
 
-  // 1. CLOSED: the lip at the bottom, the whole drawer's width; nothing moves at rest
+  // 1. CLOSED: wholly below the view with its shadows' reach (design-018 §5 — no lip), the whole drawer's width; nothing moves at rest
   let s = await tray();
-  check(s.facts !== null && s.facts.open === false && s.frame?.p === 0 && s.frame.x === 40 && s.frame.w === 1120 && s.frame.y === 788 && s.laid?.dim === 0,
-    `closed: the lip — rect x ${s.frame?.x} y ${s.frame?.y} w ${s.frame?.w} (40 · 788 · 1120), no dim (${s.laid?.dim})`);
+  check(s.facts !== null && s.facts.open === false && s.frame?.p === 0 && s.frame.x === 40 && s.frame.w === 1120 && s.frame.y === 862 && s.laid?.dim === 0,
+    `closed: wholly below the view — rect x ${s.frame?.x} y ${s.frame?.y} w ${s.frame?.w} (40 · 800 + the shadows' reach 62 · 1120), no dim (${s.laid?.dim})`);
   const restClosed = await idle();
   check(restClosed === 0, `closed at rest: ${restClosed} submits over 240 frames`);
   // design-018 §5: the lip's hover retired with its handle — the mouse at the bottom centre lifts nothing (the drawer as drawn stays)
@@ -289,8 +289,7 @@ try {
   const sel = await q("window.__desk.selection()");
   check(p1.x === p0.x && p1.y === p0.y && sel.length === 0 && (await tray()).facts.open === true, `inert: a drag on the note moved it (${p0.x},${p0.y}) → (${p1.x},${p1.y}), selected ${sel.length}, the drawer still open`);
 
-  // 8. a click on the dimmed desk closes it (selecting nothing); a click where the lip's handle was is the desk's (design-018 §5);
-  //    Esc closes it; `a` again
+  // 8. a click on the dimmed desk closes it (selecting nothing); a click where the lip was is the desk's (design-018 §5); Esc closes it; `a` again
   await click(300, 250); await sleep(150);
   s = await tray();
   check(s.facts.open === false && (await q("window.__desk.selection()")).length === 0, "a click on the dimmed desk closed it, and selected nothing under it");
@@ -719,8 +718,9 @@ try {
   };
   /** The drawer's slide `p` the renderer last drew when the next pointerup reaches the page — the pose the tick after tests the release
    *  against (no frame is drawn between the event and that tick's step); read by `pAtUp()` once the release is in */
-  const armPAtUp = () => q("window.__pAtUp = null; window.addEventListener('pointerup', () => { window.__pAtUp = window.__desk.tray.state().p; }, { capture: true, once: true }); 0");
+  const armPAtUp = () => q("window.__pAtUp = null; window.__yAtUp = null; window.addEventListener('pointerup', () => { const t = window.__desk.tray.state(); window.__pAtUp = t.p; window.__yAtUp = t.frame?.y ?? null; }, { capture: true, once: true }); 0");
   const pAtUp = () => q("window.__pAtUp");
+  const yAtUp = () => q("window.__yAtUp");
   const wayBack = async (how) => {
     const sentinel = await q("window.__desk.spawn('desk.note', { seed: 5 }, { x: 1000, y: 150 })");
     await frames(2);
@@ -736,9 +736,11 @@ try {
       homes = await traceAround(() => key("Escape", "Escape", 27)); await mouse("mouseReleased", 600, 250, { buttons: 0 });
     } else {
       // RE-TIMED at K9 (S2): a release is tested against the drawer AS DRAWN, so this one must land while the drawer still slides
-      // away — lifted, out past the open top in ONE move (the hand-off), and straight back down onto the drawer's foot (a strip it
-      // covers for its whole slide, beside the notch), released there. The slide's `p` at the release is read in the page; a release
-      // the host could not land inside the slide (p 0 — made, as it should be: the next row's case) is undone and tried again, ≤ 3
+      // away — lifted, out past the open top in ONE move (the hand-off), and straight back down onto the view's last row, released
+      // there. Shut, the drawer lies below the view with its shadows (design-018 §5), so it covers that row for the first ~130 ms of
+      // its slide away, not the whole of it: the slide's `p` and the drawer's top at the release are read in the page, and a release
+      // the host could not land while the drawer still covered the row (made, as it should be: the next row's case) is undone and
+      // tried again, ≤ 3
       for (let tries = 1; ; tries++) {
         const o = await specimenIn("desk.note");
         const g = [(o.x0 + o.x1) / 2, (o.y0 + o.y1) / 2];
@@ -748,11 +750,12 @@ try {
         await mouse("mouseMoved", 300, 430, { buttons: 1 });
         await qa(`new Promise((r) => { const t0 = performance.now(); const f = () => (window.__desk.tray.facts().handed > ${h0} || performance.now() - t0 > 4000 ? r(0) : requestAnimationFrame(f)); f(); })`);
         await armPAtUp();
-        homes = await traceAround(async () => { await mouse("mouseMoved", 300, 792, { buttons: 1 }); await mouse("mouseReleased", 300, 792, { buttons: 0 }); });
+        homes = await traceAround(async () => { await mouse("mouseMoved", 300, 799, { buttons: 1 }); await mouse("mouseReleased", 300, 799, { buttons: 0 }); });
         p = await pAtUp();
+        const top = await yAtUp();
         await frames(4);
         const landed = (await ents()).filter((e) => !before.has(e.id));
-        if (!(p === 0 && landed.length > 0 && tries < 3)) break;
+        if (!((p === 0 || top === null || top > 799) && landed.length > 0 && tries < 3)) break;
         late += 1;
         await undo(); await frames(2);
       }

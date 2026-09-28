@@ -273,28 +273,12 @@ fn tray_erf(x: f32) -> f32 {
 // Gaussian-blurred coverage of an outline at distance d (the shadow, straight out of the field — the paper's).
 fn tray_blur(d: f32, sigma: f32) -> f32 { return 0.5 - 0.5 * tray_erf(d / max(sigma * 1.4142136, 1.0e-4)); }
 
-// The research's smooth max (its rim fillet's), here the notch's join with the top edge.
-fn peg_smax(a: f32, b: f32, k: f32) -> f32 {
-  let h = clamp(0.5 - 0.5 * (b - a) / k, 0.0, 1.0);
-  return mix(b, a, h) + k * h * (1.0 - h);
-}
-
-// The drawer's body (CSS px, negative inside): a box whose top corners round and whose bottom lies past the view — what casts the shadows.
-fn tray_body(t: TrayUniforms, p: vec2f) -> f32 {
+// The drawer's outline (CSS px, negative inside): a box whose top corners round and whose bottom lies past the view — what is drawn
+// and what casts the shadows (the finger notch retired — design-018 §2).
+fn tray_outline(t: TrayUniforms, p: vec2f) -> f32 {
   let r = t.shape.x;
   let ext = vec2f(0.5 * t.rect.z, 0.5 * t.rect.w + r);
   return sdf_round_box(p - vec2f(t.rect.x + ext.x, t.rect.y + ext.y), ext, r);
-}
-
-// The drawer's outline: its body less the finger notch scooped from the top edge at the centre (a half-ellipse, the usual two-length
-// estimate of its distance; its join smoothed).
-fn tray_outline(t: TrayUniforms, p: vec2f) -> f32 {
-  let body = tray_body(t, p);
-  let nr = vec2f(t.shape.z, t.shape.w);
-  let q = p - vec2f(t.rect.x + 0.5 * t.rect.z, t.rect.y);
-  let k0 = length(q / nr);
-  let k1 = length(q / (nr * nr));
-  return peg_smax(body, -(k0 * (k0 - 1.0) / max(k1, 1.0e-6)), t.room.z);
 }
 
 // The rim — the board's cut edge, the paler fibre — within `rim` px of the outline: a bevel facing out of the drawer and toward the
@@ -340,9 +324,9 @@ fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_
   // and a scrolled board is then the same pixels, moved
   var bn = vec3f(0.5);
   if (u.night.x > 0.0) { bn = textureSampleLevel(noise_tex, noise_samp, frag * u.noise.z + u.noise.xy, 0.0).rgb; }
-  // DEEP INSIDE — clear of the rounded corners and the notch, the rim and two px more: covered, no rim, no shadow, no outline to evaluate
+  // DEEP INSIDE — clear of the rounded corners, the rim and two px more: covered, no rim, no shadow, no outline to evaluate
   let m = t.shape.y + 2.0;
-  if ((p.x > t.rect.x + m) && (p.x < t.rect.x + t.rect.z - m) && (p.y > t.rect.y + max(t.shape.x, t.shape.w) + m)) {
+  if ((p.x > t.rect.x + m) && (p.x < t.rect.x + t.rect.z - m) && (p.y > t.rect.y + t.shape.x + m)) {
     return vec4f(tray_board(ht, u, t, p, bn.y), 1.0);
   }
   let o = tray_outline(t, p);
@@ -351,8 +335,8 @@ fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_
   // the drawer does not cover them
   var under = dim;
   if (cover < 1.0) {
-    let room = t.room.y * tray_blur(tray_body(t, p), t.room.x);
-    let lamp = t.shadow.y * tray_blur(tray_body(t, p - t.shadow.zw), t.shadow.x);
+    let room = t.room.y * tray_blur(tray_outline(t, p), t.room.x);
+    let lamp = t.shadow.y * tray_blur(tray_outline(t, p - t.shadow.zw), t.shadow.x);
     under = vec4f(0.0, 0.0, 0.0, 1.0 - (1.0 - room) * (1.0 - lamp) * (1.0 - t.dim));
   }
   if (cover <= 0.0) { return under; }

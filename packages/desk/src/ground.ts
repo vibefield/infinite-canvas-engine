@@ -201,7 +201,7 @@ export interface GroundFrameInputs extends SlotInputs {
   readonly marks?: MarksInput;
   /** The object in hand (design-015 §8, D4b) while one is held or flying home; absent = the desk as it is. At `e` 0 the frame is the rest frame, byte for byte. */
   readonly held?: HeldFrameInputs;
-  /** The pegboard drawer this frame (design-017 — the renderer's flux: its slide, its lip, its shown scroll), over the marks; absent = none. Never drawn over the hand. */
+  /** The pegboard drawer this frame (design-017 — the renderer's flux: its slide, its shown scroll), over the marks; absent = none. Never drawn over the hand. */
   readonly tray?: TrayFrameInputs;
 }
 
@@ -405,8 +405,8 @@ export interface PreparedFrame {
   readonly kinds: Readonly<Record<string, number>>;
   /** What the kinds' caps turned away, by kind name, every slot's (absent: nothing) — `GroundStats.dropped` (D7). */
   readonly dropped?: Readonly<Record<string, number>>;
-  /** K5a: the tray's specimens, one slot each, prepared — drawn between the board and the rim (`drawTray`), each with the top of its reach on screen (CSS px); absent = none. */
-  readonly tray?: readonly (DrawSlot & { readonly top: number })[];
+  /** K5a: the tray's specimens, one slot each, prepared — drawn between the board and the rim (`drawTray`); absent = none. */
+  readonly tray?: readonly DrawSlot[];
   /** K5b: what the tray carries, one slot each, prepared — drawn over the rim, whole (`drawTray`); absent = none. */
   readonly carried?: readonly DrawSlot[];
 }
@@ -547,14 +547,14 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
   }
   // the tray's specimens (K5a): each in its own slot — its view block the drawer's camera scaled about it (K-L3), its kind's own pass,
   // through the drawer's face; a specimen whose slot is not made yet (a composite kind's pass, being made) waits a frame
-  const tray: (DrawSlot & { readonly top: number })[] = [];
+  const tray: DrawSlot[] = [];
   const specimens = inputs.tray?.specimens;
   if (specimens !== undefined && specimens.length > 0 && traySlots !== undefined && inputs.tray !== undefined) {
     const present = facePresent({ rect: trayRectOf(inputs), scroll: inputs.tray.scroll }, inputs.view.height);
     for (const f of specimens) {
       const slot = traySlots.get(f.type, f.kind);
       if (slot === undefined) continue;
-      tray.push({ ...prepare(slot, { view: f.view, grid: f.grid, objects: [{ kind: f.kind, record: f.record, key: f.key }], present }, f.grid, undefined), top: f.screen.y0 - DRAWER.pitch / 2 });
+      tray.push(prepare(slot, { view: f.view, grid: f.grid, objects: [{ kind: f.kind, record: f.record, key: f.key }], present }, f.grid, undefined));
     }
   }
   // …and what it carries (K5b): each in its own slot — the copy lifted off the board, a ghost growing out of it or shrinking home — whole,
@@ -577,32 +577,27 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
   };
 }
 
-/** The drawer as its frame inputs lay it (tray/drawer.ts `drawerRect` at the flux's slide and lift). */
+/** The drawer as its frame inputs lay it (tray/drawer.ts `drawerRect` at the flux's slide). */
 function trayRectOf(inputs: GroundFrameInputs): ReturnType<typeof drawerRect> {
   const t = inputs.tray as TrayFrameInputs;
-  return drawerRect(inputs.view.width, inputs.view.height, Math.min(Math.max(t.p, 0), 1), Math.min(Math.max(t.lift, 0), 1));
+  return drawerRect(inputs.view.width, inputs.view.height, Math.min(Math.max(t.p, 0), 1));
 }
 
 /**
  * THE TRAY, drawn (design-017 §5, §8; K5a) — shared by `Ground.render` and the Node oracle: the drawer UNDER its specimens (the dim, its
  * shadows, the board, the accessories), each specimen by its own kind through the drawer's face, their name tags (the marks' pills),
- * then the RIM over them all — the specimens slide under it as the board does. Leaves the scissor on the whole view.
+ * then the RIM over them all — the specimens slide under it as the board does; then what the tray carries, whole. Shut (p 0) the
+ * drawer draws nothing (its pass laid no quad) and only a carried copy is drawn. Leaves the scissor on the whole view.
  */
-export function drawTray(pass: GPURenderPassEncoder, size: { readonly w: number; readonly h: number }, dpr: number, tray: TrayPass, slots: readonly (DrawSlot & { readonly top: number })[] | undefined, marks: MarksPass | null, carried?: readonly DrawSlot[]): void {
+export function drawTray(pass: GPURenderPassEncoder, size: { readonly w: number; readonly h: number }, dpr: number, tray: TrayPass, slots: readonly DrawSlot[] | undefined, marks: MarksPass | null, carried?: readonly DrawSlot[]): void {
   tray.draw(pass);
   const rect = tray.laid?.rect;
   if (rect !== undefined) {
-    // a specimen crossing the top band is drawn in three scissors — below the band, and the band either side of the finger notch: the
-    // notch is a cut through the board (the desk shows in it), so nothing slides into it; the rim then lies over the rest
-    const band = rect.y + DRAWER.notch.h + DRAWER.rim;
-    for (const s of slots ?? []) {
-      if (s.top >= band) { drawSlot(pass, size, dpr, { ...s, bare: true }); continue; }
-      for (const clip of notchSplit(rect, dpr)) drawSlot(pass, size, dpr, { ...s, bare: true, present: { ...(s.present ?? { opacity: 1 }), within: [...(s.present?.within ?? []), clip] } });
-    }
+    // each specimen through the drawer's face, once (design-018 §2: the finger notch — and its three scissors — retired)
+    for (const s of slots ?? []) drawSlot(pass, size, dpr, { ...s, bare: true });
     if (marks !== null && marks.tagCount > 0) {
-      for (const clip of notchSplit(rect, dpr)) {
-        const [x, y, w, h] = scissorOf({ opacity: 1, portal: clip, within: [faceBox(rect, size.h / dpr)] }, dpr, size);
-        if (w <= 0 || h <= 0) continue;
+      const [x, y, w, h] = scissorOf({ opacity: 1, portal: faceBox(rect, size.h / dpr) }, dpr, size);
+      if (w > 0 && h > 0) {
         pass.setScissorRect(x, y, w, h);
         marks.drawTags(pass);
       }
@@ -624,19 +619,6 @@ function faceBox(rect: { readonly x: number; readonly y: number; readonly w: num
   const y0 = rect.y + DRAWER.rim;
   const y1 = Math.max(vh, rect.y + rect.h);
   return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hx: (x1 - x0) / 2, hy: (y1 - y0) / 2, r: 0 };
-}
-
-/**
- * The face around the finger notch (CSS px clip boxes): below the notch's band, and the band left and right of the notch — each inset a
- * device px where they meet, so the scissors `scissorOf` pads by one never overlap (nothing is laid twice on a seam).
- */
-function notchSplit(rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number }, dpr: number): { cx: number; cy: number; hx: number; hy: number; r: number }[] {
-  const e = 1 / dpr;
-  const band = rect.y + DRAWER.notch.h + DRAWER.rim;
-  const n0 = rect.x + rect.w / 2 - DRAWER.notch.w / 2;
-  const n1 = rect.x + rect.w / 2 + DRAWER.notch.w / 2;
-  const box = (x0: number, y0: number, x1: number, y1: number) => ({ cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hx: (x1 - x0) / 2, hy: (y1 - y0) / 2, r: 0 });
-  return [box(rect.x, band + e, rect.x + rect.w, 1e7), box(rect.x, rect.y, n0 - e, band - e), box(n1 + e, rect.y, rect.x + rect.w, band - e)];
 }
 
 
@@ -702,8 +684,9 @@ export class Ground {
       for (const k of this.root.kinds.values()) k.pass.endHold?.();
     }
     const encoder = this.device.createCommandEncoder({ label: "ground" });
+    // the drawer shut (p 0) lays no quad; what the tray carries is drawn whatever the slide (a ghost grows, or flies home, past it)
     const trayed = inputs.tray !== undefined && this.tray !== null ? this.tray.prepare(inputs.view, inputs.theme, inputs.grid ?? this.grid, inputs.mat, inputs.tray) : 0;
-    const prepared = prepareFrame(encoder, this.root, this.pool, inputs, this.grid, undefined, trayed > 0 ? (this.traySlots ?? undefined) : undefined);
+    const prepared = prepareFrame(encoder, this.root, this.pool, inputs, this.grid, undefined, inputs.tray !== undefined ? (this.traySlots ?? undefined) : undefined);
     const marked = this.marks !== null ? this.marks.prepare(inputs.marks, trayed > 0 ? { view: inputs.view, tags: tagsOf(inputs.tray), night: inputs.theme.matLight.night } : undefined) : 0;
     const bg = inputs.theme.canvasBg;
     const pass = beginPass(encoder, this.surface.view(), [bg[0], bg[1], bg[2], 1], "ground");
@@ -711,7 +694,7 @@ export class Ground {
     // stratum 5: the marks, over every slot and every stratum (drawFrame left the scissor on the whole view)
     if (marked > 0) this.marks?.draw(pass);
     // …and the pegboard drawer over them (design-017): the dim, its shadow on the desk, the board, the specimens (K5a), the rim
-    if (trayed > 0 && this.tray !== null) drawTray(pass, this.surface.size(), inputs.view.dpr, this.tray, prepared.tray, this.marks, prepared.carried);
+    if ((trayed > 0 || prepared.carried !== undefined) && this.tray !== null) drawTray(pass, this.surface.size(), inputs.view.dpr, this.tray, prepared.tray, this.marks, prepared.carried);
     pass.end();
     this.device.queue.submit([encoder.finish()]);
     return this.said({ ...drawn.incoming, kinds: prepared.kinds, outgoing: drawn.outgoing, portals: prepared.portals, ...(prepared.dropped ? { dropped: prepared.dropped } : {}) });

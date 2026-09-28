@@ -51,8 +51,8 @@ export interface OracleScene extends KindScene {
   readonly hold?: OracleHold;
   /** The scene's own view (a phone's portrait still, D4b): the rig sets the page's metrics to it before spawning. */
   readonly view?: { readonly cssW: number; readonly cssH: number; readonly dpr: number };
-  /** The pegboard drawer (design-017, K3): its slide, the lip's lift, the board's scroll — pinned. Absent: no tray drawn (every other scene's still). */
-  readonly tray?: { readonly p?: number; readonly lift?: number; readonly scroll?: number };
+  /** The pegboard drawer (design-017, K3): its slide, the board's scroll — pinned. Absent: no tray drawn (every other scene's still). */
+  readonly tray?: { readonly p?: number; readonly scroll?: number };
 }
 export interface OracleNav { readonly kind: "enter" | "exit"; readonly container: number; readonly p: number }
 export interface OracleHold {
@@ -269,7 +269,7 @@ export async function setScene(host: SceneHost, s: OracleScene): Promise<Staged>
   // the pegboard drawer (design-017): closed, and PINNED — hidden unless the scene draws it, so every other still stays the oracle's
   handle.tray.close();
   handle.tray.scroll(s.tray?.scroll ?? 0);
-  handle.tray.pin(s.tray === undefined ? { hidden: true } : { p: s.tray.p ?? 1, lift: s.tray.lift ?? 0, band: 0 });
+  handle.tray.pin(s.tray === undefined ? { hidden: true } : { p: s.tray.p ?? 1, band: 0 });
   if (s.tray !== undefined) pinSpecimenMonth(engine, "2026-09");
   (handle.local("board") as BoardInk | undefined)?.pinStill(false);   // the board's ink dries again (D3t-a)
   // 2. the theme, pinned (the OS no longer leads)

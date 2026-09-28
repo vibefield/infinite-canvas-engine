@@ -90,8 +90,8 @@ export function trayApi(engine: CanvasEngine, handle: DeskLayerHandle): TrayApi 
       const pass = g?.tray;
       if (device === undefined || g === null || last === null || pass == null) throw new Error("desk: no frame to measure the tray in");
       const { tray: _t, held: _h, ...bare } = last;
-      const shown = last.tray ?? { p: 1, lift: 0, scroll: 0 };
-      const open: GroundFrameInputs = { ...bare, tray: { ...shown, p: 1, lift: 0 } };
+      const shown = last.tray ?? { p: 1, scroll: 0 };
+      const open: GroundFrameInputs = { ...bare, tray: { ...shown, p: 1 } };
       const { specimens: _s, ...board } = open.tray ?? shown;
       const openBare: GroundFrameInputs = { ...bare, tray: board };
       const batch = async (run: () => void): Promise<TrayCost> => {
@@ -110,9 +110,9 @@ export function trayApi(engine: CanvasEngine, handle: DeskLayerHandle): TrayApi 
         device.queue.submit([encoder.finish()]);
       };
       // the board alone (no accessory — K3's measure), then with its accessories (K5a)
-      pass.prepare(openBare.view, openBare.theme, openBare.grid ?? g.grid, openBare.mat, openBare.tray ?? { p: 1, lift: 0, scroll: 0 });
+      pass.prepare(openBare.view, openBare.theme, openBare.grid ?? g.grid, openBare.mat, openBare.tray ?? { p: 1, scroll: 0 });
       const aloneBare = await batch(drawAlone);
-      pass.prepare(open.view, open.theme, open.grid ?? g.grid, open.mat, open.tray ?? { p: 1, lift: 0, scroll: 0 });
+      pass.prepare(open.view, open.theme, open.grid ?? g.grid, open.mat, open.tray ?? { p: 1, scroll: 0 });
       const alone = await batch(() => {
         const encoder = device.createCommandEncoder({ label: "tray/cost" });
         const rp = encoder.beginRenderPass({ label: "tray/cost", colorAttachments: [{ view: g.surface.view(), loadOp: "load", storeOp: "store" }] });

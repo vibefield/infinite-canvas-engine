@@ -733,7 +733,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   }
 
   /**
-   * A still's tray (design-017 §8, K5a): its slide, lift and shown scroll, and — unless it is `bare` — the six kinds laid by the lattice
+   * A still's tray (design-017 §8, K5a): its slide and shown scroll, and — unless it is `bare` — the six kinds laid by the lattice
    * law across the drawer, recorded by their own kinds exactly as the product's reflector records them (tray/specimens.ts): each its
    * widget's props at their defaults under its entry's, the calendar's month the still's (its clock is the day it is drawn). K5b — THE
    * FACES, as the product's stage pins them: the note's the committed raster (the one a desk note carries — Node has no text raster),
@@ -742,7 +742,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
    */
   function trayInputsOf(s, view, theme, grid) {
     const t = s.tray;
-    const base = { p: t.p ?? 1, lift: t.lift ?? 0, scroll: t.scroll ?? 0 };
+    const base = { p: t.p ?? 1, scroll: t.scroll ?? 0 };
     if (t.bare === true) return base;
     const items = hung.map((w) => ({ type: w.type, hang: w.tray.hang, category: w.tray.category ?? "", order: w.tray.order ?? 0 }));
     const laid = layTray(items, drawerSize(view.width, view.height).w, DRAWER.pitch);
@@ -755,7 +755,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       const asset = q.type === "desk.note" ? committedInk() : null;
       return { key: i + 1, type: q.type, kind: objectKindOf(w), natural: w.defaultSize, rect: { x: q.x, y: q.y, w: q.w, h: q.h }, props, accessory: w.tray.hang.accessory, pegs: w.tray.hang.pegs, label: w.tray.label, ...(asset ? { asset } : {}) };
     });
-    const frames = specimenFrames(specimens, { rect: drawerRect(view.width, view.height, base.p, base.lift), scroll: base.scroll }, { view, theme, grid, looks: looksOf(kinds, deskPalette(theme.name), theme), lift: () => 0 });
+    const frames = specimenFrames(specimens, { rect: drawerRect(view.width, view.height, base.p), scroll: base.scroll }, { view, theme, grid, looks: looksOf(kinds, deskPalette(theme.name), theme), lift: () => 0 });
     return { ...base, specimens: frames.map((f) => (f.type === "desk.photo" ? { ...f, record: { ...f.record, picture: samplePictureOf() } } : f)) };
   }
   /** The committed ink raster, placed once (a desk note's and the note specimen's alike). */
@@ -814,7 +814,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       inputs = { view: viewOf(cam, s), mat: m, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), grid: rootGrid, objects: r.objects, ...(r.portals.length ? { portals: r.portals } : {}), ...(opts.light ? { light: opts.light } : {}) };
     }
     if (opts.ownLitInsides) inputs = litOwn(inputs);
-    // the pegboard drawer (design-017): a still's slide, lip and shown scroll, over the marks — and its specimens (K5a)
+    // the pegboard drawer (design-017): a still's slide and shown scroll, over the marks — and its specimens (K5a)
     const trayIn = s.tray === undefined || s.nav ? undefined : trayInputsOf(s, inputs.view, theme, rootGrid);
     const trayed = trayIn === undefined ? 0 : tray.prepare(inputs.view, theme, rootGrid, m, trayIn);
     const prepared = prepareFrame(encoder, rootSlot, pool, trayIn === undefined ? inputs : { ...inputs, tray: trayIn }, rootGrid, undefined, trayed > 0 ? traySlots : undefined);

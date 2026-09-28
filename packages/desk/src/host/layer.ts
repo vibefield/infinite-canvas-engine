@@ -273,7 +273,7 @@ export interface DeskTrayDoor {
   scroll(px?: number): number;
   /** The facts and the flux as of now, the drawer as last drawn (the pose seam's answer) and what the pass last laid. */
   state(): TrayFluxState & { readonly frame: TrayScreenFrame | undefined; readonly laid: TrayLaid | null; readonly specimens: readonly TraySpecimenSeen[]; readonly tags: number; readonly slots: number; readonly carried: readonly TrayCarriedSeen[]; readonly presented: readonly number[] };
-  /** Pin the drawer for a still — the slide, the lift, the band, or hidden; `null` unpins. */
+  /** Pin the drawer for a still — the slide, the band, or hidden; `null` unpins. */
   pin(pin: TrayPin | null): void;
   /**
    * design-018 §6 — the category the drawer shows ("" all): set when given (core's `setTrayCategory` — the lay lays only its

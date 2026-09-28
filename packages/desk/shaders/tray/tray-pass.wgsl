@@ -2,7 +2,7 @@
 // one vertex entry that lays each by its instance, three fragment entries (three pipelines on one layout: a branch over the three in one
 // entry cost the board a third of its time, the register budget of the largest path paid by every pixel): instance 0 the drawer UNDER
 // its specimens (`fs` → tray.wgsl `tray_drawer` — the view whole while the slide shows the dim, the drawer's box grown by its shadows'
-// reach while it is closed); from instance 2, one quad per specimen's ACCESSORY with its shadow (`fs_accessory`, the records in `acc`);
+// reach while nothing dims; shut, nothing is drawn at all); from instance 2, one quad per specimen's ACCESSORY with its shadow (`fs_accessory`, the records in `acc`);
 // instance 1 the RIM over everything the drawer holds, three strips along its top and sides (`fs_rim`) — drawn last, after the kinds
 // drew the specimens between the board and it.
 
@@ -31,18 +31,18 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> TrayO
   o.mode = 0u;
   o.item = 0u;
   if (ii == 0u) {
-    // dimming: the view whole; closed: the drawer's box from its shadows' reach above and beside it down to the view's bottom edge
+    // dimming: the view whole; undimmed: the drawer's box from its shadows' reach above and beside it down to the view's bottom edge
     if (t.dim <= 0.0) {
       let reach = 3.0 * max(t.shadow.x, t.room.x) + length(t.shadow.zw);
       lo = vec2f(max(t.rect.x - reach, 0.0), max(t.rect.y - reach, 0.0));
       hi = vec2f(min(t.rect.x + t.rect.z + reach, vw), vh);
     }
   } else if (ii == 1u) {
-    // the rim's three strips, disjoint: the top (its corners and the notch below the edge), then either side below it
+    // the rim's three strips, disjoint: the top (its corners), then either side below it
     o.mode = 1u;
     let x0 = t.rect.x;
     let x1 = t.rect.x + t.rect.z;
-    let top = t.rect.y + max(t.shape.x, t.shape.w + t.shape.y) + 2.0;
+    let top = t.rect.y + max(t.shape.x, t.shape.y) + 2.0;
     let side = t.shape.y + 2.0;
     let strip = vi / 6u;
     if (strip == 0u) { lo = vec2f(x0, t.rect.y); hi = vec2f(x1, top); }

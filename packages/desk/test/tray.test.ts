@@ -16,7 +16,7 @@ import { MatUniforms } from "../src/mat/layout";
 import { compose } from "../src/engine/shader";
 import { KIT_WGSL_FILES } from "../src/kit/wgsl";
 import { shaderText } from "../src/shaders";
-import { band, DRAWER, drawerRect, drawerSize, scrollRange, slideEase } from "../src/tray/drawer";
+import { band, DRAWER, drawerRect, drawerSize, SHADOW_REACH, scrollRange, slideEase } from "../src/tray/drawer";
 import { carry, cellOf, holeCentre, holeSdf, PEG, type PegPoint, pointAt, punched, rotCell } from "../src/tray/lattice";
 import { HASH_SIZE, hashTexels, keep } from "../src/tray/pass";
 import { TrayAccessoryStruct, TrayUniforms } from "../src/tray/layout";
@@ -192,12 +192,11 @@ describe("the drawer (tray/drawer.ts)", () => {
     }
   });
 
-  it("closed shows its lip (more when hovered), open the whole drawer — centred, its bottom flush with the view", () => {
-    expect(drawerRect(1200, 800, 0, 0)).toEqual({ x: 40, y: 800 - DRAWER.lip, w: 1120, h: 352 });
-    expect(drawerRect(1200, 800, 0, 1).y).toBe(800 - DRAWER.lipHover);
-    expect(drawerRect(1200, 800, 1, 0).y).toBe(448);
-    expect(drawerRect(1200, 800, 1, 1).y).toBe(448);
-    expect(drawerRect(1200, 800, 0.5, 0).y).toBeCloseTo(800 - (12 + (352 - 12) * 0.5), 12);
+  it("closed lies wholly below the view with its shadows' reach — no lip (design-018 §5); open, the whole drawer — centred, its bottom flush with the view", () => {
+    expect(SHADOW_REACH).toBe(3 * 18 + 8);   // tray.wgsl's `reach`: three of the wider blur's σ and the lamp's push
+    expect(drawerRect(1200, 800, 0)).toEqual({ x: 40, y: 800 + SHADOW_REACH, w: 1120, h: 352 });
+    expect(drawerRect(1200, 800, 1).y).toBe(448);
+    expect(drawerRect(1200, 800, 0.5).y).toBeCloseTo(800 + SHADOW_REACH - (352 + SHADOW_REACH) * 0.5, 12);
   });
 
   it("slides on widgetlab rev 1's curve, cubic-bezier(0.32,0.72,0,1) over 340 ms", () => {
@@ -268,35 +267,39 @@ describe("the tray pass on a fake device", () => {
     return { ground, log, writes, frame, trayWrites };
   }
 
-  it("draws last in the ground's pass, in its debug groups — the drawer under its specimens (one quad, the dim folded in), then the rim's three strips over them (K5a); nothing without a tray", async () => {
-    const { ground, log, frame } = await mount();
+  it("draws last in the ground's pass, in its debug groups — the drawer under its specimens (one quad, the dim folded in), then the rim's three strips over them (K5a); nothing without a tray, nothing while it is shut", async () => {
+    const { ground, log, frame, writes } = await mount();
     ground.render(frame());
     expect(log.some((l) => l.includes("tray/pegboard"))).toBe(false);
     log.length = 0;
-    ground.render(frame({ p: 1, lift: 0, scroll: 0 }));
+    ground.render(frame({ p: 1, scroll: 0 }));
     const end = log.lastIndexOf("end");
     expect(log.slice(end - 11, end)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "debug end", "scissor 0,0,2400,1600", "debug tray/pegboard/rim", "pipeline tray/pegboard/rim", "group 0 tray/pegboard", "draw 18,1,0,1", "debug end"]);
+    // shut (design-018 §5): the drawer and its shadows lie below the view — nothing of it is drawn, and nothing uploaded
     log.length = 0;
-    ground.render(frame({ p: 0, lift: 0, scroll: 0 }));
-    expect(log).toContain("draw 6,1,0,0");
+    const uploads = writes.filter((w) => w.label.startsWith("tray/")).length;
+    ground.render(frame({ p: 0, scroll: 0 }));
+    expect(log.filter((l) => l.includes("tray/"))).toEqual([]);
+    expect(writes.filter((w) => w.label.startsWith("tray/")).length).toBe(uploads);
     expect(ground.tray?.laid?.dim).toBe(0);
-    ground.render(frame({ p: 0.5, lift: 0, scroll: 0 }, THEMES.dark));
+    expect(ground.tray?.laid?.rect.y).toBe(800 + SHADOW_REACH);
+    ground.render(frame({ p: 0.5, scroll: 0 }, THEMES.dark));
     expect(ground.tray?.laid?.dim).toBeCloseTo(0.4 * THEMES.dark.matLight.night * 0.5 + 0.1 * (1 - THEMES.dark.matLight.night) * 0.5, 9);
   });
 
   it("uploads the carry — the scroll's whole rows as an i32, the fraction as an f32 — and uploads nothing while the drawer rests", async () => {
     const { ground, frame, trayWrites } = await mount();
-    ground.render(frame({ p: 1, lift: 0, scroll: 1e6 * P + 17 }));
+    ground.render(frame({ p: 1, scroll: 1e6 * P + 17 }));
     const bytes = trayWrites().at(-1);
     if (bytes === undefined) throw new Error("no tray upload");
     const dv = new DataView(bytes.buffer);
     expect(dv.getInt32(TrayUniforms.slots.rowBase.byte, true)).toBe(1e6);
     expect(dv.getFloat32(TrayUniforms.slots.frac.byte, true)).toBe(Math.fround(17 / 40));
     const n = trayWrites().length;
-    ground.render(frame({ p: 1, lift: 0, scroll: 1e6 * P + 17 }));
-    ground.render(frame({ p: 1, lift: 0, scroll: 1e6 * P + 17 }));
+    ground.render(frame({ p: 1, scroll: 1e6 * P + 17 }));
+    ground.render(frame({ p: 1, scroll: 1e6 * P + 17 }));
     expect(trayWrites().length).toBe(n);
-    ground.render(frame({ p: 1, lift: 0, scroll: 1e6 * P + 18 }));
+    ground.render(frame({ p: 1, scroll: 1e6 * P + 18 }));
     expect(trayWrites().length).toBe(n + 1);
   });
 });
@@ -365,7 +368,7 @@ describe("the flux (tray/flux.ts — the motion lives in the renderer)", () => {
     expect(f.frame()?.max).toBe(900 + 40 - (352 - 5));
     expect(f.frame()?.pitch).toBe(40);
     f.pin({ p: 0.5, band: 12 });
-    expect(f.step(180, 1200, 800)).toEqual({ p: 0.5, lift: 0, scroll: 12 });
+    expect(f.step(180, 1200, 800)).toEqual({ p: 0.5, scroll: 12 });
     expect(f.live()).toBe(false);   // a still never keeps the desk awake
     f.pin({ hidden: true });
     expect(f.step(190, 1200, 800)).toBeUndefined();
@@ -396,8 +399,8 @@ describe("the reflector draws the tray (design-017 §3 — idle-zero open and cl
     desk.ready();
     let now = 1000;
     const step = (n = 1): number => { const before = queue.submits; for (let i = 0; i < n; i++) { now += 16; ce.step(now); } return queue.submits - before; };
-    expect(step()).toBe(1);   // the first paint: the lip
-    expect(desk.lastInputs()?.tray).toEqual({ p: 0, lift: 0, scroll: 0 });
+    expect(step()).toBe(1);   // the first paint (the drawer shut: nothing of it drawn)
+    expect(desk.lastInputs()?.tray).toEqual({ p: 0, scroll: 0 });
     expect(step(240)).toBe(0);   // closed, at rest
     openTray(ce.world);
     const ps: number[] = [];

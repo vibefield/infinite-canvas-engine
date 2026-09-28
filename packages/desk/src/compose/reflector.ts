@@ -191,7 +191,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   let gridGen = 0;
   let pinGen = 0;
   const wakes: Record<keyof DeskWakes, number> = { world: 0, removed: 0, reset: 0, order: 0, hover: 0, marks: 0, camera: 0, viewport: 0, nav: 0, theme: 0, grid: 0, pin: 0, ambient: 0, live: 0, ink: 0, tray: 0 };
-  /** The pegboard drawer's motion (design-017 §3): the facts are core's `Tray`, polled each tick; the slide, the lip, the band are here. */
+  /** The pegboard drawer's motion (design-017 §3): the facts are core's `Tray`, polled each tick; the slide and the band are here. */
   const tray = createTrayFlux();
   // the tray's specimens (K5a): read from the world each frame the drawer shows (a handful of facts — a lay, a reset or a prop moves them)
   let drawnSpecimens: readonly TraySpecimenFrame[] = [];
@@ -298,7 +298,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
         if (specimens.length > 0) {
           ground.warmTray(specimens.map((q) => [q.type, q.kind.name] as const), trayLanded);
           for (const q of specimens) if (q.local !== undefined) faced.set(q.key, q.local as KindLocal);
-          drawnSpecimens = specimenFrames(specimens, { rect: drawerRect(vp.w, vp.h, trayed.p, trayed.lift), scroll: trayed.scroll }, { view: { width: vp.w, height: vp.h, dpr }, theme, grid, looks, lift: (t) => tray.lift(t) });
+          drawnSpecimens = specimenFrames(specimens, { rect: drawerRect(vp.w, vp.h, trayed.p), scroll: trayed.scroll }, { view: { width: vp.w, height: vp.h, dpr }, theme, grid, looks, lift: (t) => tray.lift(t) });
           trayed = { ...trayed, specimens: drawnSpecimens };
         }
       }
@@ -387,7 +387,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       redraws += 1;
       opts.onFrame?.();
       if (builder.live()) { dirty = true; wakes.live += 1; }   // a spring, a ghost or a re-dressing ramp still moves: the next frame paints too
-      if (tray.live()) { dirty = true; wakes.tray += 1; }        // …and so does a drawer on its way, a lip lifting, a band letting go
+      if (tray.live()) { dirty = true; wakes.tray += 1; }        // …and so does a drawer on its way, a band letting go
       if (carry.live()) { dirty = true; wakes.tray += 1; }       // …and a copy lifting, gliding back, a ghost growing or flying home
     },
   };

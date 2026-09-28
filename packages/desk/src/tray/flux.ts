@@ -1,10 +1,10 @@
 // THE TRAY'S FLUX (design-017 §3; K3) — the pegboard drawer's motion, which lives in the renderer and nowhere else: the SLIDE (a tween
 // on widgetlab rev 1's curve from wherever the drawer is to where the fact says, on the frame's clock — a reversal starts again from
-// where it is, as a CSS transition does), the LIP's lift (a critically damped spring toward the hover fact), and the BAND's settle
-// (the shown band tracks the fact's pull exactly while there is one; when the fact lets go a spring carries it home). `live()` while
-// any of them moves; a drawer at rest is not live, so the desk sleeps. The facts are core's `Tray` (read, never written here); the
-// flux publishes the drawer AS DRAWN — its rect, its slide, the layout's scroll range — for core's input to hit-test (the pose seam).
-// Pins hold it for a still: the slide, the lift, the band, or the whole tray hidden (a scene that is not about it).
+// where it is, as a CSS transition does), the specimens' hover lifts (K5a), and the BAND's settle (the shown band tracks the fact's
+// pull exactly while there is one; when the fact lets go a spring carries it home). `live()` while any of them moves; a drawer at rest
+// is not live, so the desk sleeps. The facts are core's `Tray` (read, never written here); the flux publishes the drawer AS DRAWN —
+// its rect, its slide, the layout's scroll range — for core's input to hit-test (the pose seam). Pins hold it for a still: the slide,
+// the band, or the whole tray hidden (a scene that is not about it). (The lip and its lift spring retired — design-018 §5.)
 
 import type { TrayScreenFrame } from "@ice/core";
 import { settled, spring } from "../kit/springs";
@@ -23,21 +23,19 @@ export interface TrayFacts {
   readonly laid?: number;
 }
 
-/** A still's pins (a rig's, the oracle's): the slide, the lip's lift, the band's shown pull; `hidden` — no tray at all; `bare` — the board without its specimens (K5a). Absent keys follow the facts. */
+/** A still's pins (a rig's, the oracle's): the slide, the band's shown pull; `hidden` — no tray at all; `bare` — the board without its specimens (K5a). Absent keys follow the facts. */
 export interface TrayPin {
   readonly p?: number;
-  readonly lift?: number;
   readonly band?: number;
   readonly hidden?: boolean;
   readonly bare?: boolean;
 }
 
-/** What the flux holds, for a rig: the facts it last read, the slide and when (frame clock, ms) its tween began (−1: not yet stepped), the lift, the shown band, the specimens' hover lifts by type (K5a), whether it moves. */
+/** What the flux holds, for a rig: the facts it last read, the slide and when (frame clock, ms) its tween began (−1: not yet stepped), the shown band, the specimens' hover lifts by type (K5a), whether it moves. */
 export interface TrayFluxState {
   readonly facts: TrayFacts | null;
   readonly p: number;
   readonly since: number;
-  readonly lift: number;
   readonly band: number;
   readonly hovers: Readonly<Record<string, number>>;
   readonly live: boolean;
@@ -69,8 +67,6 @@ export function createTrayFlux(): TrayFlux {
   let from = 0;
   let to = 0;
   let t0 = -1;
-  let lift = 0;
-  let liftV = 0;
   let shown = 0;
   let shownV = 0;
   let last = -1;
@@ -102,10 +98,6 @@ export function createTrayFlux(): TrayFlux {
       p = from + (to - from) * slideEase(k);
       const sliding = from !== to && k < 1;
       if (k >= 1) from = to;   // a finished tween is at rest where it ended
-      // the lip's lift: at rest — its hover fact retired with its handle (design-018 §5)
-      [lift, liftV] = spring(lift, liftV, 0, DRAWER.liftHz, 1, dt);
-      const lifting = !settled(lift, liftV, 0, EPS);
-      if (!lifting) { lift = 0; liftV = 0; }
       // the band: tracks the pull exactly while the fact holds one; carried home by its spring when it lets go
       let settling = false;
       if (f.stretch !== 0) { shown = band(f.stretch); shownV = 0; }
@@ -120,19 +112,18 @@ export function createTrayFlux(): TrayFlux {
       if (under !== "" && !hovers.has(under)) hovers.set(under, { v: 0, dv: 0 });
       for (const [type, h] of hovers) {
         const to = type === under ? 1 : 0;
-        [h.v, h.dv] = spring(h.v, h.dv, to, DRAWER.liftHz, 1, dt);
+        [h.v, h.dv] = spring(h.v, h.dv, to, DRAWER.hoverHz, 1, dt);
         if (settled(h.v, h.dv, to, EPS)) { h.v = to; h.dv = 0; if (to === 0) hovers.delete(type); }
         else hovering = true;
       }
-      moving = sliding || lifting || settling || hovering;
+      moving = sliding || settling || hovering;
       const P = pinned;
       const pp = P?.p ?? p;
-      const pl = P?.lift ?? lift;
       const pb = P?.band ?? shown;
-      const rect = drawerRect(vw, vh, pp, pl);
+      const rect = drawerRect(vw, vh, pp);
       // `face` (K9): the board's height inside the rim — `scrollRange`'s own, so core's clamp and this range are one law
       drawn = { x: rect.x, y: rect.y, w: rect.w, h: rect.h, p: pp, max: scrollRange(vw, vh, f.bottom ?? 0), pitch: DRAWER.pitch, scroll: f.scroll + pb, face: rect.h - DRAWER.rim };
-      return { p: pp, lift: pl, scroll: f.scroll + pb };
+      return { p: pp, scroll: f.scroll + pb };
     },
 
     live: () => moving && pinned === null,
@@ -140,6 +131,6 @@ export function createTrayFlux(): TrayFlux {
     lift: (type) => hovers.get(type)?.v ?? 0,
     pinned: () => pinned,
     pin(pin) { pinned = pin; },
-    state: () => ({ facts, p, since: t0, lift, band: shown, hovers: Object.fromEntries([...hovers].map(([k, h]) => [k, h.v])), live: moving }),
+    state: () => ({ facts, p, since: t0, band: shown, hovers: Object.fromEntries([...hovers].map(([k, h]) => [k, h.v])), live: moving }),
   };
 }

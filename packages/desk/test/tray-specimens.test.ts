@@ -54,7 +54,7 @@ const specimen = (kind: ObjectKind, over: Partial<TraySpecimen> = {}): TraySpeci
   accessory: "hook", pegs: [[-1, -0.5], [1, -0.5]], label: "Fake", ...over,
 });
 const env = (lift = 0): TraySpecimenEnv => ({ view: { width: 1200, height: 800, dpr: 2 }, theme: LIGHT, grid: DEFAULT_GRID, looks: new Map([["fake", { look: 1 }]]), lift: () => lift });
-const open = drawerRect(1200, 800, 1, 0);
+const open = drawerRect(1200, 800, 1);
 
 describe("a specimen, recorded by its own kind", () => {
   it("under the drawer's camera scaled about it: its natural size at the hang's scale, on its board rect, the shown scroll in it", () => {
@@ -193,7 +193,7 @@ describe("the ground draws the specimens between the board and the rim", () => {
     expect(layered.made).toEqual(["layered"]);   // the root's
     const view = { camX: 0, camY: 0, zoom: 1, width: 1200, height: 800, dpr: 2 };
     const frames = specimenFrames([specimen(plain), specimen(layered, { key: 8, type: "t:layered", rect: { x: 400, y: 80, w: 160, h: 80 } })], { rect: open, scroll: 0 }, env());
-    const inputs: GroundFrameInputs = { view, theme: LIGHT, tray: { p: 1, lift: 0, scroll: 0, specimens: frames } };
+    const inputs: GroundFrameInputs = { view, theme: LIGHT, tray: { p: 1, scroll: 0, specimens: frames } };
     ground.render(inputs);
     // the plain kind's slot is spawned at once; the layered one's waits for its program
     let at = log.indexOf("debug tray/pegboard");

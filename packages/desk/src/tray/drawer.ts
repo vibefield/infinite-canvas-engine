@@ -1,5 +1,5 @@
-// THE DRAWER (design-017 §5, §7) — where the pegboard sits on screen, in CSS px, and how it moves: widgetlab rev 1's drawer
-// (`translate(-50%, 112%) → 0` in 340 ms on `cubic-bezier(0.32,0.72,0,1)`, top radius 22) on the desk. A PURE module: the
+// THE DRAWER (design-017 §5, §7; design-018 §5) — where the pegboard sits on screen, in CSS px, and how it moves: widgetlab rev 1's
+// drawer (`translate(-50%, 112%) → 0` in 340 ms on `cubic-bezier(0.32,0.72,0,1)`, top radius 22) on the desk. A PURE module: the
 // tray pass shades the rect it returns, the flux publishes the same rect to core's hit tests, the tests read both.
 
 import { cubicBezierEase, trayScrollMax } from "@ice/kernel";
@@ -15,13 +15,9 @@ export const DRAWER = {
   heightFrac: 0.44,
   minHeight: 220,
   maxHeight: 640,
-  /** The top corners' radius (widgetlab rev 1), the rim — the board's cut edge — along the top and the sides, and the finger notch scooped from the rim at the top centre. */
+  /** The top corners' radius (widgetlab rev 1), and the rim — the board's cut edge — along the top and the sides. */
   radius: 22,
   rim: 5,
-  notch: { w: 56, h: 8 },
-  /** Closed, the drawer's top shows this much of itself; hovered, this much. */
-  lip: 12,
-  lipHover: 18,
   /** The slide: widgetlab rev 1's curve. */
   slideMs: 340,
   curve: [0.32, 0.72, 0, 1] as const,
@@ -32,17 +28,19 @@ export const DRAWER = {
    * pushed along its ground direction — each the outline's SDF blurred σ, at α.
    */
   shadow: { room: { sigma: 14, alpha: 0.22 }, lamp: { sigma: 18, alpha: 0.18, push: 8 } },
-  /** The notch's join with the top edge, smoothed over this many px. */
-  notchRound: 3,
   /** The rubber band: its asymptote and stiffness (iOS's curve), how long the scroll input must be quiet before it lets go, the settle's spring. */
   band: { max: 72, c: 0.55, letGoMs: 120, hz: 8 },
-  /** The lip's lift spring. */
-  liftHz: 7,
-  /** A click's slop, the lip's drag-up that opens, the lip's hit pad above what is drawn. */
+  /** A specimen's hover lift spring (K5a). */
+  hoverHz: 7,
+  /** A click's slop. */
   slop: 4,
-  lipDrag: 10,
-  lipPad: 8,
 } as const;
+
+/**
+ * How far the drawer's shadows reach past its outline (CSS px): three of the wider blur's σ and the lamp's push — tray.wgsl's `reach`,
+ * one law. Closed, the drawer rests this far below the view, so nothing of it — its shadows included — is on screen (design-018 §5).
+ */
+export const SHADOW_REACH = 3 * Math.max(DRAWER.shadow.lamp.sigma, DRAWER.shadow.room.sigma) + DRAWER.shadow.lamp.push;
 
 /** A rect on screen, CSS px: the drawer's outline box as drawn (its top-left, its width, its FULL height — the part below the view included). */
 export interface DrawerRect {
@@ -61,14 +59,12 @@ export function drawerSize(vw: number, vh: number): { readonly w: number; readon
 }
 
 /**
- * The drawer as drawn at slide `p` (0 closed … 1 open) with the lip lifted by `lift` (0 … 1): centred on whole CSS px, its
- * bottom flush with the view — closed, only the lip is on screen; open, the whole drawer.
+ * The drawer as drawn at slide `p` (0 closed … 1 open): centred on whole CSS px — open, its bottom flush with the view; closed, wholly
+ * below it with its shadows' reach (design-018 §5: no lip — at p 0 nothing of the drawer is on screen, and nothing is drawn).
  */
-export function drawerRect(vw: number, vh: number, p: number, lift = 0): DrawerRect {
+export function drawerRect(vw: number, vh: number, p: number): DrawerRect {
   const { w, h } = drawerSize(vw, vh);
-  const lip = DRAWER.lip + (DRAWER.lipHover - DRAWER.lip) * lift;
-  const shown = lip + (h - lip) * p;
-  return { x: Math.round((vw - w) / 2), y: vh - shown, w, h };
+  return { x: Math.round((vw - w) / 2), y: vh + SHADOW_REACH - (h + SHADOW_REACH) * p, w, h };
 }
 
 /** The slide's ease: widgetlab rev 1's `cubic-bezier(0.32,0.72,0,1)`, the exact curve CSS runs (the kernel's). */
