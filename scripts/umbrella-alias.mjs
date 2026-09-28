@@ -4,6 +4,9 @@
 // build would be a second copy of the desk: two kind registries, two WeakMaps of drivers). The map is READ from the umbrella's
 // exports map, so an entry the published package does not ship cannot resolve. TypeScript and tsx take the same map from
 // tsconfig.base.json's `paths`; this is the bundlers' (Vite, vitest) — anchored regexes, so `/desk` never swallows `/desk/kit`.
+// The umbrella's OWN declaration build must not see the published names: packages/ice/tsconfig.dts.json overrides `paths` with the
+// `@ice/*` names alone (those scripts/fix-dts-specifiers.mjs rewrites) — seeing `@vibecook/ice*`, tsc names inferred types through
+// them (`import("@vibecook/ice").PhaseSet<…>`), the umbrella naming itself inside its own d.ts, which pack:audit refuses.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 
