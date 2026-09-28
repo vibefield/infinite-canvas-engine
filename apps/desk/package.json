@@ -35,6 +35,7 @@
     "@ice/devtools": "workspace:*",
     "@ice/objects": "workspace:*",
     "@ice/react": "workspace:*",
+    "@ice-examples/desk-clock": "workspace:*",
     "react": "^19",
     "react-dom": "^19"
   },

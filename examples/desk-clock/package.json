@@ -5,7 +5,8 @@
   "type": "module",
   "description": "A THIRD-PARTY desk kind in its own package (design-016 K8b · K-L2): an analogue desk clock drawn by its own WGSL, with durable props, a registered wake, a tray entry, a menu act, an opening with its own held tools, a chip inside a mini mat and a round face to pick — built on the umbrella's PUBLISHED entries alone (`@vibecook/ice`, `/kernel`, `/desk`, `/desk/kit`, `/desk/engine`), exactly as a VibeField plugin will be. Never published: apps/desk registers it and the oracle draws its scenes.",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./oracle/scenes.mjs": "./oracle/scenes.mjs"
   },
   "scripts": {
     "typecheck": "tsc --noEmit",

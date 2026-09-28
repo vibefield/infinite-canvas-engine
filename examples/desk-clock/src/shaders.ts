@@ -194,7 +194,7 @@ fn clock_facet(x: vec2f, a: f32, L: vec3f, albedo: vec3f) -> vec3f {
   let d = clock_dir(a);
   let side = vec2f(-d.y, d.x);
   let n = normalize(vec3f(side * sign(dot(x, side)) * 0.45, 1.0));
-  return albedo * pow(saturate(dot(n, L)) / max(L.z, 1.0e-3), 1.0 / 2.2);
+  return albedo * (0.35 + 0.65 * pow(saturate(dot(n, L)) / max(L.z, 1.0e-3), 1.0 / 2.2));
 }
 
 // One clock at world point p: premultiplied colour. px = world units per device px; frag = the framebuffer pixel; lit = the slot
@@ -234,7 +234,8 @@ fn shade_clock(C: Clock, u: MatUniforms, p: vec2f, px: f32, frag: vec2f,
     let spec = pow(saturate(dot(n, Hv)), 28.0) * C.caseColour.w;
     let grain = (value_noise(q * 1.7) - 0.5) * 0.03 + (bn.x - 0.5) * 0.02;
     let albedo = clamp(C.caseColour.xyz + vec3f(grain), vec3f(0.0), vec3f(1.0));
-    lit_albedo = albedo * pow(max(diffuse, 0.0), 1.0 / 2.2) + mix(vec3f(1.0), albedo, 0.35) * spec;
+    // the room's share: metal turned from the lamp still mirrors the room (never black), the lamp's light over it
+    lit_albedo = albedo * (0.3 + 0.7 * pow(max(diffuse, 0.0), 1.0 / 2.2)) + mix(vec3f(1.0), albedo, 0.35) * spec;
   } else {
     // THE DIAL: the enamel with its grain, the printing, the lume's paint; the bezel's wall and the hands shade it
     let grain = ((value_noise(x * 40.0) - 0.5) + (bn.x - 0.5) * 0.5) * C.dialColour.w;
@@ -269,8 +270,9 @@ fn shade_clock(C: Clock, u: MatUniforms, p: vec2f, px: f32, frag: vec2f,
     let cCap = clock_cov((length(x) - 0.045) * F, px);
     lit_albedo = mix(lit_albedo, capColour * (0.92 + 0.16 * saturate(dot(normalize(vec3f(x * 12.0, 1.0)), Hv))), cCap);
     lume *= 1.0 - max(cHour, cMin);
-    // the glass: a shallow dome over the dial — its glint where it turns the lamp to the eye, a sheen about it
-    let nd = normalize(vec3f(x * 0.55, 1.0));
+    // the glass: a dome over the dial — its glint where it turns the lamp to the eye (the desk's lamp is low: a shallow dome would
+    // turn it past the rim), a sheen about it
+    let nd = normalize(vec3f(x * 1.1, 1.0));
     let g = saturate(dot(nd, Hv));
     glass = pow(g, 90.0) * 0.5 + pow(g, 10.0) * 0.045;
   }
@@ -278,9 +280,11 @@ fn shade_clock(C: Clock, u: MatUniforms, p: vec2f, px: f32, frag: vec2f,
   var gobo = sample_gobo(u, gobo_tex, gobo_samp, clock_desk_at(u, p, h), bn.z);
   if (lit) { gobo = lit_gobo(u, gobo_tex, gobo_samp, p, h, clock_desk_at(u, p, h), bn.z); }
   var colour = clock_colour(u, clamp(lit_albedo, vec3f(0.0), vec3f(1.0)), gobo, bn.y);
-  // the lume glows by night (emitted, never lit); the glint is the Sun's by day, the Moon's — dimmer, cooler — by night
+  // the lume glows by night (emitted, never lit); the glint is the Sun's by day, the Moon's — dimmer, cooler — by night, shaded
+  // under the leaves as the mat's own light is (mat.wgsl shade_mat's grade: the gobo's floor and its mix)
   colour += C.lume.xyz * lume * C.lume.w * u.night.x;
-  colour += mix(vec3f(1.0), vec3f(0.72, 0.8, 1.0), u.night.x) * glass * (1.0 - 0.7 * u.night.x) * gobo;
+  let seen = mix(1.0, u.gobo.w + (1.0 - u.gobo.w) * gobo, u.gobo.z);
+  colour += mix(vec3f(1.0), vec3f(0.72, 0.8, 1.0), u.night.x) * glass * (1.0 - 0.7 * u.night.x) * seen;
   acc = clock_over(vec4f(clamp(colour, vec3f(0.0), vec3f(1.0)) * cov, cov), acc);
   return acc * C.alpha;
 }

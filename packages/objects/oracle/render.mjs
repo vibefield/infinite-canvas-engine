@@ -48,6 +48,8 @@ import { sdRoundBox, unproject } from "../src/photo/photo.ts";
 import { sdBoard, sdSurface } from "../src/board/board.ts";
 import { cssColor, MARKS } from "../../desk/src/theme.ts";
 import { markDistance } from "../../desk/src/marks/mirror.ts";
+// the open kind list (K8b): a plugin's object types, from its own package — its scenes are in scenes.mjs
+import { DESK_CLOCK_OBJECTS } from "../../../examples/desk-clock/src/index.ts";
 
 Object.assign(globalThis, globals);   // GPUBufferUsage & friends, which the browser has for free
 const here = dirname(fileURLToPath(import.meta.url));
@@ -98,7 +100,7 @@ const scoped = async (what, fn) => {
 };
 // The desk both hosts draw (frame.mjs), on Dawn's device, composed from the .wgsl files on disk.
 const desk = await scoped("creation", () => createOracleDesk({
-  device, format: FORMAT, text: texts,
+  device, format: FORMAT, text: texts, objects: DESK_CLOCK_OBJECTS,
   assets: {
     noise: raw("blue-noise.rgba"), goboC: hostRaw("gobo-c.rgba"), goboB: hostRaw("gobo-b.rgba"),
     glyphMeta, glyphs: glyphMeta && glyphMeta.count >= 12 ? hostRaw("glyphs-mono-2x.r8") : null,

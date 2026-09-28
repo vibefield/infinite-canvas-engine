@@ -26,7 +26,7 @@ export const CLOCK = {
   lift: { height: 14, scale: 1.04 },
   /** Its shadow: σ at contact, alpha (resting, held), σ per unit of height, the slope's cap; the relief the bezel is shaded with. */
   shadow: { sigma: 1.1, alpha: 0.38, alphaHeld: 0.26, sigmaPerUnit: 0.32, slopeMax: 0.9 },
-  relief: 1.6,
+  relief: 1.0,
 } as const;
 export type ClockLaw = typeof CLOCK;
 

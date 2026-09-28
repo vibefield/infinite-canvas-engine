@@ -22,6 +22,7 @@ import inkUrl from "@ice/objects/oracle/fixtures/assets/ink-note-1.r8?url";
 import photoMetaUrl from "@ice/objects/oracle/fixtures/assets/photo-1.json?url";
 import photoUrl from "@ice/objects/oracle/fixtures/assets/photo-1.rgba?url";
 import { PRINT_FIXTURES, type PrintMeta, printSheetOf } from "@ice/objects/oracle/prints.mjs";
+import { DESK_CLOCK_OBJECTS } from "@ice-examples/desk-clock";   // the oracle's open kind list (design-016 K8b): a plugin's objects, for its stills
 import { bytesOf, fetchRetry, jsonOf } from "./rig/fetch-retry";   // the rigs' fetches, retried (K-H)
 
 /** The page's door for the rig (and a person at the console). */
@@ -107,7 +108,7 @@ async function boot(): Promise<void> {
     prints[name] = printSheetOf((await metaRes.json()) as PrintMeta, bytes);
   }
   const desk = await scope("creation", () => createOracleDesk({
-    device, format: surf.format, text: shaderText,
+    device, format: surf.format, text: shaderText, objects: DESK_CLOCK_OBJECTS,
     assets: { noise: blueNoise(), goboC, goboB, glyphMeta, glyphs, inkMeta, ink, photoMeta, photo, prints },
     log: (message) => console.warn(message),
   }));

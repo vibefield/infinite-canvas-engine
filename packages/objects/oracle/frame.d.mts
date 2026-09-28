@@ -45,6 +45,12 @@ export function createOracleDesk(opts: {
   readonly text: ShaderText;
   readonly assets: OracleAssets;
   readonly log?: (message: string) => void;
+  /**
+   * THE OPEN KIND LIST (design-016 K8b): object types beyond the reference six — a plugin's (`defineObject`'s widget types) —
+   * drawn through their kinds' own contract wherever a scene lays them (`objects: [{ type, x, y, w?, h?, props?, asset? }]`).
+   * Untyped here (a widget type is `@ice/core`'s): the declaration stays self-contained.
+   */
+  readonly objects?: readonly unknown[];
 }): Promise<OracleDesk>;
 
 /**

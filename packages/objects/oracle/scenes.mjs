@@ -365,3 +365,10 @@ export const TRAY_SCENES = [
   { name: "tray-scrolled", trayed: true, scene: { ...trayBase, tray: { p: 1, scroll: 240.4 } } },
 ];
 ORACLE_SCENES.push(...TRAY_SCENES);
+
+// THE OPEN KIND LIST (design-016 K8b): a PLUGIN's stills join the golden — the desk clock's, from its own package
+// (examples/desk-clock, built on the published entries alone), drawn through its kind's own contract; its object types are handed to
+// the desk by each host (render.mjs here, the parity page in Chrome) from the same package. New rows only: every scene above draws
+// as it did.
+import { CLOCK_SCENES } from "../../../examples/desk-clock/oracle/scenes.mjs";
+ORACLE_SCENES.push(...CLOCK_SCENES);

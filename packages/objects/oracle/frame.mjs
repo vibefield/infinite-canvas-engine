@@ -42,7 +42,7 @@ import { DEFAULT_MAT_CONFIG, HERO_MATRIX } from "../../desk/src/mat/layout.ts";
 import { DEFAULT_GRID } from "../../desk/src/mat/grid.ts";
 import { DEFAULT_PAPER_LAW, lampOf, resolvePaper, tiltOf } from "../src/paper/paper.ts";
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from "../src/minimat/minimat.ts";
-import { flightLights, flightPresent, insidePresent } from "../../desk/src/kit/inside.ts";
+import { finishOf, flightLights, flightPresent, insidePresent } from "../../desk/src/kit/inside.ts";
 import { insideView, miniMatInstance } from "../src/minimat/inside.ts";
 import { createSlotSet, drawFrame, drawTray, prepareFrame, renderHeldFrame, SlotPool, tagsOf } from "../../desk/src/ground.ts";
 import { DRAWER, drawerRect, drawerSize } from "../../desk/src/tray/drawer.ts";
@@ -203,12 +203,19 @@ export function pinnedAt(c, day) {
  * committed ink raster and the prints' picture, each with its metadata; a missing atlas, raster or picture is `null`
  * and the desk draws without it).
  */
-export async function createOracleDesk({ device, format, text, assets, log = console.log }) {
+export async function createOracleDesk({ device, format, text, assets, log = console.log, objects = [] }) {
   const mat = await CuttingMat.create(device, format, matShaders(text(MAT_SHADER_FILES)));
+  // THE OPEN KIND LIST (design-016 K8b): object types a host hands the desk beyond the reference six — a PLUGIN's (the desk clock,
+  // examples/desk-clock) — each drawn through its own kind's contract alone (`resolve` → `record`, `chip`), never by name here: a
+  // scene lays them as `objects: [{ type, x, y, w?, h?, props?, asset? }]` on any desk. Their programs join the root's registry after
+  // the six (a kind with no records in a slot costs it nothing — every reference scene draws byte for byte as before). The tray
+  // hangs the reference six alone: a plugin's specimen is the rigs' (rig:clock), never a reference scene's.
+  const pluginTypes = new Map(objects.map((t) => [t.type, t]));
+  const pluginKinds = objects.map((t) => { const k = objectKindOf(t); if (k === undefined) throw new Error(`oracle: "${t.type}" is not a desk object`); return k; });
   // The root slot from the kind registry: every desk kind's pass on the root's mat — the sticky notes (STICKY.md), the mini mats
   // (MINIMAT.md), the whiteboards (BOARD.md), the prints (PHOTO.md), the desk calendars (CALENDAR.md) and the notebooks
   // (NOTEBOOK.md) — and the passes a scene reaches into: the notes' (the ink pages, the law), the mini mats', the boards', …
-  const rootSlot = await createSlotSet(device, format, mat, deskKinds(text));
+  const rootSlot = await createSlotSet(device, format, mat, [...deskKinds(text), ...pluginKinds]);
   const passOf = (name) => { const k = rootSlot.kinds.get(name); if (!k) throw new Error(`oracle: the registry has no "${name}" kind`); return k.pass.pass; };
   const papers = passOf(PAPER_KIND);
   const minimats = passOf(MINIMAT_KIND);
@@ -250,6 +257,9 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   await traySlots.ready(hung.map((t) => [t.type, objectKindOf(t).name]));
   /** The prototype's own selection ring (its stills drew it) — on only for the baseline check; the product's selection is the marks. */
   let prototypeRing = false;
+
+  /** The chip finishes a mini mat's face draws (its kind's own `faceLaw`, K8a) — a plugin's chip is drawn in the first it names of these. */
+  const FACE_FINISHES = DESK_OBJECTS.map((t) => objectKindOf(t)).find((k) => k?.name === MINIMAT_KIND)?.faceLaw?.finishes ?? [];
 
   // The slots beyond the root — the departed desk's, the live insides — from the same pool the ground keeps.
   const pool = new SlotPool(rootSlot);
@@ -300,14 +310,51 @@ export async function createOracleDesk({ device, format, text, assets, log = con
    * it gives one (`things` — a print laid between two notes), else the prototype's order: the whiteboards, the notes, the prints,
    * the notebooks. A note stuck to a calendar's day (`pin: { pad, day }`) lies where the lab's calendar snaps it: its day's slot.
    */
-  const thingsOf = (desk) => (desk.things ?? [...(desk.boards ?? []).map((b) => ({ ...b, kind: "board" })), ...(desk.notes ?? []).map((n) => ({ ...n, kind: "note" })), ...(desk.prints ?? []).map((p) => ({ ...p, kind: "print" })), ...(desk.books ?? []).map(bookThing)]).map((t) => (t.pin ? { ...t, ...pinnedAt((desk.calendars ?? [])[t.pin.pad ?? 0], t.pin.day) } : t));
+  const thingsOf = (desk) => (desk.things ?? [...(desk.boards ?? []).map((b) => ({ ...b, kind: "board" })), ...(desk.notes ?? []).map((n) => ({ ...n, kind: "note" })), ...(desk.prints ?? []).map((p) => ({ ...p, kind: "print" })), ...(desk.books ?? []).map(bookThing), ...objectsIn(desk)]).map((t) => (t.pin ? { ...t, ...pinnedAt((desk.calendars ?? [])[t.pin.pad ?? 0], t.pin.day) } : t));
+  /** A desk's plugin objects (K8b) as things — laid after the reference kinds' things, in the order the desk lists them. */
+  function objectsIn(desk) { return (desk.objects ?? []).map((o) => ({ ...o, kind: "object" })); }
+  /** A plugin object's type (K8b), or a throw: a scene names only what the host handed the desk. */
+  const pluginOf = (t) => { const w = pluginTypes.get(t.type); if (w === undefined) throw new Error(`oracle: no object type "${t.type}" was handed to the desk (createOracleDesk({ objects }))`); return w; };
+  /** A plugin object's size: the scene's, else its type's default. */
+  const objectSize = (t) => { const w = pluginOf(t); return { w: t.w ?? w.defaultSize.w, h: t.h ?? w.defaultSize.h }; };
+  /** The look each plugin kind makes of the product's palette for a theme (its `theme`), made once a theme. */
+  const pluginLooks = new Map();
+  const pluginLookOf = (name, theme) => { let m = pluginLooks.get(theme.name); if (!m) { m = looksOf(pluginKinds, deskPalette(theme.name), theme); pluginLooks.set(theme.name, m); } return m.get(name); };
+  /** The theme the frame being encoded is drawn in — what a plugin kind's look is made for. */
+  let themeNow = THEMES.light;
+  /**
+   * A plugin object's CONTEXT as the builder hands one (kinds/world.ts `ObjectContext`): its rect (centred), its props — its type's
+   * defaults under the scene's —, at rest (a scene's `held` lifts it), its look for the frame's theme, the one lamp, the slot's view,
+   * a still's asset (`asset`, the handle's `pinAsset` in the world); no desk state (`local` — a still is its facts and its pins).
+   */
+  function objectContext(t, cam, s, depth) {
+    const w = pluginOf(t);
+    const kind = objectKindOf(w);
+    const { w: ow, h: oh } = objectSize(t);
+    const props = {};
+    for (const g of w.groups) { const cell = w.prefab.components.find(([c]) => c === g.component); for (const name of Object.keys(g.fields)) props[name] = cell?.[1][name]; }
+    Object.assign(props, t.props ?? {});
+    return {
+      kind,
+      ctx: {
+        entity: t.id ?? 1, rect: { cx: t.x, cy: t.y, w: ow, h: oh }, props, flux: { lift: t.held ? 1 : 0, hover: 0, ring: 0, fade: 1 },
+        look: pluginLookOf(kind.name, themeNow), theme: themeNow, lamp, view: viewOf(cam, s), grid: gridFor(s, depth === 0), dt: 0,
+        ...(t.asset !== undefined ? { asset: t.asset } : {}),
+      },
+    };
+  }
+  /** A plugin object as its kind records it — its pass's record. */
+  function objectOf(t, cam, s, depth) {
+    const { kind, ctx } = objectContext(t, cam, s, depth);
+    return { kind: kind.name, record: kind.record(kind.resolve(ctx), ctx) };
+  }
   /** A book spec's thing — the same object for the same spec, so the book it is keeps its id and mesh from frame to frame (`notebookDraw`). */
   const bookThings = new WeakMap();
   function bookThing(b) { let t = bookThings.get(b); if (!t) { t = { ...b, kind: "book" }; bookThings.set(b, t); } return t; }
   const notesIn = (desk) => (desk.things ? desk.things.filter((t) => t.kind === "note") : (desk.notes ?? []));
   const printsIn = (desk) => thingsOf(desk).filter((t) => t.kind === "print");
   /** The bounds of a desk's content (its notes, its prints and its mini mats) — what its arrival is framed on; a control may pin them (`bounds`). */
-  const contentOf = (desk) => desk.bounds ?? boundsOf([...notesIn(desk).map((n) => ({ x: n.x - (n.w ?? NOTE.size) / 2, y: n.y - (n.h ?? NOTE.size) / 2, width: n.w ?? NOTE.size, height: n.h ?? NOTE.size })), ...printsIn(desk).map((p) => { const s = printSizeOf(); return { x: p.x - s.w / 2, y: p.y - s.h / 2, width: s.w, height: s.h }; }), ...(desk.minimats ?? []).map((m) => ({ x: m.x - (m.w ?? MINIMAT.size.w) / 2, y: m.y - (m.h ?? MINIMAT.size.h) / 2, width: m.w ?? MINIMAT.size.w, height: m.h ?? MINIMAT.size.h }))]);
+  const contentOf = (desk) => desk.bounds ?? boundsOf([...notesIn(desk).map((n) => ({ x: n.x - (n.w ?? NOTE.size) / 2, y: n.y - (n.h ?? NOTE.size) / 2, width: n.w ?? NOTE.size, height: n.h ?? NOTE.size })), ...printsIn(desk).map((p) => { const s = printSizeOf(); return { x: p.x - s.w / 2, y: p.y - s.h / 2, width: s.w, height: s.h }; }), ...(desk.minimats ?? []).map((m) => ({ x: m.x - (m.w ?? MINIMAT.size.w) / 2, y: m.y - (m.h ?? MINIMAT.size.h) / 2, width: m.w ?? MINIMAT.size.w, height: m.h ?? MINIMAT.size.h })), ...(desk.objects ?? []).map((o) => { const z = objectSize(o); return { x: o.x - z.w / 2, y: o.y - z.h / 2, width: z.w, height: z.h }; })]);
   /** A desk's children as the far LOD draws them (minimat.ts `ChildShape`), in the desk's own frame — a print has no chip yet (the far LOD's kinds are D2b's). */
   function childrenOf(desk) {
     const out = [];
@@ -316,6 +363,13 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       const G = noteGeometry(n);
       const w = n.greek ? { ink: pen(n.pen ?? "felt"), x0: 16, em: 24, lines: n.greek.map(([y, width]) => ({ y, width })) } : undefined;
       out.push({ finish: "paper", cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: G.angle, radius: G.radius, colour: surface(n.paper ?? "note"), height: G.curl * 0.5, ...(w ? { writing: w } : {}) });
+    }
+    // a plugin object's chip (K8b, K8a's generic chips): its kind's own `chip`, in the first of its finishes the mini mat's face draws
+    for (const o of desk.objects ?? []) {
+      const { kind, ctx } = objectContext(o, { x: 0, y: 0, zoom: 1 }, {}, 1);
+      const chip = kind.chip?.(kind.resolve(ctx), ctx) ?? null;
+      const finish = chip === null ? undefined : finishOf(chip.finish, FACE_FINISHES);
+      if (chip !== null && finish !== undefined) out.push({ ...chip, finish });
     }
     return out;
   }
@@ -450,14 +504,14 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       });
     }
     let n = 0;
-    const thingObjects = things.map((t) => (t.kind === "note" ? { kind: PAPER_KIND, record: notes[n++] } : t.kind === "board" ? { kind: BOARD_KIND, record: boardOf(t) } : t.kind === "print" ? { kind: PHOTO_KIND, record: printOf(t) } : t.kind === "book" ? { kind: NOTEBOOK_KIND, record: bookOf(t) } : thingError(t)));
+    const thingObjects = things.map((t) => (t.kind === "note" ? { kind: PAPER_KIND, record: notes[n++] } : t.kind === "board" ? { kind: BOARD_KIND, record: boardOf(t) } : t.kind === "print" ? { kind: PHOTO_KIND, record: printOf(t) } : t.kind === "object" ? objectOf(t, cam, s, depth) : t.kind === "book" ? { kind: NOTEBOOK_KIND, record: bookOf(t) } : thingError(t)));
     // the desk calendars lie in the pads stratum, beneath everything whatever their place in the list (`padsFirst` puts them before the things)
     const pads = (desk.calendars ?? []).map((c, i) => ({ kind: CALENDAR_KIND, record: calendarDraw(c, i) }));
     if (depth === 0) pinPrints(desk.calendars ?? []);
     const objects = [...minis.map((record) => ({ kind: MINIMAT_KIND, record })), ...(s.padsFirst ? pads : []), ...thingObjects, ...(s.padsFirst ? [] : pads)];
     return { objects, portals };
   }
-  const thingError = (t) => { throw new Error(`oracle: a desk's thing is a note, a board, a print or a book — not "${t.kind}"`); };
+  const thingError = (t) => { throw new Error(`oracle: a desk's thing is a note, a board, a print, a book or a plugin object — not "${t.kind}"`); };
   /**
    * The desk calendars' PRINTS (D3t-c): each pad's sheets in play — the month on it and the one in motion, as `calendarDraw` lays
    * them in its table slots (2i, 2i + 1) — pinned with the COMMITTED print its scene names for that month (`print: { "YYYY-MM":
@@ -719,6 +773,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   function encode(encoder, target, size, s, opts = {}) {
     prototypeRing = opts.prototypeRing === true;
     const theme = opts.theme ?? THEMES[s.theme];
+    themeNow = theme;
     const m = matOf(s);
     // the hand (D4b): a carry above 0 is the held frame's own path; at 0 the frame is the rest frame, byte for byte
     if (s.hold !== undefined && s.hold.e > 0) {
@@ -755,7 +810,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       };
     } else {
       const cam = { x: s.camX, y: s.camY, zoom: s.zoom };
-      const r = deskInputs({ notes: s.notes ?? [], minimats: s.minimats ?? [], ...(s.boards ? { boards: s.boards } : {}), ...(s.prints ? { prints: s.prints } : {}), ...(s.books ? { books: s.books } : {}), ...(s.calendars ? { calendars: s.calendars } : {}), ...(s.things ? { things: s.things } : {}) }, cam, s, 0);
+      const r = deskInputs({ notes: s.notes ?? [], minimats: s.minimats ?? [], ...(s.boards ? { boards: s.boards } : {}), ...(s.prints ? { prints: s.prints } : {}), ...(s.books ? { books: s.books } : {}), ...(s.calendars ? { calendars: s.calendars } : {}), ...(s.things ? { things: s.things } : {}), ...(s.objects ? { objects: s.objects } : {}) }, cam, s, 0);
       inputs = { view: viewOf(cam, s), mat: m, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), grid: rootGrid, objects: r.objects, ...(r.portals.length ? { portals: r.portals } : {}), ...(opts.light ? { light: opts.light } : {}) };
     }
     if (opts.ownLitInsides) inputs = litOwn(inputs);
