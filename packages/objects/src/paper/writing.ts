@@ -70,6 +70,8 @@ export interface WritingOptions {
   readonly hand?: HandLaw;
   readonly face?: string;
   readonly bleed?: number;
+  /** K7b — the far LOD's low edge (theme.ts `PAPER.far`), CSS px of the sheet's longer side: under it no raster is held or asked (the note greeks). */
+  readonly far?: number;
   /** A typed glyph's wipe, ms (theme.ts `HAND.wipeMs`). */
   readonly wipeMs?: number;
   /** The caret's blink, ms (theme.ts `PAPER.caret.blinkMs`). */
@@ -228,6 +230,8 @@ export function createWriting(opts: WritingOptions): Writing {
   const law = opts.hand ?? DEFAULT_HAND_LAW;
   const face = opts.face ?? DEFAULT_FACE;
   const bleed = opts.bleed ?? DEFAULT_BLEED;
+  /** K7b: the note is FAR — under the far LOD's low edge on screen — and holds and asks no raster (its writing is greeked). */
+  const far = (rect: { readonly w: number; readonly h: number }, zoom: number): boolean => Math.max(rect.w, rect.h) * zoom < (opts.far ?? 0);
   const wipeMs = Math.max(opts.wipeMs ?? HAND.wipeMs, 1);
   const blinkMs = Math.max(opts.blinkMs ?? PAPER.caret.blinkMs, 60);
   const marginPx = opts.marginPx ?? 200;
@@ -317,7 +321,7 @@ export function createWriting(opts: WritingOptions): Writing {
   /** The band note `e` asks (`bandOf`): 0 for an empty sheet, a pinned still, no text raster. */
   const bandAsked = (e: Entity, props: Readonly<Record<string, unknown>>, rect: { readonly w: number; readonly h: number }, zoom: number, dpr: number): number => {
     const en = entries.get(e);
-    if (text === undefined || en?.pinned === true || str(props, "text").length === 0) return 0;
+    if (text === undefined || en?.pinned === true || str(props, "text").length === 0 || far(rect, zoom)) return 0;
     return askBand(en, rect.w, rect.h, zoom, dpr);
   };
 
@@ -413,7 +417,7 @@ export function createWriting(opts: WritingOptions): Writing {
       }
       const L = en.layout;
       // the raster: none for an unwritten sheet; else at the band the view asks, redrawn on a new layout or a rung only
-      if (t.length === 0 || L === undefined || text === undefined) { release(pages, en); unask(e, en); }
+      if (t.length === 0 || L === undefined || text === undefined || far(rect, view.zoom)) { release(pages, en); unask(e, en); }
       else if (pages !== undefined && near(rect, view)) {
         const band = askBand(en, rect.w, rect.h, view.zoom, view.dpr);
         const r = en.raster;

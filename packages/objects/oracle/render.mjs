@@ -676,6 +676,29 @@ async function orderCheck(sc) {
 }
 
 /**
+ * K7b (design-016 §6 K7) — THE FAR LOD's handover, as pixels: one written note (the committed raster, its writing's greeked lines
+ * stated) alone on the desk. Over the band's HIGH edge (66 CSS px) it draws exactly as without its greek — the full look, byte for
+ * byte; under its LOW edge (46 px) exactly as without its raster — so the raster let go there shows nothing (no pop); within the
+ * band (56 px) it is neither — the crossfade.
+ */
+async function farCheck() {
+  const lines = [[36, 96], [64, 150], [92, 168]];
+  const note = { kind: "note", x: 0, y: 0, seed: 7, text: "buy milk", asset: "note-1" };
+  const at = (px, extra) => {
+    const zoom = px / 200;
+    return { camX: -600 / zoom, camY: -400 / zoom, zoom, theme: "light", things: [{ ...note, ...extra }] };
+  };
+  const diff = (A, B) => { let n = 0; for (let o = 0; o < A.length; o += 4) if (delta(A, B, o) > 0 || A[o + 3] !== B[o + 3]) n++; return n; };
+  const top = diff((await render(at(66, { greek: lines }))).px, (await render(at(66, {}))).px);
+  const low = diff((await render(at(46, { greek: lines }))).px, (await render(at(46, { greek: lines, asset: undefined }))).px);
+  const midRaster = diff((await render(at(56, { greek: lines }))).px, (await render(at(56, {}))).px);
+  const midGreek = diff((await render(at(56, { greek: lines }))).px, (await render(at(56, { greek: lines, asset: undefined }))).px);
+  const ok = top === 0 && low === 0 && midRaster > 0 && midGreek > 0;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  far        a written note across the far band: at 66 px with its greek lines vs without them ${top} px differ · at 46 px with its raster vs without it ${low} px differ · at 56 px (the band) it is neither — ${midRaster} px from the raster alone, ${midGreek} from the lines alone`);
+  return ok;
+}
+
+/**
  * K7b (design-016 §6 K7 — the run question) — THE FLAT CARDS, as pixels. A desk whose notes (half with the committed ink), prints
  * and whiteboards INTERLEAVE in sibling order, small (zoom 0.3: every print at its thumbnail; the pool binds eight boards, the rest
  * draw their thumbnails), drawn with the flat-card pipeline — the notes, the prints and the thumbnail boards one run — and again with
@@ -1189,6 +1212,7 @@ for (const sc of scenes) if (sc.paper) { if (!(await paperCheck(sc))) failed += 
 for (const sc of scenes) if (sc.photo) { if (!(await photoCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.order) { if (!(await orderCheck(sc))) failed += 1; }
 if (!(await cardCheck())) failed += 1;
+if (!(await farCheck())) failed += 1;
 for (const sc of scenes) if (sc.board) { if (!(await boardCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.ink) { if (!(await inkCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.marks) { if (!(await marksCheck(sc))) failed += 1; }

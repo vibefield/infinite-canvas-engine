@@ -109,6 +109,8 @@ interface BoardShared {
   /** The pool: the board each slot binds (null: free), and the live board (its stroke and wet bound). */
   readonly pool: (number | null)[];
   live: number | null;
+  /** K7b: a frame drew boards since the last step — the step frees the slots none of them asked for (a board gone FAR asks nothing). */
+  drew: boolean;
   /** The boards on screen since the last step and the density each asked (the most). */
   readonly asked: Map<number, number>;
   /** K6b: the thumbnails' layer kept EMPTY — a board with no ink yet (its first replay the queue's) draws its melamine from it; taken on first need. */
@@ -259,7 +261,7 @@ export class BoardPass {
       rasters: new Map(), slots: 0,
       group1: undefined as unknown as GPUBindGroup,
       thumbs: new LayerArray(device, { label: "board/thumbnails", format: "rgba8unorm", side: BOARD_THUMB }),
-      thumbOf: new Map(), pool: Array.from({ length: BOARD_SLOTS }, () => null), live: null, asked: new Map(), bare: null,
+      thumbOf: new Map(), pool: Array.from({ length: BOARD_SLOTS }, () => null), live: null, asked: new Map(), drew: false, bare: null,
       blank: device.createTexture({ label: "board/pool blank", size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING }),
       blankR: device.createTexture({ label: "board/pool blank r8", size: [1, 1], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING }),
       blankArray: device.createTexture({ label: "board/thumbnails (none yet)", size: [1, 1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING }),
@@ -426,11 +428,13 @@ export class BoardPass {
    * THE FRAME BOUNDARY (the kind's tick, before the next build): the slots of boards no frame asked for since the last step are
    * freed (their rasters stay, a cache), the live slot of a board no longer laid on or wet; and the boards that asked for more
    * than their raster holds — largest first, BOARD_RASTERS_A_STEP a step — are returned with the density to remake them at
-   * (the kind replays their strokes into it). Nothing is freed when nothing was drawn since the last step.
+   * (the kind replays their strokes into it). Nothing is freed when nothing was drawn since the last step — a frame that drew only
+   * FAR boards (K7b: they ask nothing) frees the slots they held.
    */
   step(): { readonly id: number; readonly density: number }[] {
     const s = this.shared;
-    if (s.asked.size === 0) return [];
+    if (s.asked.size === 0 && !s.drew) return [];
+    s.drew = false;
     let moved = false;
     if (s.live !== null && !liveOf(s.rasters.get(s.live))) { s.live = null; moved = true; }
     for (let i = 0; i < s.pool.length; i++) {
@@ -444,7 +448,7 @@ export class BoardPass {
   }
 
   /** The last frame's asks still unanswered (K7a): the next tick owes them a `step` — a slot freed, a board raised to its rung. */
-  get stepOwed(): boolean { return this.shared.asked.size > 0; }
+  get stepOwed(): boolean { const s = this.shared; return s.asked.size > 0 || (s.drew && s.pool.some((id) => id !== null && s.live !== id)); }
 
   /** The raster's size in texels, or null. */
   sizeOf(id: number): readonly [number, number] | null { return this.shared.rasters.get(id)?.size ?? null; }
@@ -636,9 +640,14 @@ export class BoardPass {
       // thumbnail (unseen; a slot it took would be freed at the next step, every frame) — and the one laid on or drying the live slot
       const q = b.quad;
       const seen = q.x1 >= x0 && q.x0 <= x1 && q.y1 >= y0 && q.y0 <= y1;
-      if (seen) s.asked.set(b.id, Math.max(s.asked.get(b.id) ?? 0, boardRung(zd * b.geometry.scale)));
+      // K7b — THE FAR LOD: a board at the ladder's FIRST rung whose thumbnail is made draws from it — the rung-1 raster's own
+      // texels (its chain's tail from the first level that fits BOARD_THUMB², a texel a unit) — so it asks for no raster and takes
+      // no pool slot: the flat card draws it, nothing is replayed at low zoom, an evicted raster stays evicted. Not the live board.
+      const rung = boardRung(zd * b.geometry.scale);
+      const far = rung === 1 && t !== undefined && s.live !== b.id && b.stroke === undefined;
+      if (seen && !far) s.asked.set(b.id, Math.max(s.asked.get(b.id) ?? 0, rung));
       if (r) {
-        if (seen && !s.pool.includes(b.id)) { const free = s.pool.indexOf(null); if (free >= 0) { s.pool[free] = b.id; bind = true; } }
+        if (seen && !far && !s.pool.includes(b.id)) { const free = s.pool.indexOf(null); if (free >= 0) { s.pool[free] = b.id; bind = true; } }
         if (s.live === null && (liveOf(r) || b.stroke !== undefined)) { s.live = b.id; bind = true; }
       }
       if (t === undefined && r !== undefined && !s.pool.includes(b.id)) continue;   // a raster with no layer and no slot: nothing to draw it from
@@ -650,6 +659,7 @@ export class BoardPass {
       from.push(i);
     }
     if (bind) bindPool(s);
+    if (drawn.length > 0) s.drew = true;
     this.store.prepare(drawn, drawnKeys, (i) => aux[i] as number);
     this.rebind();   // after: the store's buffers may have grown
     this.drawnFrom = from;

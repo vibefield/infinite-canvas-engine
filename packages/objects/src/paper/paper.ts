@@ -26,6 +26,7 @@ export interface PaperLaw {
   readonly grain: number;
   readonly ring: number;
   readonly caret: { readonly width: number; readonly blinkMs: number };
+  readonly far: { readonly px: readonly [number, number]; readonly weight: number; readonly alpha: number };
 }
 export const DEFAULT_PAPER_LAW: PaperLaw = PAPER;
 

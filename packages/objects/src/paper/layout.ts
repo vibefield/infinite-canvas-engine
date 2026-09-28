@@ -12,6 +12,9 @@ import type { UvRect } from "./pages";
 import type { PaperGeometry } from "./paper";
 
 // vec2s first, then scalars, then vec4s: tight under the alignment rules.
+/** The most lines of a note's writing its far LOD greeks (K7b) — a mini mat's chip greeks as many (minimat.ts `CHIP_LINES`). */
+export const GREEK_LINES = 6;
+
 export const Paper = defineStruct("Paper", [
   ["centre", "vec2f"], ["half", "vec2f"],
   ["rot", "vec2f"],     // cos, sin of the tilt
@@ -27,11 +30,14 @@ export const Paper = defineStruct("Paper", [
   ["wipe", "vec4f"],    // the newest glyph's box, note units from the sheet's top-left: x0 y0 x1 y1 (x1 < x0 = none)
   ["caret", "vec4f"],   // the caret: x, baseline y (note units), its reach above and below
   ["marks", "vec4f"],   // the wipe's progress, the caret on (0/1), unused ×2
+  ["greek", "vec4f"],   // K7b — the writing GREEKED (the far LOD): the text's left edge and em (note units), how many lines, unused
+  ["glines", `array<vec4f, ${GREEK_LINES / 2}>`],   // …each line's baseline and width (note units), two lines a vec4
 ] as const);
 
 export const PaperUniforms = defineStruct("PaperUniforms", [
   ["knobs", "vec4f"],   // the mat's chain on the paper (0 = a lit byte is the token's byte, 1 = the mat's double gamma), the wipe's softness (note units), the caret's width (CSS px), the ring's width (CSS px)
   ["select", "vec4f"],  // --vf-select, the ring's colour
+  ["far", "vec4f"],     // K7b — the far LOD (theme.ts `PAPER.far`): its band's low and high edges (CSS px of the sheet's longer side), the greek's weight and alpha
 ] as const);
 
 export const MAX_PAPERS = 1024;
@@ -52,6 +58,8 @@ export interface PaperInstance {
   readonly wipe?: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number; readonly t: number } | undefined;
   /** The caret, when the note is being written. */
   readonly caret?: { readonly x: number; readonly y: number; readonly above: number; readonly below: number; readonly on: boolean } | undefined;
+  /** K7b — its writing GREEKED (the far LOD): the text's left edge and em, each line's baseline and width (note units); absent = unwritten. */
+  readonly greek?: { readonly x0: number; readonly em: number; readonly lines: readonly { readonly y: number; readonly width: number }[] } | undefined;
 }
 
 export function paperValues(p: PaperInstance, grain: number) {
@@ -59,6 +67,10 @@ export function paperValues(p: PaperInstance, grain: number) {
   const r = p.raster;
   const w = p.wipe;
   const c = p.caret;
+  const gk = p.greek;
+  const gl = new Array<number>(2 * GREEK_LINES).fill(0);
+  const gn = gk === undefined ? 0 : Math.min(gk.lines.length, GREEK_LINES);
+  for (let i = 0; i < gn; i++) { const L = gk?.lines[i] as { readonly y: number; readonly width: number }; gl[2 * i] = L.y; gl[2 * i + 1] = L.width; }
   return {
     centre: G.centre, half: G.half, rot: [G.cos, G.sin], slope: G.slope,
     lift: G.lift, curl: G.curl, cornerCurl: G.cornerCurl, glue: G.glue, radius: G.radius, ring: G.ring, alpha: G.alpha,
@@ -71,5 +83,7 @@ export function paperValues(p: PaperInstance, grain: number) {
     wipe: w ? [w.x0, w.y0, w.x1, w.y1] : [0, 0, -1, -1],
     caret: c ? [c.x, c.y, c.above, c.below] : [0, 0, 0, 0],
     marks: [w ? w.t : 1, c?.on ? 1 : 0, 0, 0],
+    greek: [gk?.x0 ?? 0, gk?.em ?? 0, gn, 0],
+    glines: gl,
   };
 }

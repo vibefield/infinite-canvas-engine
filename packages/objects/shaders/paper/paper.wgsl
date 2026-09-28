@@ -67,6 +67,24 @@ fn paper_colour(u: MatUniforms, albedo: vec3f, gobo: f32, noise: f32, chain: f32
   return mix(day, night, u.night.x);
 }
 
+// K7b — the writing GREEKED at `nq` (note units from the sheet's top-left), as a mini mat's chip greeks a note (MINIMAT.md §5):
+// each line a stroke of the pen's ink from the text's left edge along its width, on its x-height's middle (0.32 em over the
+// baseline), `far.z` × the em thick — its coverage at `far.w`, the greek's presence (theme.ts `PAPER.far`).
+fn paper_greek(P: Paper, k: PaperUniforms, nq: vec2f, px: f32) -> f32 {
+  let n = min(u32(P.greek.z), 6u);
+  let em = P.greek.y;
+  let r = 0.5 * k.far.z * em;
+  var lines = P.glines;
+  var cov = 0.0;
+  for (var i = 0u; i < n; i++) {
+    let v = lines[i / 2u];
+    let L = select(v.xy, v.zw, (i & 1u) == 1u);
+    let y = L.x - 0.32 * em;
+    cov = max(cov, paper_cov(sdf_segment(nq, vec2f(P.greek.x, y), vec2f(P.greek.x + L.y, y)) - r, px));
+  }
+  return cov * k.far.w;
+}
+
 // One note at a world point `p`: premultiplied colour. `px` is world units per DEVICE px,
 // `css` world units per CSS px; `frag` the framebuffer pixel (the blue noise's key); `lit` the
 // slot is lit from elsewhere (a mini mat's inside, a handover — MINIMAT.md §4): a PIPELINE constant,
@@ -87,6 +105,14 @@ fn shade_paper(P: Paper, u: MatUniforms, k: PaperUniforms, p: vec2f, px: f32, cs
   if (d > px) { return acc * P.alpha; }
   let cov = paper_cov(d, px);
 
+  // K7b — THE FAR LOD (theme.ts `PAPER.far`): the sheet's longer side on screen, CSS px. Under the band's high edge the writing
+  // crossfades to its greeked lines and the FIBRE — the finest detail, a grain that only aliases once a texel spans units — fades
+  // out; under its low edge the lines alone and no fibre is computed. The lamp's shading of the curl stays (it reads at any size).
+  // Above the band `fine` is 1: the full path, the very arithmetic it always was.
+  let size = 2.0 * max(P.half.x, P.half.y) / css;
+  let far = smoothstep(k.far.y, k.far.x, size);
+  let fine = 1.0 - far;
+
   // The sheet: its height, its normal, the lamp — the flat strip reads 1, the curl turns toward or from the light.
   let h = paper_height(P, q);
   let n = paper_normal(P, q);
@@ -95,7 +121,11 @@ fn shade_paper(P: Paper, u: MatUniforms, k: PaperUniforms, p: vec2f, px: f32, cs
 
   // The albedo: the paper with its fibre (in the sheet's own units, so the grain sticks to it), the ink laid into it.
   let bn = textureSampleLevel(noise_tex, noise_samp, frag * u.noise.z + u.noise.xy, 0.0).rgb;
-  let fibre = ((value_noise(q * 0.9) - 0.5) + (value_noise(q * 3.1) - 0.5) * 0.5 + (bn.x - 0.5) * 0.5) * P.paper.w;
+  var fibre = 0.0;
+  if (fine > 0.0) {
+    fibre = ((value_noise(q * 0.9) - 0.5) + (value_noise(q * 3.1) - 0.5) * 0.5 + (bn.x - 0.5) * 0.5) * P.paper.w;
+    if (fine < 1.0) { fibre = fibre * fine; }
+  }
   var albedo = P.paper.xyz + vec3f(fibre * 1.1, fibre, fibre * 0.7);
   let nq = q + P.half;                      // note units from the sheet's top-left
   let uv = P.uv.xy + (nq / (2.0 * P.half)) * (P.uv.zw - P.uv.xy);
@@ -106,6 +136,8 @@ fn shade_paper(P: Paper, u: MatUniforms, k: PaperUniforms, p: vec2f, px: f32, cs
     let edge = P.wipe.x + P.marks.x * (P.wipe.z - P.wipe.x + k.knobs.y);
     ink *= 1.0 - smoothstep(edge - k.knobs.y, edge, nq.x);
   }
+  // K7b: the greeked lines in the raster's place — crossfaded within the band, alone under it (where no raster is held)
+  if (far > 0.0 && P.greek.z > 0.5) { ink = mix(ink, paper_greek(P, k, nq, px), far); }
   albedo = mix(albedo, P.ink.xyz, ink * P.ink.w);
   // the lamp's shading, in the display's own gamma (the mat's law: a linear multiply shows as shade^(1/2.2))
   albedo = albedo * pow(max(diffuse, 0.0), 1.0 / 2.2);

@@ -37,4 +37,11 @@ export const PAPER = {
   ring: PHYSICS.ring,
   /** The caret: CSS px wide, the platform's blink. */
   caret: { width: 1.5, blinkMs: 530 },
+  /**
+   * The FAR LOD (K7b, design-016 §6 K7): under `px[1]` CSS px (the sheet's longer side on screen) the writing crossfades to its
+   * GREEKED lines — bars of the pen's ink at `alpha`, `weight` × the em thick through each line's x-height, as a mini mat's chip
+   * greeks a note (MINIMAT.md §5) — and the fibre fades out with it (the cheap path: the grain aliases once a device px spans units
+   * of paper); under `px[0]` the note is greeked alone: no raster held, none asked, no fibre computed.
+   */
+  far: { px: [48, 64], weight: 0.3, alpha: 0.42 },
 } as const;

@@ -52,7 +52,7 @@ function fakePages(layers = 4) {
   return { pages, shelves, writes, resets: () => resets };
 }
 
-function desk(opts: { text?: TextRaster | undefined; layers?: number; drawn?: (e: Entity) => number | undefined; pages?: InkPages; queued?: boolean } = {}) {
+function desk(opts: { text?: TextRaster | undefined; layers?: number; drawn?: (e: Entity) => number | undefined; pages?: InkPages; queued?: boolean; far?: number } = {}) {
   const t = fakeText();
   const p = fakePages(opts.layers);
   const pages = opts.pages ?? p.pages;
@@ -60,7 +60,7 @@ function desk(opts: { text?: TextRaster | undefined; layers?: number; drawn?: (e
   const q = createRasterQueue({ budgetMs: 1e9 });
   const remade: Entity[] = [];
   const w = createWriting({
-    pages: () => pages, text: "text" in opts ? opts.text : t.text, ...(opts.drawn !== undefined ? { drawn: opts.drawn } : {}),
+    pages: () => pages, text: "text" in opts ? opts.text : t.text, ...(opts.drawn !== undefined ? { drawn: opts.drawn } : {}), ...(opts.far !== undefined ? { far: opts.far } : {}),
     ...(opts.queued === true ? { queue: q, remake: (e: Entity) => { remade.push(e); } } : {}),
   });
   let now = 0;
@@ -140,6 +140,27 @@ describe("the writing · the raster cache's keys", () => {
     frame([n], { ...VIEW, zoom: 0.5 });                        // 1 < 8 / 2.3: down to 1
     expect(w.rasterOf(E(1))).toMatchObject({ band: 1, w: 200, h: 200 });
     expect(t.calls.map((c) => c.band)).toEqual([4, 8, 1]);
+  });
+
+  it("K7b — the FAR LOD: under the far band's low edge (PAPER.far, CSS px of the sheet's longer side) a written note holds and asks NO raster — its rung 0, its pages freed, its layout standing (the record's greeked lines); back over the edge its raster is laid again", () => {
+    expect(DEFAULT_PAPER_LAW.far.px).toEqual([48, 64]);
+    const { w, t, frame } = desk({ far: DEFAULT_PAPER_LAW.far.px[0] });
+    const n = { e: E(1), cx: 300, cy: 250, text: "call the studio\nback before five" };
+    const P = { text: n.text };
+    const R = { w: 200, h: 200 };
+    frame([n], { ...VIEW, zoom: 0.5 });                         // 100 CSS px: near — rastered
+    expect(w.rasterOf(E(1))).toMatchObject({ band: 1 });
+    expect(w.bandOf(n.e, P, R, 0.25, 2)).toBeGreaterThan(0);  // 50 px: over the edge — a band
+    expect(w.bandOf(n.e, P, R, 0.2, 2)).toBe(0);               // 40 px: under it — no band (the rung the builder remakes on)
+    const { out } = frame([n], { ...VIEW, zoom: 0.2 });
+    expect(out[0]?.raster).toBeUndefined();                    // the record shows no raster: its greeked lines alone
+    expect(w.rasterOf(E(1)) ?? null).toBeNull();              // …and the pages' room is given back
+    expect(w.layoutOf(E(1))?.lines.length).toBeGreaterThan(1);   // the layout stands: the lines the record greeks
+    frame([n], { ...VIEW, zoom: 0.1 });
+    expect(t.calls.length).toBe(1);                            // nothing rastered while far
+    frame([n], { ...VIEW, zoom: 0.3 });                         // 60 px: back over the edge — laid at the ladder's band (0.6 → √½)
+    expect(w.rasterOf(E(1))?.band).toBeCloseTo(Math.SQRT1_2, 12);
+    expect(t.calls.length).toBe(2);
   });
 
   it("bandOf — the paper kind's RUNG (K6b): the band `draw` rasters at, under the same hysteresis; 0 for an empty sheet, a pinned still, no text raster", () => {

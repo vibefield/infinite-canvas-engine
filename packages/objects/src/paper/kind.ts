@@ -16,7 +16,7 @@
 // takes all three from it; a raster a host pinned through the builder (`ctx.asset`) is the fallback.
 
 import { type KindExtra, type KindPass, type KindProgram, type SlotContext, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type KindHost, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, type RungContext, stringProp } from "@ice/desk";
-import { type MatPass, type MarkFrame, type ChildShape, type HandLaw, HAND, PAPER_FINISH, type ShaderText, TEXT_RASTER } from "@ice/desk/kit";
+import { type MatPass, type MarkFrame, type ChildShape, type HandLaw, type HandLayout, HAND, PAPER_FINISH, type ShaderText, TEXT_RASTER } from "@ice/desk/kit";
 import type { PaperInstance } from "./layout";
 import { DEFAULT_PAPER_LAW, type PaperGeometry, type PaperLaw, pickPaper, resolvePaper, tiltOf } from "./paper";
 import { PaperPass } from "./paper-pass";
@@ -119,6 +119,12 @@ const pagesOf = (host: KindHost) => (): PaperPass | undefined => {
   return pass instanceof PaperKind ? pass.pass : undefined;
 };
 
+/** A note's writing greeked (a mini mat's chip, the far LOD — K7b): the lines a still pinned, else the hand's layout of its text; undefined = none. */
+function greekOf(asset: PaperAsset | undefined, laid: HandLayout | undefined, hand: { readonly pad: number; readonly size: number }): PaperWriting | undefined {
+  const g = asset?.greek ?? (laid === undefined ? undefined : { x0: hand.pad, em: hand.size, lines: laid.lines.map((L) => ({ y: L.y, width: L.width })) });
+  return g === undefined || g.lines.length === 0 ? undefined : g;
+}
+
 /** The note's kind, whole (kinds/world.ts `ObjectKind`): the program, and the world half on the prototype's laws. */
 export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry, PaperInstance, PaperLook> {
   const law = opts.law ?? DEFAULT_PAPER_LAW;
@@ -139,6 +145,7 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
       queue: host.rasters,
       remake: host.remake,
       wipeMs: HAND.wipeMs,
+      far: law.far.px[0],
       blinkMs: law.caret.blinkMs,
       ...(opts.hand?.law !== undefined ? { hand: opts.hand.law } : {}),
       ...(opts.hand?.face !== undefined ? { face: opts.hand.face } : {}),
@@ -161,7 +168,9 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
       const hand = w?.draw(ctx.entity, ctx.props, ctx.rect, ctx.view, G, ctx.flux.fade < 1) ?? {};   // a ghost fades on what it has
       const asset = asPaperAsset(ctx.asset);
       const raster = hand.raster ?? (hasRaster(asset) ? { layer: asset.layer, uv: asset.uv } : undefined);
-      return { geometry: G, paper, ink, ...(raster !== undefined ? { raster } : {}), ...(hand.wipe !== undefined ? { wipe: hand.wipe } : {}), ...(hand.caret !== undefined ? { caret: hand.caret } : {}) };
+      // K7b — its writing GREEKED (the far LOD, theme.ts `PAPER.far`): the lines a still pinned, else the hand's own layout of its text
+      const greek = greekOf(asset, w?.layoutOf?.(ctx.entity), opts.hand?.law ?? HAND);
+      return { geometry: G, paper, ink, ...(raster !== undefined ? { raster } : {}), ...(hand.wipe !== undefined ? { wipe: hand.wipe } : {}), ...(hand.caret !== undefined ? { caret: hand.caret } : {}), ...(greek !== undefined ? { greek } : {}) };
     },
     hit(G: PaperGeometry, wx: number, wy: number): ObjectHit | null {
       return pickPaper(G, wx, wy) === "paper" ? "content" : null;
@@ -178,9 +187,7 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
       const pens = look?.pens ?? {};
       const paper = papers[stringProp(ctx.props, "paper", "")] ?? Object.values(papers)[0] ?? ([0, 0, 0] as unknown as RGB);
       const ink = pens[stringProp(ctx.props, "pen", "")] ?? Object.values(pens)[0] ?? paper;
-      const laid = (ctx.local as Writing | undefined)?.layoutOf(ctx.entity);
-      const hand = opts.hand?.law ?? HAND;
-      const greek = asPaperAsset(ctx.asset)?.greek ?? (laid === undefined ? undefined : { x0: hand.pad, em: hand.size, lines: laid.lines.map((L) => ({ y: L.y, width: L.width })) });
+      const greek = greekOf(asPaperAsset(ctx.asset), (ctx.local as Partial<Writing> | undefined)?.layoutOf?.(ctx.entity), opts.hand?.law ?? HAND);
       return {
         finish: PAPER_FINISH, cx: G.centre[0], cy: G.centre[1], hx: G.half[0], hy: G.half[1], angle: G.angle, radius: G.radius, colour: paper, height: G.curl * 0.5,
         ...(greek !== undefined && greek.lines.length > 0 ? { writing: { ink, x0: greek.x0, em: greek.em, lines: greek.lines } } : {}),

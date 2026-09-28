@@ -288,7 +288,9 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     return specs.map((n) => {
       if (n.asset === "note-1" && inkBytes && !inkRaster) { const rect = papers.alloc(inkMeta.w, inkMeta.h); if (rect) inkRaster = { layer: rect.layer, uv: papers.write(rect, inkBytes) }; }
       const raster = n.asset === "note-1" ? inkRaster : null;
-      return { geometry: noteGeometry(n), paper: surface(n.paper ?? "note"), ink: pen(n.pen ?? "felt"), ...(raster ? { raster } : {}) };
+      // K7b: the greeked lines a still states ride the note as the app's pin does (layer.ts `pinGreek` → the record's `greek`) — its far LOD
+      const greek = n.greek ? { x0: 16, em: 24, lines: n.greek.map(([y, width]) => ({ y, width })) } : undefined;
+      return { geometry: noteGeometry(n), paper: surface(n.paper ?? "note"), ink: pen(n.pen ?? "felt"), ...(raster ? { raster } : {}), ...(greek ? { greek } : {}) };
     });
   }
   const matGeometry = (m) => resolveMiniMat({ cx: m.x, cy: m.y, w: m.w ?? MINIMAT.size.w, h: m.h ?? MINIMAT.size.h }, { held: m.held ? 1 : 0, hover: 0, ring: prototypeRing && m.selected ? 1 : 0, fade: 1 }, DEFAULT_MINIMAT_LAW, lamp);

@@ -168,7 +168,8 @@ export class PaperPass {
     this.rebind();   // after: the store's buffers may have grown
     this.count = n;
     this.litElsewhere = !litByOwn(view, lit);
-    this.knobs.set({ knobs: [this.chain ? 1 : 0, this.wipeSoft, this.law.caret.width, this.law.ring], select: [select[0], select[1], select[2], 1] });
+    const far = this.law.far;
+    this.knobs.set({ knobs: [this.chain ? 1 : 0, this.wipeSoft, this.law.caret.width, this.law.ring], select: [select[0], select[1], select[2], 1], far: [far.px[0], far.px[1], far.weight, far.alpha] });
     writeChanged(this.device.queue, this.knobBuf, this.knobs, this.knobsSent);
     return n;
   }

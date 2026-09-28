@@ -61,6 +61,27 @@ describe("the pool and the thumbnails on a fake device", () => {
     return { kind, pass, raster };
   }
 
+  it("K7b — the FAR LOD: a board at the ladder's FIRST rung (zoom·dpr ≤ 0.5) with its thumbnail cut takes NO pool slot and asks for no raster — the flat card draws it from the thumbnail; the slot it held near is freed at the next step; one with no thumbnail yet still asks (to cut one)", async () => {
+    const { kind, pass, raster } = await root();
+    raster(1, 1);                                              // rastered at rung 1 and replayed: its thumbnail cut
+    expect(pass.thumbed(1)).toBe(true);
+    expect(kind.prepare({} as GPUCommandEncoder, ctx(), [board(1)])).toBe(1);   // near (zoom 1: rung 4) — it takes a slot
+    expect(pass.bound(1)).toBe(true);
+    expect(kind.cardSlot(0)).toBe(-1);                         // …and draws itself
+    pass.step();
+    const far = { ...VIEW, zoom: 0.2 };                        // zd 0.4: rung 1
+    expect(kind.prepare({} as GPUCommandEncoder, ctx(far), [board(1)])).toBe(1);   // far: it asks NOTHING…
+    expect(pass.stepOwed).toBe(true);                          // …yet the frame drew it: the step it owes frees the slot it held
+    expect(pass.step()).toEqual([]);
+    expect(pass.bound(1)).toBe(false);
+    expect(kind.prepare({} as GPUCommandEncoder, ctx(far), [board(1)])).toBe(1);
+    expect(kind.cardSlot(0)).toBeGreaterThanOrEqual(0);        // the flat card's
+    pass.step();
+    expect(pass.stepOwed).toBe(false);                         // nothing asked, nothing bound: the loop may sleep
+    expect(kind.prepare({} as GPUCommandEncoder, ctx(far), [board(1), board(2)])).toBe(2);   // board 2: no ink yet, bare…
+    expect(pass.step().map((r) => r.id)).toEqual([2]);        // …asks, to cut its thumbnail; board 1 does not
+  });
+
   it("a board on screen with a raster takes a pool slot — BOARD_SLOTS of them, the rest drawn from their thumbnails; one in the cull's margin takes none", async () => {
     const { kind, pass, raster } = await root();
     const ids = Array.from({ length: BOARD_SLOTS + 1 }, (_, i) => i + 1);
