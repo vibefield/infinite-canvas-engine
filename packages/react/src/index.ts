@@ -37,7 +37,7 @@ export {
   type FramePreviewBoundaryProps,
 } from "./frame-preview-boundary";
 export { usePresencePeers, type PresencePeerView } from "./use-presence";
-export { attachKeymap, type KeymapEntry, nudgeSelection, toggleTape } from "./keymap";
+export { attachKeymap, type KeymapEntry, nudgeSelection, toggleTape, unlessInert } from "./keymap";
 export {
   defaultSelectionActions,
   placeSelectionMenu,

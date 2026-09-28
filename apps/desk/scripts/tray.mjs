@@ -630,6 +630,46 @@ try {
     check(lent === -1 && sel.length === 0 && stillOpen === true && lentShut === underNote,
       `inert under the drawer: a click on the note specimen over a note lent the editor to ${lent} (−1: nothing), selected ${sel.length}, the drawer ${stillOpen ? "still open" : "SHUT"}; shut, the same click lends it to that note (${lentShut}, the note ${underNote})`);
   }
+
+  // K9 S3: the app's OWN keys are quiet on the inert desk (design-017 §4) — with the drawer out, `w` `m` `b` ⇧W ⇧C make nothing, Tab and
+  // ⇧Tab walk the selection nowhere, ⇧→ nudges the selected note nowhere, while `d` (the theme — no touch on the desk) stays live; shut,
+  // `w` makes a note (control). And in HAND: ⇧→ moves the held notebook nowhere; put down and selected, it moves one lattice cell (control).
+  {
+    const keyMod = async (k, code, vk, modifiers = 0) => { await front(); await tab.send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code, windowsVirtualKeyCode: vk, modifiers, text: k.length === 1 ? k : undefined }); await tab.send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code, windowsVirtualKeyCode: vk, modifiers }); };
+    await q(`window.__desk.engine.ops.setSelection([${note}], 'replace')`); await frames(2);
+    const n0 = (await ents()).length;
+    const p0 = (await ents()).find((e) => e.id === note);
+    await q("window.__desk.tray.open()"); await slide(); await settle();
+    const theme0 = await q("window.__desk.theme()");
+    for (const [k, code, vk, mods] of [["w", "KeyW", 87, 0], ["m", "KeyM", 77, 0], ["b", "KeyB", 66, 0], ["W", "KeyW", 87, 8], ["C", "KeyC", 67, 8], ["Tab", "Tab", 9, 0], ["Tab", "Tab", 9, 8], ["ArrowRight", "ArrowRight", 39, 8], ["d", "KeyD", 68, 0]]) await keyMod(k, code, vk, mods);
+    await frames(4);
+    const n1 = (await ents()).length;
+    const p1 = (await ents()).find((e) => e.id === note);
+    const sel1 = await q("window.__desk.selection()");
+    const theme1 = await q("window.__desk.theme()");
+    await keyMod("d", "KeyD", 68); await frames(2);   // the theme back
+    const stillOpen = (await tray()).facts.open;
+    await q("window.__desk.tray.close()"); await settle();
+    await keyMod("w", "KeyW", 87); await frames(4);
+    const n2 = (await ents()).length;
+    await undo(); await frames(2);   // the control's note away
+    check(n1 === n0 && p1.x === p0.x && p1.y === p0.y && sel1.length === 1 && sel1[0] === note && theme1 !== theme0 && stillOpen === true && n2 === n0 + 1,
+      `the app's keys on the inert desk: w m b ⇧W ⇧C Tab ⇧Tab ⇧→ under the open drawer made ${n1 - n0} objects, moved the selected note (${p0.x},${p0.y}) → (${p1.x},${p1.y}), left the selection ${JSON.stringify(sel1)} (the note ${note}), the drawer ${stillOpen ? "open" : "SHUT"}; \`d\` stayed live (${theme0} → ${theme1}); shut, \`w\` made ${n2 - n0} (control)`);
+    const book = await q("window.__desk.spawn('desk.notebook', { seed: 5, angle: 0 }, { x: 900, y: 300 })"); await frames(2);
+    const b0 = (await ents()).find((e) => e.id === book);
+    await q(`window.__desk.open(${book})`); await settle();
+    const inHand = (await q("window.__desk.hand()")) !== null;
+    await keyMod("ArrowRight", "ArrowRight", 39, 8); await frames(4);
+    const b1 = (await ents()).find((e) => e.id === book);
+    await q("window.__desk.putDown()"); await settle();
+    await q(`window.__desk.engine.ops.setSelection([${book}], 'replace')`); await frames(2);
+    await keyMod("ArrowRight", "ArrowRight", 39, 8); await frames(4);
+    const b2 = (await ents()).find((e) => e.id === book);
+    await undo(); await frames(2); await undo(); await frames(2);   // the nudge, then the notebook
+    await q("window.__desk.engine.ops.setSelection([], 'replace')"); await frames(2);
+    check(inHand && b1.x === b0.x && b1.y === b0.y && b2.x === b0.x + 20 && b2.y === b0.y,
+      `…and in hand (held ${inHand}): ⇧→ moved the held notebook (${b0.x},${b0.y}) → (${b1.x},${b1.y}); put down and selected, ⇧→ moved it to (${b2.x},${b2.y}) — one lattice cell right (control)`);
+  }
   await q("window.__desk.tray.close()"); await settle();
   const restAfter = await idle(240);
   check(restAfter === 0, `at rest after all of it, the drawer shut: ${restAfter} submits over 240 frames`);

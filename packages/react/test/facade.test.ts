@@ -23,6 +23,8 @@ import {
   type Entity,
   openTray,
   trayOpen,
+  closeTray,
+  heldEntity,
 } from "@ice/core";
 import type { LayerFactory } from "@ice/dom";
 import { StrictMode, act, createElement, useState, type ReactElement } from "react";
@@ -36,6 +38,7 @@ import {
   usePresencePeers,
   useTool,
   useUndoStatus,
+  unlessInert,
 } from "../src";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
@@ -46,6 +49,8 @@ defineWidget({
   props: { text: p.string({ default: "hi" }) },
   defaultSize: { w: 100, h: 60 },
 });
+// …and an OPENABLE one: the hand's case of the inert desk (K9 S3's `unlessInert` test).
+defineWidget({ type: "rt:book", object: { name: "book" }, openable: true, defaultSize: { w: 200, h: 140 } });
 
 /**
  * A structural fake of the desk's layer factory (`deskLayer(…)` in production): react must treat
@@ -319,6 +324,32 @@ describe("default keymap", () => {
     input.dispatchEvent(new KeyboardEvent("keydown", { key: "Delete", bubbles: true }));
     step();
     expect(engine.world.isAlive(e)).toBe(true); // survived — the shortcut was skipped
+  });
+
+  it("`unlessInert` is exported for an app's OWN keys (K9 S3): the wrapped run fires on the live desk, not while the pegboard drawer is out, not with an object in hand", () => {
+    const { engine, step } = makeEngine();
+    let ran = 0;
+    const run = unlessInert(() => { ran++; });
+    run(engine);
+    expect(ran).toBe(1);
+    openTray(engine.world);
+    run(engine);
+    expect(ran).toBe(1);
+    closeTray(engine.world);
+    run(engine);
+    expect(ran).toBe(2);
+    const book = engine.ops.spawnWidget("rt:book", { x: 200, y: 200 });
+    step();
+    engine.ops.open(book);
+    step();
+    expect(heldEntity(engine.world)).toBe(book);
+    run(engine);
+    expect(ran).toBe(2);
+    engine.ops.putDown();
+    step();
+    expect(heldEntity(engine.world)).toBeUndefined();
+    run(engine);
+    expect(ran).toBe(3);
   });
 });
 

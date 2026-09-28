@@ -18,7 +18,7 @@ import { bookAngle } from "@ice/objects";
 import { BOARD_TYPE, CALENDAR_TYPE, DESK_OBJECTS, MINIMAT_TYPE, NOTE_TYPE, NOTEBOOK_TYPE, VINYL_ACT } from "@ice/objects";
 import { CLOCK_SECONDS_ACT, CLOCK_TYPE } from "@ice-examples/desk-clock";
 import type { ThemeName } from "@ice/desk";
-import { defaultSelectionActions, Desk, type KeymapEntry, type LayerFactory, nudgeSelection, type SelectionAction, SelectionMenu, type SelectionMenuSource } from "@ice/react";
+import { defaultSelectionActions, Desk, type KeymapEntry, type LayerFactory, nudgeSelection, type SelectionAction, SelectionMenu, type SelectionMenuSource, unlessInert } from "@ice/react";
 import { useEffect, useMemo, useRef, useState, type ReactElement } from "react";
 import { installDeskApi, type DeskApi } from "./api";
 import { deskBlobs } from "./blobs";
@@ -135,14 +135,16 @@ export function App(): ReactElement {
       if (next !== undefined) engine.ops.setSelection([next.e], "replace");
     };
     return [
-      { key: "w", run: () => stick(NOTE_TYPE, { seed: (Math.random() * 0x7fffffff) | 0 }) },
-      { key: "m", run: () => stick(MINIMAT_TYPE, { name: `Mat ${matSerial.current++}` }) },
+      // K9 S3: what makes, acts on or moves objects is quiet on the INERT desk (design-017 §4 — the drawer out, or an object in hand):
+      // `unlessInert`, the core keymap's own gate. `a` (the drawer's key), `d`, `u`, the backtick and `~` stay live — none touches the desk.
+      { key: "w", run: unlessInert(() => stick(NOTE_TYPE, { seed: (Math.random() * 0x7fffffff) | 0 })) },
+      { key: "m", run: unlessInert(() => stick(MINIMAT_TYPE, { name: `Mat ${matSerial.current++}` })) },
       // D3w: `W` lays a whiteboard (BOARD.md — its capped marker black, bullet)
-      { key: "w", shift: true, run: () => stick(BOARD_TYPE, {}) },
+      { key: "w", shift: true, run: unlessInert(() => stick(BOARD_TYPE, {})) },
       // …`b` a notebook (NOTEBOOK.md — its seed its hand and its turn on the mat, never set down quite square)
-      { key: "b", run: () => { const seed = (Math.random() * 1000) | 0; stick(NOTEBOOK_TYPE, { seed, angle: bookAngle(seed) }); } },
+      { key: "b", run: unlessInert(() => { const seed = (Math.random() * 1000) | 0; stick(NOTEBOOK_TYPE, { seed, angle: bookAngle(seed) }); }) },
       // …`C` a desk calendar showing this month (CALENDAR.md — the host's clock), its week from Monday
-      { key: "c", shift: true, run: () => { const d = new Date(); stick(CALENDAR_TYPE, { month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` }); } },
+      { key: "c", shift: true, run: unlessInert(() => { const d = new Date(); stick(CALENDAR_TYPE, { month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` }); }) },
       // K8b: `c` sets a DESK CLOCK down (examples/desk-clock — a plugin kind in its own package, registered beside the six: desk.ts
       // `DESK_PLUGINS`); on a page that registered none (a rig's reference desk) the key finds no type and does nothing
       { key: "c", run: () => stick(CLOCK_TYPE, {}) },
@@ -152,7 +154,7 @@ export function App(): ReactElement {
       // K3: `a` ("add") slides the pegboard tray in and out (design-017 — widgetlab's `B` is the notebook's here)
       { key: "a", run: () => { handleRef.current?.tray.toggle(); } },
       // `t` (MINIMAT.md §2): the mini mat's own act (K8a — `defineObject({ menu })`), run on the selected mats through the engine
-      { key: "t", run: () => { engine.ops.runMenuAction(VINYL_ACT); } },
+      { key: "t", run: unlessInert(() => { engine.ops.runMenuAction(VINYL_ACT); }) },
       // K1: `u` prints the rulers or not (the ground demo's key) — through the dev panel's params, so the panel's row and the
       // browser's saved desk agree with it; like every letter here, never while typing (the keymap's editable gate)
       { key: "u", run: () => panelRef.current?.tweak((p) => { p.ruler.on = !p.ruler.on; }) },
@@ -162,10 +164,11 @@ export function App(): ReactElement {
       { key: "~", shift: true, run: () => dockRef.current?.toggle() },
       // D4b: Tab walks the desk's objects in reading order (top to bottom, left to right) — the keyboard's way to a notebook, which ⏎
       // then picks up and Esc lands with the selection back; ⇧Tab walks back. Nothing while something is in hand (the bar's Tab is D3t's).
-      { key: "Tab", run: () => tabSelection(1) },
-      { key: "Tab", shift: true, run: () => tabSelection(-1) },
-      // ⇧ arrows nudge one lattice cell (Marks on the Mat's keys, D4a) — the engine's default ⇧ step is 10; a taped object never moves
-      ...([["ArrowLeft", -1, 0], ["ArrowRight", 1, 0], ["ArrowUp", 0, -1], ["ArrowDown", 0, 1]] as const).map(([key, dx, dy]): KeymapEntry => ({ key, shift: true, run: (e) => nudgeSelection(e, dx * LATTICE_CELL, dy * LATTICE_CELL) })),
+      { key: "Tab", run: unlessInert(() => tabSelection(1)) },
+      { key: "Tab", shift: true, run: unlessInert(() => tabSelection(-1)) },
+      // ⇧ arrows nudge one lattice cell (Marks on the Mat's keys, D4a) — the engine's default ⇧ step is 10; a taped object never moves.
+      // These REPLACE the core keymap's ⇧-arrow entries, so they carry its gate themselves (K9 S3: ⇧→ moved a notebook in hand)
+      ...([["ArrowLeft", -1, 0], ["ArrowRight", 1, 0], ["ArrowUp", 0, -1], ["ArrowDown", 0, 1]] as const).map(([key, dx, dy]): KeymapEntry => ({ key, shift: true, run: unlessInert((e) => nudgeSelection(e, dx * LATTICE_CELL, dy * LATTICE_CELL)) })),
     ];
   }, [engine]);
 

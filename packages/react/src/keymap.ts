@@ -86,9 +86,10 @@ function escapeOrExit(engine: CanvasEngine): void {
 
 /**
  * The desk's keys go quiet while it is inert — an object in hand (D4b) or the pegboard tray open (design-017 §4): what would delete,
- * copy, nudge or gather on the inert desk does nothing.
+ * copy, nudge or gather on the inert desk does nothing. Exported for an app's OWN keys (K9 S3: the desk app's `w`, `m`, Tab and its
+ * ⇧ arrows — which replace the entries here — made, walked and nudged objects under the open drawer and moved a notebook in hand).
  */
-const unlessInert = (run: (engine: CanvasEngine) => void) => (engine: CanvasEngine): void => { if (heldEntity(engine.world) === undefined && !trayOpen(engine.world)) run(engine); };
+export const unlessInert = (run: (engine: CanvasEngine) => void) => (engine: CanvasEngine): void => { if (heldEntity(engine.world) === undefined && !trayOpen(engine.world)) run(engine); };
 
 /**
  * The held bar's keys (design-015 §8; D3t-a): with an object in hand, its type's tools (`heldTools` — the kind's `open.tools`)
