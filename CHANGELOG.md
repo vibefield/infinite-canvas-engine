@@ -873,6 +873,21 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   674 → 19, GPU 4.79 → 4.60 ms (min), the pan's JS 2.84 → 2.30 ms, memory under its budget (23,744 → 117 evictions); idle
   asleep. Still MISSED: the pan's JS ≤ 2 ms and the 256 MB budget at the full 10,000 (board thumbnails at scale).
 
+<!-- design-016 K8b (2026-09-28) -->
+- **A third-party kind in its own package: the desk clock** (`examples/desk-clock`, `@ice-examples/desk-clock`, private —
+  design-016 §5, K-L1 · K-L2): an analogue clock written the way a VibeField plugin will be, importing ONLY the published
+  entries (`@vibecook/ice`, `/desk`, `/desk/kit`, `/desk/engine` — a unit reads them from the umbrella's exports map and a
+  cruiser rule `examples-import-only-the-published-entries` fails anything else). Its own WGSL (a metal bezel, a recessed
+  dial, SDF numerals and its own stroke font, faceted hands and their shadows, a glass glint, lume by night — the kit's
+  light by name), an instanced pass on the slot's view block, durable props (style, 24-hour ring, seconds, zone), a
+  REGISTERED WAKE (the next second or minute its hands need — never polled; seconds on: a submit per wall second and
+  none between), a tray entry (a hook), a menu act with its own glyph, an opening with five held tools, a chip inside a
+  mini mat, a round pick. apps/desk registers it beside the six (`c` sets one down, `s` its act); `rig:clock` (11 rows)
+  joins `gate:landing` (seventeen rigs); the oracle's kind list is OPEN (`createOracleDesk({ objects })`) and five clock
+  stills join the golden (111); `dts:check` compiles the clock against the umbrella's BUILT declarations. D-K8b.1: a
+  plugin kind's logic is its desk state (`local`), drivers (input on one desk) or `defineBehavior` (a fact to sync, undo
+  or keep) — design-015 §5.2's `behaviors: [noteTyping]` is superseded (typing is flux committed whole).
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 

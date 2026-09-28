@@ -1496,7 +1496,7 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   across FW-B and FW-A. NOT MET and owed: §11.4's idle main-thread ≤ 0.1 ms/s (2.07–2.56 measured — registered wakes); a
   relation-only reparent leaves `Selected`/`Held` standing; a kind-declared input lease behind the seam's two DOM exceptions.
 
-## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a, K5a, K6b, K5b and K7a LANDED 2026-09-27 · K-H, K8a and K7b LANDED 2026-09-28)**
+## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a, K5a, K6b, K5b and K7a LANDED 2026-09-27 · K-H, K8a, K7b and K8b LANDED 2026-09-28)**
 
 *(Numbering note: next free after M20. James's five asks of 2026-09-26 — "we do need the dynamic rulers, do port them from
 ground demo"; "do we have proper profiler on webgpu part?"; "how is our multi objects performance? are you utilizing best
@@ -1578,8 +1578,13 @@ drawn by the desk, its specimens the kinds' own draws, taking one through core's
   (10k, mixed order, real pictures; its light run in the gate), ONE flat-card pipeline composed from the kinds' own
   `CardMaterial`s (ON by default, D-K7b.2), the far LOD (greeked notes, no rasters below 48 px). Zoom 0.2: draws 674 → 19,
   memory inside its budget; pan JS 2.30 ms and the 10k budget still MISS. Graded: ci 0, gate:landing 0 (sixteen rigs).
-- K8b — the desk clock (building) · K9 — the review and its
-  fixes: planned (design-016 §8; K5, K6, K7 and K8 each split in two so no builder carries more than its context holds).
+- **K8b — the desk clock, a third-party kind in its own package** (**LANDED 2026-09-28**, ten commits → `0742477`,
+  rebased by its builder over K7b): `examples/desk-clock` imports only the published entries (a unit + a cruiser rule
+  prove it), its own WGSL, a registered wake per second, a tray entry, a menu act, an opening, a chip; mounted in apps/desk;
+  the oracle's kind list open (golden 111); `rig:clock` (11) and `dts:check` in the gate. D-K8b.1 records drivers vs
+  `defineBehavior`. Graded: ci 0, gate:landing 0 (seventeen rigs).
+- K9 — the review (three lenses, 29 findings, none P0) and its fix wave (FW-A … FW-D): building (design-016 §8; K5, K6,
+  K7 and K8 were each split in two so no builder carries more than its context holds).
 
 **Exit:** design-016 §6's gates on `rig:stress` and a new `rig:scale` (10,000 objects, mixed order, real pictures) with
 the load beside every number; the committed golden byte-identical through every refactor; every built-in kind compiling
