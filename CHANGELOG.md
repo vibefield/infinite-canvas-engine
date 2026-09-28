@@ -1303,6 +1303,28 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   and four deliberate regressions (a 2 ms stall in the desk copy, doubled pegboard shading, a mismatched A/A, 9 ms before
   every raster run) go red every time.
 
+<!-- design-016 K9 — the fix wave, FW-A: the inert desk and the keys (2026-09-28) -->
+- **The desk under the open pegboard drawer is inert to the PICK too** (K9 law #1, P1): `trayInput`'s `HandledByWidget` is a
+  same-phase structural stamp `picking` never saw (a tag lands at the phase boundary, after the pick), so the exact hit stayed live
+  THROUGH the drawer — a click on a specimen over a note lent the editor to the note under it, a click over a calendar pad selected a
+  day (a double-click began writing, and at zoom < 0.3 flew the pad into the hand), and the hover rose on the dimmed desk. `picking`
+  now reads `Tray.open` itself and answers the bare canvas for every local pointer while the drawer is out — on the flip too, so a
+  note hovered as the drawer opens by key lets go with the pointer still; `tapHit` and the calendar's `tapOn` refuse outright
+  meanwhile. The header claim that picking "never hears of what the tray takes" (core `systems/tray.ts`) is corrected; design-017 §4
+  owes the same errata. Witnesses in core, desk and objects (the law reviewer's probe as `objects/test/tray-inert.test.ts`) and a
+  rig:tray row.
+- **The desk app's own keys are quiet on the inert desk** (S3, P1): `unlessInert` is exported from `@ice/react` and wraps the app's
+  `w` `m` `b` ⇧W ⇧C `t` Tab ⇧Tab and its ⇧ arrows (which replace the core keymap's gated ones) — under the open drawer they made,
+  walked and nudged objects, and ⇧→ moved a notebook in hand. `a`, `d`, `u`, the backtick and `~` stay live. Two rig:tray rows.
+- **Tab while a lease holds the editor goes nowhere** (S4, P1): a Tab the lease declines is preventDefaulted — it used to move the
+  page's focus to the selection menu's first button, ending the lease, so the next letters were the desk's shortcuts.
+- **A double-tap pairs on the taps' OWN timestamps** (S6, P2 — K-H's product call): `navTap` and the hand's two-taps put-down time
+  the pair by the down EVENT's `PointerButtons.downMs` (the adapter's `e.timeStamp`), the frame's `now` only as the fallback for an
+  input with no time, never the frame clock — a 400 ms main-thread stall between two taps 110 ms apart no longer unpairs them.
+- **A tool's letter is bound only where its tool is legal** (S8, P2, pre-M21): the keymap sets, at the press, the first registered
+  tool on that letter the current canvas allows — on the desk `v` and `c` threw "not legal in the current CanvasType" and `h` left
+  it in pan for good; `desk.select` now answers `v`.
+
 ## [0.13.0] — 2026-09-07
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and
