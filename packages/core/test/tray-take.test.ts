@@ -4,7 +4,8 @@
 // desk — the drawer shuts, `handed` bumps, and after the step `ops.insertByDrag` spawns the insert ghost under the SAME grab point (no
 // centre-snap), its home the specimen's centre, its synthetic down the pointer's. The ordinary drag runs; the release is ONE create
 // transaction, selected, one undo step. Released inside the drawer, or the drawer shut under it, the take is put back; released back
-// over the drawer's open rect after the hand-off, or Esc mid-drag, the ghost flies home — nothing enters undo. A kind that is not
+// over the drawer as drawn after the hand-off (still sliding away — once shut, where it stood is the desk's: K9), or Esc mid-drag, the
+// ghost flies home — nothing enters undo. A kind that is not
 // core-movable is taken all the same. What one taken is made with is the entry's `take` (D-K5b.1). Through the REAL stack; the pose is
 // the renderer's word.
 import { describe, expect, it } from "vitest";
@@ -273,7 +274,7 @@ describe("taking one (design-017 §9)", () => {
     expect(r.ce.docs.undo()).toBe(false);
   });
 
-  it("released back over the drawer's open rect after the hand-off, the gesture is cancelled: the ghost flies home to the specimen's spot and nothing enters undo", () => {
+  it("released back over the drawer AS DRAWN — still sliding away — the gesture is cancelled: the ghost flies home to the specimen's spot and nothing enters undo", () => {
     const r = rig();
     const { s, x } = r.lift("take:note", 0.5, 0.5);
     r.mouse("move", x, 300, 1);                     // handed: the drawer shuts
@@ -281,9 +282,11 @@ describe("taking one (design-017 §9)", () => {
     r.mouse("move", x + 20, 280, 1);
     r.mouse("move", x + 40, 250, 1);
     expect(r.world.has(g, Grab)).toBe(true);
-    r.mouse("move", x + 40, 450, 1);                // back down over where the drawer stands open
-    expect(trayOpen(r.world)).toBe(false);          // …which it no longer does
-    r.mouse("up", x + 40, 450, 0);
+    r.pin({ x: 40, y: 468, w: 720, h: 252, p: 0.5, max: 400, pitch: 40, scroll: 0 });   // the renderer's drawer, half way down its slide
+    r.mouse("move", x + 40, 500, 1);                // back down over the drawer where it is drawn
+    expect(trayOpen(r.world)).toBe(false);          // (the fact is shut: the pixels lag it by the slide)
+    r.mouse("up", x + 40, 500, 0);
+    r.pin(null);
     expect(r.world.hasTag(g, GhostRetiring)).toBe(true);
     const tw = r.world.read(g, TransformTween);
     // it flies so its centre lands on the specimen's (the ghost is 100 × 100)
@@ -294,6 +297,33 @@ describe("taking one (design-017 §9)", () => {
     expect(r.twins("take:note")).toEqual([]);
     expect(r.ce.docs.undo()).toBe(false);
     expect(r.press()).toBeUndefined();
+  });
+
+  it("once the drawer has slid shut, a release where it stood open lands the take — that rect is the desk's again (K9 S2); so is the lip's strip beside the notch (D-K9-c.1)", () => {
+    const r = rig();
+    const { x } = r.lift("take:note", 0.5, 0.5);
+    r.mouse("move", x, 300, 1);                     // handed: the drawer shuts, and the renderer's word is that it has (p 0)
+    r.mouse("move", x + 20, 380, 1);
+    r.mouse("move", x + 40, 450, 1);                // inside the rect the drawer stood open in (its top 348)
+    expect(r.frame().p).toBe(0);
+    r.mouse("up", x + 40, 450, 0);
+    r.step(3);
+    const made = r.twins("take:note");
+    expect(made).toHaveLength(1);
+    expect(r.world.hasTag(made[0] as Entity, Selected)).toBe(true);
+    expect(r.ce.docs.undo()).toBe(true);
+    r.step(2);
+    expect(r.twins("take:note")).toEqual([]);
+    // …and on the strip the shut drawer still shows at the view's foot (its 12 px lip, 588 … 600), beside the notch
+    openTray(r.world); r.step(2);
+    const again = r.lift("take:note", 0.5, 0.5);
+    r.mouse("move", again.x, 300, 1);
+    r.mouse("move", 200, 500, 1);
+    r.mouse("move", 200, 595, 1);
+    r.mouse("up", 200, 595, 0);
+    r.step(3);
+    expect(r.twins("take:note")).toHaveLength(1);
+    expect(r.ce.docs.undo()).toBe(true);
   });
 
   it("control: the same release above the drawer's open rect lands it", () => {

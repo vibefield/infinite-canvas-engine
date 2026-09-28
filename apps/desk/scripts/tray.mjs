@@ -10,8 +10,9 @@
 // the band carrying them, the hover lifting one and settling, a PLUGIN fixture kind on the tray by its entry alone, idle with them
 // open and closed, and what they cost. K5b — TAKING ONE: each kind dragged off its specimen made where it is dropped (the grab point kept,
 // selected, one undo step), the copy lifted at ×1.06 with the specimen still hung, the hand-off without a pop (the copy's rect and the
-// ghost's first, measured), the ways back (Esc, over the drawer, inside it) making nothing and leaving nothing in undo, the ghost flying
-// home shrinking, into a mini mat by the kinds' rules, the plugin kind taken too, idle after. Exit 0 = every row passed.
+// ghost's first, measured), the ways back (Esc, over the drawer as drawn — still sliding away — inside it) making nothing and leaving nothing
+// in undo, the ghost flying home shrinking; K9: a drop where the drawer stood open, once it has shut, made there; into a mini mat by the
+// kinds' rules, the plugin kind taken too, idle after. Exit 0 = every row passed.
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
@@ -557,20 +558,44 @@ try {
     await q("window.__carryActed = true");
     return qa("new Promise((r) => { const f = () => (window.__carryDone ? r(window.__carryTrace) : requestAnimationFrame(f)); f(); })", 60000);
   };
+  /** The drawer's slide `p` the renderer last drew when the next pointerup reaches the page — the pose the tick after tests the release
+   *  against (no frame is drawn between the event and that tick's step); read by `pAtUp()` once the release is in */
+  const armPAtUp = () => q("window.__pAtUp = null; window.addEventListener('pointerup', () => { window.__pAtUp = window.__desk.tray.state().p; }, { capture: true, once: true }); 0");
+  const pAtUp = () => q("window.__pAtUp");
   const wayBack = async (how) => {
     const sentinel = await q("window.__desk.spawn('desk.note', { seed: 5 }, { x: 1000, y: 150 })");
     await frames(2);
     const before = new Set((await ents()).map((e) => e.id));
     let homes = [];
+    let p = null;
+    let late = 0;
     if (how === "inside") {
       await carryOut("desk.note", 0.5, 0.5, [700, 600], { release: false, steps: 4 });
       homes = await traceAround(() => mouse("mouseReleased", 700, 600, { buttons: 0 }));
-    } else {
+    } else if (how === "esc") {
       await carryOut("desk.note", 0.5, 0.5, [600, 250], { release: false });
-      if (how === "esc") { homes = await traceAround(() => key("Escape", "Escape", 27)); await mouse("mouseReleased", 600, 250, { buttons: 0 }); }
-      else {
-        for (let i = 1; i <= 6; i++) { await mouse("mouseMoved", 600, 250 + (i * (680 - 250)) / 6, { buttons: 1 }); await frames(2); }
-        homes = await traceAround(() => mouse("mouseReleased", 600, 680, { buttons: 0 }));
+      homes = await traceAround(() => key("Escape", "Escape", 27)); await mouse("mouseReleased", 600, 250, { buttons: 0 });
+    } else {
+      // RE-TIMED at K9 (S2): a release is tested against the drawer AS DRAWN, so this one must land while the drawer still slides
+      // away — lifted, out past the open top in ONE move (the hand-off), and straight back down onto the drawer's foot (a strip it
+      // covers for its whole slide, beside the notch), released there. The slide's `p` at the release is read in the page; a release
+      // the host could not land inside the slide (p 0 — made, as it should be: the next row's case) is undone and tried again, ≤ 3
+      for (let tries = 1; ; tries++) {
+        const o = await specimenIn("desk.note");
+        const g = [(o.x0 + o.x1) / 2, (o.y0 + o.y1) / 2];
+        await mouse("mouseMoved", g[0], g[1]); await mouse("mousePressed", g[0], g[1], { buttons: 1 }); await frames(1);
+        await mouse("mouseMoved", g[0] + 8, g[1], { buttons: 1 }); await frames(2);
+        const h0 = await q("window.__desk.tray.facts().handed");
+        await mouse("mouseMoved", 300, 430, { buttons: 1 });
+        await qa(`new Promise((r) => { const t0 = performance.now(); const f = () => (window.__desk.tray.facts().handed > ${h0} || performance.now() - t0 > 4000 ? r(0) : requestAnimationFrame(f)); f(); })`);
+        await armPAtUp();
+        homes = await traceAround(async () => { await mouse("mouseMoved", 300, 792, { buttons: 1 }); await mouse("mouseReleased", 300, 792, { buttons: 0 }); });
+        p = await pAtUp();
+        await frames(4);
+        const landed = (await ents()).filter((e) => !before.has(e.id));
+        if (!(p === 0 && landed.length > 0 && tries < 3)) break;
+        late += 1;
+        await undo(); await frames(2);
       }
     }
     await frames(4);
@@ -583,11 +608,32 @@ try {
     const sentinelGone = !(await ents()).some((e) => e.id === sentinel);
     await redo(); await frames(2);
     const r = await undo(); await frames(2);   // tidy: the sentinel away again
-    return { how, made: made.length, shrank, first: widths[0], last: widths[widths.length - 1], frames: widths.length, u, sentinelGone, r, phases: phases.slice(0, 3) };
+    return { how, made: made.length, shrank, first: widths[0], last: widths[widths.length - 1], frames: widths.length, u, sentinelGone, r, phases: phases.slice(0, 3), p, late };
   };
   const backs = [await wayBack("esc"), await wayBack("over"), await wayBack("inside")];
-  check(backs.every((b) => b.made === 0 && b.shrank && b.u && b.sentinelGone),
-    `the ways back make nothing and leave nothing in undo (one undo takes back the sentinel spawned before): ${backs.map((b) => `${b.how} — ${b.how === "inside" ? "the copy glided back onto its specimen" : "the ghost flew home shrinking"} ${b.first?.toFixed(0)} → ${b.last?.toFixed(1)} px over ${b.frames} frames${b.made === 0 && b.shrank && b.u && b.sentinelGone ? "" : ` ✗${JSON.stringify(b)}`}`).join(" · ")}`);
+  const backOk = (b) => b.made === 0 && b.shrank && b.u && b.sentinelGone && (b.how !== "over" || b.p > 0);
+  check(backs.every(backOk),
+    `the ways back make nothing and leave nothing in undo (one undo takes back the sentinel spawned before): ${backs.map((b) => `${b.how} — ${b.how === "inside" ? "the copy glided back onto its specimen" : "the ghost flew home shrinking"} ${b.first?.toFixed(0)} → ${b.last?.toFixed(1)} px over ${b.frames} frames${b.how === "over" ? ` (released over the drawer as drawn, p ${b.p?.toFixed(3)} of its slide away${b.late > 0 ? `; ${b.late} release(s) the host landed after it shut, made and undone` : ""})` : ""}${backOk(b) ? "" : ` ✗${JSON.stringify(b)}`}`).join(" · ")}`);
+
+  // K9 (S2): once the drawer has slid shut, where it stood open is the DESK's — the 44 % of the view it covers open refused every
+  // drop before (its open rect was tested, no pixel of it drawn): a take carried there and released is made there, selected, one undo
+  {
+    const before = new Set((await ents()).map((e) => e.id));
+    await carryOut("desk.note", 0.5, 0.5, [600, 250], { release: false });
+    const shut = await qa("new Promise((r) => { const t0 = performance.now(); const f = () => { const p = window.__desk.tray.state().p; if (p === 0 || performance.now() - t0 > 4000) r(p); else requestAnimationFrame(f); }; f(); })");
+    for (let i = 1; i <= 4; i++) { await mouse("mouseMoved", 600 - (i * 300) / 4, 250 + (i * 428) / 4, { buttons: 1 }); await frames(2); }
+    await armPAtUp();
+    await mouse("mouseReleased", 300, 678, { buttons: 0 }); await frames(20);   // a CANCELLED drop's ghost has flown home by then (12 frames)
+    const p = await pAtUp();
+    const made = (await ents()).filter((e) => !before.has(e.id));
+    const m = made[0];
+    const sel = await q("window.__desk.selection()");
+    const at = m === undefined ? null : [m.x + 0.5 * m.w - 300, m.y + 0.5 * m.h - 678];
+    const u = await undo(); await frames(2);
+    const gone = m !== undefined && !(await ents()).some((e) => e.id === m.id);
+    check(shut === 0 && p === 0 && made.length === 1 && m.type === "desk.note" && Math.hypot(at[0], at[1]) < 1.5 && sel.length === 1 && sel[0] === m.id && u && gone,
+      `a take dropped where the drawer stood open, once it has slid shut (p ${shut} at the drop, ${p} at the release), is made THERE: ${made.length} ${m?.type ?? "—"} at (${m?.x}, ${m?.y}), its grab point ${at === null ? "—" : Math.hypot(at[0], at[1]).toFixed(2)} px from the release, selected ${m !== undefined && sel.length === 1 && sel[0] === m.id}, one undo takes it (${u && gone})`);
+  }
 
   // into a mini mat by the kinds' rules: a note goes inside it; a notebook (`drop: never`) lands on the desk over it
   {

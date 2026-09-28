@@ -253,7 +253,7 @@ export const Specimen = defineTag("Specimen");
  * Where it began (CSS px), the scroll it began from, whether it moved past the slop. K5b (§9): on a SPECIMEN (`specimen`: past the
  * slop its copy lifts; out of the drawer it is handed to the desk) — its `type`, the grab point `u`/`v` across the object as drawn,
  * the specimen's centre on screen `homeX`/`homeY`; and, once handed, the take CARRIED (`carry`: the insert ghost's drag is this
- * pointer's — released back over the drawer's open rect, it is cancelled and the ghost flies home).
+ * pointer's — released back over the drawer as drawn, still sliding away, it is cancelled and the ghost flies home).
  */
 export const TrayPress = defineComponent("TrayPress", {
   kind: field(enumOf(["lip", "board", "desk", "specimen", "carry"]), { default: "desk" }),

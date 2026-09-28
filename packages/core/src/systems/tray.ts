@@ -24,7 +24,8 @@
  *    rect the copy is HANDED to the desk: the drawer slides away (`open` false), `handed` bumps (that tick `take` still names it, where
  *    it left — what the renderer's ghost grows out of — and it clears the tick after), and the one-tick `TrayIntent` asks the
  *    facade for `ops.insertByDrag` after the step — the insert ghost under the same grab point, its synthetic down this pointer's, the
- *    ordinary drag from there. The press becomes `carry`: released back over the drawer's open rect, the ghost's gesture is CANCELLED
+ *    ordinary drag from there. The press becomes `carry`: released back over the drawer as drawn — still sliding away, its open rect
+ *    the desk's once it has shut (K9) — the ghost's gesture is CANCELLED
  *    (`CancelRequest` — the ctl sweep reads it this tick, before the release can commit) and it flies home. Released inside the drawer,
  *    or the drawer shut under it (Esc, the key), the take is put back: nothing was made, nothing enters undo.
  *
@@ -168,10 +169,11 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
         if (!open) {
           if (press?.kind === "carry") {
             // K5b: the take handed to the desk — the insert ghost's drag is this pointer's (its synthetic down included: never the
-            // lip's). Released back over the drawer's open rect, the gesture is cancelled — this tick's ctl sweep, before the release
-            // can commit — and the ghost flies home; anywhere else the ordinary drag ends it.
+            // lip's). Released back over the drawer AS DRAWN this frame — still sliding away — the gesture is cancelled — this tick's
+            // ctl sweep, before the release can commit — and the ghost flies home; anywhere else the ordinary drag ends it. Once it
+            // has slid shut its open rect is the desk's again (K9 S2), and so is the lip's strip (D-K9-c.1, as D-K3.10 gave it back).
             const ended = ctx.hasTag(p, WentUp) || ctx.hasTag(p, WentCancelled);
-            if (ctx.hasTag(p, WentUp) && inOpen(s.x, s.y)) cancelActiveGestures(world);
+            if (ctx.hasTag(p, WentUp) && frame !== undefined && frame.p > 0 && over(s.x, s.y, 0)) cancelActiveGestures(world);
             if (ended) ctx.removeComponent(p, TrayPress);
             continue;
           }
