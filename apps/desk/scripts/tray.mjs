@@ -12,8 +12,11 @@
 // selected, one undo step), the copy lifted at ×1.06 with the specimen still hung, the hand-off without a pop (the copy's rect and the
 // ghost's first, measured), the ways back (Esc, over the drawer as drawn — still sliding away — inside it) making nothing and leaving nothing
 // in undo, the ghost flying home shrinking; K9: a drop where the drawer stood open, once it has shut, made there; into a mini mat by the
-// kinds' rules; K9: inside an entered mini mat the drawer hangs only what it takes; the plugin kind taken too, idle after. Exit 0 = every
-// row passed.
+// kinds' rules; K9: inside an entered mini mat the drawer hangs only what it takes; the plugin kind taken too, idle after. design-018
+// (R2) — THE BAR: the drawer's DOM handle opens and shuts it by real clicks on its rect, sits on the drawer's top edge open and at the
+// foot shut, shows the categories the drawer hangs as chips — a chip lays only its entries from the board's top and leaves the drawer
+// open, All lays them all — and the plugin's category is its own chip. Every other row reads the canvas alone (the bar hidden).
+// Exit 0 = every row passed.
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
@@ -60,6 +63,11 @@ try {
   const idle = (n = 240) => qa(`(async () => { await window.__desk.settle(4000); const b = window.__desk.submits().total; await new Promise((r) => { let i = 0; const f = () => { if (++i >= ${n}) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); }); return window.__desk.submits().total - b; })()`);
   const tray = () => q("({ ...window.__desk.tray.state(), facts: window.__desk.tray.facts() })");
   const lum = (img, x, y) => { const i = (y * img.width + x) * 4; return 0.2126 * img.rgba[i] + 0.7152 * img.rgba[i + 1] + 0.0722 * img.rgba[i + 2]; };
+  // design-018 §5 (R2): the tray's BAR as the page lays it out — its pill's rect, its button's centre, each chip's (CSS px)
+  const BAR = `(() => { const root = document.querySelector("[data-ice-tray-bar]"); if (!root) return null; const pill = root.querySelector(".ice-tb-bar").getBoundingClientRect(); const t = root.querySelector("[data-act=tray]"); const tr = t.getBoundingClientRect();
+    return { open: root.dataset.open, visible: root.dataset.visible, x0: pill.left, y0: pill.top, x1: pill.right, y1: pill.bottom, toggle: { x: tr.left + tr.width / 2, y: tr.top + tr.height / 2, expanded: t.getAttribute("aria-expanded") },
+      chips: [...root.querySelectorAll(".ice-tb-chip")].map((c) => { const r = c.getBoundingClientRect(); return { id: c.dataset.category, label: c.textContent, pressed: c.getAttribute("aria-pressed"), x: r.left + r.width / 2, y: r.top + r.height / 2 }; }) }; })()`;
+  const bar = () => q(BAR);
 
   // a still desk (no wind frames), a note on it and one under where the drawer comes
   await q("window.__desk.ambient('still'); window.__desk.setTheme('light')");
@@ -297,6 +305,53 @@ try {
   check((await tray()).facts.open === true, "`a` opened it");
   await settle();
 
+  // design-018 §5–§6 (R2) — THE BAR, by REAL clicks on its rect (CDP): shown for these rows alone (the rest read the canvas's pixels)
+  await q("window.__desk.bar(true)"); await settle();
+  let b = await bar();
+  s = await tray();
+  const cats = await q("window.__desk.handle.tray.categories()");
+  check(b !== null && b.open === "true" && b.visible === "true" && Math.abs(b.y1 - (s.frame.y - 10)) <= 1 && Math.abs((b.x0 + b.x1) / 2 - 600) <= 1
+    && b.chips.map((c) => c.label).join(" · ") === ["All", ...cats.map((c) => c.label)].join(" · ") && cats.map((c) => c.id).join() === "paper,surfaces" && b.chips[0]?.pressed === "true",
+    `open, the bar rides the drawer's top edge at rest: its bottom at ${b?.y1.toFixed(1)} — the board's top ${s.frame.y} less 10 (±1) — centred (${b === null ? "?" : ((b.x0 + b.x1) / 2).toFixed(1)}); its chips ${b?.chips.map((c) => c.label).join(" · ")}: All and the categories the drawer hangs (${cats.map((c) => `${c.id} ${c.count}`).join(", ")}), All pressed`);
+  await q("window.__desk.tray.scroll(120)"); await settle();
+  const surf = b?.chips.find((c) => c.id === "surfaces");
+  await click(surf.x, surf.y); await sleep(150); await settle();
+  const barLaw = await q("window.__desk.tray.law()");
+  const surfWant = layTray(barLaw.items.filter((i) => i.category === "surfaces"), barLaw.width, barLaw.pitch).placed;
+  const surfHeld = await q("window.__desk.tray.specimens()");
+  s = await tray(); b = await bar();
+  check(s.facts.open === true && s.facts.category === "surfaces" && s.facts.scroll === 0 && surfHeld.length === 2 && surfWant.every((w) => surfHeld.some((h) => h.type === w.type && h.x === w.x && h.y === w.y)) && b.chips.find((c) => c.id === "surfaces")?.pressed === "true",
+    `a click on the Surfaces chip lays only its entries where the law lays them alone (${surfHeld.map((h) => `${h.type} ${h.x},${h.y}`).join(" · ")}), the board at its top (scroll ${s.facts.scroll} from 120), the chip pressed — and the drawer still open: a chip is no click on the dim`);
+  // scrolled while Surfaces shows (the door takes any value until the range next moves): All's change must zero it — the six's range
+  // (their foot + a pitch − the face, ≈ 300 px) would keep 120, so no clamp can stand in for the change here (Surfaces alone ranges 0)
+  await q("window.__desk.tray.scroll(120)"); await settle();
+  const allChip = b.chips.find((c) => c.id === "");
+  await click(allChip.x, allChip.y); await sleep(150); await settle();
+  const allHeld = await q("window.__desk.tray.specimens()");
+  s = await tray();
+  check(s.facts.open === true && s.facts.category === "" && s.facts.scroll === 0 && allHeld.length === 6,
+    `…and All lays the six again (${allHeld.length}), the board back at its top (scroll ${s.facts.scroll} from 120 — the six's range would keep 120: the change zeroed it), the drawer open`);
+  const barRest = await idle(120);
+  check(barRest === 0, `open at rest with the bar over the desk: ${barRest} submits over 120 frames`);
+  // no rAF of its own (design-018 §5): the page's every ask for a frame counted over 1 s at rest — the loop's own included (it
+  // looks the global up at each call), so a written scroll that wakes it is the control
+  const rafs = (poke) => qa(`(async () => { let n = 0; const raf = window.requestAnimationFrame; window.requestAnimationFrame = (f) => { n += 1; return raf.call(window, f); }; ${poke} await new Promise((r) => setTimeout(r, 1000)); window.requestAnimationFrame = raf; return n; })()`);
+  const rafRest = await rafs("");
+  const rafWoken = await rafs("window.__desk.tray.scroll(1);");
+  await q("window.__desk.tray.scroll(0)"); await settle();
+  check(rafRest === 0 && rafWoken > 0, `at rest with the bar out the page asks for no frame: ${rafRest} rAF in 1 s (control: a scroll written wakes the loop — ${rafWoken} in 1 s)`);
+  b = await bar();
+  await click(b.toggle.x, b.toggle.y); await sleep(150); await settle(); await sleep(400); await settle();
+  s = await tray(); b = await bar();
+  const barFoot = Math.min(800 - 16, s.frame.y - 10);
+  check(s.facts.open === false && b.open === "false" && b.toggle.expanded === "false" && Math.abs(b.y1 - barFoot) <= 1 && Math.abs((b.x0 + b.x1) / 2 - 600) <= 1,
+    `a click on its button (the ×) shut the drawer, and the bar came down to the foot: its bottom at ${b.y1.toFixed(1)} — min(800 − 16, the drawer's top ${s.frame.y} − 10) = ${barFoot} (±1), not expanded`);
+  await click(b.toggle.x, b.toggle.y); await sleep(150); await settle(); await sleep(400); await settle();
+  s = await tray(); b = await bar();
+  check(s.facts.open === true && s.frame.p === 1 && b.open === "true" && b.toggle.expanded === "true" && Math.abs(b.y1 - (s.frame.y - 10)) <= 1,
+    `…and a click on it opened the drawer again (p ${s.frame.p}): the bar back on the top edge (${b.y1.toFixed(1)} for ${s.frame.y - 10}), expanded`);
+  await q("window.__desk.bar(false)"); await settle();
+
   // K5a — THE SPECIMENS (design-017 §8)
   await q("window.__desk.tray.scroll(0)"); await settle();
   // S1. the world holds the six, each exactly where the lattice law lays them — read back from core's facts, the law run here
@@ -425,6 +480,18 @@ try {
   const pTakes = await plug.evaluate(`window.__desk.engine.placement.canIngress("rig.swatch", ${pmm}).ok`, { timeoutMs: 20000 });
   await pqa(`(async () => { window.__desk.tray.close(); await window.__desk.settle(4000); window.__desk.engine.ops.exitContainer({ transition: "none" }); await window.__desk.settle(4000); window.__desk.tray.open(); await window.__desk.settle(4000); })()`);
   const pBack = (await plug.evaluate("window.__desk.tray.specimens()", { timeoutMs: 20000 })).map((s) => s.type);
+  // design-018 §6 (R2): the plugin's category is ITS OWN CHIP — a real click on it lays the swatch alone, one on All lays the seven again
+  const pbar = () => plug.evaluate(BAR, { timeoutMs: 20000 });
+  const pclick = async (c) => { await pm("mouseMoved", c.x, c.y); await pm("mousePressed", c.x, c.y, { buttons: 1 }); await sleep(30); await pm("mouseReleased", c.x, c.y); await pqa("window.__desk.settle(4000)"); };
+  const pb0 = await pbar();
+  const plugChip = pb0?.chips.find((c) => c.id === "plugin");
+  if (plugChip !== undefined) await pclick(plugChip);
+  const pAlone = (await plug.evaluate("window.__desk.tray.specimens()", { timeoutMs: 20000 })).map((x) => x.type);
+  const pb1 = await pbar();
+  const pAllChip = pb1?.chips.find((c) => c.id === "");
+  if (pAllChip !== undefined) await pclick(pAllChip);
+  const pSeven = (await plug.evaluate("window.__desk.tray.specimens()", { timeoutMs: 20000 })).length;
+  const pOpen = await plug.evaluate("window.__desk.tray.isOpen()", { timeoutMs: 20000 });
   const plugFaults = await plug.evaluate("window.__desk.faults ?? []", { timeoutMs: 20000 });
   await plug.close?.();
   check(plugHeld.length === 7 && plugOn !== undefined && plugWant !== undefined && plugOn.x === plugWant.x && plugOn.y === plugWant.y && plugDrawn?.kind === "paper" && plugDrawn.accessory === "clip" && plugFaults.length === 0 && held.every((h) => h.type !== "rig.swatch"),
@@ -433,6 +500,8 @@ try {
     `…and TAKEN as the built-ins are (K5b): dragged off its clip to the desk, one made (${pMade.map((m) => `${m.type}${m.selected ? ", selected" : ""}`).join(" · ") || "none"}), one undo step takes it back (${pUndo}, gone ${pGone})`);
   check(pTakes === false && !pInside.includes("rig.swatch") && pInside.includes("desk.note") && pBack.includes("rig.swatch"),
     `…and judged as the built-ins are (K9): inside an entered mini mat — whose ingress refuses it (${pTakes}) — it does not hang (${pInside.join(", ")}); at the desk it does (${pBack.length} hung)`);
+  check(pb0?.chips.map((c) => c.label).join(" · ") === "All · Paper · Plugin · Surfaces" && pAlone.join() === "rig.swatch" && pb1?.chips.find((c) => c.id === "plugin")?.pressed === "true" && pSeven === 7 && pOpen === true,
+    `…and its category is its own chip (design-018 §6): ${pb0?.chips.map((c) => c.label).join(" · ")} — a click on Plugin lays the swatch alone (${pAlone.join(", ")}), one on All the seven (${pSeven}), the drawer open`);
   await front();
 
   // 9. THE COST (design-017 §6.7): the drawer open at 2400 × 1600 — n of it alone per batch, and whole frames with it open and closed,
