@@ -15,9 +15,13 @@ export const DRAWER = {
   heightFrac: 0.44,
   minHeight: 220,
   maxHeight: 640,
-  /** The top corners' radius (widgetlab rev 1), and the rim — the board's cut edge — along the top and the sides. */
-  radius: 22,
-  rim: 5,
+  /**
+   * The top corners' radius — a hardboard panel's, about SKÅDIS's ¼ pitch (design-018 §2: widgetlab's 22 read as a card) — and the
+   * ARRIS: the board's edge, a quarter-round this wide where its face meets the outline, in the face's own material (the rim retired;
+   * D-R1.1 — the thinner end of design-018's 1.5–2: at 2 px the lit top edge read as a thin cream rim again).
+   */
+  radius: 10,
+  arris: 1.5,
   /** The slide: widgetlab rev 1's curve. */
   slideMs: 340,
   curve: [0.32, 0.72, 0, 1] as const,
@@ -82,9 +86,10 @@ export function band(stretch: number): number {
 
 /**
  * How far the board scrolls before the band (design-017 §8; K5a — K3's 26-row stub retired): the laid content's foot (`TrayContent.bottom`,
- * board px) plus a pitch, less the face the drawer shows (its height inside the rim) — kernel `trayScrollMax`; 0 with nothing laid.
+ * board px) plus a pitch, less the face the drawer shows (its whole height: the face runs to the outline — design-018 §2) — kernel
+ * `trayScrollMax`; 0 with nothing laid.
  */
 export function scrollRange(vw: number, vh: number, bottom: number): number {
   const { h } = drawerSize(vw, vh);
-  return trayScrollMax(bottom, h - DRAWER.rim, DRAWER.pitch);
+  return trayScrollMax(bottom, h, DRAWER.pitch);
 }

@@ -281,26 +281,31 @@ fn tray_outline(t: TrayUniforms, p: vec2f) -> f32 {
   return sdf_round_box(p - vec2f(t.rect.x + ext.x, t.rect.y + ext.y), ext, r);
 }
 
-// The rim — the board's cut edge, the paler fibre — within `rim` px of the outline: a bevel facing out of the drawer and toward the
-// eye, lit on the lamp's side and in the room's shadow on the far one. Its fibre is the drawer's own (it never scrolls).
-fn tray_rim(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, noise: f32) -> vec3f {
+// The board point under a pixel (CSS px) — the rows on screen added to the carried rows in i32.
+fn tray_point(t: TrayUniforms, p: vec2f) -> PegPoint {
+  let ly = (p.y - t.rect.y) / t.view.w + t.frac;
+  let fl = floor(ly);
+  return PegPoint((p.x - t.rect.x) / t.view.w, t.rowBase + i32(fl), ly - fl);
+}
+
+// The board's EDGE (design-018 §2): an ARRIS — a quarter-round `A` px wide where the face meets the outline, in the FACE's own
+// material (its tone at the board point under it, so the grain runs on without a seam; not the paler punched fibre). Its normal turns
+// from the eye (on the face's side) to the outline's outward direction (at the outline): it catches the lamp where the outline faces
+// it — the top and the left — and falls to the room's shade on the far side. `o`: the outline's distance there (−A … 0).
+fn tray_arris(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, o: f32, noise: f32) -> vec3f {
   let e = 0.5;
   let gx = tray_outline(t, p + vec2f(e, 0.0)) - tray_outline(t, p - vec2f(e, 0.0));
   let gy = tray_outline(t, p + vec2f(0.0, e)) - tray_outline(t, p - vec2f(0.0, e));
   let g = vec2f(gx, gy) / max(length(vec2f(gx, gy)), 1.0e-6);
-  let n = normalize(vec3f(g * 0.8, 0.6));
-  let yl = (p.y - t.rect.y) / t.view.w;
-  let fl = floor(yl);
-  let pt = PegPoint((p.x - t.rect.x) / t.view.w, i32(fl), yl - fl);
-  return tray_lit(u, t, peg_edge(ht, t, pt, t.fp), n, 1.0, noise);
+  let s = clamp(1.0 + o / t.shape.y, 0.0, 1.0);
+  let n = vec3f(s * g, sqrt(max(1.0 - s * s, 0.0)));
+  let face = peg_face(ht, t, tray_point(t, p), t.fp);
+  return tray_lit(u, t, t.face.xyz * (1.0 + face.g), n, 1.0, noise);
 }
 
-// The board inside the rim: the point under the carry — the rows on screen added to the carried rows in i32 — its hole, the front
-// surface over the hole by its analytic coverage.
+// The board to its edge: the point under the carry, its hole, the front surface over the hole by its analytic coverage.
 fn tray_board(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, noise: f32) -> vec3f {
-  let ly = (p.y - t.rect.y) / t.view.w + t.frac;
-  let fl = floor(ly);
-  let pt = PegPoint((p.x - t.rect.x) / t.view.w, t.rowBase + i32(fl), ly - fl);
+  let pt = tray_point(t, p);
   let h = peg_hole(t, pt);
   let c = clamp(0.5 + h.d / t.fp, 0.0, 1.0);
   var col = vec3f(0.0);
@@ -310,8 +315,9 @@ fn tray_board(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, no
 }
 
 // One pixel of the tray UNDER its specimens (`frag` in device px), the view whole: the dim over the desk, the drawer's shadows on it,
-// the board to the outline — premultiplied, each pixel drawn once. The rim is laid over it all LAST (`tray_rim_over`, K5a): the
-// specimens hang between the board and the rim, and slide under the rim as the board does.
+// the board to the outline and its edge — premultiplied, each pixel drawn once. The board scrolls under its edge (the drawer is a
+// window onto it): a hole running under the top edge is covered by the arris there, whose line runs on unbroken. The specimens hang
+// over the board inside the edge (their face clip, tray/specimens.ts `faceClip`), so nothing is laid over the board after them.
 fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_2d<f32>, noise_samp: sampler, ht: texture_2d<f32>) -> vec4f {
   let dpr = t.view.z;
   let p = frag / dpr;
@@ -324,7 +330,7 @@ fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_
   // and a scrolled board is then the same pixels, moved
   var bn = vec3f(0.5);
   if (u.night.x > 0.0) { bn = textureSampleLevel(noise_tex, noise_samp, frag * u.noise.z + u.noise.xy, 0.0).rgb; }
-  // DEEP INSIDE — clear of the rounded corners, the rim and two px more: covered, no rim, no shadow, no outline to evaluate
+  // DEEP INSIDE — clear of the rounded corners, the edge and two px more: covered, no edge, no shadow, no outline to evaluate
   let m = t.shape.y + 2.0;
   if ((p.x > t.rect.x + m) && (p.x < t.rect.x + t.rect.z - m) && (p.y > t.rect.y + t.shape.x + m)) {
     return vec4f(tray_board(ht, u, t, p, bn.y), 1.0);
@@ -335,26 +341,17 @@ fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_
   // the drawer does not cover them
   var under = dim;
   if (cover < 1.0) {
-    let room = t.room.y * tray_blur(tray_outline(t, p), t.room.x);
+    let room = t.room.y * tray_blur(o, t.room.x);
     let lamp = t.shadow.y * tray_blur(tray_outline(t, p - t.shadow.zw), t.shadow.x);
     under = vec4f(0.0, 0.0, 0.0, 1.0 - (1.0 - room) * (1.0 - lamp) * (1.0 - t.dim));
   }
   if (cover <= 0.0) { return under; }
-  let col = tray_board(ht, u, t, p, bn.y);
+  // the edge within `A` of the outline, the board inside it — blended across the pixel where they meet
+  let k = clamp(0.5 + (o + t.shape.y) / px, 0.0, 1.0);
+  var col = vec3f(0.0);
+  if (k > 0.0) { col = tray_arris(ht, u, t, p, o, bn.y); }
+  if (k < 1.0) { col = mix(tray_board(ht, u, t, p, bn.y), col, k); }
   return vec4f(col * cover, cover) + under * (1.0 - cover);
-}
-
-// The RIM over everything the drawer holds (K5a): within `rim` px of the outline, at its coverage there, premultiplied — the board's
-// cut edge over the board, the accessories and the specimens alike; nothing elsewhere.
-fn tray_rim_over(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_2d<f32>, noise_samp: sampler, ht: texture_2d<f32>) -> vec4f {
-  let p = frag / t.view.z;
-  let px = 1.0 / t.view.z;
-  let o = tray_outline(t, p);
-  let a = clamp(0.5 - o / px, 0.0, 1.0) * clamp(0.5 + (o + t.shape.y) / px, 0.0, 1.0);
-  if (a <= 0.0) { return vec4f(0.0); }
-  var bn = vec3f(0.5);
-  if (u.night.x > 0.0) { bn = textureSampleLevel(noise_tex, noise_samp, frag * u.noise.z + u.noise.xy, 0.0).rgb; }
-  return vec4f(tray_rim(ht, u, t, p, bn.y) * a, a);
 }
 
 // ---- the accessories (K5a): what the specimens hang on, plugged into real holes — SKÅDIS's hook, shelf, clip and rail seen head-on, in
@@ -401,12 +398,12 @@ fn acc_sdf(a: TrayAccessory, p: vec2f, P: f32) -> f32 {
 
 // One pixel of an accessory's quad: its shadow on the board (the silhouette seen from the lamp, pushed off by how far it stands off the
 // board, softened by the lamp's size over that), then the accessory over it — its rounded relief from the silhouette's gradient, lit as
-// the rim is; both kept inside the drawer's outline (the rim is laid over them after). Premultiplied.
+// the board's edge is; both kept inside that edge. Premultiplied.
 fn tray_accessory(u: MatUniforms, t: TrayUniforms, a: TrayAccessory, frag: vec2f, noise_tex: texture_2d<f32>, noise_samp: sampler, ht: texture_2d<f32>) -> vec4f {
   let p = frag / t.view.z;
   let px = 1.0 / t.view.z;
   let P = t.view.w;
-  let inside = clamp(0.5 - tray_outline(t, p) / px, 0.0, 1.0);
+  let inside = clamp(0.5 - (tray_outline(t, p) + t.shape.y) / px, 0.0, 1.0);   // inside the board's edge
   if (inside <= 0.0) { return vec4f(0.0); }
   let L = t.lamp.xyz;
   let lz = max(L.z, 1.0e-3);

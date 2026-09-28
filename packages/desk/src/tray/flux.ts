@@ -121,8 +121,8 @@ export function createTrayFlux(): TrayFlux {
       const pp = P?.p ?? p;
       const pb = P?.band ?? shown;
       const rect = drawerRect(vw, vh, pp);
-      // `face` (K9): the board's height inside the rim — `scrollRange`'s own, so core's clamp and this range are one law
-      drawn = { x: rect.x, y: rect.y, w: rect.w, h: rect.h, p: pp, max: scrollRange(vw, vh, f.bottom ?? 0), pitch: DRAWER.pitch, scroll: f.scroll + pb, face: rect.h - DRAWER.rim };
+      // `face` (K9): the board's height — its face runs to the outline (design-018 §2) — `scrollRange`'s own, so core's clamp and this range are one law
+      drawn = { x: rect.x, y: rect.y, w: rect.w, h: rect.h, p: pp, max: scrollRange(vw, vh, f.bottom ?? 0), pitch: DRAWER.pitch, scroll: f.scroll + pb, face: rect.h };
       return { p: pp, scroll: f.scroll + pb };
     },
 

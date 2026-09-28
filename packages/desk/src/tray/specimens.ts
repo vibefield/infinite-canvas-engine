@@ -77,14 +77,17 @@ export interface TraySpecimenEnv {
   readonly lift: (type: string) => number;
 }
 
-/** The FACE the specimens show through: inside the rim, its top corners rounded as the rim's inner edge, its foot past the view's. */
+/**
+ * The FACE the specimens show through: the outline inside the board's edge (the arris — design-018 §2: nothing hangs over it), its top
+ * corners rounded as the arris's inner edge, its foot past the view's.
+ */
 export function faceClip(rect: DrawerRect, vh: number): PortalClip {
-  const rim = DRAWER.rim;
-  const x0 = rect.x + rim;
-  const x1 = rect.x + rect.w - rim;
-  const y0 = rect.y + rim;
+  const a = DRAWER.arris;
+  const x0 = rect.x + a;
+  const x1 = rect.x + rect.w - a;
+  const y0 = rect.y + a;
   const y1 = Math.max(vh, rect.y + rect.h) + DRAWER.radius;
-  return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hx: (x1 - x0) / 2, hy: (y1 - y0) / 2, r: DRAWER.radius - rim };
+  return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hx: (x1 - x0) / 2, hy: (y1 - y0) / 2, r: DRAWER.radius - a };
 }
 
 /** The tray's grid: the root's with no gobo dapple (D-K3.6 — the drawer lies above the desk; the wind would wake it). */

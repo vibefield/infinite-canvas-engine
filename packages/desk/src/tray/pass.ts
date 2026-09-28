@@ -1,7 +1,7 @@
 // THE TRAY PASS — the pegboard drawer on the GPU (design-017 §5–§6; K3): one pipeline, one draw of one quad in the ROOT's render pass
 // after the marks — the view whole while the desk is dimmed (the dim, the drawer's shadows, the board: each pixel drawn once); shut
-// (p 0) it lies wholly below the view with its shadows and NOTHING is laid, uploaded or drawn (design-018 §5) — where tray.wgsl shades the rim
-// and the research board in closed form. Its light is the DESK's: a block of the mat's own struct carrying the theme's light, the
+// (p 0) it lies wholly below the view with its shadows and NOTHING is laid, uploaded or drawn (design-018 §5) — where tray.wgsl shades the
+// research board in closed form to its edge (the arris, design-018 §2). Its light is the DESK's: a block of the mat's own struct carrying the theme's light, the
 // root grid's shadow grade and the frame's blue-noise offset (so `shade_mat` / `night_mat` are the mat's functions, not copies),
 // and the research's HOME lamp (D-K3.4). That block is the tray's OWN, never a slot's view block: K-L3 binds a slot's kinds, and the
 // drawer is screen-space chrome drawn in no slot — the desk's camera, box, clocks, portal chain and presence are nothing to it, only
@@ -100,8 +100,7 @@ export class TrayPass {
   private readonly device: GPUDevice;
   private readonly mat: MatPass;
   private readonly pipeline: GPURenderPipeline;
-  /** K5a: the rim's and the accessories' own fragment entries on the same layout (a branch in one entry slowed the board). */
-  private readonly rimPipeline: GPURenderPipeline;
+  /** K5a: the accessories' own fragment entry on the same layout (a branch in one entry slowed the board). */
   private readonly accPipeline: GPURenderPipeline;
   private readonly layout: GPUBindGroupLayout;
   private readonly sampler: GPUSampler;
@@ -124,10 +123,10 @@ export class TrayPass {
   private accSent = new Uint8Array(0);
   private accCount = 0;
 
-  private constructor(device: GPUDevice, mat: MatPass, pipelines: readonly [GPURenderPipeline, GPURenderPipeline, GPURenderPipeline], layout: GPUBindGroupLayout) {
+  private constructor(device: GPUDevice, mat: MatPass, pipelines: readonly [GPURenderPipeline, GPURenderPipeline], layout: GPUBindGroupLayout) {
     this.device = device;
     this.mat = mat;
-    [this.pipeline, this.rimPipeline, this.accPipeline] = pipelines;
+    [this.pipeline, this.accPipeline] = pipelines;
     this.layout = layout;
     this.sampler = device.createSampler({ label: "tray/pegboard/noise", magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" });
     this.trayBuf = uniformBuffer(device, TrayUniforms.size, "tray/pegboard/uniforms");
@@ -151,10 +150,9 @@ export class TrayPass {
     const pl = device.createPipelineLayout({ label: "tray/pegboard", bindGroupLayouts: [layout] });
     const pipelines = await Promise.all([
       renderPipeline(device, { label: "tray/pegboard", layout: pl, module, format, blend: BLEND_PREMUL }),
-      renderPipeline(device, { label: "tray/pegboard/rim", layout: pl, module, format, blend: BLEND_PREMUL, fragment: "fs_rim" }),
       renderPipeline(device, { label: "tray/pegboard/accessories", layout: pl, module, format, blend: BLEND_PREMUL, fragment: "fs_accessory" }),
     ]);
-    return new TrayPass(device, mat, pipelines as [GPURenderPipeline, GPURenderPipeline, GPURenderPipeline], layout);
+    return new TrayPass(device, mat, pipelines as [GPURenderPipeline, GPURenderPipeline], layout);
   }
 
   /**
@@ -183,7 +181,7 @@ export class TrayPass {
       view: [view.width, view.height, view.dpr, P],
       rect: [rect.x, rect.y, rect.w, rect.h],
       rowBase, frac, fp, dim,
-      shape: [DRAWER.radius, DRAWER.rim, 0, 0],
+      shape: [DRAWER.radius, DRAWER.arris, 0, 0],
       hole: [PEG.holeR, PEG.holeHalf, PEG.rimK, PEG.border],
       depth: [PEG.thick, PEG.gap, PEG.colPhase, PEG.rowPhase],
       lamp: [L[0], L[1], L[2], T.lampSize],
@@ -260,23 +258,14 @@ export class TrayPass {
 
   /**
    * The drawer UNDER its specimens into the open pass — over everything drawn so far (the caller left the scissor on the whole view):
-   * the dim, the drawer's shadows, the board; then each specimen's accessory with its shadow on the board (K5a).
+   * the dim, the drawer's shadows, the board to its edge; then each specimen's accessory with its shadow on the board (K5a).
    */
   draw(pass: GPURenderPassEncoder): void {
     if (this.quads === 0) return;
     pass.pushDebugGroup("tray/pegboard");
     this.bind(pass, this.pipeline);
     pass.draw(6, 1, 0, 0);
-    if (this.accCount > 0) { pass.setPipeline(this.accPipeline); pass.draw(6, this.accCount, 0, 2); }
-    pass.popDebugGroup();
-  }
-
-  /** The RIM over everything the drawer holds (K5a) — last, after the kinds drew the specimens: three strips along its top and sides. */
-  drawRim(pass: GPURenderPassEncoder): void {
-    if (this.quads === 0) return;
-    pass.pushDebugGroup("tray/pegboard/rim");
-    this.bind(pass, this.rimPipeline);
-    pass.draw(18, 1, 0, 1);
+    if (this.accCount > 0) { pass.setPipeline(this.accPipeline); pass.draw(6, this.accCount, 0, 1); }
     pass.popDebugGroup();
   }
 

@@ -19,7 +19,7 @@ import { DRAWER, drawerRect } from "../src/tray/drawer";
 import { createTrayFlux } from "../src/tray/flux";
 import { TRAY_LOOK } from "../src/tray/look";
 import { trayShaders } from "../src/tray/shaders";
-import { accessoryOf, specimenFrames, type TraySpecimen, type TraySpecimenEnv } from "../src/tray/specimens";
+import { accessoryOf, faceClip, specimenFrames, type TraySpecimen, type TraySpecimenEnv } from "../src/tray/specimens";
 import { LAYER_IDLE_MS } from "../src/kit/layer";
 import { fakeDevice, fakeSurface, installGpuFlags } from "./fake-gpu";
 
@@ -153,7 +153,7 @@ describe("the flux follows the laid content and the hover", () => {
     const f = createTrayFlux();
     f.read({ ...opened, bottom: 606, laid: 1 });
     f.step(0, 1200, 800);
-    expect(f.frame()?.max).toBe(606 + P - (352 - DRAWER.rim));
+    expect(f.frame()?.max).toBe(606 + P - 352);   // the face is the whole drawer: it runs to the outline (design-018 §2)
     expect(f.frame()?.scroll).toBe(0);
   });
 
@@ -178,12 +178,21 @@ describe("the flux follows the laid content and the hover", () => {
   });
 });
 
-describe("the ground draws the specimens between the board and the rim", () => {
+describe("the face the specimens show through (design-018 §2)", () => {
+  it("is the outline inside the board's edge — inset by the arris, its top corners the arris's inner edge, its foot past the view", () => {
+    const c = faceClip(open, 800);
+    expect([c.cx - c.hx, c.cy - c.hy, c.cx + c.hx, c.r]).toEqual([open.x + DRAWER.arris, open.y + DRAWER.arris, open.x + open.w - DRAWER.arris, DRAWER.radius - DRAWER.arris]);
+    expect([open.x + 1.5, open.y + 1.5, 8.5]).toEqual([c.cx - c.hx, c.cy - c.hy, c.r]);
+    expect(c.cy + c.hy).toBeGreaterThan(800);
+  });
+});
+
+describe("the ground draws the specimens over the board, inside its edge", () => {
   const undo: (() => void)[] = [];
   beforeAll(() => { undo.push(installGpuFlags()); });
   afterAll(() => { for (const u of undo.splice(0)) u(); });
 
-  it("the drawer under them (the board, then each accessory), each in its own slot, their tags, the rim last; a composite kind's slot made from its program", async () => {
+  it("the drawer under them (the board to its edge, then each accessory), each in its own slot, their tags last — no rim over them; a composite kind's slot made from its program", async () => {
     const log: string[] = [];
     const { device } = fakeDevice(log);
     const plain = fakeKind("fake");
@@ -197,7 +206,7 @@ describe("the ground draws the specimens between the board and the rim", () => {
     ground.render(inputs);
     // the plain kind's slot is spawned at once; the layered one's waits for its program
     let at = log.indexOf("debug tray/pegboard");
-    expect(log.slice(at, at + 7)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "pipeline tray/pegboard/accessories", "draw 6,2,0,2", "debug end"]);
+    expect(log.slice(at, at + 7)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "pipeline tray/pegboard/accessories", "draw 6,2,0,1", "debug end"]);
     expect(log.filter((l) => l.startsWith("debug kind "))).toEqual(["debug kind fake+ 0-1"]);
     let ready = false;
     await new Promise<void>((r) => ground.warmTray([["t:layered", "layered"]], () => { ready = true; r(); }));
@@ -209,12 +218,14 @@ describe("the ground draws the specimens between the board and the rim", () => {
     at = log.indexOf("debug tray/pegboard");
     const kinds = log.map((l, i) => [l, i] as const).filter(([l]) => l.startsWith("debug kind ")).map(([l, i]) => [l, i] as const);
     expect(kinds.map(([l]) => l)).toEqual(["debug kind fake+ 0-1", "debug kind layered 0-1"]);
-    const rim = log.indexOf("debug tray/pegboard/rim");
     const tags = log.indexOf("pipeline marks", at);   // the name tags: the marks' pipeline, under the face's scissor
-    expect(kinds.every(([, i]) => i > at + 6 && i < rim)).toBe(true);
+    expect(kinds.every(([, i]) => i > at + 6)).toBe(true);
     expect(tags).toBeGreaterThan(kinds[1]?.[1] ?? 0);
-    expect(tags).toBeLessThan(rim);
-    expect(log.slice(rim, rim + 5)).toEqual(["debug tray/pegboard/rim", "pipeline tray/pegboard/rim", "group 0 tray/pegboard", "draw 18,1,0,1", "debug end"]);
+    // the rim laid over them all retired (design-018 §2): nothing of the drawer is drawn after the specimens
+    const lastDrawer = Math.max(...log.map((l, i) => (l.startsWith("debug tray/") ? i : -1)));
+    expect(lastDrawer).toBeGreaterThanOrEqual(0);
+    expect(lastDrawer).toBeLessThan(kinds[0]?.[1] ?? 0);
+    expect(log.some((l) => l.includes("tray/pegboard/rim"))).toBe(false);
     expect(ground.traySlots?.size).toBe(2);
     // every tick the tray's own slots are asked to let go of what they make again (D-K6a.3) — the root's passes never by the tray
     ground.idleTray();

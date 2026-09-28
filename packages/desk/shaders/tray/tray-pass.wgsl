@@ -1,10 +1,9 @@
-// The pegboard tray's pass (design-017 §5; K5a): drawn in the ROOT's render pass after the marks, premultiplied, three kinds of quad —
-// one vertex entry that lays each by its instance, three fragment entries (three pipelines on one layout: a branch over the three in one
+// The pegboard tray's pass (design-017 §5; K5a; design-018 §2): drawn in the ROOT's render pass after the marks, premultiplied, two kinds
+// of quad — one vertex entry that lays each by its instance, two fragment entries (two pipelines on one layout: a branch over both in one
 // entry cost the board a third of its time, the register budget of the largest path paid by every pixel): instance 0 the drawer UNDER
-// its specimens (`fs` → tray.wgsl `tray_drawer` — the view whole while the slide shows the dim, the drawer's box grown by its shadows'
-// reach while nothing dims; shut, nothing is drawn at all); from instance 2, one quad per specimen's ACCESSORY with its shadow (`fs_accessory`, the records in `acc`);
-// instance 1 the RIM over everything the drawer holds, three strips along its top and sides (`fs_rim`) — drawn last, after the kinds
-// drew the specimens between the board and it.
+// its specimens, its edge included (`fs` → tray.wgsl `tray_drawer` — the view whole while the slide shows the dim, the drawer's box grown
+// by its shadows' reach while nothing dims; shut, nothing is drawn at all); from instance 1, one quad per specimen's ACCESSORY with its
+// shadow (`fs_accessory`, the records in `acc`). The rim's strips over it all retired with the rim (design-018 §2).
 
 @group(0) @binding(0) var<uniform> u: MatUniforms;
 @group(0) @binding(1) var<uniform> t: TrayUniforms;
@@ -37,22 +36,9 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> TrayO
       lo = vec2f(max(t.rect.x - reach, 0.0), max(t.rect.y - reach, 0.0));
       hi = vec2f(min(t.rect.x + t.rect.z + reach, vw), vh);
     }
-  } else if (ii == 1u) {
-    // the rim's three strips, disjoint: the top (its corners), then either side below it
-    o.mode = 1u;
-    let x0 = t.rect.x;
-    let x1 = t.rect.x + t.rect.z;
-    let top = t.rect.y + max(t.shape.x, t.shape.y) + 2.0;
-    let side = t.shape.y + 2.0;
-    let strip = vi / 6u;
-    if (strip == 0u) { lo = vec2f(x0, t.rect.y); hi = vec2f(x1, top); }
-    else if (strip == 1u) { lo = vec2f(x0, top); hi = vec2f(x0 + side, vh); }
-    else { lo = vec2f(x1 - side, top); hi = vec2f(x1, vh); }
-    lo = clamp(lo, vec2f(0.0), vec2f(vw, vh));
-    hi = clamp(hi, vec2f(0.0), vec2f(vw, vh));
   } else {
-    o.mode = 2u;
-    o.item = ii - 2u;
+    o.mode = 1u;
+    o.item = ii - 1u;
     let b = acc[o.item].box;
     lo = clamp(b.xy, vec2f(0.0), vec2f(vw, vh));
     hi = clamp(b.zw, vec2f(0.0), vec2f(vw, vh));
@@ -65,11 +51,6 @@ fn vs(@builtin(vertex_index) vi: u32, @builtin(instance_index) ii: u32) -> TrayO
 @fragment
 fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
   return tray_drawer(u, t, pos.xy, noise_tex, noise_samp, hash_tex);
-}
-
-@fragment
-fn fs_rim(@builtin(position) pos: vec4f) -> @location(0) vec4f {
-  return tray_rim_over(u, t, pos.xy, noise_tex, noise_samp, hash_tex);
 }
 
 @fragment

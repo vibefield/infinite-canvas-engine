@@ -585,8 +585,8 @@ function trayRectOf(inputs: GroundFrameInputs): ReturnType<typeof drawerRect> {
 
 /**
  * THE TRAY, drawn (design-017 §5, §8; K5a) — shared by `Ground.render` and the Node oracle: the drawer UNDER its specimens (the dim, its
- * shadows, the board, the accessories), each specimen by its own kind through the drawer's face, their name tags (the marks' pills),
- * then the RIM over them all — the specimens slide under it as the board does; then what the tray carries, whole. Shut (p 0) the
+ * shadows, the board to its edge, the accessories), each specimen by its own kind through the drawer's face (inside the edge — the rim
+ * laid over them all retired, design-018 §2), their name tags (the marks' pills); then what the tray carries, whole. Shut (p 0) the
  * drawer draws nothing (its pass laid no quad) and only a carried copy is drawn. Leaves the scissor on the whole view.
  */
 export function drawTray(pass: GPURenderPassEncoder, size: { readonly w: number; readonly h: number }, dpr: number, tray: TrayPass, slots: readonly DrawSlot[] | undefined, marks: MarksPass | null, carried?: readonly DrawSlot[]): void {
@@ -604,7 +604,6 @@ export function drawTray(pass: GPURenderPassEncoder, size: { readonly w: number;
     }
   }
   pass.setScissorRect(0, 0, size.w, size.h);
-  tray.drawRim(pass);
   // what the tray carries (K5b): over the rim and the dim, whole — it is off the board
   if (carried !== undefined && carried.length > 0) {
     for (const s of carried) drawSlot(pass, size, dpr, { ...s, bare: true });
@@ -612,11 +611,11 @@ export function drawTray(pass: GPURenderPassEncoder, size: { readonly w: number;
   }
 }
 
-/** The drawer's face inside its rim as a clip box (CSS px), square — the tags' scissor. */
+/** The drawer's face inside its edge as a clip box (CSS px), square — the tags' scissor. */
 function faceBox(rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number }, vh: number): { cx: number; cy: number; hx: number; hy: number; r: number } {
-  const x0 = rect.x + DRAWER.rim;
-  const x1 = rect.x + rect.w - DRAWER.rim;
-  const y0 = rect.y + DRAWER.rim;
+  const x0 = rect.x + DRAWER.arris;
+  const x1 = rect.x + rect.w - DRAWER.arris;
+  const y0 = rect.y + DRAWER.arris;
   const y1 = Math.max(vh, rect.y + rect.h);
   return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hx: (x1 - x0) / 2, hy: (y1 - y0) / 2, r: 0 };
 }

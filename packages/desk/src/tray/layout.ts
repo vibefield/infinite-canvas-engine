@@ -11,7 +11,7 @@ export const TrayUniforms = defineStruct("TrayUniforms", [
   ["frac", "f32"],       // …and the fraction of a row, the only part of the scroll in an f32
   ["fp", "f32"],         // pitches per device px — the footprint every band fades by
   ["dim", "f32"],        // the dim's alpha this frame
-  ["shape", "vec4f"],    // the top corners' radius, the rim, —, — — CSS px
+  ["shape", "vec4f"],    // the top corners' radius, the arris (the board's edge), —, — — CSS px
   ["hole", "vec4f"],     // the stadium's radius and straight half-length, the rim fillet k, the solid side border — pitches
   ["depth", "vec4f"],    // the board's thickness, the gap to the wall — pitches; the phase: columns, rows
   ["lamp", "vec4f"],     // the unit direction to the lamp (x right, y down, z toward the eye), its angular radius (rad)

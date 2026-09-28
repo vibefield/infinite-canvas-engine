@@ -366,7 +366,7 @@ try {
   const onHole = ([x, y]) => { const r = Math.round(y - PEG_LATTICE.rowPhase); const c = x - PEG_LATTICE.colPhase - ((r & 1) !== 0 ? 0.5 : 0); return Math.abs(y - PEG_LATTICE.rowPhase - r) < 1e-9 && Math.abs(c - Math.round(c)) < 1e-9 && x >= PEG_LATTICE.border && x <= s.frame.w / 40 - PEG_LATTICE.border; };
   check(pegs.length >= 6 && pegs.every(onHole), `every peg on a punched hole's centre: ${pegs.length} pegs of ${s.specimens.length} specimens in view (${pegs.slice(0, 4).map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ")} …)`);
   // S3. the scroll's range is the laid content's: its foot plus a pitch less the face (K3's 26-row stub retired)
-  check(s.frame.max === s.facts.bottom + 40 - (352 - 5) && s.facts.bottom === want.bottom, `the range ${s.frame.max} px = the content's foot ${s.facts.bottom} + 40 − the face ${352 - 5} (the law's foot ${want.bottom})`);
+  check(s.frame.max === s.facts.bottom + 40 - 352 && s.facts.bottom === want.bottom, `the range ${s.frame.max} px = the content's foot ${s.facts.bottom} + 40 − the face 352 (the whole drawer: its face runs to the outline — design-018 §2; the law's foot ${want.bottom})`);
   // S4. each is drawn by its own kind: its rect on screen is far from the bare board there — at the top, and scrolled to the end
   const drawnBy = async () => {
     const A = await shot();

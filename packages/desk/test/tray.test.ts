@@ -199,6 +199,12 @@ describe("the drawer (tray/drawer.ts)", () => {
     expect(drawerRect(1200, 800, 0.5).y).toBeCloseTo(800 + SHADOW_REACH - (352 + SHADOW_REACH) * 0.5, 12);
   });
 
+  it("has a hardboard panel's corners (radius 10) and an ARRIS for an edge, 1.5 px in the face's material — the rim retired (design-018 §2)", () => {
+    expect(DRAWER.radius).toBe(10);
+    expect(DRAWER.arris).toBe(1.5);
+    expect("rim" in DRAWER).toBe(false);
+  });
+
   it("slides on widgetlab rev 1's curve, cubic-bezier(0.32,0.72,0,1) over 340 ms", () => {
     expect(DRAWER.slideMs).toBe(340);
     expect(slideEase(0)).toBe(0);
@@ -210,7 +216,7 @@ describe("the drawer (tray/drawer.ts)", () => {
   });
 
   it("scrolls its laid content past the face it shows: the last line's foot plus a pitch, less the face (K5a — K3's stub retired)", () => {
-    expect(scrollRange(1200, 800, 530)).toBe(530 + 40 - (352 - 5));
+    expect(scrollRange(1200, 800, 530)).toBe(530 + 40 - 352);   // the face is the whole drawer: it runs to the outline (design-018 §2)
     expect(scrollRange(1200, 4000, 530)).toBe(0);   // the tallest drawer's face shows it all
     expect(scrollRange(1200, 800, 0)).toBe(0);      // nothing laid: nothing to scroll
   });
@@ -267,14 +273,15 @@ describe("the tray pass on a fake device", () => {
     return { ground, log, writes, frame, trayWrites };
   }
 
-  it("draws last in the ground's pass, in its debug groups — the drawer under its specimens (one quad, the dim folded in), then the rim's three strips over them (K5a); nothing without a tray, nothing while it is shut", async () => {
+  it("draws last in the ground's pass, in its debug group — the drawer under its specimens, its edge included (one quad, the dim folded in; the rim's strips retired); nothing without a tray, nothing while it is shut", async () => {
     const { ground, log, frame, writes } = await mount();
     ground.render(frame());
     expect(log.some((l) => l.includes("tray/pegboard"))).toBe(false);
     log.length = 0;
     ground.render(frame({ p: 1, scroll: 0 }));
     const end = log.lastIndexOf("end");
-    expect(log.slice(end - 11, end)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "debug end", "scissor 0,0,2400,1600", "debug tray/pegboard/rim", "pipeline tray/pegboard/rim", "group 0 tray/pegboard", "draw 18,1,0,1", "debug end"]);
+    expect(log.slice(end - 6, end)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "debug end", "scissor 0,0,2400,1600"]);
+    expect(log.some((l) => l.includes("tray/pegboard/rim"))).toBe(false);   // the rim's strips retired (design-018 §2)
     // shut (design-018 §5): the drawer and its shadows lie below the view — nothing of it is drawn, and nothing uploaded
     log.length = 0;
     const uploads = writes.filter((w) => w.label.startsWith("tray/")).length;
@@ -365,7 +372,7 @@ describe("the flux (tray/flux.ts — the motion lives in the renderer)", () => {
     // the laid content's foot moves the range (K5a): a fact the flux reads
     f.read({ ...opened, bottom: 900, laid: 1 });
     f.step(190, 1200, 800);
-    expect(f.frame()?.max).toBe(900 + 40 - (352 - 5));
+    expect(f.frame()?.max).toBe(900 + 40 - 352);
     expect(f.frame()?.pitch).toBe(40);
     f.pin({ p: 0.5, band: 12 });
     expect(f.step(180, 1200, 800)).toEqual({ p: 0.5, scroll: 12 });
