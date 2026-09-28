@@ -1,0 +1,24 @@
+{
+  "name": "@ice-examples/desk-clock",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "A THIRD-PARTY desk kind in its own package (design-016 K8b · K-L2): an analogue desk clock drawn by its own WGSL, with durable props, a registered wake, a tray entry, a menu act, an opening with its own held tools, a chip inside a mini mat and a round face to pick — built on the umbrella's PUBLISHED entries alone (`@vibecook/ice`, `/kernel`, `/desk`, `/desk/kit`, `/desk/engine`), exactly as a VibeField plugin will be. Never published: apps/desk registers it and the oracle draws its scenes.",
+  "exports": {
+    ".": "./src/index.ts",
+    "./oracle/scenes.mjs": "./oracle/scenes.mjs"
+  },
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "dts:check": "node scripts/dts-check.mjs"
+  },
+  "peerDependencies": {
+    "@vibecook/ice": "^0.13.0"
+  },
+  "devDependencies": {
+    "@vibecook/ice": "workspace:*",
+    "@webgpu/types": "^0.1.72",
+    "vitest": "^3"
+  }
+}

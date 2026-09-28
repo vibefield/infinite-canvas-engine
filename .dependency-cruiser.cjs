@@ -196,6 +196,20 @@ module.exports = {
       to: { path: `${OBJECTS}[^/]+/host/` },
     },
     {
+      name: "examples-import-only-the-published-entries",
+      comment:
+        "design-016 K8b · K-L1/K-L2: a worked plugin package (examples/*) is written the way an OUTSIDE plugin is — its shipped " +
+        "modules (src/, oracle/) import ICE through the umbrella's PUBLISHED entries alone (`@vibecook/ice`, `/kernel`, `/dom`, " +
+        "`/desk`, `/desk/engine`, `/desk/kit`, `/react`, `/devtools` — tsconfig.base.json maps each to its source entry under " +
+        "packages/ice/src, so a published specifier resolves THERE) and never the reference kinds (`/desk/objects`: no kind imports " +
+        "a kind). A workspace name (`@ice/desk` resolves into packages/desk), a path into packages/, an npm package or a Node builtin " +
+        "is a violation; type-only edges count. The unit test that holds the same wall per specifier is " +
+        "examples/desk-clock/test/imports.test.ts.",
+      severity: "error",
+      from: { path: "^examples/[^/]+/(src|oracle)/" },
+      to: { pathNot: ["^examples/[^/]+/(src|oracle)/", "^packages/ice/src/(index|kernel|dom|desk|desk-engine|desk-kit|react|devtools)\\.ts$"] },
+    },
+    {
       name: "devtools-only-core-kernel-strata",
       comment:
         "design-002 §6 (amended 2026-07-13): devtools reads core + kernel and WRAPS " +
@@ -260,7 +274,7 @@ module.exports = {
       severity: "error",
       // …and every app's modules too (D7: `depcruise` walks apps/ since the fix wave; an app is a consumer, and three is
       // imported NOWHERE)
-      from: { path: ["^packages/(kernel|core|dom|react|desk|objects|devtools|ice)/src", "^apps/"] },
+      from: { path: ["^packages/(kernel|core|dom|react|desk|objects|devtools|ice)/src", "^apps/", "^examples/"] },
       to: { path: ["^three(/|$)", nm("three"), "^@react-three/", nm("@react-three"), "^stats-gl(/|$)", nm("stats-gl")] },
     },
   ],

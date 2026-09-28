@@ -17,7 +17,16 @@
       "@ice/core": ["./packages/core/src/index.ts"],
       "@ice/dom": ["./packages/dom/src/index.ts"],
       "@ice/react": ["./packages/react/src/index.ts"],
-      "@ice/devtools": ["./packages/devtools/src/index.ts"]
+      "@ice/devtools": ["./packages/devtools/src/index.ts"],
+      "@vibecook/ice": ["./packages/ice/src/index.ts"],
+      "@vibecook/ice/kernel": ["./packages/ice/src/kernel.ts"],
+      "@vibecook/ice/dom": ["./packages/ice/src/dom.ts"],
+      "@vibecook/ice/desk": ["./packages/ice/src/desk.ts"],
+      "@vibecook/ice/desk/engine": ["./packages/ice/src/desk-engine.ts"],
+      "@vibecook/ice/desk/kit": ["./packages/ice/src/desk-kit.ts"],
+      "@vibecook/ice/desk/objects": ["./packages/ice/src/desk-objects.ts"],
+      "@vibecook/ice/react": ["./packages/ice/src/react.ts"],
+      "@vibecook/ice/devtools": ["./packages/ice/src/devtools.ts"]
     }
   }
 }

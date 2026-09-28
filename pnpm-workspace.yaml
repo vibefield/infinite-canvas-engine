@@ -1,6 +1,8 @@
 packages:
   - "packages/*"
   - "apps/*"
+  # design-016 K8b: worked plugin packages built on the umbrella's published entries alone (never published themselves)
+  - "examples/*"
 # pnpm 11 migration (2026-07-18): settings moved out of package.json#pnpm.
 # allowBuilds carries the old onlyBuiltDependencies approvals. electron (binary
 # download) and @vibecook/truffle (native addon + sidecar) were widgetlab-desktop's,

@@ -76,6 +76,18 @@ importers:
         specifier: ^3.0.0
         version: 3.2.7(@types/node@26.1.1)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13)
 
+  examples/desk-clock:
+    devDependencies:
+      '@vibecook/ice':
+        specifier: workspace:*
+        version: link:../../packages/ice
+      '@webgpu/types':
+        specifier: ^0.1.72
+        version: 0.1.72
+      vitest:
+        specifier: ^3
+        version: 3.2.7(@types/node@26.1.1)(happy-dom@20.10.6)(jiti@2.7.0)(lightningcss@1.32.0)(tsx@4.23.13)
+
   packages/core:
     dependencies:
       '@ice/kernel':
