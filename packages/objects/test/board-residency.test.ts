@@ -101,6 +101,25 @@ describe("the pool and the thumbnails on a fake device", () => {
     expect(pass.bound(50)).toBe(false);                // off screen: its thumbnail, no slot
   });
 
+  it("D-K9-d.4: a THUMBED board on screen past the pool asks for no raster — the step raises none for it, so no raster is made that the budget takes at once (the thrash); a board with no thumbnail yet, or in hand, still asks", async () => {
+    const { kind, pass, raster } = await root();
+    const ids = Array.from({ length: BOARD_SLOTS + 2 }, (_, i) => i + 1);
+    for (const id of ids) raster(id);                  // ten boards: rasters and thumbnails
+    for (const id of ids.slice(BOARD_SLOTS)) pass.evict(id);   // the two past the pool lose their rasters (the budget's doing); their thumbnails stay
+    kind.prepare({} as GPUCommandEncoder, ctx(), ids.map((id) => board(id)));   // eight take the slots; 9 and 10 have no slot, no raster, a thumbnail
+    expect(ids.slice(0, BOARD_SLOTS).every((id) => pass.bound(id))).toBe(true);
+    expect(pass.step()).toEqual([]);                   // before D-K9-d.4: [{ id: 9, density: 4 }, { id: 10, density: 4 }] — remade, evicted, asked again, every frame
+    // a slot frees (board 1 left the screen): the next frame they ask — a raster made now can bind next frame
+    kind.prepare({} as GPUCommandEncoder, ctx(), ids.slice(1).map((id) => board(id)));
+    pass.step();
+    kind.prepare({} as GPUCommandEncoder, ctx(), ids.slice(1).map((id) => board(id)));
+    expect(pass.step().map((r) => r.id).sort((a, b) => a - b)).toEqual([9, 10]);   // both ask while a slot is free — the queue serves them in turn
+    // a NEW board (no thumbnail) on a full pool still asks: its first replay cuts its thumbnail
+    for (const id of ids.slice(0, BOARD_SLOTS)) { pass.ensure(id, [BOARD.spec.width, BOARD.spec.height], 4); }
+    kind.prepare({} as GPUCommandEncoder, ctx(), [...ids.slice(0, BOARD_SLOTS).map((id) => board(id)), board(11)]);
+    expect(pass.step().map((r) => r.id)).toEqual([11]);
+  });
+
   it("the step frees the slots of boards no frame asked for since (their rasters stay, a cache) and nothing when nothing was drawn", async () => {
     const { kind, pass, raster } = await root();
     raster(1); raster(2);

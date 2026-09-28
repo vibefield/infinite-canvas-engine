@@ -694,11 +694,19 @@ export class BoardPass {
       // nor the tray's specimen (id 0: its one clean raster, K5a — bound and asked as it always was; far, it cost the slide frames)
       const rung = boardRung(zd * b.geometry.scale);
       const far = b.id !== 0 && rung === 1 && t !== undefined && s.live !== b.id && b.stroke === undefined;
-      if (seen && !far) s.asked.set(b.id, Math.max(s.asked.get(b.id) ?? 0, rung));
       if (r) {
         if (seen && !far && !s.pool.includes(b.id)) { const free = s.pool.indexOf(null); if (free >= 0) { s.pool[free] = b.id; bind = true; } }
         if (s.live === null && (liveOf(r) || b.stroke !== undefined)) { s.live = b.id; bind = true; }
       }
+      // D-K9-d.4 — a board on screen ASKS for a raster only when it can bind one: a pool slot held, or one free (a raster made in the
+      // queue's turn takes it next frame); with no thumbnail yet (its first replay cuts it — K6b's bare state must end); in hand (the
+      // live board, a stroke); the tray's specimen (K5a). A THUMBED board past the pool draws its thumbnail through the card, a little
+      // soft, as a print past the detail slots does — before K9 it asked every frame, the queue made its raster, the budget's trim took
+      // it at once (never bound, never kept) and it asked again: a thrash as fast as the host let the queue run (rig:scale at N 3,000,
+      // zoom 0.5: 13 boards on screen, 8 slots — 8,469 evictions at load 7 on 7a7602f, 17,149 on this tree; 43–808 at load 100–300,
+      // where the queue managed a replay or two a turn — and the gate's memory row could not fail until K9 R5)
+      const asks = seen && !far && (s.pool.includes(b.id) || s.pool.includes(null) || t === undefined || s.live === b.id || b.stroke !== undefined || b.id === 0);
+      if (asks) s.asked.set(b.id, Math.max(s.asked.get(b.id) ?? 0, rung));
       // K9 R1: a raster with no layer and no slot (the array at the device's cap, the pool full) — nothing to draw its INK from this
       // frame: the board is drawn BARE (its melamine from the empty layer — honestly blank, never another board's layer) and counted
       // in `dropped` when on screen, so the ground's stats say what the desk does not show; without even the empty layer it is not drawn
