@@ -154,7 +154,11 @@ try {
   const logs = [];
   const tab = await bootTab("", logs);
   let pluginTab = null;
-  const tabFor = async (sc) => (needsPlugins(sc) ? (pluginTab ??= await bootTab("?plugins", logs)) : tab);
+  const tabFor = async (sc) => {
+    if (!needsPlugins(sc)) return tab;
+    if (pluginTab === null) pluginTab = await bootTab("?plugins", logs);
+    return pluginTab;
+  };
 
   let flaps = 0;
   let kept = 0;
