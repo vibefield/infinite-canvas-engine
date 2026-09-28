@@ -454,6 +454,9 @@ export class BoardPass {
   get thumbnailBytes(): number { return this.shared.thumbs.bytes; }
   /** What the thumbnails' layers IN USE weigh — the budget's resident `board`/`thumbnails` charge (K9 R2). */
   get thumbnailUsedBytes(): number { return this.shared.thumbs.usedBytes; }
+  /** The thumbnails' layers in use, and the array's capacity (K9 R5 — the kind's `stats`). */
+  get thumbnailLayers(): number { return this.shared.thumbs.used; }
+  get thumbnailCapacity(): number { return this.shared.thumbs.capacity; }
 
   /** Has board `id` its far-LOD thumbnail (a layer, cut)? */
   thumbed(id: number): boolean { return this.shared.thumbOf.has(id); }

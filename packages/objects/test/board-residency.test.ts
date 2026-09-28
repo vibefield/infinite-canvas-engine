@@ -168,6 +168,22 @@ describe("the pool and the thumbnails on a fake device", () => {
     expect([pass.densityOf(id2), bare.replays()]).toEqual([4, 1]);
   });
 
+  it("K9 R5: the local's `stats` — boards, ever inked, thumbed, rasters held, bound, the array's layers and capacity (rig:scale's memory row)", async () => {
+    const { kind, pass, q, ink } = await queued();
+    const G = board(1).geometry;
+    expect(ink.stats()).toEqual({ boards: 0, inked: 0, thumbed: 0, rastered: 0, bound: 0, layers: 0, capacity: 0 });
+    const id = ink.raster(E(7), G, look, false, 2, 0);
+    kind.prepare({} as GPUCommandEncoder, ctx(), [board(id)]);   // bare: the empty layer taken
+    expect(ink.stats()).toMatchObject({ boards: 1, inked: 0, thumbed: 0, rastered: 0, layers: 1, capacity: 4 });
+    q.drain();   // made at its rung, replayed, its thumbnail cut
+    kind.prepare({} as GPUCommandEncoder, ctx(), [board(id)]);
+    expect(ink.stats()).toEqual({ boards: 1, inked: 1, thumbed: 1, rastered: 1, bound: 1, layers: 2, capacity: 4 });
+    pass.evict(id);   // the budget's eviction: the raster goes, the thumbnail stays, the board stays inked
+    expect(ink.stats()).toMatchObject({ boards: 1, inked: 1, thumbed: 1, rastered: 0, bound: 0 });
+    ink.forget(E(7));
+    expect(ink.stats()).toMatchObject({ boards: 0, inked: 0, thumbed: 0, layers: 1 });   // the empty layer alone remains
+  });
+
   it("K6b over K5a: the TRAY's specimen board (id 0 — recorded without the desk's local) draws from its one clean raster at density 1 — never bare, never asked of the frame queue, never raised", async () => {
     const { kind, pass, q, ink } = await queued();
     const big = { ...VIEW, camX: 450, zoom: 4 };                          // on screen at zd 8: its size asks the rung 4

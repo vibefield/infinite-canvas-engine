@@ -324,14 +324,28 @@ try {
     rows.push(["idle (zoom 0.2)", `${idle.submits} submits · ${idle.steps} steps`, `${fmt(idle.stepMsPerS, 3)} ms/s engine · the page ${fmt(idle.page.median, 3)} ms/s (min ${fmt(idle.page.min, 3)})`, idle.loads.join(" ")]);
   }
 
-  // ── memory: the GPU ledger and the raster budget after the pans and the zoom swept the field
+  // ── memory: the GPU ledger and the raster budget after the pans and the zoom swept the field. These rows are CHECKS, not
+  // gates (K9 R5): a memory bound is not a timing bound — the host's load never moves it — so a MISS here is a regression, in
+  // the light run too. (K9 R2 made them true: the thumbnail arrays reside at what is in use, the caches keep their room.)
   if (wantCase("memory")) {
     const mem = await memoryNow();
-    report.memory = mem;
+    const boards = await q(`window.__desk.handle.local("board")?.stats() ?? null`);
+    const pics = await q(`window.__desk.handle.local("photo")?.pictures() ?? null`);
+    report.memory = { ...mem, boards, pictures: pics };
     console.log(`\n-- memory · after the scenarios · load ${load()} --\n  ${memoryLine(mem)}`);
-    gate(mem.budget.used <= mem.budget.cap && mem.budget.evictions < 1000, `memory: the kinds' rasters and pictures within the ONE budget, no thrash (${MB(mem.budget.used)} of ${MB(mem.budget.cap)}, ${mem.budget.evictions} evictions)`);
-    gate((mem.ledger?.total ?? Number.POSITIVE_INFINITY) <= 512 * 1048576, `memory: the whole GPU ledger ≤ 512 MB with ${count.print} prints of real pictures (${MB(mem.ledger?.total ?? 0)})`);
-    rows.push(["memory", `${MB(mem.ledger?.total ?? 0)} live`, `budget ${MB(mem.budget.used)} of ${MB(mem.budget.cap)} · ${mem.budget.evictions} evictions`, load()]);
+    console.log(`  budget: resident ${MB(mem.budget.resident ?? 0)} (the thumbnail arrays, never evicted) · the caches' room ${MB(mem.budget.room ?? mem.budget.cap)}`);
+    console.log(`  boards: ${JSON.stringify(boards)}\n  pictures: ${JSON.stringify(pics?.resident ?? null)}`);
+    check(mem.budget.used <= mem.budget.cap && mem.budget.evictions < 1000, `memory: the kinds' rasters and pictures within the ONE budget, no thrash (${MB(mem.budget.used)} of ${MB(mem.budget.cap)} — resident ${MB(mem.budget.resident ?? 0)}, ${mem.budget.evictions} evictions)`);
+    check((mem.ledger?.total ?? Number.POSITIVE_INFINITY) <= 512 * 1048576, `memory: the whole GPU ledger ≤ 512 MB with ${count.print} prints of real pictures (${MB(mem.ledger?.total ?? 0)})`);
+    // K9 R1/R5 — the boards' thumbnails: every board ever inked keeps its far-LOD thumbnail (a layer of the one array) — at the
+    // array's cap a reclaimed layer would read here as thumbed < inked
+    check(boards !== null && boards.boards === count.board && boards.inked > 0 && boards.thumbed === boards.inked, `memory: every inked whiteboard keeps its thumbnail — ${boards?.thumbed} thumbnails for ${boards?.inked} inked of ${boards?.boards} boards (${boards?.rastered} rasters held, ${boards?.bound} bound; the array ${boards?.layers} of ${boards?.capacity} layers)`);
+    // K9 R2/R5 — the pictures: every picture resident as its thumbnail, a layer each; and the details FETCHED again for the prints
+    // large on screen at the runs' zoom 1 (before K9 R2 the thumbnails' capacity charge left `afford` no room: built 0)
+    const r = pics?.resident ?? null;
+    check(r !== null && r.layers === r.pictures && r.pictures >= PICTURES.length, `memory: every picture resident as its thumbnail — ${r?.layers} layers for ${r?.pictures} pictures (the array's capacity ${r?.capacity})`);
+    if (wantCase("runs")) check(r !== null && r.built > 0, `memory: details fetched for the prints large on screen at zoom 1 — built ${r?.built}, ${r?.details} held, ${r?.evicted} evicted (before K9 R2: 0 built)`);
+    rows.push(["memory", `${MB(mem.ledger?.total ?? 0)} live`, `budget ${MB(mem.budget.used)} of ${MB(mem.budget.cap)} (resident ${MB(mem.budget.resident ?? 0)}) · ${mem.budget.evictions} evictions · boards ${boards?.thumbed}/${boards?.inked} thumbed · pictures ${r?.layers} layers, ${r?.built} details built`, load()]);
   }
 
   logs.push(...(await faultsOf(tab)));

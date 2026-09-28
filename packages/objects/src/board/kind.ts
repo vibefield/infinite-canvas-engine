@@ -229,6 +229,12 @@ export interface BoardInk extends KindLocal {
   rasterOf(e: Entity): number | undefined;
   /** Board `e`'s residency (K6a — a rig's witness): its raster's density (null: evicted or not made), whether the pool binds it this frame, whether its thumbnail is cut. */
   residency(e: Entity): { readonly density: number | null; readonly bound: boolean; readonly thumb: boolean } | undefined;
+  /**
+   * The boards' residency in sum (K9 R5 — rig:scale's row): how many boards the desk has, how many were ever inked (replayed),
+   * how many keep a far-LOD thumbnail (every inked board should, until the array's layer cap reclaims one — K9 R1), hold a raster,
+   * are bound in the pool this frame; the thumbnail array's layers in use and capacity.
+   */
+  stats(): { readonly boards: number; readonly inked: number; readonly thumbed: number; readonly rastered: number; readonly bound: number; readonly layers: number; readonly capacity: number };
   /** The stroke in hand on `e`: the builder's stamps since the last call into the stroke layer (sent at the next prepare). */
   lay(e: Entity, builder: StrokeBuilder): void;
   /** The lift: the stroke in hand laid into the ink and marked WET; its entity (its cell's `points`) is adopted when it lands. */
@@ -264,6 +270,8 @@ interface BoardState {
   /** The board's run for the queue, made once. */
   run: (() => "done" | "wait") | undefined;
   stamp: number;
+  /** Replayed at least once — its ink has been on the device (K9 R5: `stats` counts these against the thumbnails kept). */
+  inked: boolean;
   /** The density the pass's step asked its raster remade at (K6a — it grew on screen); undefined when none is owed. */
   raise: number | undefined;
   look: BoardObjectLook | null;
@@ -312,7 +320,7 @@ export function createBoardInk(host: KindHost): BoardInk {
   };
   const state = (e: Entity): BoardState => {
     let st = boards.get(e);
-    if (st === undefined) { st = { id: next++, want: null, run: undefined, stamp: -1, raise: undefined, look: null, live: null, adopt: null, pen: penAtRest(), hand: undefined, pin: undefined }; boards.set(e, st); byId.set(st.id, e); }
+    if (st === undefined) { st = { id: next++, want: null, run: undefined, stamp: -1, inked: false, raise: undefined, look: null, live: null, adopt: null, pen: penAtRest(), hand: undefined, pin: undefined }; boards.set(e, st); byId.set(st.id, e); }
     return st;
   };
   /** A raster just made charged to the budget — evicted, the RASTER goes and its thumbnail stays (replayed when next wanted) — else touched. */
@@ -328,6 +336,7 @@ export function createBoardInk(host: KindHost): BoardInk {
   const replay = (e: Entity, st: BoardState, pass: BoardPass, look: BoardObjectLook): void => {
     pass.replay(st.id, boardOps(host.children?.rows(e, BoardStroke) ?? [], look.markers));
     land(e);
+    st.inked = true;
     replays += 1;
     if (st.live !== null) pass.lay(st.id, st.live.builder.tool, st.live.builder.stamps());
   };
@@ -524,6 +533,21 @@ export function createBoardInk(host: KindHost): BoardInk {
       const id = boards.get(e)?.id;
       const pass = passOf();
       return id === undefined || pass === undefined ? undefined : { density: pass.densityOf(id), bound: pass.bound(id), thumb: pass.thumbed(id) };
+    },
+    stats() {
+      const pass = passOf();
+      let inked = 0;
+      let thumbed = 0;
+      let rastered = 0;
+      let bound = 0;
+      for (const st of boards.values()) {
+        if (st.inked) inked += 1;
+        if (pass === undefined) continue;
+        if (pass.thumbed(st.id)) thumbed += 1;
+        if (pass.densityOf(st.id) !== null) rastered += 1;
+        if (pass.bound(st.id)) bound += 1;
+      }
+      return { boards: boards.size, inked, thumbed, rastered, bound, layers: pass?.thumbnailLayers ?? 0, capacity: pass?.thumbnailCapacity ?? 0 };
     },
   };
 }
