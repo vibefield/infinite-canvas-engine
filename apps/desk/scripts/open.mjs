@@ -23,6 +23,7 @@ import { spawn } from "node:child_process";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
+import { hostLoad, median, minOf } from "./timing.mjs";
 import { notebookRows } from "./open-notebook.mjs";
 import { calendarRig } from "./open-calendar.mjs";
 
@@ -232,11 +233,22 @@ try {
   console.log(`  cost under the default ambient (idle, the wind ${idleCost0.phase}): ${idleCost.submits} submits, ${idleCost.copies} desk copies in 600 ms held — 0 ms per held frame`);
   check(idleCost0.phase === "live" && idleCost.copies === 0 && idleCost.submits === 0, `a held frame under the default ambient costs nothing while the desk stands: ${idleCost.copies} copies, ${idleCost.submits} submits in 600 ms, the wind ${idleCost0.phase}`);
   await q("window.__desk.ambient('still')");
-  const cost = await tab.evaluate("window.__desk.holdCost(40)", { awaitPromise: true, timeoutMs: 60000 });
-  const copyMs = cost.copy.ms; const handMs = cost.hand.ms; const restMs = cost.rest.ms;
-  console.log(`  cost (ms/frame, 40 back to back, GPU drained, every frame drawn in full): the copy remade each frame ${copyMs.toFixed(2)} (cpu ${(cost.copy.cpu * 1000).toFixed(0)} µs) · the hand alone ${handMs.toFixed(2)} (cpu ${(cost.hand.cpu * 1000).toFixed(0)} µs) · the rest frame ${restMs.toFixed(2)} (cpu ${(cost.rest.cpu * 1000).toFixed(0)} µs) · the held frame STANDING (K7a: its layer laid again undrawn) ${cost.standing.ms.toFixed(2)} (cpu ${(cost.standing.cpu * 1000).toFixed(0)} µs)`);
-  check(cost.standing.ms < handMs, `a held frame standing lays the hand's layer again undrawn: ${cost.standing.ms.toFixed(2)} ms against ${handMs.toFixed(2)} drawn in full (K7a)`);
-  check(copyMs - handMs <= 1.5, `with a second notebook behind the hand, the desk copy + its blur costs ${(copyMs - handMs).toFixed(2)} ms over the hand alone (design-015 §11.4: ≤ 1.5 ms, once per settled desk; 0 per held frame — the row above, the wind up)`);
+  // SEVEN ROUNDS, THE MINIMUM (K-H): one holdCost is a single drained batch per arm, and on a loaded host one call read the copy
+  // −0.76 … +4.33 ms over the hand (load 147) — a burst lands in one arm and not the other. Each round warms itself (K7a) and draws
+  // its arms back to back (they share the round's load); a cost is the MINIMUM over the rounds — load only ever adds time to a
+  // drained batch — and the copy's is min(copy) − min(hand) on the GPU PLUS its main-thread share (D-KH.4): the batches are GPU
+  // bound (render() spends 0.05–0.2 ms of CPU against 3.4+ ms of GPU), so a main-thread cost in the copy's path hides inside the
+  // GPU's time — a 2 ms busy-wait there read 2.2 ms of cpu a frame and left the GPU difference at 0.58 ms (the minima of 6) — unless it is counted on its own
+  const rounds = [];
+  for (let i = 0; i < 7; i++) rounds.push(await tab.evaluate("window.__desk.holdCost(40)", { awaitPromise: true, timeoutMs: 60000 }));
+  const arm = (k, f = "ms") => rounds.map((r) => r[k][f]);
+  const copyMs = minOf(arm("copy")); const handMs = minOf(arm("hand")); const restMs = minOf(arm("rest")); const standMs = minOf(arm("standing"));
+  const copyCpu = minOf(arm("copy", "cpu")) - minOf(arm("hand", "cpu"));
+  const copyCost = copyMs - handMs + Math.max(0, copyCpu);
+  const us = (k) => (minOf(arm(k, "cpu")) * 1000).toFixed(0);
+  console.log(`  cost (ms/frame, 40 back to back, GPU drained, every frame drawn in full; the MIN of 7 rounds, medians after · load ${hostLoad()}): the copy remade each frame ${copyMs.toFixed(2)} (${median(arm("copy")).toFixed(2)}; cpu ${us("copy")} µs) · the hand alone ${handMs.toFixed(2)} (${median(arm("hand")).toFixed(2)}; cpu ${us("hand")} µs) · the rest frame ${restMs.toFixed(2)} (${median(arm("rest")).toFixed(2)}; cpu ${us("rest")} µs) · the held frame STANDING (K7a: its layer laid again undrawn) ${standMs.toFixed(2)} (${median(arm("standing")).toFixed(2)}; cpu ${us("standing")} µs)`);
+  check(standMs < handMs, `a held frame standing lays the hand's layer again undrawn: ${standMs.toFixed(2)} ms against ${handMs.toFixed(2)} drawn in full (K7a; the minima of 7 rounds)`);
+  check(copyCost <= 1.5, `with a second notebook behind the hand, the desk copy + its blur costs ${copyCost.toFixed(2)} ms over the hand alone — ${(copyMs - handMs).toFixed(2)} on the GPU + ${Math.max(0, copyCpu).toFixed(2)} on the main thread, the minima of 7 rounds at load ${hostLoad()} (design-015 §11.4: ≤ 1.5 ms, once per settled desk; 0 per held frame — the row above, the wind up)`);
   console.log(`  note: a held frame is the OPEN spread at ${(672 / 252).toFixed(2)}× plus the hand's two composites — ${(handMs / restMs).toFixed(1)}× the rest frame's closed book at 1×; the object's own cost at its reading size, not the hand's overhead (the copy's is the number above)`);
   await key("Escape", "Escape", 27);
   await landed();

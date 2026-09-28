@@ -30,6 +30,7 @@ import { mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, until, watchPage } from "./cdp.mjs";
+import { aaVerdict, hostLoad, twoWitnesses } from "./timing.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -167,12 +168,19 @@ try {
   //    printing its tiles) shares the GPU with the batches and the tool must say its numbers are noise, not pass on them
   await q("window.__gpuOff(); 0");
   const quiet = await settle();
-  const kc = await qa("window.__desk.perf.kindCost({ rounds: 7 })", 180000);
-  // the control's disagreement is within twice the floor (or 2 % of the frame) AND below every cost the tool calls real — its resolution
-  const real = Object.values(kc.kinds).filter((k) => k.clears).map((k) => k.ms);
-  const aaOk = Math.abs(kc.aa) <= Math.max(2 * kc.noise, 0.02 * kc.base.median) && real.length > 0 && Math.abs(kc.aa) < Math.min(...real) && kc.noise <= 0.1 * kc.base.median;
-  console.log(`  per-kind GPU         ${Object.entries(kc.kinds).sort((a, b) => b[1].ms - a[1].ms).map(([k, v]) => `${k} ${fmt(v.ms, 3)} ms × ${v.objects}${v.clears ? "" : " (under the floor)"}`).join(" · ")} — base ${fmt(kc.base.median, 3)} ms/frame, ${kc.frames}-frame batches × ${kc.rounds} rounds`);
-  check(quiet.settled && aaOk, `per-kind cost: the A/A control within its noise floor — A/A ${fmt(kc.aa, 4)} ms, floor ${fmt(kc.noise, 4)} ms (|A/A| ≤ max(2 × floor, 2 % of the ${fmt(kc.base.median, 3)} ms frame) and below the smallest cost that clears it, ${fmt(Math.min(...real), 3)} ms; the floor ≤ 10 % of the frame; the desk settled first: ${quiet.settled})`);
+  // THE A/A BY ITS METHOD (K-H; D-KH.2, D-KH.3): WARM first — an untimed ablation, the GPU coming to it from the settle's idle; then
+  // 21 rounds, the control read PAIRED as every kind is and judged against its OWN run's spread (timing.mjs `aaVerdict`), the desk's
+  // own frames meanwhile counted (what "the floor ≤ 10 % of the frame" stood in for: a desk drawing beside the batches — a loaded
+  // host swelled that floor past 10 % in 4 of 12 runs at load 140 whose A/A read zero, z ≤ 1.9); on a failure ONE second witness
+  await qa("window.__desk.perf.kindCost({ rounds: 1 })", 180000);
+  const aa = await twoWitnesses(async () => {
+    const r0 = await q("window.__desk.handle.redraws()");
+    const kc = await qa("window.__desk.perf.kindCost({ rounds: 21 })", 180000);
+    return { kc, redraws: (await q("window.__desk.handle.redraws()")) - r0 };
+  }, ({ kc, redraws }, earlier) => ({ ...aaVerdict(kc, { redraws, pool: earlier?.kc }), kc }));
+  const kc = (aa.second ?? aa.first).kc;
+  console.log(`  per-kind GPU         ${Object.entries(kc.kinds).sort((a, b) => b[1].ms - a[1].ms).map(([k, v]) => `${k} ${fmt(v.ms, 3)} ms × ${v.objects}${v.clears ? "" : " (under the floor)"}`).join(" · ")} — base ${fmt(kc.base.median, 3)} ms/frame, ${kc.frames}-frame batches × ${kc.rounds} rounds · load ${hostLoad()}`);
+  check(quiet.settled && aa.ok, `per-kind cost: the A/A control reads zero by the method's own spread and below every cost it calls real — ${aa.text}; the desk settled first: ${quiet.settled}`);
   await q("window.__gpuOff = window.__desk.perf.gpu().arm(); window.__desk.perf.take(); 0");
 
   // ── prints between notes split the run as the code says: n n p n n n p p → paper 2 draws / 5 instances, photo 2 draws / 3

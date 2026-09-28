@@ -14,10 +14,10 @@
 // home shrinking, into a mini mat by the kinds' rules, the plugin kind taken too, idle after. Exit 0 = every row passed.
 import { spawn } from "node:child_process";
 import { createServer } from "node:net";
-import { loadavg } from "node:os";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 import { decodePng } from "./png.mjs";
+import { hostLoad, median, minOf } from "./timing.mjs";
 import { layTray, PEG_LATTICE } from "../../../packages/kernel/src/tray.ts";
 
 const here = import.meta.dirname;
@@ -327,18 +327,19 @@ try {
   await front();
 
   // 9. THE COST (design-017 §6.7): the drawer open at 2400 × 1600 — n of it alone per batch, and whole frames with it open and closed,
-  //    each batch drained around; medians and minima of 7 rounds, the host's load beside them — K5a: whole frames open with the
-  //    specimens and open bare, the difference what the specimens cost
+  //    each batch drained around; 7 rounds, the host's load beside them — K5a: whole frames open with the specimens and open bare,
+  //    the difference what the specimens cost. K-H: WARM (an untimed round first — the rows before leave the GPU idle, and a
+  //    round's first batch is the board's), and the bound on the MINIMUM of the rounds: load only ever adds time to a drained
+  //    batch, and the median of 7 read 0.301 and 0.334 ms on loaded hosts where the minimum stood near 0.2
+  await qa("window.__desk.tray.cost(60)", 90000);
   const rounds = [];
   for (let i = 0; i < 7; i++) rounds.push(await qa("window.__desk.tray.cost(60)", 90000));
-  const med = (xs) => [...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)];
   const alone = rounds.map((r) => r.alone.ms);
   const whole = rounds.map((r) => r.open.ms);
   const plain = rounds.map((r) => r.bare.ms);
   const bare = rounds.map((r) => r.closed.ms);
-  const load = loadavg().map((v) => v.toFixed(1)).join(" ");
   const aloneBare = rounds.map((r) => r.aloneBare.ms);
-  check(med(aloneBare) <= 0.3, `the drawer's GPU cost at 2400 × 1600, open: the board alone median ${med(aloneBare).toFixed(3)} ms, min ${Math.min(...aloneBare).toFixed(3)} (≤ 0.3) · with its six accessories ${med(alone).toFixed(3)} (min ${Math.min(...alone).toFixed(3)}); whole frames open with the specimens ${med(whole).toFixed(3)} (min ${Math.min(...whole).toFixed(3)}) · open bare ${med(plain).toFixed(3)} (min ${Math.min(...plain).toFixed(3)}) — the specimens Δ ${(med(whole) - med(plain)).toFixed(3)} · closed ${med(bare).toFixed(3)} ms · load ${load}`);
+  check(minOf(aloneBare) <= 0.3, `the drawer's GPU cost at 2400 × 1600, open: the board alone ${minOf(aloneBare).toFixed(3)} ms, the minimum of 7 warm rounds (≤ 0.3; median ${median(aloneBare).toFixed(3)}) · with its six accessories ${minOf(alone).toFixed(3)} (median ${median(alone).toFixed(3)}); whole frames open with the specimens ${minOf(whole).toFixed(3)} (${median(whole).toFixed(3)}) · open bare ${minOf(plain).toFixed(3)} (${median(plain).toFixed(3)}) — the specimens Δ ${(minOf(whole) - minOf(plain)).toFixed(3)} · closed ${minOf(bare).toFixed(3)} ms · load ${hostLoad()}`);
   await settle();
 
   // 10. the night: the Moon on the board, the desk dimmed 40 %

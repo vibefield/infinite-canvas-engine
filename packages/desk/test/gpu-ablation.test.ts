@@ -63,6 +63,11 @@ describe("per-kind GPU cost by ablation (K2)", () => {
     expect(r.kinds.photo?.clears).toBe(true);
     // the probe and the batch at its guess, then rounds × variants batches: each drained before its clock starts and after it stops
     expect(log.length).toBe(2 + 2 + 2 * 5 * (2 + 3));
+    // every batch kept, by variant in round order (K-H: the rigs judge the A/A on the paired rounds, never on two medians)
+    expect(Object.keys(r.samples)).toEqual(["base", "control", "paper", "minimat", "photo"]);
+    for (const v of Object.values(r.samples)) expect(v).toHaveLength(5);
+    for (const x of r.samples.control ?? []) expect(x).toBeCloseTo(base, 9);
+    for (const x of r.samples.photo ?? []) expect(x).toBeCloseTo(base - 0.4, 9);
   });
 
   it("a position bias is rotated out and shows as the noise floor: a kind that costs nothing reads 0 and does not clear it", async () => {

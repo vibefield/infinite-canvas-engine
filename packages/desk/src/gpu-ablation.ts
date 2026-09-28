@@ -62,6 +62,8 @@ export interface KindCostReport {
   /** The noise floor: the median over rounds of |control − base| within a round. */
   readonly noise: number;
   readonly kinds: Readonly<Record<string, KindCost>>;
+  /** Every batch, ms per frame, by variant (`base`, `control`, each kind), in round order — round r drew variant i at position (i − r) mod n. */
+  readonly samples: Readonly<Record<string, readonly number[]>>;
 }
 
 export interface Ablation {
@@ -158,5 +160,5 @@ export async function ablateKinds(a: Ablation, opts: KindCostOptions = {}): Prom
     out[k] = { ms: cost, share: baseS.median > 0 ? cost / baseS.median : 0, without: sampled(w), objects: present[k] ?? 0, clears: cost > noise };
   }
   a.render(a.inputs);   // the frame as it was
-  return { frames, rounds, base: baseS, control: sampled(c), aa: median(c) - baseS.median, noise, kinds: out };
+  return { frames, rounds, base: baseS, control: sampled(c), aa: median(c) - baseS.median, noise, kinds: out, samples: Object.fromEntries(ms) };
 }

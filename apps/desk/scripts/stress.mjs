@@ -41,6 +41,7 @@ import { createServer } from "node:net";
 import { loadavg } from "node:os";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
+import { aaVerdict, hostLoad, twoWitnesses } from "./timing.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -378,11 +379,18 @@ try {
     // K2 — WHAT EACH KIND COSTS the frame at the pan's end (per-kind GPU by ablation, design-016 §4.4): each kind's objects left out in
     // turn, saturated and drained batches, the variants round-robined, an A/A control beside — a kind under the floor is not a number
     await settle();
-    const kc = await qa(`window.__desk.perf.kindCost({ rounds: ${ROUNDS} })`, 300000);
+    // THE A/A BY ITS METHOD (K-H; D-KH.2, D-KH.3 — rig:gpu's row): warm, then at least 21 rounds (the gate's DESK_STRESS_ROUNDS=3
+    // made every median one of 3), the control read paired against its own run's spread, one second witness on a failure
+    await qa("window.__desk.perf.kindCost({ rounds: 1 })", 300000);
+    const aa = await twoWitnesses(async () => {
+      const r0 = await q("window.__desk.handle.redraws()");
+      const kc = await qa(`window.__desk.perf.kindCost({ rounds: ${Math.max(ROUNDS, 21)} })`, 300000);
+      return { kc, redraws: (await q("window.__desk.handle.redraws()")) - r0 };
+    }, ({ kc, redraws }, earlier) => ({ ...aaVerdict(kc, { redraws, pool: earlier?.kc }), kc }));
+    const kc = (aa.second ?? aa.first).kc;
     s.kindCost = kc;
-    console.log(`  per-kind GPU         ${Object.entries(kc.kinds).sort((a, b) => b[1].ms - a[1].ms).map(([k, v]) => `${k} ${fmt(v.ms, 3)} ms × ${v.objects}${v.clears ? "" : " (under the floor)"}`).join(" · ")} — the frame ${fmt(kc.base.median, 3)} ms, A/A ${fmt(kc.aa, 4)}, floor ${fmt(kc.noise, 4)} ms, ${kc.frames}-frame batches × ${kc.rounds} rounds`);
-    const real = Object.values(kc.kinds).filter((k) => k.clears).map((k) => k.ms);
-    check(Math.abs(kc.aa) <= Math.max(2 * kc.noise, 0.02 * kc.base.median) && real.length > 0 && Math.abs(kc.aa) < Math.min(...real), `pan: the per-kind cost's A/A control within its noise floor and below every cost it calls real (A/A ${fmt(kc.aa, 4)} ms, floor ${fmt(kc.noise, 4)} ms, the frame ${fmt(kc.base.median, 3)} ms, the smallest real cost ${fmt(Math.min(...real), 3)} ms)`);
+    console.log(`  per-kind GPU         ${Object.entries(kc.kinds).sort((a, b) => b[1].ms - a[1].ms).map(([k, v]) => `${k} ${fmt(v.ms, 3)} ms × ${v.objects}${v.clears ? "" : " (under the floor)"}`).join(" · ")} — the frame ${fmt(kc.base.median, 3)} ms, A/A ${fmt(kc.aa, 4)}, floor ${fmt(kc.noise, 4)} ms, ${kc.frames}-frame batches × ${kc.rounds} rounds · load ${hostLoad()}`);
+    check(aa.ok, `pan: the per-kind cost's A/A control reads zero by the method's own spread and below every cost it calls real — ${aa.text}`);
     gate(kc.noise <= 0.1 * kc.base.median, `pan: the per-kind cost's noise floor ≤ 10 % of the frame (${fmt(kc.noise, 4)} of ${fmt(kc.base.median, 3)} ms)`);
     rows.push(["per kind (pan's end)", `${Object.entries(kc.kinds).sort((a, b) => b[1].ms - a[1].ms).slice(0, 3).map(([k, v]) => `${k} ${fmt(v.ms, 3)}`).join(" · ")} ms`, `A/A ${fmt(kc.aa, 4)} · floor ${fmt(kc.noise, 4)} ms · the frame ${fmt(kc.base.median, 3)} ms`, load()]);
     gate(s.stepMs.median <= 2, `pan: main-thread JS ≤ 2 ms/frame (${fmt(s.stepMs.median)})`);
