@@ -1,4 +1,5 @@
-// rig:lifetime — THE APP'S LIFETIME (K9: surface S1): what `<App>`'s mount starts, the cleanup it hands `<Desk>` ends.
+// rig:lifetime — THE APP'S LIFETIME (K9: surface S1, S5): what `<App>`'s mount starts, the cleanup it hands `<Desk>` ends; what
+// the app makes once, it makes once.
 //
 // THE DEV SERVER — Vite's own (`createServer` over the app's vite.config.ts in middleware mode, behind this rig's http server on a
 // port the OS picks — never the :5173 a `pnpm dev` runs: Vite reads `port: 0` as its default —; its own dep cache, no HMR socket,
@@ -8,10 +9,15 @@
 //   · `?room=` boots with no fail screen and joins its room ONCE (one BroadcastChannel) — a second join superseded the first, whose
 //     rejection covered the desk;
 //   · a desk at rest calls requestAnimationFrame NOT AT ALL — the discarded mount waited on its dead layer, polling at 60/s forever;
-//   · ONE paste makes ONE print — the discarded mount's paste listener stayed.
+//   · ONE paste makes ONE print — the discarded mount's paste listener stayed;
+//   · ONE listener follows the OS's appearance — the theme control was made at every render, each with its own (4 here).
+// THE PRODUCT (dist/index.html, served as the other rigs serve it): a theme pinned with `d` holds while the OS's appearance moves
+// — the controls made at other renders, never pinned, flipped the desk back (the OS leading an unpinned desk is the row's
+// control: the emulated appearance reaches the page, so the pinned half cannot pass by hearing nothing).
 // Exit 0 = every check passed.
 //
-//   pnpm --filter ./apps/desk rig:lifetime
+//   pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:lifetime
+import { spawn } from "node:child_process";
 import { createServer as createHttpServer } from "node:http";
 import { resolve } from "node:path";
 import { createServer } from "vite";
@@ -20,8 +26,12 @@ import { hostLoad, watchdog } from "./timing.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
+const repo = resolve(app, "../..");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const t0 = Date.now();
+const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
+const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
+const PRODUCT = `http://127.0.0.1:${PORT}/apps/desk/dist/index.html`;
 // its dep cache under the app's node_modules, never the `.vite` a `pnpm dev` in this checkout keeps; the page crossOriginIsolated,
 // as the config's own server makes it (its `server.headers`)
 const dev = await createServer({
@@ -37,29 +47,40 @@ await new Promise((r) => http.listen(0, "127.0.0.1", r));
 const DEV = `http://127.0.0.1:${http.address().port}`;
 const chrome = await launchChrome({ headless: !process.env.DESK_HEADED });
 let done = false;
-async function cleanup() { if (done) return; done = true; try { await chrome.close(); } catch {} try { await dev.close(); } catch {} try { http.close(); } catch {} }
+async function cleanup() { if (done) return; done = true; try { await chrome.close(); } catch {} try { await dev.close(); } catch {} try { http.close(); } catch {} try { server.kill("SIGKILL"); } catch {} }
 const kick = watchdog(240_000, cleanup);   // no row in 240 s: a hang (K-H — a dev server's first compile on a slow host is not one)
 let pass = 0;
 let failN = 0;
 const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; kick(); };
 
-/** What a page counts from before its first script runs: requestAnimationFrame calls, BroadcastChannels opened. */
+/** What a page counts from before its first script runs: requestAnimationFrame calls, BroadcastChannels opened, the listeners on the OS's appearance. */
 const COUNTERS = `(() => {
-  const k = (window.__lifetime = { raf: 0, channels: 0 });
+  const k = (window.__lifetime = { raf: 0, channels: 0, schemes: 0 });
   const raf = window.requestAnimationFrame.bind(window);
   window.requestAnimationFrame = (cb) => { k.raf += 1; return raf(cb); };
   const BC = window.BroadcastChannel;
   window.BroadcastChannel = class extends BC { constructor(name) { super(name); k.channels += 1; } };
+  const MQ = MediaQueryList.prototype, add = MQ.addEventListener, remove = MQ.removeEventListener;
+  const scheme = (mq, type) => type === "change" && mq.media.includes("prefers-color-scheme");
+  MQ.addEventListener = function (type, fn, o) { if (scheme(this, type)) k.schemes += 1; return add.call(this, type, fn, o); };
+  MQ.removeEventListener = function (type, fn, o) { if (scheme(this, type)) k.schemes -= 1; return remove.call(this, type, fn, o); };
 })();`;
 const FAIL_TEXT = "(document.getElementById('fail').hidden ? null : document.getElementById('fail').textContent)";
 
-/** A tab at `url`, the counters in before the page's first script; `booted` once the desk says ready or the fail screen shows (≤ 3 min). */
-async function page(url) {
+/** The OS's appearance as `tab`'s page sees it (`prefers-color-scheme`). */
+const osScheme = (tab, value) => tab.send("Emulation.setEmulatedMedia", { features: [{ name: "prefers-color-scheme", value }] });
+
+/**
+ * A tab at `url` (the OS's appearance `scheme` from its first script), the counters in before the page's first script; `booted`
+ * once the desk says ready or the fail screen shows (≤ 3 min).
+ */
+async function page(url, { scheme = "light" } = {}) {
   const tab = await openTab(chrome.port, "about:blank");
   const logs = [];
   await tab.send("Runtime.enable"); await tab.send("Log.enable"); await tab.send("Page.enable");
   watchPage(tab, logs);
   await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
+  await osScheme(tab, scheme);
   await tab.send("Page.addScriptToEvaluateOnNewDocument", { source: COUNTERS });
   await tab.send("Page.navigate", { url });
   const q = async (js, awaitPromise = false) => { await tab.send("Page.bringToFront"); return tab.evaluate(js, { awaitPromise, timeoutMs: 30_000 }); };
@@ -70,6 +91,23 @@ async function page(url) {
   }
   if (!booted) console.log(`  (no boot at ${url}: ${JSON.stringify(logs.slice(0, 4)).slice(0, 600)})`);
   return { tab, logs, q, booted };
+}
+
+/** A key pressed and let go on `p`'s page, as a hand would — the keymap's own path. */
+async function press(p, key, code, vk) {
+  await p.tab.send("Page.bringToFront");
+  await p.tab.send("Input.dispatchKeyEvent", { type: "keyDown", key, code, windowsVirtualKeyCode: vk, text: key, unmodifiedText: key });
+  await p.tab.send("Input.dispatchKeyEvent", { type: "keyUp", key, code, windowsVirtualKeyCode: vk });
+}
+
+/** The rig's own ear on the OS's appearance, made AFTER the app's: media queries report in the order they were made (CSSOM View). */
+const EAR = `(() => { const k = window.__lifetime; k.seen = []; matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => k.seen.push(e.matches ? "dark" : "light")); })()`;
+
+/** The OS's appearance moves to `value`; once the rig's ear heard it (so the app's listeners have run), the theme the page shows and the desk says. */
+async function osMoves(p, value) {
+  await osScheme(p.tab, value);
+  for (const end = Date.now() + 5000; Date.now() < end && (await p.q("window.__lifetime.seen.at(-1)")) !== value; ) await sleep(50);
+  return p.q("({ heard: window.__lifetime.seen.at(-1), shown: document.documentElement.dataset.theme, said: window.__desk.theme() })");
 }
 
 try {
@@ -106,9 +144,28 @@ try {
     return { before, after: prints() };
   })()`, true);
   check(paste.after - paste.before === 1, `ONE paste makes ONE print: ${paste.before} → ${paste.after} (one paste listener — the discarded mount's is gone)`);
+  const schemes = await desk.q("window.__lifetime.schemes");
+  check(schemes === 1, `ONE listener follows the OS's appearance: ${schemes} (the theme control is made once, its listener held by the mount)`);
   desk.logs.push(...(await faultsOf(desk.tab, "desk")));
 
-  const logs = [...room.logs, ...desk.logs];
+  // THE PRODUCT — the OS light at boot: an unpinned desk follows it (the control), then `d` pins dark through two OS moves
+  console.log(`\nthe product ${PRODUCT}`);
+  const product = await page(PRODUCT, { scheme: "light" });
+  const productFail = await product.q(FAIL_TEXT);
+  if (!product.booted || productFail !== null) throw new Error(`the product desk did not boot${productFail !== null ? `: ${productFail.slice(0, 200)}` : " (build it first)"}`);
+  await product.q(EAR);
+  const boot = await product.q("document.documentElement.dataset.theme");
+  const led = await osMoves(product, "dark");
+  const back = await osMoves(product, "light");
+  check(boot === "light" && led.shown === "dark" && led.said === "dark" && back.shown === "light", `an unpinned desk follows the OS: ${boot} at boot → OS dark: ${led.shown} → OS light: ${back.shown} (the control — the page hears the emulated appearance)`);
+  await press(product, "d", "KeyD", 68);
+  const pinned = await product.q("({ shown: document.documentElement.dataset.theme, said: window.__desk.theme() })");
+  await osMoves(product, "dark");
+  const held = await osMoves(product, "light");
+  check(pinned.shown === "dark" && pinned.said === "dark" && held.heard === "light" && held.shown === "dark" && held.said === "dark", `\`d\` pins dark and it holds while the OS moves dark → light: the page shows ${held.shown}, the desk says ${held.said}`);
+  product.logs.push(...(await faultsOf(product.tab, "product")));
+
+  const logs = [...room.logs, ...desk.logs, ...product.logs];
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
   check(logs.length === 0, "no page errors or contained faults");
   console.log(`\n${pass} passed, ${failN} failed · ${((Date.now() - t0) / 1000).toFixed(1)} s · load ${hostLoad()}`);

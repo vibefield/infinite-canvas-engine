@@ -63,13 +63,18 @@ function createThemeControl(handle: () => DeskLayerHandle | null, themeOf: (name
     document.documentElement.dataset.theme = name;
     handle()?.setTheme(themeOf(name), deskPalette(name));
   };
-  const mq = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
-  mq?.addEventListener("change", (e) => { if (!pinned) { name = e.matches ? "dark" : "light"; apply(); } });
   return {
     name: () => name,
     set(next: ThemeName, pin: boolean) { name = next; if (pin) pinned = true; apply(); },
     toggle() { name = name === "dark" ? "light" : "dark"; pinned = true; apply(); },
     apply,
+    /** Follow the OS's appearance while unpinned, until the returned undo — the app's effect holds it (K9: never at construction). */
+    follow(): () => void {
+      const mq = typeof matchMedia === "function" ? matchMedia("(prefers-color-scheme: dark)") : null;
+      const moved = (e: MediaQueryListEvent): void => { if (!pinned) { name = e.matches ? "dark" : "light"; apply(); } };
+      mq?.addEventListener("change", moved);
+      return () => mq?.removeEventListener("change", moved);
+    },
   };
 }
 
@@ -80,7 +85,11 @@ export function App(): ReactElement {
   const panelRef = useRef<DevPanel | null>(null);
   const dockRef = useRef<ProfilerDock | null>(null);
   const [params] = useState(() => defaultParams());
-  const themeRef = useRef(createThemeControl(() => handleRef.current, (name) => panelRef.current?.themeOf(name, deskTheme(name)) ?? deskTheme(name)));
+  // the theme control, made ONCE (K9: `useRef(f())` ran f on every render, and each run's OS listener — never pinned by `d`,
+  // never removed — flipped a pinned desk back at the OS's next change); its listener lives as long as the mount
+  const [theme] = useState(() => createThemeControl(() => handleRef.current, (name) => panelRef.current?.themeOf(name, deskTheme(name)) ?? deskTheme(name)));
+  const themeRef = useRef(theme);
+  useEffect(() => theme.follow(), [theme]);
   const matSerial = useRef(1);
   const [menuSource, setMenuSource] = useState<SelectionMenuSource | null>(null);
 
