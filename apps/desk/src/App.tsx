@@ -146,10 +146,11 @@ export function App(): ReactElement {
       // …`C` a desk calendar showing this month (CALENDAR.md — the host's clock), its week from Monday
       { key: "c", shift: true, run: unlessInert(() => { const d = new Date(); stick(CALENDAR_TYPE, { month: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}` }); }) },
       // K8b: `c` sets a DESK CLOCK down (examples/desk-clock — a plugin kind in its own package, registered beside the six: desk.ts
-      // `DESK_PLUGINS`); on a page that registered none (a rig's reference desk) the key finds no type and does nothing
-      { key: "c", run: () => stick(CLOCK_TYPE, {}) },
+      // `DESK_PLUGINS`); on a page that registered none (a rig's reference desk) the key finds no type and does nothing. Both of the
+      // clock's keys act on the desk, so both carry the inert gate (K9 S3)
+      { key: "c", run: unlessInert(() => stick(CLOCK_TYPE, {})) },
       // …and `s` flips the selected clocks' seconds hand — the clock's OWN menu act (`defineObject({ menu })`), run through the engine
-      { key: "s", run: () => { engine.ops.runMenuAction(CLOCK_SECONDS_ACT); } },
+      { key: "s", run: unlessInert(() => { engine.ops.runMenuAction(CLOCK_SECONDS_ACT); }) },
       { key: "d", run: () => themeRef.current.toggle() },
       // K3: `a` ("add") slides the pegboard tray in and out (design-017 — widgetlab's `B` is the notebook's here)
       { key: "a", run: () => { handleRef.current?.tray.toggle(); } },

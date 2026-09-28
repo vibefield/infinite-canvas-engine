@@ -669,6 +669,41 @@ try {
     await q("window.__desk.engine.ops.setSelection([], 'replace')"); await frames(2);
     check(inHand && b1.x === b0.x && b1.y === b0.y && b2.x === b0.x + 20 && b2.y === b0.y,
       `…and in hand (held ${inHand}): ⇧→ moved the held notebook (${b0.x},${b0.y}) → (${b1.x},${b1.y}); put down and selected, ⇧→ moved it to (${b2.x},${b2.y}) — one lattice cell right (control)`);
+    // …and K8b's clock keys, on the page that registers the plugin (`rig.html?plugins` — this page registers none, so `c` finds no type
+    // here): with the drawer out `c` sets no clock down and `s` flips no seconds hand; shut, `c` makes one and `s` flips it (control);
+    // a notebook in hand, `s` flips nothing
+    {
+      const plug = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html?plugins=1`);
+      for (let i = 0; i < 200; i++) { await plug.send("Page.bringToFront"); if (await plug.evaluate("typeof window.__desk === 'object' && window.__desk.state.ready", { timeoutMs: 20000 })) break; await sleep(200); }
+      const pq = (js) => plug.evaluate(js, { timeoutMs: 20000 });
+      const psettle = () => plug.evaluate("window.__desk.settle(4000)", { awaitPromise: true, timeoutMs: 30000 });
+      const pf = (n) => plug.evaluate(`new Promise((r) => { let i = 0; const f = () => { if (++i >= ${n}) r(true); else requestAnimationFrame(f); }; requestAnimationFrame(f); })`, { awaitPromise: true, timeoutMs: 20000 });
+      const pkey = async (k, code, vk) => { await plug.send("Page.bringToFront"); await plug.send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code, windowsVirtualKeyCode: vk, text: k }); await plug.send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code, windowsVirtualKeyCode: vk }); };
+      const CLOCK = "ice-examples.desk-clock";
+      const clocks = () => pq(`window.__desk.entities().filter((e) => e.type === ${JSON.stringify(CLOCK)}).map((e) => ({ id: e.id, selected: e.selected, seconds: e.props.seconds }))`);
+      await pq("window.__desk.ambient('still')"); await psettle();
+      await plug.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 600, y: 300, button: "none" });
+      await pkey("c", "KeyC", 67); await pf(4);
+      const made = await clocks();   // shut: one clock, its seconds hand on
+      await pq(`window.__desk.engine.ops.setSelection([${made[0]?.id ?? 0}], 'replace')`); await pf(2);
+      await pq("window.__desk.tray.open()"); await psettle();
+      await pkey("c", "KeyC", 67); await pkey("s", "KeyS", 83); await pf(4);
+      const under = await clocks();   // the drawer out: still one, its seconds untouched
+      await pq("window.__desk.tray.close()"); await psettle();
+      await pkey("s", "KeyS", 83); await pf(4);
+      const shut = await clocks();    // shut: flipped
+      const book2 = await pq("window.__desk.spawn('desk.notebook', { seed: 5, angle: 0 }, { x: 900, y: 300 })"); await pf(2);
+      await pq(`window.__desk.open(${book2})`); await psettle();
+      const heldNow = (await pq("window.__desk.hand()")) !== null;
+      await pkey("s", "KeyS", 83); await pf(4);
+      const held2 = await clocks();   // in hand: untouched
+      await pq("window.__desk.putDown()"); await psettle();
+      const pfaults = await pq("window.__desk.faults ?? []");
+      await plug.close?.();
+      await front();
+      check(made.length === 1 && made[0].seconds === true && under.length === 1 && under[0].seconds === true && shut.length === 1 && shut[0].seconds === false && heldNow && held2[0]?.seconds === false && pfaults.length === 0,
+        `…and K8b's clock keys on the plugin page: shut, \`c\` set ${made.length} clock down (seconds ${made[0]?.seconds}); the drawer out, \`c\` made ${under.length - made.length} more and \`s\` left its seconds ${under[0]?.seconds}; shut, \`s\` flipped it to ${shut[0]?.seconds} (control); a notebook in hand (${heldNow}, the clock ${held2[0]?.selected ? "still" : "no longer"} selected), \`s\` left it ${held2[0]?.seconds}; faults ${pfaults.length}`);
+    }
   }
   await q("window.__desk.tray.close()"); await settle();
   const restAfter = await idle(240);
