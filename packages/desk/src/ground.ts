@@ -686,7 +686,7 @@ export class Ground {
     // the drawer shut (p 0) lays no quad; what the tray carries is drawn whatever the slide (a ghost grows, or flies home, past it)
     const trayed = inputs.tray !== undefined && this.tray !== null ? this.tray.prepare(inputs.view, inputs.theme, inputs.grid ?? this.grid, inputs.mat, inputs.tray) : 0;
     const prepared = prepareFrame(encoder, this.root, this.pool, inputs, this.grid, undefined, inputs.tray !== undefined ? (this.traySlots ?? undefined) : undefined);
-    const marked = this.marks !== null ? this.marks.prepare(inputs.marks, trayed > 0 ? { view: inputs.view, tags: tagsOf(inputs.tray), night: inputs.theme.matLight.night } : undefined) : 0;
+    const marked = this.marks !== null ? this.marks.prepare(inputs.marks, trayed > 0 && this.tray !== null ? { view: inputs.view, tags: tagsOf(inputs.tray), night: inputs.theme.matLight.night, fade: tagFadeOf(this.tray) } : undefined) : 0;
     const bg = inputs.theme.canvasBg;
     const pass = beginPass(encoder, this.surface.view(), [bg[0], bg[1], bg[2], 1], "ground");
     const drawn = drawFrame(pass, this.surface.size(), inputs.view.dpr, prepared.incoming, prepared.outgoing);
@@ -720,6 +720,12 @@ export class Ground {
   idleTray(): void { this.traySlots?.idle(); }
   /** When `idleTray` next lets a tray layer go (K7a — a time the host registers; ∞ — nothing to let go). */
   trayIdleAt(): number { return this.traySlots?.idleAt() ?? Number.POSITIVE_INFINITY; }
+}
+
+/** The tags' fade at the drawer's top edge (design-018 §4): the face's feather — from the face's top edge, over `DRAWER.fade`. */
+export function tagFadeOf(tray: TrayPass): { readonly top: number; readonly band: number } | undefined {
+  const r = tray.laid?.rect;
+  return r === undefined ? undefined : { top: r.y + DRAWER.arris, band: DRAWER.fade };
 }
 
 /** The specimens' name tags this frame (K5a): each label centred under its specimen — below a shelf's plank — in screen px. */

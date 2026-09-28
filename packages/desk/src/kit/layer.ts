@@ -9,19 +9,29 @@
 // slot's scissor, then gives the slot its scissor back (the objects after it draw in the slot's, as the
 // ground restored it after a host's `underlays`).
 
+import { bindLayout } from "../engine/pipeline";
 import type { KindPass, RenderTarget, SlotContext } from "../kind";
 import type { View } from "../lattice/lod";
 import type { MatPass } from "./view";
 import { scissorOf } from "../nav/portal";
 import type { ComposeOptions } from "../engine/shader";
 import type { ShaderText } from "../shaders";
+import { kitWgsl } from "./wgsl";
 
 /** The composite's entry: a resolved, premultiplied layer laid over what the ground drew (the layered kinds share it). */
 export const LAYER_COMPOSITE_FILE = "kit/composite.wgsl";
 
-/** The program that lays a layer — its one entry, from the host's shader text. */
+/**
+ * The program that lays a layer — its entry, from the host's shader text, after the kit's view block and portal chain: the layer is
+ * laid through the slot's chain (design-018 §4), so a layered object keeps the kit's contract as one — the tray's feather included.
+ */
 export function layerComposite(text: ShaderText): ComposeOptions {
-  return { entry: { label: LAYER_COMPOSITE_FILE, text: text({ composite: LAYER_COMPOSITE_FILE }).composite } };
+  return kitWgsl(["view", "portal"], { entry: { label: LAYER_COMPOSITE_FILE, text: text({ composite: LAYER_COMPOSITE_FILE }).composite } }, text);
+}
+
+/** The composite's bindings (every layered kind's): the resolved layer, its box's origin, and the slot's view block (its chain). */
+export function layerCompositeLayout(device: GPUDevice, label: string): GPUBindGroupLayout {
+  return bindLayout(device, [{ binding: 0, stages: ["fragment"], texture: "float" }, { binding: 1, stages: ["fragment"], buffer: "uniform" }, { binding: 2, stages: ["fragment"], buffer: "uniform" }], label);
 }
 
 /** A device-px rect: x, y, width, height. */
@@ -166,7 +176,8 @@ export class BoxTargets {
   /** …and the content it read, by value (the knobs, the records, the view block), with each copy's length. */
   private readonly drawnBytes: Uint8Array[] = [];
   private readonly drawnLen: number[] = [];
-  constructor(private readonly device: GPUDevice, private readonly label: string, private readonly layoutComp: GPUBindGroupLayout, private readonly samples = 4) {}
+  /** `view`: the slot's view block (`MatPass.view`) — the composite lays the layer through its portal chain (`layerCompositeLayout`). */
+  constructor(private readonly device: GPUDevice, private readonly label: string, private readonly layoutComp: GPUBindGroupLayout, private readonly samples: number, private readonly view: GPUBuffer) {}
 
   /** The targets are made (a layer holds device memory). */
   get made(): boolean { return this.msaa !== null; }
@@ -189,7 +200,7 @@ export class BoxTargets {
       this.depth = d.createTexture({ label: `${this.label}/depth ×4`, size: [w, h], format: "depth24plus", sampleCount: this.samples, usage: GPUTextureUsage.RENDER_ATTACHMENT });
       this.resolve = d.createTexture({ label: `${this.label}/layer`, size: [w, h], format: "rgba8unorm", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
       this.originBuf ??= d.createBuffer({ label: `${this.label}/layer origin`, size: 16, usage: GPUBufferUsage.UNIFORM | GPUBufferUsage.COPY_DST });
-      this.compGroup = d.createBindGroup({ label: `${this.label}/composite`, layout: this.layoutComp, entries: [{ binding: 0, resource: this.resolve.createView() }, { binding: 1, resource: { buffer: this.originBuf } }] });
+      this.compGroup = d.createBindGroup({ label: `${this.label}/composite`, layout: this.layoutComp, entries: [{ binding: 0, resource: this.resolve.createView() }, { binding: 1, resource: { buffer: this.originBuf } }, { binding: 2, resource: { buffer: this.view } }] });
       this.size.w = w;
       this.size.h = h;
       this.sent.fill(Number.NaN);

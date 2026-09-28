@@ -17,7 +17,7 @@
 
 import { bindGroup, bindLayout, storageBuffer, uniformBuffer, compile, compose } from "@ice/desk/engine";
 import type { RenderTarget, RGB } from "@ice/desk";
-import { type FadeIn, type View, type MatConfig, type MatFrame, MatUniforms, type MatPass, DAY_LIGHT, type MatLight, type DeskEye, eyeValues, project, NbBook, NbUniforms, type BuiltMesh, VERTEX_BYTES, inverseOf, matrixOf, type Rigid, worldBounds, PAPER_TEX, paperTexture, generateMips, mipCount, sentBytes, writeChanged, attachmentOf, BoxTargets } from "@ice/desk/kit";
+import { type FadeIn, type View, type MatConfig, type MatFrame, MatUniforms, type MatPass, DAY_LIGHT, type MatLight, type DeskEye, eyeValues, project, NbBook, NbUniforms, type BuiltMesh, VERTEX_BYTES, inverseOf, matrixOf, type Rigid, worldBounds, PAPER_TEX, paperTexture, generateMips, mipCount, sentBytes, writeChanged, attachmentOf, BoxTargets, layerCompositeLayout } from "@ice/desk/kit";
 import type { CalendarLaw } from "./law";
 import { CalPad, type CalendarColours, CalUniforms, calUniformValues, MAX_CALENDARS, TABLE_SLOTS } from "./layout";
 import { movingGrid, type PadFrame } from "./pad";
@@ -183,7 +183,7 @@ export class CalendarPass {
     this.device = device; this.mat = mat; this.layers = layers;
     this.layoutMain = pipes.layoutMain; this.layoutComp = pipes.layoutComp;
     this.facePipe = pipes.face; this.sheetPipe = pipes.sheet; this.solidPipe = pipes.solid; this.movingPipe = pipes.moving; this.recvPipe = pipes.recv; this.compPipe = pipes.comp;
-    this.frameT = calTarget(new BoxTargets(device, "calendar", this.layoutComp, SAMPLES));
+    this.frameT = calTarget(new BoxTargets(device, "calendar", this.layoutComp, SAMPLES, mat.view));
     this.t = this.frameT;
     this.knobBuf = uniformBuffer(device, CalUniforms.size, "calendar/knobs");
     this.recordBuf = storageBuffer(device, CalPad.size * MAX_CALENDARS, "calendar/pads");
@@ -220,8 +220,9 @@ export class CalendarPass {
       { binding: 10, stages: ["fragment"], texture: "float" },
       { binding: 11, stages: ["fragment"], sampler: "filtering" },
     ], "calendar/main");
-    // the layer and its box's origin (K7a — kit/layer.ts `BoxTargets`: the composite reads a pixel's texel at the pixel less it)
-    const layoutComp = bindLayout(device, [{ binding: 0, stages: ["fragment"], texture: "float" }, { binding: 1, stages: ["fragment"], buffer: "uniform" }], "calendar/composite");
+    // the layer, its box's origin (K7a — kit/layer.ts `BoxTargets`: the composite reads a pixel's texel at the pixel less it) and the
+    // slot's view block — the composite lays the layer through the slot's portal chain (design-018 §4: the kit's contract, as one)
+    const layoutComp = layerCompositeLayout(device, "calendar/composite");
     const module = await compile(device, compose(src.program));
     const compModule = await compile(device, compose(src.composite));
     const vertexLayout: GPUVertexBufferLayout = {
@@ -517,7 +518,7 @@ export class CalendarPass {
 
   /** The render target the next prepare, layer and composite are for (D7): the frame's, or the held desk copy's — made on first use. */
   use(target: RenderTarget): void {
-    if (target === "copy" && this.copyT === null) this.copyT = calTarget(new BoxTargets(this.device, "calendar", this.layoutComp, SAMPLES));
+    if (target === "copy" && this.copyT === null) this.copyT = calTarget(new BoxTargets(this.device, "calendar", this.layoutComp, SAMPLES, this.mat.view));
     this.t = target === "copy" && this.copyT !== null ? this.copyT : this.frameT;
   }
 

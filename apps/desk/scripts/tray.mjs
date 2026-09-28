@@ -971,6 +971,107 @@ try {
       `inside an entered mini mat the drawer hangs what it takes — ${inside.join(", ")} — and not ${refused.join(", ")} (refused by its ingress); back at the desk all ${back.length} again`);
     await q("window.__desk.tray.open()"); await settle();
   }
+  // (a) THE FADE (design-018 §4, §8 R1 a): each kind's specimen — the clock included (this page registers the plugin) — placed with its
+  //     top 12 px above the face's top edge (the band pinned: a still's shown scroll) fades in across the band F below that edge, as the
+  //     face's feather has every kind's own `portal_cover` (and the layered kinds' composite) do. Its visibility per device row is read
+  //     pixel by pixel against the SAME content fully shown — the board a pitch further on, 80 device px down (the face is the same
+  //     pixels moved; a hole in either frame is skipped: it shows the desk) — (frame − bare) ÷ (frame′ − bare′), the row's median:
+  //     nothing above the edge, the band's four quarters rising on the smoothstep's (0.05 · 0.32 · 0.68 · 0.95), no row a step
+  {
+    const ft = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html?plugins=1`);
+    await ft.send("Page.enable");
+    await ft.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
+    for (let i = 0; i < 200; i++) { await ft.send("Page.bringToFront"); if (await ft.evaluate("typeof window.__desk === 'object' && window.__desk.state.ready", { timeoutMs: 20000 })) break; await sleep(200); }
+    const fq = async (js) => { await ft.send("Page.bringToFront"); return ft.evaluate(js, { timeoutMs: 20000 }); };
+    const fsettle = async () => { await ft.send("Page.bringToFront"); return ft.evaluate("window.__desk.settle(4000)", { awaitPromise: true, timeoutMs: 30000 }); };
+    const fshot = async () => { await ft.send("Page.bringToFront"); const { data } = await ft.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true }); return decodePng(Buffer.from(data, "base64")); };
+    await fq("window.__desk.ambient('still'); window.__desk.setTheme('light'); window.__desk.tray.open(); window.__desk.tray.scroll(0)");
+    // a pinned slide never moves (a still), so the drawer is pinned open: p 1
+    await fq("window.__desk.tray.pin({ p: 1, band: 0 })"); await fsettle(); await fsettle();
+    const fr = (await fq("window.__desk.tray.state()")).frame;
+    const faceTop = fr.y + 1.5;   // the face's top edge, inside the arris (tray/drawer.ts DRAWER.arris)
+    const F = 28;                 // DRAWER.fade
+    const Y0 = Math.round(faceTop * 2);
+    const drawnOf = async (type) => (await fq("window.__desk.tray.state()")).specimens.find((q) => q.type === type)?.object;
+    const frames2 = async (band) => {
+      await fq(`window.__desk.tray.pin({ p: 1, band: ${band} })`); await fsettle();
+      const A = await fshot();
+      await fq(`window.__desk.tray.pin({ p: 1, band: ${band}, bare: true })`); await fsettle();
+      return [A, await fshot()];
+    };
+    const ramp = (t) => { const u = Math.min(Math.max(t, 0), 1); return u * u * (3 - 2 * u); };
+    const fades = [];
+    for (const s of await fq("window.__desk.tray.specimens()")) {
+      // the shown scroll that lays the object's top 12 px above the face's top edge: from its hang on the board, then its object as drawn
+      let want = s.y + fr.y - faceTop + 12;
+      await fq(`window.__desk.tray.pin({ p: 1, band: ${want} })`); await fsettle();
+      const o0 = await drawnOf(s.type);
+      if (o0 === undefined) { fades.push({ type: s.type, missing: true }); continue; }
+      want += o0.y0 - (faceTop - 12);
+      await fq(`window.__desk.tray.pin({ p: 1, band: ${want} })`); await fsettle();
+      const o = await drawnOf(s.type);
+      const [A, B] = await frames2(want);
+      const [A2, B2] = await frames2(want - 40);
+      const x0 = Math.ceil((o.x0 + 4) * 2);
+      const x1 = Math.floor((o.x1 - 4) * 2);
+      let above = 0;
+      for (let y = Y0 - 8; y < Y0 - 1; y++) for (let x = x0; x < x1; x += 2) above = Math.max(above, Math.abs(lum(A, x, y) - lum(B, x, y)));
+      const vis = [];
+      for (let y = Y0; y < Y0 + 2 * F; y++) {
+        const r = [];
+        for (let x = x0; x < x1; x += 2) {
+          if (!onFace(fr, x, y, want) || !onFace(fr, x, y + 80, want - 40)) continue;
+          const den = lum(A2, x, y + 80) - lum(B2, x, y + 80);
+          if (Math.abs(den) >= 16) r.push((lum(A, x, y) - lum(B, x, y)) / den);
+        }
+        r.sort((a, b) => a - b);
+        vis.push(r.length >= 6 ? r[r.length >> 1] : Number.NaN);
+      }
+      const quarter = [0, 1, 2, 3].map((k) => { const v = vis.slice((k * F) / 2, ((k + 1) * F) / 2).filter(Number.isFinite); return v.reduce((a, b) => a + b, 0) / Math.max(v.length, 1); });
+      const want4 = [0, 1, 2, 3].map((k) => { let m = 0; for (let i = 0; i < F / 2; i++) m += ramp(((k * F) / 2 + i + 0.5) / (2 * F)) / (F / 2); return m; });
+      // the steepest rise per row over 4 rows (a median row of a 3D kind seen through the desk eye is noisier; a hard clip rises 25 %/row)
+      let steep = 0; for (let i = 4; i < vis.length; i++) if (Number.isFinite(vis[i]) && Number.isFinite(vis[i - 4])) steep = Math.max(steep, (vis[i] - vis[i - 4]) / 4);
+      fades.push({ type: s.type, above, quarter, off: Math.max(...quarter.map((v, k) => Math.abs(v - want4[k]))), steep, rows: vis.filter(Number.isFinite).length });
+    }
+    // …and the TAGS and the ACCESSORIES take the same ramp (in the marks' tag draw, in `tray_accessory`): the photo's tag, then its
+    // clip, laid across the band (its centre 8 px below the edge) — the rows 1…15 px below the edge, read as above, against the ramp
+    const partRamp = async (type, locate) => {
+      await fq("window.__desk.tray.pin({ p: 1, band: 0 })"); await fsettle();
+      const st0 = await fq("window.__desk.tray.state()");
+      const at = locate(st0);
+      if (at === null) return null;
+      const band = at.y - (faceTop + 8);
+      const [A, B] = await frames2(band);
+      const [A2, B2] = await frames2(band - 40);
+      const x0 = Math.round((at.x - at.hw) * 2);
+      const x1 = Math.round((at.x + at.hw) * 2);
+      const got = [];
+      const exp = [];
+      for (let y = Y0 + 2; y < Y0 + 30; y++) {
+        const r = [];
+        for (let x = x0; x <= x1; x++) {
+          if (!onFace(fr, x, y, band) || !onFace(fr, x, y + 80, band - 40)) continue;
+          const den = lum(A2, x, y + 80) - lum(B2, x, y + 80);
+          if (Math.abs(den) >= 16) r.push((lum(A, x, y) - lum(B, x, y)) / den);
+        }
+        if (r.length < 3) continue;
+        r.sort((m, n) => m - n);
+        got.push(r[r.length >> 1]);
+        exp.push(ramp((y - Y0 + 0.5) / (2 * F)));
+      }
+      const mean = (v) => v.reduce((m, n) => m + n, 0) / Math.max(v.length, 1);
+      return { type, rows: got.length, got: mean(got), want: mean(exp) };
+    };
+    const P = 40;
+    const tagFade = await partRamp("desk.photo", (st) => { const sp = st.specimens.find((q) => q.type === "desk.photo"); return sp === undefined ? null : { x: (sp.screen.x0 + sp.screen.x1) / 2, y: sp.screen.y1 + (sp.accessory === "shelf" ? 0.24 * P : 0) + 0.45 * P, hw: 12 }; });
+    const accFade = await partRamp("desk.photo", (st) => { const sp = st.specimens.find((q) => q.type === "desk.photo"); const peg = sp?.pegs[0]; return peg === undefined ? null : { x: peg[0], y: peg[1], hw: 9 }; });   // the clip's body either side of its hole
+    const partOk = (r) => r !== null && r.rows >= 8 && Math.abs(r.got - r.want) < 0.15;
+    await fq("window.__desk.tray.pin(null)");
+    await ft.close?.();
+    const fadeOk = (r) => !r.missing && r.above < 1 && r.rows >= 40 && r.quarter[0] < r.quarter[1] && r.quarter[1] < r.quarter[2] && r.quarter[2] < r.quarter[3] && r.off < 0.12 && r.steep < 0.07;
+    check(fades.length >= 7 && fades.some((r) => r.type === "ice-examples.desk-clock") && fades.every(fadeOk) && partOk(tagFade) && partOk(accFade),
+      `the fade: each kind straddling the top edge fades in over the ${F} px below it on the smoothstep — ${fades.map((r) => (r.missing ? `${r.type} not drawn` : `${r.type.replace(/^.*\./, "")} ${r.quarter.map((v) => v.toFixed(2)).join("·")} (off ${r.off.toFixed(2)}, steepest ${(r.steep * 100).toFixed(1)} %/row, above ${r.above.toFixed(0)})`)).join(" · ")} — its quarters of the same content shown whole; the print's tag ${tagFade?.got.toFixed(2)} and its clip ${accFade?.got.toFixed(2)} across the band's first 15 px (the ramp there ${tagFade?.want.toFixed(2)}, ${accFade?.want.toFixed(2)}; ${tagFade?.rows}, ${accFade?.rows} rows)`);
+  }
   await q("window.__desk.tray.close()"); await settle();
   const restAfter = await idle(240);
   check(restAfter === 0, `at rest after all of it, the drawer shut: ${restAfter} submits over 240 frames`);

@@ -32,6 +32,7 @@ export const MarkStruct = defineStruct("Mark", [
 export const MarksUniformsStruct = defineStruct("MarksUniforms", [
   ["view", "vec4f"],
   ["atlas", "vec4f"],
+  ["fade", "vec4f"],   // the tray's tags' fade (design-018 §4): the band's top, its width (CSS px), the first tag's record; 0 width = none
 ]);
 
 /** The primitives (marks.wgsl's `MARK_*`). */

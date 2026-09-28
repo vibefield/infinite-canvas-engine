@@ -44,7 +44,7 @@ import { DEFAULT_PAPER_LAW, lampOf, resolvePaper, tiltOf } from "../src/paper/pa
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from "../src/minimat/minimat.ts";
 import { finishOf, flightLights, flightPresent, insidePresent } from "../../desk/src/kit/inside.ts";
 import { insideView, miniMatInstance } from "../src/minimat/inside.ts";
-import { createSlotSet, drawFrame, drawTray, prepareFrame, renderHeldFrame, SlotPool, tagsOf } from "../../desk/src/ground.ts";
+import { createSlotSet, drawFrame, drawTray, prepareFrame, renderHeldFrame, SlotPool, tagFadeOf, tagsOf } from "../../desk/src/ground.ts";
 import { DRAWER, drawerRect, drawerSize } from "../../desk/src/tray/drawer.ts";
 import { SAMPLE_SIZE, samplePicture } from "../src/photo/sample.ts";
 import { specimenFrames, TraySlots } from "../../desk/src/tray/specimens.ts";
@@ -820,7 +820,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     const prepared = prepareFrame(encoder, rootSlot, pool, trayIn === undefined ? inputs : { ...inputs, tray: trayIn }, rootGrid, undefined, trayed > 0 ? traySlots : undefined);
     // the desk's marks (stratum 5): a still's — a flight's chrome waits for its landing; off for a check that measures the objects alone
     // (the tray's name tags ride the marks pass either way)
-    const tags = trayed > 0 ? { view: inputs.view, tags: tagsOf(trayIn), night: theme.matLight.night } : undefined;
+    const tags = trayed > 0 ? { view: inputs.view, tags: tagsOf(trayIn), night: theme.matLight.night, fade: tagFadeOf(tray) } : undefined;
     const marked = opts.marks === false || prototypeRing || s.nav ? (tags === undefined ? 0 : marks.prepare(undefined, tags)) : marks.prepare(marksOf(s, { x: s.camX, y: s.camY, zoom: s.zoom }, theme), tags);
     const pass = beginPass(encoder, target, [bg[0], bg[1], bg[2], 1]);
     drawFrame(pass, size, viewSpecOf(s).dpr, prepared.incoming, prepared.outgoing);

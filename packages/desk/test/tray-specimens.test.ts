@@ -11,13 +11,14 @@ import type { KindPass, KindProgram } from "../src/kind";
 import type { ObjectContext, ObjectKind } from "../src/kinds/world";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
-import { TRAY_TAG_STYLE, tagMarks } from "../src/marks/layout";
+import { MarksUniformsStruct, TRAY_TAG_STYLE, tagMarks } from "../src/marks/layout";
 import { MARKS_SHADER_FILES, marksShaders } from "../src/marks/shaders";
 import { shaderText } from "../src/shaders";
 import { type Palette, themeFrom } from "../src/theme";
 import { DRAWER, drawerRect } from "../src/tray/drawer";
 import { createTrayFlux } from "../src/tray/flux";
 import { TRAY_LOOK } from "../src/tray/look";
+import { TrayUniforms } from "../src/tray/layout";
 import { trayShaders } from "../src/tray/shaders";
 import { accessoryOf, faceClip, specimenFrames, type TraySpecimen, type TraySpecimenEnv } from "../src/tray/specimens";
 import { LAYER_IDLE_MS } from "../src/kit/layer";
@@ -184,6 +185,8 @@ describe("the face the specimens show through (design-018 §2)", () => {
     expect([c.cx - c.hx, c.cy - c.hy, c.cx + c.hx, c.r]).toEqual([open.x + DRAWER.arris, open.y + DRAWER.arris, open.x + open.w - DRAWER.arris, DRAWER.radius - DRAWER.arris]);
     expect([open.x + 1.5, open.y + 1.5, 8.5]).toEqual([c.cx - c.hx, c.cy - c.hy, c.r]);
     expect(c.cy + c.hy).toBeGreaterThan(800);
+    expect(c.feather).toBe(DRAWER.fade);   // its content fades out over the band at the top edge (design-018 §4)
+    expect(DRAWER.fade).toBe(28);
   });
 });
 
@@ -203,7 +206,13 @@ describe("the ground draws the specimens over the board, inside its edge", () =>
     const view = { camX: 0, camY: 0, zoom: 1, width: 1200, height: 800, dpr: 2 };
     const frames = specimenFrames([specimen(plain), specimen(layered, { key: 8, type: "t:layered", rect: { x: 400, y: 80, w: 160, h: 80 } })], { rect: open, scroll: 0 }, env());
     const inputs: GroundFrameInputs = { view, theme: LIGHT, tray: { p: 1, scroll: 0, specimens: frames } };
+    const writes: { label: string; bytes: Uint8Array }[] = [];
+    (device.queue as { writeBuffer: unknown }).writeBuffer = (buf: { label: string }, _off: number, data: Uint8Array) => { writes.push({ label: buf.label, bytes: new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)) }); };
     ground.render(inputs);
+    // the fade at the top edge (design-018 §4): the accessories' band in the tray's block, the tags' in the marks' — from the face's top
+    const f32 = (label: string, byte: number): number[] => { const w = writes.filter((x) => x.label === label).at(-1); if (w === undefined) throw new Error(`no ${label} upload`); return [...new Float32Array(w.bytes.buffer, byte, 4)]; };
+    expect(f32("tray/pegboard/uniforms", TrayUniforms.slots.fade.byte)).toEqual([DRAWER.fade, 0, 0, 0]);
+    expect(f32("marks/uniforms", MarksUniformsStruct.slots.fade.byte)).toEqual([Math.fround(open.y + DRAWER.arris), DRAWER.fade, 0, 0]);
     // the plain kind's slot is spawned at once; the layered one's waits for its program
     let at = log.indexOf("debug tray/pegboard");
     expect(log.slice(at, at + 7)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "pipeline tray/pegboard/accessories", "draw 6,2,0,1", "debug end"]);

@@ -79,7 +79,8 @@ export interface TraySpecimenEnv {
 
 /**
  * The FACE the specimens show through: the outline inside the board's edge (the arris — design-018 §2: nothing hangs over it), its top
- * corners rounded as the arris's inner edge, its foot past the view's.
+ * corners rounded as the arris's inner edge, its foot past the view's — and its top FEATHER (design-018 §4): what hangs there fades out
+ * over `DRAWER.fade` into the board at its top edge, through every kind's own `portal_cover`.
  */
 export function faceClip(rect: DrawerRect, vh: number): PortalClip {
   const a = DRAWER.arris;
@@ -87,7 +88,7 @@ export function faceClip(rect: DrawerRect, vh: number): PortalClip {
   const x1 = rect.x + rect.w - a;
   const y0 = rect.y + a;
   const y1 = Math.max(vh, rect.y + rect.h) + DRAWER.radius;
-  return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hx: (x1 - x0) / 2, hy: (y1 - y0) / 2, r: DRAWER.radius - a };
+  return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hx: (x1 - x0) / 2, hy: (y1 - y0) / 2, r: DRAWER.radius - a, feather: DRAWER.fade };
 }
 
 /** The tray's grid: the root's with no gobo dapple (D-K3.6 — the drawer lies above the desk; the wind would wake it). */

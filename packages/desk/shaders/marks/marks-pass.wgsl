@@ -32,7 +32,9 @@ fn vs(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32) -> VSO
 @fragment
 fn fs(in: VSOut) -> @location(0) vec4f {
   let dpr = max(u.view.z, 1e-6);
-  let c = marks_shade(marks[in.idx], in.clip.xy / dpr, dpr, u.atlas, glyph_tex, glyph_samp);
+  var c = marks_shade(marks[in.idx], in.clip.xy / dpr, dpr, u.atlas, glyph_tex, glyph_samp);
+  // the tray's name tags fade out at the drawer's top edge as its specimens do (design-018 §4) — from the first tag's record on
+  if (u.fade.y > 0.0 && f32(in.idx) >= u.fade.z) { c *= smoothstep(u.fade.x, u.fade.x + u.fade.y, in.clip.y / dpr); }
   if (c.a <= 0.0 && max(c.r, max(c.g, c.b)) <= 0.0) { discard; }
   return c;
 }

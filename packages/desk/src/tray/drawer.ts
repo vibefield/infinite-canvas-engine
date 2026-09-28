@@ -24,6 +24,11 @@ export const DRAWER = {
   arris: 1.5,
   /** The edge's inner shadow on the lamp's side (D-R1.2): black at this alpha just inside the edge, fading over this many px. */
   inner: { alpha: 0.18, width: 3 },
+  /**
+   * The CONTENT's fade at the top edge (design-018 §4): the specimens, their shadows, their accessories and their tags fade out over
+   * this band (CSS px, 0.7 pitch), ending at the face's top edge — a feather on the face's portal clip; the board does not fade.
+   */
+  fade: 28,
   /** The slide: widgetlab rev 1's curve. */
   slideMs: 340,
   curve: [0.32, 0.72, 0, 1] as const,

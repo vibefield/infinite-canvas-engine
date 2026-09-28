@@ -20,7 +20,7 @@
 
 import { bindGroup, bindLayout, storageBuffer, uniformBuffer, compile, compose } from "@ice/desk/engine";
 import type { RenderTarget, RGB, RGBA } from "@ice/desk";
-import { type FadeIn, type View, type MatConfig, type MatFrame, MatUniforms, type MatPass, DAY_LIGHT, type MatLight, type DeskEye, eyeValues, project, type BuiltMesh, VERTEX_BYTES, inverseOf, lightFrame, matrixOf, type Rigid, worldBounds, PAPER_TEX, paperTexture, generateMips, mipCount, sentBytes, writeChanged, attachmentOf, BoxTargets } from "@ice/desk/kit";
+import { type FadeIn, type View, type MatConfig, type MatFrame, MatUniforms, type MatPass, DAY_LIGHT, type MatLight, type DeskEye, eyeValues, project, type BuiltMesh, VERTEX_BYTES, inverseOf, lightFrame, matrixOf, type Rigid, worldBounds, PAPER_TEX, paperTexture, generateMips, mipCount, sentBytes, writeChanged, attachmentOf, BoxTargets, layerCompositeLayout } from "@ice/desk/kit";
 import type { NotebookLaw } from "./law";
 import { designCode, MAX_NOTEBOOKS, MAX_SHADOWED, NbBook, NbUniforms, nbUniformValues, type NotebookLook, type Ruling, rulingCode, SHADOW_RES } from "./layout";
 import type { Frame } from "./shape";
@@ -170,7 +170,7 @@ export class NotebookPass {
     this.device = device; this.format = format; this.mat = mat;
     this.layoutMain = pipes.layoutMain; this.layoutShadow = pipes.layoutShadow; this.layoutComp = pipes.layoutComp;
     this.bookPipe = pipes.book; this.recvPipe = pipes.recv; this.shadowPipe = pipes.shadow; this.compPipe = pipes.comp;
-    this.frameT = nbTarget(new BoxTargets(device, "notebook", this.layoutComp, SAMPLES));
+    this.frameT = nbTarget(new BoxTargets(device, "notebook", this.layoutComp, SAMPLES, mat.view));
     this.t = this.frameT;
     this.knobBuf = uniformBuffer(device, NbUniforms.size, "notebook/knobs");
     this.recordBuf = storageBuffer(device, NbBook.size * MAX_NOTEBOOKS, "notebook/books");
@@ -207,8 +207,9 @@ export class NotebookPass {
     ], "notebook/main");
     // the shadow pass draws INTO the depth array, so its group must not bind it
     const layoutShadow = device.createBindGroupLayout({ label: "notebook/shadow", entries: [{ binding: 2, visibility: GPUShaderStage.VERTEX, buffer: { type: "read-only-storage" } }] });
-    // the layer and its box's origin (K7a — kit/layer.ts `BoxTargets`: the composite reads a pixel's texel at the pixel less it)
-    const layoutComp = bindLayout(device, [{ binding: 0, stages: ["fragment"], texture: "float" }, { binding: 1, stages: ["fragment"], buffer: "uniform" }], "notebook/composite");
+    // the layer, its box's origin (K7a — kit/layer.ts `BoxTargets`: the composite reads a pixel's texel at the pixel less it) and the
+    // slot's view block — the composite lays the layer through the slot's portal chain (design-018 §4: the kit's contract, as one)
+    const layoutComp = layerCompositeLayout(device, "notebook/composite");
     const module = await compile(device, compose(src.program));
     const compModule = await compile(device, compose(src.composite));
     const vertexLayout: GPUVertexBufferLayout = {
@@ -481,7 +482,7 @@ export class NotebookPass {
 
   /** The render target the next prepare, layer and composite are for (D7): the frame's, or the held desk copy's — made on first use. */
   use(target: RenderTarget): void {
-    if (target === "copy" && this.copyT === null) this.copyT = nbTarget(new BoxTargets(this.device, "notebook", this.layoutComp, SAMPLES));
+    if (target === "copy" && this.copyT === null) this.copyT = nbTarget(new BoxTargets(this.device, "notebook", this.layoutComp, SAMPLES, this.mat.view));
     this.t = target === "copy" && this.copyT !== null ? this.copyT : this.frameT;
   }
 

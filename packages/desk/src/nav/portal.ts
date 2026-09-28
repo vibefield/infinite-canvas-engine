@@ -14,8 +14,12 @@ import type { Box } from "../lattice/lod";
 import { PORTAL } from "../theme";
 import type { CameraState, Rect, Viewport } from "./flight";
 
-/** A rounded rect in screen CSS px: centre, half extents, corner radius. */
-export interface PortalClip { readonly cx: number; readonly cy: number; readonly hx: number; readonly hy: number; readonly r: number }
+/**
+ * A rounded rect in screen CSS px: centre, half extents, corner radius — and a top FEATHER (design-018 §4): what the face shows
+ * fades in over this many CSS px below its top edge, a smoothstep in every pass's `portal_cover` (absent or 0: a hard edge). The
+ * pegboard tray's face carries one, so its specimens dissolve into the board at the drawer's top edge instead of being cut.
+ */
+export interface PortalClip { readonly cx: number; readonly cy: number; readonly hx: number; readonly hy: number; readonly r: number; readonly feather?: number }
 
 /**
  * The most faces a slot can be seen through, its own included — the length
@@ -55,13 +59,13 @@ export function chainOf(p: Presentation | undefined): PortalClip[] {
   return out;
 }
 
-/** The `portals` and `clips` records every uniform block carries: the chain in order, a zero `clips[i].y` ending it. */
+/** The `portals` and `clips` records every uniform block carries: the chain in order, a zero `clips[i].y` ending it; `clips[i].z` the feather. */
 export function portalValues(p: Presentation | undefined): { portals: number[]; clips: number[] } {
   const portals = new Array<number>(4 * PORTAL_CHAIN).fill(0);
   const clips = new Array<number>(4 * PORTAL_CHAIN).fill(0);
   const chain = chainOf(p);
   if (chain.length > PORTAL_CHAIN) throw new Error(`nav/portal: a chain of ${chain.length} faces exceeds PORTAL_CHAIN ${PORTAL_CHAIN}`);
-  chain.forEach((c, i) => { portals[4 * i] = c.cx; portals[4 * i + 1] = c.cy; portals[4 * i + 2] = c.hx; portals[4 * i + 3] = c.hy; clips[4 * i] = c.r; clips[4 * i + 1] = 1; });
+  chain.forEach((c, i) => { portals[4 * i] = c.cx; portals[4 * i + 1] = c.cy; portals[4 * i + 2] = c.hx; portals[4 * i + 3] = c.hy; clips[4 * i] = c.r; clips[4 * i + 1] = 1; clips[4 * i + 2] = c.feather ?? 0; });
   return { portals, clips };
 }
 

@@ -42,6 +42,7 @@ import { chipOf, faceClip, faceOf, sdMiniMat } from "../src/minimat/minimat.ts";
 import { insideView } from "../src/minimat/inside.ts";
 import { arrivalCamera, FIT } from "../../desk/src/nav/flight.ts";
 import { PORTAL_GATE } from "../../desk/src/nav/portal.ts";
+import { DRAWER, SHADOW_REACH } from "../../desk/src/tray/drawer.ts";
 import { THEMES, surface } from "./fixtures/vf-theme.ts";
 import { DAY_LIGHT, linearToSrgb, srgbToLinear } from "../../desk/src/mat/night.ts";
 import { sdRoundBox, unproject } from "../src/photo/photo.ts";
@@ -1096,7 +1097,7 @@ async function trayCheck(sc) {
   const { tray: _tray, ...bare } = s;
   const { px: B } = await render(bare, { marks: true });
   const d = (s.view ?? VIEW).dpr;
-  const reach = 3 * 18 + 8 + 2;   // the lamp's shadow's σ, its push, and a pixel's margin (tray/drawer.ts DRAWER.shadow)
+  const reach = SHADOW_REACH + 2;   // the shadows' reach (tray/drawer.ts: the lamp's σ ×3 and its push) and a pixel's margin
   const r = laid.rect;
   let outside = 0;
   let worst = 0;
@@ -1109,14 +1110,15 @@ async function trayCheck(sc) {
       for (let c = 0; c < 3; c++) { const i = (y * w + x) * 4 + c; worst = Math.max(worst, Math.abs((A[i] ?? 0) - (B[i] ?? 0) * (1 - laid.dim))); }
     }
   }
-  // the SPECIMENS (K5a): each one's rect on screen, as the pass laid its accessory, is its kind's drawing — far from the bare board there
+  // the SPECIMENS (K5a): each one's rect on screen, as the pass laid its accessory, is its kind's drawing — far from the bare board there,
+  // below the face's top and its fade band (design-018 §4: within it a specimen dissolves into the board by design)
   const specimens = laid.accessories.map((a) => a.rect);
   const { px: C } = await render({ ...s, tray: { ...s.tray, bare: true } }, { marks: true });
   let drawnBy = 0;
   let shown = 0;
   for (const [x0, y0, x1, y1] of specimens) {
-    const ys = Math.max(y0, r.y + 6);
-    if (y1 <= ys || ys >= h / d) continue;   // wholly under the rim or below the view: nothing of it to see
+    const ys = Math.max(y0, r.y + DRAWER.arris + DRAWER.fade);
+    if (y1 <= ys || ys >= h / d) continue;   // wholly in the fade band or below the view: nothing of it to see whole
     shown++;
     let sum = 0;
     let n = 0;

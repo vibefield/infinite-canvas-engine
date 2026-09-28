@@ -12,6 +12,8 @@ import {
   departedCamera, invertAffine, outgoingCamera, portalAffine, solveFlightStart, springStep, startFlight, stepFlight, visibleRect,
 } from "../src/nav/flight";
 import { clipOf, PORTAL_CHAIN, portalValues, scissorOf } from "../src/nav/portal";
+import { layerComposite } from "../src/kit/layer";
+import { shaderText } from "../src/shaders";
 import { lod } from "../src/lattice/lod";
 
 const VP = { width: 1200, height: 800 };
@@ -197,6 +199,22 @@ describe("the portal records", () => {
     expect(scissorOf(undefined, 2, { w: 2400, h: 1600 })).toEqual([0, 0, 2400, 1600]);
     expect(scissorOf({ opacity: 1, portal: { cx: -500, cy: 10, hx: 20, hy: 20, r: 0 } }, 2, { w: 2400, h: 1600 })[2]).toBe(0);   // off screen: zero width
     expect(scissorOf({ opacity: 1, portal: { cx: 1190, cy: 790, hx: 100, hy: 100, r: 0 } }, 2, { w: 2400, h: 1600 })).toEqual([2179, 1379, 221, 221]);
+  });
+  it("a face's top FEATHER rides its clip record's z — every pass's `portal_cover` fades what it shows below the face's top (design-018 §4)", () => {
+    const face = { cx: 600, cy: 700, hx: 558.5, hy: 250, r: 8.5, feather: 28 };
+    const v = portalValues({ opacity: 1, portal: face, within: [{ cx: 600, cy: 400, hx: 600, hy: 400, r: 0 }] });
+    expect(v.clips.slice(0, 8)).toEqual([8.5, 1, 28, 0, 0, 1, 0, 0]);   // the face's feather; the face above it none
+    expect(portalValues({ opacity: 1, portal: { ...face, feather: 0 } }).clips[2]).toBe(0);
+    const src = shaderText({ portal: "portal.wgsl" }).portal;
+    expect(src).toMatch(/if \(clip\.z <= 0\.0\) \{ return c; \}/);   // no feather: the cover exactly as before (every other golden)
+    expect(src).toMatch(/smoothstep\(top, top \+ clip\.z, p_css\.y\)/);
+  });
+  it("a LAYERED kind lays its layer through the slot's chain as ONE (design-018 §4): the composite takes the view block and the chain by name", () => {
+    const c = layerComposite(shaderText);
+    expect((c.structs ?? []).map((s) => s.name)).toEqual(["MatUniforms"]);
+    expect((c.modules ?? []).map((m) => m.label)).toEqual(["portal.wgsl"]);
+    expect(c.entry.text).toMatch(/@binding\(2\) var<uniform> u: MatUniforms;/);
+    expect(c.entry.text).toMatch(/\* portal_cover\(pos\.xy \/ dpr, u\.portals, u\.clips, dpr\)/);
   });
   it("the mat's uniform block — the one every object pass binds for its mat — carries the portal chain by name", () => {
     const names = MatUniforms.fields.map(([name]) => name);

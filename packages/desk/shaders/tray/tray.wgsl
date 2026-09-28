@@ -419,7 +419,9 @@ fn tray_accessory(u: MatUniforms, t: TrayUniforms, a: TrayAccessory, frag: vec2f
   let p = frag / t.view.z;
   let px = 1.0 / t.view.z;
   let P = t.view.w;
-  let inside = clamp(0.5 - (tray_outline(t, p) + t.shape.y) / px, 0.0, 1.0);   // inside the board's edge
+  // inside the board's edge — and faded out at its top as the specimens are (design-018 §4: the face's feather, over `fade.x`)
+  let top = t.rect.y + t.shape.y;
+  let inside = clamp(0.5 - (tray_outline(t, p) + t.shape.y) / px, 0.0, 1.0) * smoothstep(top, top + t.fade.x, p.y);
   if (inside <= 0.0) { return vec4f(0.0); }
   let L = t.lamp.xyz;
   let lz = max(L.z, 1.0e-3);

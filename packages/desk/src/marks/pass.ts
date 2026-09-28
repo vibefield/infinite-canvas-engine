@@ -64,7 +64,7 @@ export class MarksPass {
    * Lay this frame's marks out and upload them (before the frame's pass begins); after them, the tray's NAME TAGS (K5a — drawn apart,
    * `drawTags`, where the tray says). Returns the count of the frame's marks that will draw (`draw`).
    */
-  prepare(input: MarksInput | undefined, tray?: { readonly view: { readonly width: number; readonly height: number; readonly dpr: number }; readonly tags: readonly { readonly label: string; readonly x: number; readonly y: number }[]; readonly night?: number }): number {
+  prepare(input: MarksInput | undefined, tray?: { readonly view: { readonly width: number; readonly height: number; readonly dpr: number }; readonly tags: readonly { readonly label: string; readonly x: number; readonly y: number }[]; readonly night?: number; readonly fade?: { readonly top: number; readonly band: number } | undefined }): number {
     const marks = input === undefined ? [] : layoutMarks(input, this.mat.glyphs);
     const view = input?.view ?? tray?.view;
     const tags = view === undefined ? [] : (tray?.tags ?? []).flatMap((t) => tagMarks(t.label, t.x, t.y, this.mat.glyphs, view.dpr, tray?.night ?? 0));
@@ -85,7 +85,9 @@ export class MarksPass {
     this.tags = tags.length;
     if (view === undefined) return 0;
     const atlas = this.mat.glyphs;
-    this.uniforms.set({ view: [view.width, view.height, view.dpr, 0], atlas: [atlas.width, atlas.height, atlas.scale, atlas.cellW] });
+    // the tags fade out at the drawer's top edge as its specimens do (design-018 §4): from the band's top, over its width, from the first tag on
+    const fade = tray?.fade !== undefined && tags.length > 0 ? [tray.fade.top, tray.fade.band, marks.length, 0] : [0, 0, 0, 0];
+    this.uniforms.set({ view: [view.width, view.height, view.dpr, 0], atlas: [atlas.width, atlas.height, atlas.scale, atlas.cellW], fade });
     this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniforms.view());
     if (total > 0) this.device.queue.writeBuffer(this.recordBuf, 0, this.records.view(total));
     return marks.length;
