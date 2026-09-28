@@ -17,7 +17,7 @@ export interface SceneHost {
 }
 
 /** What a desk's spawn made, by kind, in the scene's own order. */
-export interface Staged { readonly notes: Entity[]; readonly minimats: Entity[]; readonly boards: Entity[]; readonly prints: Entity[]; readonly books: Entity[]; readonly pads: Entity[] }
+export interface Staged { readonly notes: Entity[]; readonly minimats: Entity[]; readonly boards: Entity[]; readonly prints: Entity[]; readonly books: Entity[]; readonly pads: Entity[]; /** A plugin's objects (K8b). */ readonly plugins: Entity[] }
 
 /** The committed print a rig lays down: its picture's hash in the desk's BlobStore (preloaded on the photo kind) and its size. */
 export interface PrintFixture { readonly hash: string; readonly w: number; readonly h: number }

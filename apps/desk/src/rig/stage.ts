@@ -27,7 +27,7 @@ import { MINIMAT, PAPER, type BoardInk, type PaperAsset, type PaperKind } from "
 import { oracleFixtures } from "./oracle-fixtures";
 import type { SceneHost, Staged } from "../rig-door";
 import { type SpawnSpec, spawnAll } from "../scene";
-import { boardSpec, bookSpec, type KindScene, layBookInk, layEvents, layPins, layStrokes, type OracleBoard, type OracleBook, type OraclePrint, type OracleThing, padSpec, pinBooks, pinPadPrints, pinPads, pinPrints, pinSpecimenPrint, printFixture, type PrintFixture, printSpec, generatedPicture, strokeSpecOf, thingsOf } from "./scene-kinds";
+import { boardSpec, bookSpec, type KindScene, layBookInk, layEvents, layPins, layStrokes, type OracleBoard, type OracleBook, type OracleObject, type OraclePrint, type OracleThing, padSpec, pinBooks, pinPadPrints, pinPads, pinPrints, pinSpecimenPrint, printFixture, type PrintFixture, printSpec, generatedPicture, strokeSpecOf, thingsOf } from "./scene-kinds";
 
 /** A scene as scenes.mjs states one — the mat, ruler, paper, minimat and nav scenes' fields, the D3w kinds' (scene-kinds.ts). */
 export interface OracleScene extends KindScene {
@@ -166,6 +166,13 @@ function thingSpec(t: OracleThing, parent: Entity | undefined, photo: PrintFixtu
   throw new Error(`desk: a scene's "${t.kind}" needs its D3w world half`);
 }
 
+/** A plugin's object as a spawn (K8b): its type must be registered on the page (rig.html `?plugins`); its size, its type's unless stated. */
+function objectSpec(engine: CanvasEngine, o: OracleObject, parent: Entity | undefined): SpawnSpec {
+  const widget = engine.catalog.widget(o.type);
+  if (widget === undefined) throw new Error(`desk: the scene lays a "${o.type}" and this page registered no such type (rig.html?plugins)`);
+  return { type: o.type, cx: o.x, cy: o.y, w: o.w ?? widget.defaultSize.w, h: o.h ?? widget.defaultSize.h, props: o.props ?? {}, ...(parent === undefined ? {} : { parent }) };
+}
+
 /**
  * Spawn a desk's mini mats, desk calendars and things into `parent` (the open frame, or a mini mat), recursing
  * into every mini mat's inside: the mats first (sheets), then the pads, then the things in the oracle's `thingsOf`
@@ -185,7 +192,7 @@ async function spawnDesk(host: SceneHost, fx: Awaited<ReturnType<typeof oracleFi
   for (const t of things) if (t.kind === "print" && typeof t.picture === "object" && t.picture !== null) gen.set(t, await generatedPicture(handle, t.picture));
   const padSpecs = desk.calendars ?? [];
   if (parent !== undefined && padSpecs.length > 0) throw new Error("desk: a desk calendar is a ROOT object (D-D18) — a scene cannot lay one inside a mini mat");
-  const spawned = spawnAll(engine, [...mats.map((m) => matSpec(m, parent)), ...padSpecs.map(padSpec), ...things.map((t) => thingSpec(t, parent, photo, gen))], false);
+  const spawned = spawnAll(engine, [...mats.map((m) => matSpec(m, parent)), ...padSpecs.map(padSpec), ...things.map((t) => (t.kind === "object" ? objectSpec(engine, t, parent) : thingSpec(t, parent, photo, gen)))], false);
   const matEntities = spawned.slice(0, mats.length);
   const padEntities = spawned.slice(mats.length, mats.length + padSpecs.length);
   const thingEntities = spawned.slice(mats.length + padSpecs.length);
@@ -205,6 +212,12 @@ async function spawnDesk(host: SceneHost, fx: Awaited<ReturnType<typeof oracleFi
   for (const f of flagged) {
     if (f.spec.selected) selected.push(f.entity);
     if (f.spec.held) handle.pinFlux(f.entity, { lift: 1 });
+  }
+  // a plugin's objects (K8b): the asset its kind defines, through the handle's generic door (the desk clock's pinned time), and the facts
+  for (const { entity: e, spec: o } of of("object")) {
+    if (o.asset !== undefined) handle.pinAsset(e, o.asset);
+    if (o.selected) selected.push(e);
+    if (o.held) handle.pinFlux(e, { lift: 1 });
   }
   pinPrints(handle, prints);   // a print's pose is its body's (height, slope, bend, the hand) — pinned on the photo kind
   pinBooks(handle, books);   // a book's (open, mid-turn, peeking, tilted) — pinned on the notebook kind
@@ -227,7 +240,7 @@ async function spawnDesk(host: SceneHost, fx: Awaited<ReturnType<typeof oracleFi
     if (inside === undefined) continue;
     await spawnDesk(host, fx, inside, matEntities[i] as Entity, selected);
   }
-  return { notes: notes.map((n) => n.entity), minimats: matEntities, boards: boards.map((b) => b.entity), prints: prints.map((p) => p.entity), books: books.map((b) => b.entity), pads: padEntities };
+  return { notes: notes.map((n) => n.entity), minimats: matEntities, boards: boards.map((b) => b.entity), prints: prints.map((p) => p.entity), books: books.map((b) => b.entity), pads: padEntities, plugins: of("object").map((o) => o.entity) };
 }
 
 /** Spawn the scene, pin the mat, the rasters and the flux, set the camera and the theme; fly and pin a nav scene. Resolves once every asset is uploaded. */

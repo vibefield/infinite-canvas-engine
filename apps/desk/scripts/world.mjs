@@ -37,7 +37,13 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
  * the whiteboards, the prints — one inside a mini mat, through the inside's slot, lit by its host's lamp — the notebooks, the
  * desk calendars, and a selected notebook's and desk calendar's marks (D3w); the pegboard drawer, pinned (K3).
  */
-const WORLD_SCENES = /^(mat|ruler|paper|minimat|nav|board|photo|book|pad|marks-book|marks-pad|zoom|hold|tray)-/;
+const WORLD_SCENES = /^(mat|ruler|paper|minimat|nav|board|photo|book|pad|marks-book|marks-pad|zoom|hold|tray|clock)-/;
+/**
+ * design-016 K8b — the oracle's OPEN kind list: a still that lays a PLUGIN's objects (the desk clock's) is drawn on a page that registered
+ * them (`rig.html?plugins`); every other on the reference desk (plain `rig.html` — the six alone, as the golden's reference stills were
+ * drawn: the clock on its hook would move the tray's). Two tabs, one server.
+ */
+const needsPlugins = (sc) => JSON.stringify(sc.scene).includes('"objects":');
 /**
  * design-015 D3w: the three inked-board scenes keep, from the world too, the bound rig:parity names for them (D-D3r-a.5): the
  * stamp pass compiled by Chrome's Dawn and by node-webgpu's quantises a handful of the raster's coverages one LSB apart — the
@@ -123,9 +129,9 @@ async function witness(tab, sc) {
   return { ...r, png, settled: s.settled, objects: stats.objects, kinds: stats.kinds, spawned: spawned.objects };
 }
 
-try {
-  const tab = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html`);
-  const logs = [];
+/** A rig page booted for the witnesses: its logs watched into `logs`, the metrics set, the desk up, the selection menu hidden; a failed boot throws. */
+async function bootTab(query, logs) {
+  const tab = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html${query}`);
   await tab.send("Runtime.enable"); await tab.send("Log.enable"); await tab.send("Page.enable");
   watchPage(tab, logs, { warnings: true });
   await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
@@ -141,18 +147,27 @@ try {
   const boot = await tab.evaluate("window.__desk ? { available: window.__desk.handle.available(), status: window.__desk.handle.status().state, vp: window.__desk.viewport(), iso: crossOriginIsolated } : null", { timeoutMs: 20000 });
   console.log(`chrome ${chrome.version.Browser} · desk boot: ${fail ? `FAIL ${fail}` : "ok"} · ${JSON.stringify(boot)}${logs.length ? `\n  ${logs.slice(0, 5).join("\n  ")}` : ""}`);
   if (fail) throw new Error("boot failed");
+  return tab;
+}
+
+try {
+  const logs = [];
+  const tab = await bootTab("", logs);
+  let pluginTab = null;
+  const tabFor = async (sc) => (needsPlugins(sc) ? (pluginTab ??= await bootTab("?plugins", logs)) : tab);
 
   let flaps = 0;
   let kept = 0;
   console.log("\nscene                        Chrome (from the world) vs Node                objects");
   for (const sc of scenes) {
-    let r = await witness(tab, sc);
+    const t = await tabFor(sc);
+    let r = await witness(t, sc);
     let note = "";
     const clean = (x) => x.error === undefined && x.maxD === 0;
     if (!clean(r)) {
       const first = r;
       writeFileSync(resolve(results, `world-${sc.name}-1.png`), Buffer.from(first.png, "base64"));
-      r = await witness(tab, sc);
+      r = await witness(t, sc);
       note = clean(r) ? ` · FLAP: the first capture read ${first.error ?? `maxΔ ${first.maxD} on ${first.differ} px`}` : ` · red on both witnesses (the first: ${first.error ?? `maxΔ ${first.maxD}`})`;
       if (clean(r)) flaps += 1;
       else writeFileSync(resolve(results, `world-${sc.name}-2.png`), Buffer.from(r.png, "base64"));
@@ -181,7 +196,7 @@ try {
   }
   console.log(`\n${scenes.length} scene${scenes.length === 1 ? "" : "s"} drawn from the world${sheets > 0 ? ` · ${sheets} live sheet${sheets === 1 ? "" : "s"} held to the committed print` : ""} · ${failures} FAILED · ${kept} kept within a named, measured bound · ${flaps} flap${flaps === 1 ? "" : "s"} (clean on the second witness)`);
   // D7: an error or a fault the engine CONTAINED is a failure, never only a line of log (the warnings stay a print)
-  const errors = [...logs.filter((l) => !/^(\[warning\]|console\.warning) /.test(l)), ...(await faultsOf(tab))];
+  const errors = [...logs.filter((l) => !/^(\[warning\]|console\.warning) /.test(l)), ...(await faultsOf(tab)), ...(pluginTab === null ? [] : await faultsOf(pluginTab))];
   if (errors.length) failures += 1;
   console.log(`${errors.length ? "FAIL" : "PASS"}  no page errors or contained faults${errors.length ? ` (${errors.length}): ${errors.slice(0, 4).join(" · ")}` : ""}`);
   if (logs.length) console.log(`\npage logs:\n  ${logs.slice(0, 8).join("\n  ")}`);

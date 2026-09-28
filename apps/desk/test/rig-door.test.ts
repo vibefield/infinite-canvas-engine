@@ -16,7 +16,7 @@ describe("the rigs' door (D7)", () => {
   });
 
   it("is the harness once rig.html's harness opened it", () => {
-    const rig: DeskRig = { setScene: async () => ({ notes: [], minimats: [], boards: [], prints: [], books: [], pads: [] }), printFixture: async () => ({ hash: "h", w: 1, h: 1 }) };
+    const rig: DeskRig = { setScene: async () => ({ notes: [], minimats: [], boards: [], prints: [], books: [], pads: [], plugins: [] }), printFixture: async () => ({ hash: "h", w: 1, h: 1 }) };
     g.window = { __deskRig: rig };
     expect(deskRig()).toBe(rig);
   });

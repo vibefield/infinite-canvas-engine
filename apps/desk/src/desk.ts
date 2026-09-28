@@ -7,6 +7,7 @@
 
 import { type BootstrapClock, broadcastChannelByteChannel, type ByteChannel, type CanvasEngine, createCanvasEngine, type JoinResult, type WidgetType, webSocketByteChannel } from "@ice/core";
 import { DESK_ENGINE, deskSelect, PRESENCE_INKS } from "@ice/objects";
+import { DESK_CLOCK_OBJECTS } from "@ice-examples/desk-clock";
 
 const param = (name: string): string | undefined => (typeof location === "undefined" ? undefined : new URLSearchParams(location.search).get(name) ?? undefined);
 
@@ -69,15 +70,28 @@ export async function joinDeskRoom(engine: CanvasEngine, opts: DeskRoomOptions =
 export const DESK_FAULTS: string[] = [];
 const faultText = (err: unknown): string => (err instanceof Error ? err.message : String(err));
 
-/** The object types the rigs' harness registers before the engine is made (rig.html only; none on the product page). */
-const rigWidgets = (): readonly WidgetType[] => (typeof window === "undefined" ? [] : (window.__deskRig?.widgets ?? []));
+/**
+ * The app's PLUGIN kinds (design-016 K8b): object types from packages of their own, built on ICE's published entries alone, registered
+ * beside the reference six exactly as a VibeField plugin's will be — the desk clock (examples/desk-clock). It hangs on the tray by its
+ * own entry, `c` sets one down, `s` flips the selected clocks' seconds hand (its menu act).
+ */
+export const DESK_PLUGINS: readonly WidgetType[] = DESK_CLOCK_OBJECTS;
+
+/**
+ * The object types beyond the reference six this page registers before the engine is made: the product page, the app's plugins; the
+ * RIGS' page (rig.html), what its harness asks for (`window.__deskRig.widgets` — `?plugins` for the app's, `?trayPlugin` for K5a's
+ * fixture), so a reference still — the pegboard tray's among them — is drawn from the world on the desk the golden's reference scenes
+ * were drawn on (D-K8b.2: the clock on its hook would move tray-scrolled's pixels).
+ */
+const pageWidgets = (): readonly WidgetType[] => (typeof window === "undefined" ? DESK_PLUGINS : window.__deskRig !== undefined ? (window.__deskRig.widgets ?? []) : DESK_PLUGINS);
 
 /** A desk engine with a fresh document — none yet in a room (`joinDeskRoom` brings the room's) — the desk's tool in hand; its contained faults into `faults`. */
 export function createDeskEngine(room: string | undefined = deskRoom(), faults: string[] = DESK_FAULTS): CanvasEngine {
   const engine = createCanvasEngine({
     ...DESK_ENGINE,
-    // object types the rigs' harness registers (`window.__deskRig.widgets` — K5a's plugin fixture, hung on the tray by its entry alone)
-    ...(rigWidgets().length > 0 ? { widgets: [...DESK_ENGINE.widgets, ...rigWidgets()] } : {}),
+    // the app's plugin kinds (K8b), or on the rigs' page what its harness asked for (K5a's fixture, the app's plugins) — each hung on
+    // the tray by its own entry alone
+    ...(pageWidgets().length > 0 ? { widgets: [...DESK_ENGINE.widgets, ...pageWidgets()] } : {}),
     onReflectorFault: (name, err) => { faults.push(`reflector "${name}": ${faultText(err)}`); console.error(`[ice] reflector "${name}" threw — skipped this frame`, err); },
     onGuestFault: (id, err) => { faults.push(`guest "${id}": ${faultText(err)}`); console.error(`[ice] guest "${id}" faulted`, err); },
   });

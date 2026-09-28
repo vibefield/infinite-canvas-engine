@@ -103,7 +103,8 @@ export type OracleThing =
   | ({ readonly kind: "note" } & OracleNote)
   | ({ readonly kind: "board" } & OracleBoard)
   | ({ readonly kind: "print" } & OraclePrint)
-  | ({ readonly kind: "book" } & OracleBook);
+  | ({ readonly kind: "book" } & OracleBook)
+  | ({ readonly kind: "object" } & OracleObject);
 
 /** A desk calendar as the lab's `reset` + `pose` take one (scenes.mjs `pad()`): where, which month, the week's start, a roll pinned part-way. */
 export interface OraclePad {
@@ -127,7 +128,26 @@ export interface OraclePad {
 }
 
 /** The scene fields the D3w kinds read. */
+/**
+ * A PLUGIN's object as a still states it (design-016 K8b — the oracle's open kind list, frame.mjs `objects`): its type (registered on the
+ * page — rig.html `?plugins`), its centre, its size (default: its type's), its props, the asset its kind pins (`handle.pinAsset` — the
+ * desk clock's `{ at }`), and the facts a still states.
+ */
+export interface OracleObject {
+  readonly type: string;
+  readonly x: number;
+  readonly y: number;
+  readonly w?: number;
+  readonly h?: number;
+  readonly props?: Readonly<Record<string, unknown>>;
+  readonly asset?: unknown;
+  readonly held?: boolean;
+  readonly selected?: boolean;
+}
+
 export interface KindScene {
+  /** Plugin objects (K8b), laid after the reference kinds' things. */
+  readonly objects?: readonly OracleObject[];
   readonly boards?: readonly OracleBoard[];
   readonly notes?: readonly OracleNote[];
   readonly prints?: readonly OraclePrint[];
@@ -146,6 +166,7 @@ export function thingsOf(s: KindScene): OracleThing[] {
     ...(s.notes ?? []).map((n) => ({ ...n, kind: "note" as const })),
     ...(s.prints ?? []).map((p) => ({ ...p, kind: "print" as const })),
     ...(s.books ?? []).map((b) => ({ ...b, kind: "book" as const })),
+    ...(s.objects ?? []).map((o) => ({ ...o, kind: "object" as const })),
   ];
   return list.map((t) => {
     const pin = t.kind === "note" ? (t as { pin?: { pad?: number; day: string } }).pin : undefined;
