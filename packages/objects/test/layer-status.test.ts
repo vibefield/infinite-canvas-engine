@@ -12,9 +12,10 @@ import { fakeDevice, installGpuFlags } from "../../desk/test/fake-gpu";
 function fakeHost() {
   const listeners: ((ev: { readonly error: unknown }) => void)[] = [];
   const { device } = fakeDevice();
+  let lose: (info: { readonly reason: string; readonly message: string }) => void = () => {};
   Object.assign(device, {
     addEventListener: (type: string, fn: (ev: { readonly error: unknown }) => void) => { if (type === "uncapturederror") listeners.push(fn); },
-    lost: new Promise(() => {}),
+    lost: new Promise((r) => { lose = r; }),
     destroy: () => {},
   });
   const adapter = { features: new Set<string>(), requestDevice: async () => device };
@@ -26,7 +27,9 @@ function fakeHost() {
   const container = { ownerDocument: { createElement: (tag: string) => (tag === "canvas" ? canvas : node()), defaultView: undefined, addEventListener: () => {}, removeEventListener: () => {} }, prepend: () => {}, appendChild: () => {}, addEventListener: () => {}, removeEventListener: () => {} } as unknown as HTMLElement;
   /** An error the device reports and nobody captured — as the browser dispatches it. */
   const uncaptured = (name: string, message: string): void => { for (const fn of listeners) fn({ error: { message, constructor: { name } } }); };
-  return { gpu, container, uncaptured };
+  /** The device lost — its `lost` promise settles, as the browser settles it. */
+  const lost = (reason: string, message: string): void => lose({ reason, message });
+  return { gpu, container, uncaptured, lost };
 }
 
 describe("the desk layer's status on an uncaptured GPU error (D7)", () => {
@@ -52,6 +55,34 @@ describe("the desk layer's status on an uncaptured GPU error (D7)", () => {
       uncaptured("GPUValidationError", "a later one");
       expect(handle.status().state).toBe("degraded");   // never back to ready on its own
       expect(errors).toHaveBeenCalled();
+      handle.dispose();
+    } finally {
+      errors.mockRestore();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("the device lost after the boot: `onStatus` tells each listener — ready, then failed with the loss named — and an unsubscribed one hears no more (K9)", async () => {
+    const { gpu, container, lost } = fakeHost();
+    vi.stubGlobal("navigator", { gpu });
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const ce = createCanvasEngine({});
+      ce.docs.create();
+      const handle = deskLayer({ gpu, objects: [], theme: THEMES.light, palette: PALETTE.light })({ host: { container }, world: ce.world });
+      const heard: string[] = [];
+      const left: string[] = [];
+      handle.onStatus((s) => heard.push(s.message === undefined ? s.state : `${s.state}: ${s.message}`));
+      const leave = handle.onStatus((s) => left.push(s.state));
+      for (let i = 0; i < 50 && handle.status().state === "pending"; i++) await new Promise((r) => setTimeout(r, 5));
+      expect(heard).toEqual(["ready"]);
+      leave();
+      lost("destroyed", "Device was destroyed.");
+      await new Promise((r) => setTimeout(r, 0));
+      expect(heard).toEqual(["ready", "failed: the device was lost: destroyed: Device was destroyed."]);
+      expect(handle.status().state).toBe("failed");
+      expect(handle.available()).toBe(false);   // the layer ended
+      expect(left).toEqual(["ready"]);
       handle.dispose();
     } finally {
       errors.mockRestore();

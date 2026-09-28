@@ -1,5 +1,5 @@
-// rig:lifetime — THE APP'S LIFETIME (K9: surface S1, S5): what `<App>`'s mount starts, the cleanup it hands `<Desk>` ends; what
-// the app makes once, it makes once.
+// rig:lifetime — THE APP'S LIFETIME (K9: surface S1, S5, S9): what `<App>`'s mount starts, the cleanup it hands `<Desk>` ends;
+// what the app makes once, it makes once; and an end the page comes to is said on the page.
 //
 // THE DEV SERVER — Vite's own (`createServer` over the app's vite.config.ts in middleware mode, behind this rig's http server on a
 // port the OS picks — never the :5173 a `pnpm dev` runs: Vite reads `port: 0` as its default —; its own dep cache, no HMR socket,
@@ -13,7 +13,8 @@
 //   · ONE listener follows the OS's appearance — the theme control was made at every render, each with its own (4 here).
 // THE PRODUCT (dist/index.html, served as the other rigs serve it): a theme pinned with `d` holds while the OS's appearance moves
 // — the controls made at other renders, never pinned, flipped the desk back (the OS leading an unpinned desk is the row's
-// control: the emulated appearance reaches the page, so the pinned half cannot pass by hearing nothing).
+// control: the emulated appearance reaches the page, so the pinned half cannot pass by hearing nothing); and the device lost
+// after the boot (the layer ends, its canvas gone) puts "the GPU was lost — reload" on the fail screen, never a blank page.
 // Exit 0 = every check passed.
 //
 //   pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:lifetime
@@ -164,6 +165,15 @@ try {
   const held = await osMoves(product, "light");
   check(pinned.shown === "dark" && pinned.said === "dark" && held.heard === "light" && held.shown === "dark" && held.said === "dark", `\`d\` pins dark and it holds while the OS moves dark → light: the page shows ${held.shown}, the desk says ${held.said}`);
   product.logs.push(...(await faultsOf(product.tab, "product")));
+  // …and the end a booted product can come to: the device lost — the layer ends, its canvas gone — said on the page
+  const quiet = product.logs.length;
+  await product.q("window.__desk.handle.device()?.destroy()");
+  let lostText = null;
+  for (const end = Date.now() + 10_000; lostText === null && Date.now() < end; ) { await sleep(100); lostText = await product.q(FAIL_TEXT); }
+  const canvases = await product.q("document.querySelectorAll('canvas').length");
+  check(lostText?.startsWith("the GPU was lost — reload") === true && canvases === 0, `the device lost after the boot: the page says "${lostText === null ? "nothing — a blank page" : lostText.split("\n")[0]}" (${canvases} canvas left)`);
+  // the layer's own report of the loss belongs on the console; anything else the loss brought is a page error
+  product.logs.push(...product.logs.splice(quiet).filter((l) => !l.startsWith("console.error [ice] desk: the device was lost ")));
 
   const logs = [...room.logs, ...desk.logs, ...product.logs];
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);

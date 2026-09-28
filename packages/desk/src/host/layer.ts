@@ -266,6 +266,11 @@ export interface DeskLayerHandle {
   /** The device is acquired and `Ground.create` resolved. */
   available(): boolean;
   status(): DeskLayerStatus;
+  /**
+   * Told each time `status()` moves — the boot's end, an uncaptured error, the device lost after the boot (K9: a host says so on
+   * its page; a desk that just ended leaves no canvas behind). Returns the unsubscribe; `dispose` drops every listener.
+   */
+  onStatus(listener: (status: DeskLayerStatus) => void): () => void;
   /** The device the layer draws with once it is here — the engine's when the context carries one (D7: one device per engine), else the layer's own. */
   device(): GPUDevice | undefined;
   /** The ground once made (a rig's door to a pass: `ground()?.pass("paper")`). */
@@ -424,6 +429,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     let ledger: MemoryLedger | undefined;
     let profiler: GpuProfiler | undefined;
     let status: DeskLayerStatus = { state: "pending" };
+    const statusHeard = new Set<(status: DeskLayerStatus) => void>();
+    /** Every move of the status goes through here, and `onStatus`'s listeners hear it (K9). */
+    const setStatus = (next: DeskLayerStatus): void => { status = next; for (const l of [...statusHeard]) l(next); };
     let disposed = false;
     let ended = false;
     let grid: GridConfig = opts.grid ?? DEFAULT_GRID;
@@ -664,8 +672,8 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const detachTransition = ctx.transitions?.register({ id: "@ice/desk", plane: "ground", prepare: () => null }) ?? null;
 
     const fail = (what: string, e: unknown): void => {
-      status = { state: "failed", message: `${what}: ${e instanceof Error ? e.message : String(e)}` };
       console.error(`[ice] desk: ${what}`, e);
+      setStatus({ state: "failed", message: `${what}: ${e instanceof Error ? e.message : String(e)}` });
     };
     /** The layer is over (a lost device): nothing renders again, the canvas leaves, `available()` is false. */
     const endLayer = (): void => {
@@ -682,7 +690,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           onError: (error) => {
             console.error("[ice] desk: uncaptured GPU error", error.message);
             // never silent: a lost submit leaves the desk black while nothing else says so (D7) — a failed layer stays failed
-            if (status.state !== "failed") status = { state: "degraded", message: `an uncaptured GPU error — ${error.constructor?.name ?? "GPUError"}: ${error.message}` };
+            if (status.state !== "failed") setStatus({ state: "degraded", message: `an uncaptured GPU error — ${error.constructor?.name ?? "GPUError"}: ${error.message}` });
           },
     };
     // ONE device per engine (D7): the ENGINE's device when it has one — drawn with, never destroyed here (the app owns it);
@@ -704,7 +712,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           made.mat.setNoise(blueNoise());   // the desk's own noise; the plates are the app's (`setPlate`)
           made.grid = grid;
           ground = made;
-          if (status.state === "pending") status = { state: "ready" };   // an error while it booted keeps its word
+          if (status.state === "pending") setStatus({ state: "ready" });   // an error while it booted keeps its word
           compose.ready();
         });
     boot.catch((e: unknown) => { if (!disposed) fail("no desk — the adapter, the device or the pipelines were refused", e); });
@@ -716,6 +724,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       canvas,
       available: () => ground !== null && (status.state === "ready" || status.state === "degraded"),
       status: () => status,
+      onStatus(listener) { statusHeard.add(listener); return () => { statusHeard.delete(listener); }; },
       device: () => drawDevice ?? undefined,
       ground: () => ground,
       setTheme: (t, p) => compose.setTheme(t, p),
@@ -853,6 +862,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         stopWake?.();
         stopText?.();
         listeners.clear();
+        statusHeard.clear();
         for (const d of drivers.values()) d.dispose?.();   // the calendar's disposes its DOM half
         editor.dispose();
         for (const local of locals.values()) local.dispose?.();

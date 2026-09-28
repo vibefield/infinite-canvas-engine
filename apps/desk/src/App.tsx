@@ -190,6 +190,13 @@ export function App(): ReactElement {
         // K9: what this mount starts, the cleanup it returns ends — the mount StrictMode discards (in development) must leave no
         // paste listener, no join and no wait on its dead layer behind it
         let cancelled = false;
+        // K9 (S9): the device lost AFTER the boot ends the layer — its canvas gone — and the page says so, never a blank one (a boot
+        // the layer refused is the feed's to say, below)
+        let lived = false;
+        const offStatus = handle.onStatus((s) => {
+          if (s.state === "ready" || s.state === "degraded") lived = true;
+          else if (s.state === "failed" && lived && !cancelled) fail(`the GPU was lost — reload\n\n${s.message ?? ""}`);
+        });
         setMenuSource(handle.selection);
         // K1: the rulers' glyph atlas, kept to the ratio the desk draws at (the viewport's) and the panel's text size (glyphs.ts) —
         // nothing until the ground is here
@@ -207,7 +214,7 @@ export function App(): ReactElement {
           await joined.current;   // D2c: `?room=` joins the room's document first
           if (cancelled) return;
           const plates = await productPlates();
-          while (!cancelled && !handle.available()) { if (handle.status().state === "failed") throw new Error(handle.status().message); await new Promise((r) => requestAnimationFrame(r)); }
+          while (!cancelled && !handle.available()) { if (handle.status().state === "failed") { if (lived) return; throw new Error(handle.status().message); } await new Promise((r) => requestAnimationFrame(r)); }
           if (cancelled) return;
           handle.setPlate("c", plates.c);
           handle.setPlate("b", plates.b);
@@ -219,7 +226,7 @@ export function App(): ReactElement {
           api.state.ready = true;
         };
         feed().catch((e: unknown) => { if (!cancelled) fail(e); });
-        return () => { cancelled = true; undoDrop(); };
+        return () => { cancelled = true; undoDrop(); offStatus(); };
       }}
     >
       {menuSource !== null ? <SelectionMenu source={menuSource} actions={MENU_ACTIONS} /> : null}
