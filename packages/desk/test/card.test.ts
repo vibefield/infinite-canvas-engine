@@ -2,8 +2,8 @@
 // pipeline, and the ground draws their interleaved objects as ONE run — any kind, a plugin's as a built-in's (K-L2), so these
 // kinds are fakes. The pixels are the oracle's (`card` check: the card vs every object its own kind's, byte for byte).
 
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { type CardKind, cardEntry, cardLayoutEntries, planCards } from "../src/card/card";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
+import { bindingName, type CardKind, cardEntry, cardLayoutEntries, createCardShared, planCards } from "../src/card/card";
 import type { ComposeOptions } from "../src/engine/shader";
 import { Ground } from "../src/ground";
 import type { CardMaterial, KindPass, KindProgram, StratumName } from "../src/kind";
@@ -111,6 +111,90 @@ describe("the ground's runs with the card (K7b): interleaved material kinds are 
     ground.render({ view: { ...VIEW, camX: 6 }, theme: THEMES.light, objects });
     frame = log.slice(log.indexOf("pass ground"));
     expect(frame.filter((l) => l.startsWith("draw 6") || / \d+\.\.\d+$/.test(l))).toEqual(["note 0..1", "print 0..1", "note 1..2", "print 1..2"]);
+    ground.dispose();
+  });
+});
+
+describe("one material's fault is its own kind's, never the desk's (K9 R3)", () => {
+  const undo: (() => void)[] = [];
+  beforeAll(() => { undo.push(installGpuFlags()); });
+  afterAll(() => { for (const u of undo.splice(0)) u(); });
+  afterEach(() => { vi.restoreAllMocks(); });
+  const program = (name: string, card?: CardMaterial): KindProgram => ({ name, stratum: "things", ...(card ? { card } : {}), create: async () => ({ spawn: () => { throw new Error("not spawned"); }, prepare: () => 0, drawRange: () => {}, dispose: () => {} }) as unknown as KindPass });
+  type Struct = NonNullable<ComposeOptions["structs"]>[number];
+  const struct = (name: string, wgsl: string): Struct => ({ name, wgsl }) as unknown as Struct;
+  /** A material whose program carries `structs`/`modules` beside the helper's, and `marker` in its entry (what the refusing device reads). */
+  const withProgram = (name: string, o: { structs?: Struct[]; modules?: { label: string; text: string }[]; marker?: string }, extra: Partial<CardMaterial> = {}): CardMaterial => {
+    const base = material(name, extra);
+    const shaders = (): ComposeOptions => { const s = base.shaders(); return { ...s, ...(o.structs ? { structs: o.structs } : {}), modules: o.modules ?? s.modules ?? [], entry: { ...s.entry, text: `${s.entry.text}\n// ${o.marker ?? ""}` } }; };
+    return { ...base, shaders };
+  };
+  /** A device that refuses a module naming BROKEN, or naming CLASH twice (two kinds' pieces that cannot stand in one program). */
+  const refusing = (): GPUDevice => {
+    const { device } = fakeDevice();
+    (device as unknown as { createShaderModule: unknown }).createShaderModule = (d: GPUShaderModuleDescriptor) => ({
+      label: d.label ?? "",
+      getCompilationInfo: async () => {
+        const broken = d.code.includes("BROKEN");
+        const clash = d.code.split("CLASH").length > 2;
+        return { messages: broken || clash ? [{ type: "error", lineNum: 1, linePos: 1, message: broken ? "unresolved value 'BROKEN'" : "redeclaration of 'clash'" }] : [] };
+      },
+    });
+    return device;
+  };
+
+  it("bindingName: the name after `var` and its template, or none", () => {
+    expect(bindingName("var<uniform> paper_k: PaperUniforms")).toBe("paper_k");
+    expect(bindingName("var<storage, read> boards: array<Board>")).toBe("boards");
+    expect(bindingName("var ink_tex: texture_2d_array<f32>")).toBe("ink_tex");
+    expect(bindingName("var  ink_samp : sampler")).toBe("ink_samp");
+    expect(bindingName("let x = 1")).toBeNull();
+  });
+
+  it("the plan refuses a name that is the card's own, another kind's binding or card function, and a struct or module that only NAMES like an earlier kind's — the earlier kind keeps its names", () => {
+    const own = planCards([program("a", material("a", { bindings: [{ wgsl: "var<uniform> u: vec4f", entry: { stages: ["fragment"], buffer: "uniform" } }] }))], LIMITS);
+    expect(own.kinds).toEqual([]);
+    expect(own.left).toEqual([{ name: "a", why: "its name `u` is the card's own" }]);
+    const bound = planCards([program("a", material("a")), program("b", material("b", { bindings: [{ wgsl: "var<uniform> a_k: vec4f", entry: { stages: ["fragment"], buffer: "uniform" } }] }))], LIMITS);
+    expect(bound.kinds.map((k) => k.name)).toEqual(["a"]);
+    expect(bound.left).toEqual([{ name: "b", why: 'its name `a_k` is "a"\'s' }]);
+    const fn = planCards([program("a", material("a")), program("b", material("b", { quad: "a_quad" }))], LIMITS);
+    expect(fn.left).toEqual([{ name: "b", why: 'its name `a_quad` is "a"\'s' }]);
+    const structs = planCards([program("a", withProgram("a", { structs: [struct("Rec", "struct Rec { x: f32 }")] })), program("b", withProgram("b", { structs: [struct("Rec", "struct Rec { x: f32, y: f32 }")] })), program("c", withProgram("c", { structs: [struct("Rec", "struct Rec { x: f32 }")] }))], LIMITS);
+    expect(structs.kinds.map((k) => k.name)).toEqual(["a", "c"]);   // c's struct IS a's, text for text: composed once, as before
+    expect(structs.left).toEqual([{ name: "b", why: 'its struct `Rec` differs from "a"\'s of the same name' }]);
+    const modules = planCards([program("a", withProgram("a", { modules: [{ label: "shared.wgsl", text: "fn one() -> f32 { return 1.0; }" }] })), program("b", withProgram("b", { modules: [{ label: "shared.wgsl", text: "fn one() -> f32 { return 2.0; }" }] }))], LIMITS);
+    expect(modules.left).toEqual([{ name: "b", why: 'its module "shared.wgsl" differs from "a"\'s of the same label' }]);
+    const nameless = planCards([program("a", material("a", { bindings: [{ wgsl: "texture_2d<f32>", entry: { stages: ["fragment"], texture: "float" } }] }))], LIMITS);
+    expect(nameless.left[0]?.why).toBe("its binding `texture_2d<f32>` declares no name (`var… <name>: <type>`)");
+  });
+
+  it("a material the device refuses is left out with its error, said once — the card is made of the rest", async () => {
+    const said = vi.spyOn(console, "error").mockImplementation(() => {});
+    const shared = await createCardShared(refusing(), "bgra8unorm", [program("note", material("note")), program("bad", withProgram("bad", { marker: "BROKEN" })), program("print", material("print"))]);
+    expect(shared).not.toBeNull();
+    expect(shared?.kinds).toEqual(["note", "print"]);
+    expect([...(shared?.material ?? [])]).toEqual([["note", 0], ["print", 1]]);
+    expect(shared?.left.map((l) => l.name)).toEqual(["bad"]);
+    expect(shared?.left[0]?.why).toMatch(/^its card material does not compile: .*unresolved value 'BROKEN'$/);
+    expect(said).toHaveBeenCalledTimes(1);
+    expect(said.mock.calls[0]?.[0]).toContain('kind "bad" is left out of the flat card');
+  });
+
+  it("two materials that compile alone and not together: the LATER registered goes (a plugin registers after the built-ins), the innocent kind after it stays", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const shared = await createCardShared(refusing(), "bgra8unorm", [program("a", withProgram("a", { marker: "CLASH" })), program("b", material("b")), program("c", withProgram("c", { marker: "CLASH" })), program("d", material("d"))]);
+    expect(shared?.kinds).toEqual(["a", "b", "d"]);
+    expect(shared?.left.map((l) => l.name)).toEqual(["c"]);
+    expect(shared?.left[0]?.why).toMatch(/^its card material does not compile beside the kinds it is composed with: .*redeclaration of 'clash'/);
+  });
+
+  it("every material refused: no card, and the ground is still made — every kind draws itself (before K9 the desk never came up)", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const device = refusing();
+    const ground = await Ground.create({ device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [program("bad", withProgram("bad", { marker: "BROKEN" })), program("mug")] });
+    expect(ground.root.card).toBeUndefined();
+    expect([...ground.root.kinds.keys()]).toEqual(["bad", "mug"]);
     ground.dispose();
   });
 });

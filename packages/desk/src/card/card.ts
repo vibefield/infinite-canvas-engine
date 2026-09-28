@@ -43,15 +43,64 @@ export interface CardPlan { readonly kinds: readonly CardKind[]; readonly left: 
 
 type Limits = Pick<GPUSupportedLimits, "maxSampledTexturesPerShaderStage" | "maxSamplersPerShaderStage" | "maxStorageBuffersPerShaderStage" | "maxUniformBuffersPerShaderStage" | "maxBindingsPerBindGroup">;
 
+/** The card's own bindings' names (`cardEntry`): a material's binding may not take one. */
+const OWN_NAMES: readonly string[] = ["u", "gobo_tex", "noise_tex", "cards"];
+/** A binding's name from its WGSL (`var<uniform> paper_k: PaperUniforms` → `paper_k`); null when it declares none the card can read. */
+export const bindingName = (wgsl: string): string | null => /^\s*var(?:\s*<[^>]*>)?\s+([A-Za-z_][A-Za-z0-9_]*)\s*:/.exec(wgsl)?.[1] ?? null;
+
+/**
+ * What one card program cannot hold twice (K9 R3): a binding's name, a card function's name, a struct's name with OTHER text, a
+ * module's label with OTHER text. `cardShaders` deduplicates structs by name and modules by label — two kinds sharing the kit's
+ * pieces compose them once — but a kind whose struct or module only NAMES like another's, with different fields or text, would
+ * either fail the compile (and, before K9, take every kind's card down) or read the other's layout silently. The names go to the
+ * kind registered first; the later kind is left out and draws itself.
+ */
+interface Taken {
+  readonly names: Map<string, string>;     // a binding or card function name → the kind that has it (the card's own: "the card")
+  readonly structs: Map<string, { readonly text: string; readonly by: string }>;
+  readonly modules: Map<string, { readonly text: string; readonly by: string }>;
+}
+
+/** Why `k` cannot join the card beside what `taken` already holds — null when it can (then its names are recorded). */
+function collision(k: CardKind, taken: Taken): string | null {
+  const names: string[] = [];
+  for (const b of k.material.bindings) {
+    const n = bindingName(b.wgsl);
+    if (n === null) return `its binding \`${b.wgsl}\` declares no name (\`var… <name>: <type>\`)`;
+    names.push(n);
+  }
+  names.push(k.material.quad);
+  if (k.material.frag !== undefined) names.push(k.material.frag);
+  for (const n of names) {
+    const by = taken.names.get(n);
+    if (by !== undefined) return `its name \`${n}\` is ${by === "the card" ? "the card's own" : `"${by}"'s`}`;
+  }
+  if (new Set(names).size !== names.length) return "two of its bindings or card functions share a name";
+  for (const s of k.shaders.structs ?? []) {
+    const had = taken.structs.get(s.name);
+    if (had !== undefined && had.text !== s.wgsl) return `its struct \`${s.name}\` differs from "${had.by}"'s of the same name`;
+  }
+  for (const m of k.shaders.modules ?? []) {
+    const had = taken.modules.get(m.label);
+    if (had !== undefined && had.text !== m.text) return `its module "${m.label}" differs from "${had.by}"'s of the same label`;
+  }
+  for (const n of names) taken.names.set(n, k.name);
+  for (const s of k.shaders.structs ?? []) if (!taken.structs.has(s.name)) taken.structs.set(s.name, { text: s.wgsl, by: k.name });
+  for (const m of k.shaders.modules ?? []) if (!taken.modules.has(m.label)) taken.modules.set(m.label, { text: m.text, by: k.name });
+  return null;
+}
+
 /**
  * The kinds one card pipeline composes, in registration order — a material kind is left out (and draws itself) when it is a
- * composite (its objects are one target's) or when adding it would pass one of the device's per-stage limits.
+ * composite (its objects are one target's), when adding it would pass one of the device's per-stage limits, or (K9 R3) when a
+ * name of its would collide with the card's own or an earlier kind's.
  */
 export function planCards(programs: readonly KindProgram[], limits: Limits): CardPlan {
   const kinds: CardKind[] = [];
   const left: { name: string; why: string }[] = [];
   // what the card's own four take: a uniform block (both stages), two textures, a storage buffer (the vertex stage)
   const used = { vertex: { tex: 0, samp: 0, sto: 1, uni: 1 }, fragment: { tex: 2, samp: 0, sto: 0, uni: 1 }, bindings: OWN.length };
+  const taken: Taken = { names: new Map(OWN_NAMES.map((n) => [n, "the card"])), structs: new Map(), modules: new Map() };
   for (const p of programs) {
     if (p.card === undefined) continue;
     if (p.composite === true) { left.push({ name: p.name, why: "a composite draws one target of its own" }); continue; }
@@ -69,8 +118,11 @@ export function planCards(programs: readonly KindProgram[], limits: Limits): Car
     }
     const over = (["vertex", "fragment"] as const).find((st) => next[st].tex > limits.maxSampledTexturesPerShaderStage || next[st].samp > limits.maxSamplersPerShaderStage || next[st].sto > limits.maxStorageBuffersPerShaderStage || next[st].uni > limits.maxUniformBuffersPerShaderStage);
     if (over !== undefined || next.bindings > limits.maxBindingsPerBindGroup) { left.push({ name: p.name, why: `its bindings would pass the device's ${over ?? "bind group"} limits` }); continue; }
+    const k: CardKind = { name: p.name, material: p.card, shaders: p.card.shaders() };
+    const clash = collision(k, taken);
+    if (clash !== null) { left.push({ name: p.name, why: clash }); continue; }
     used.vertex = next.vertex; used.fragment = next.fragment; used.bindings = next.bindings;
-    kinds.push({ name: p.name, material: p.card, shaders: p.card.shaders() });
+    kinds.push(k);
   }
   return { kinds, left };
 }
@@ -158,18 +210,62 @@ export interface CardShared {
   readonly left: CardPlan["left"];
 }
 
-/** The card's pipelines for the registered programs; null when none declares a material the device can compose. */
+type Built = { readonly ok: true; readonly layout: GPUBindGroupLayout; readonly pipeline: GPURenderPipeline; readonly litPipeline: GPURenderPipeline } | { readonly ok: false; readonly why: string };
+
+/** One card program over `kinds` — its layout, module and both pipelines — or why the device refused it (the compile's first error). */
+async function buildCard(device: GPUDevice, format: GPUTextureFormat, kinds: readonly CardKind[]): Promise<Built> {
+  try {
+    const layout = bindLayout(device, cardLayoutEntries(kinds), "card/flat");
+    const module = await compile(device, compose(cardShaders(kinds)));
+    const pl = device.createPipelineLayout({ bindGroupLayouts: [layout] });
+    const [pipeline, litPipeline] = await Promise.all([
+      renderPipeline(device, { label: "card/flat", layout: pl, module, format, blend: BLEND_PREMUL }),
+      renderPipeline(device, { label: "card/flat, lit from elsewhere", layout: pl, module, format, blend: BLEND_PREMUL, constants: { LIT_ELSEWHERE: 1 } }),
+    ]);
+    return { ok: true, layout, pipeline, litPipeline };
+  } catch (e) {
+    const lines = (e instanceof Error ? e.message : String(e)).split("\n").map((l) => l.trim()).filter((l) => l.length > 0);
+    return { ok: false, why: (lines.length > 1 && lines[0]?.startsWith("WGSL ") ? lines[1] : lines[0]) ?? "refused" };
+  }
+}
+
+/**
+ * The card's pipelines for the registered programs; null when none declares a material the device can compose. A material the
+ * device REFUSES (K9 R3 — a plugin's WGSL error, a binding whose type its layout belies) takes only its own kind out of the card:
+ * each material is then compiled alone and the ones that fail are left with their error; if what remains still fails together (a
+ * collision the plan did not see), the last registered goes until the card compiles (a plugin registers after the built-ins).
+ * Every kind left out draws itself, as one past the device's limits does, and is said once (`console.error`, and `left`).
+ */
 export async function createCardShared(device: GPUDevice, format: GPUTextureFormat, programs: readonly KindProgram[]): Promise<CardShared | null> {
   const plan = planCards(programs, device.limits);
-  if (plan.kinds.length === 0) return null;
-  const layout = bindLayout(device, cardLayoutEntries(plan.kinds), "card/flat");
-  const module = await compile(device, compose(cardShaders(plan.kinds)));
-  const pl = device.createPipelineLayout({ bindGroupLayouts: [layout] });
-  const [pipeline, litPipeline] = await Promise.all([
-    renderPipeline(device, { label: "card/flat", layout: pl, module, format, blend: BLEND_PREMUL }),
-    renderPipeline(device, { label: "card/flat, lit from elsewhere", layout: pl, module, format, blend: BLEND_PREMUL, constants: { LIT_ELSEWHERE: 1 } }),
-  ]);
-  return { kinds: plan.kinds.map((k) => k.name), material: new Map(plan.kinds.map((k, i) => [k.name, i])), layout, pipeline, litPipeline, left: plan.left };
+  const left = [...plan.left];
+  const leave = (k: CardKind, why: string): void => { left.push({ name: k.name, why }); console.error(`desk: kind "${k.name}" is left out of the flat card — it draws itself: ${why}`); };
+  let kinds = plan.kinds;
+  let built: Built | null = kinds.length === 0 ? null : await buildCard(device, format, kinds);
+  if (built !== null && !built.ok) {
+    const alone = await Promise.all(kinds.map((k) => buildCard(device, format, [k])));
+    const kept: CardKind[] = [];
+    kinds.forEach((k, i) => { const b = alone[i] as Built; if (b.ok) kept.push(k); else leave(k, `its card material does not compile: ${b.why}`); });
+    kinds = kept;
+    built = kinds.length === 0 ? null : await buildCard(device, format, kinds);
+    while (built !== null && !built.ok) {
+      // the kind whose removal alone lets the rest compile — the LAST registered such one goes (of a clashing pair, the later: a
+      // plugin registers after the built-ins); none (two clashes at once): the last registered goes, and the rest are asked again
+      const why = built.why;
+      let culprit = kinds.length - 1;
+      let rest: Built | null = null;
+      for (let i = kinds.length - 1; i >= 0; i--) {
+        const others = kinds.filter((_, j) => j !== i);
+        const b = others.length === 0 ? null : await buildCard(device, format, others);
+        if (b === null || b.ok) { culprit = i; rest = b; break; }
+      }
+      leave(kinds[culprit] as CardKind, `its card material does not compile beside the kinds it is composed with: ${why}`);
+      kinds = kinds.filter((_, j) => j !== culprit);
+      built = rest !== null ? rest : kinds.length === 0 ? null : await buildCard(device, format, kinds);
+    }
+  }
+  if (built === null || !built.ok) return null;
+  return { kinds: kinds.map((k) => k.name), material: new Map(kinds.map((k, i) => [k.name, i])), layout: built.layout, pipeline: built.pipeline, litPipeline: built.litPipeline, left };
 }
 
 /**
