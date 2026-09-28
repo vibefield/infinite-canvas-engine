@@ -364,7 +364,8 @@ describe("taking one (design-017 §9)", () => {
     r.mouse("move", x + 30, 250, 1);
     r.mouse("move", x + 60, 200, 1);
     r.mouse("move", x + 60, 200, 1);
-    expect(r.world.read(g, Position)).toEqual({ x: x + 60 - 75, y: 200 - 50 });
+    const at = r.world.read(g, Position);   // the grab point's arithmetic in f64 (a board 2 pitches down: 150.00000000000003)
+    expect([at.x, at.y].map((v) => Math.round(v * 1e9) / 1e9)).toEqual([x + 60 - 75, 200 - 50]);
     r.mouse("up", x + 60, 200, 0);
     r.step(3);
     const made = r.twins("take:print");
@@ -431,5 +432,41 @@ describe("taking one (design-017 §9)", () => {
     r.mouse("move", 700, 580, 0);                        // the board where nothing hangs
     expect(r.tray().hover).toBe("");
     expect(r.ce.stack.readCursor()).toBe("default");
+  });
+
+  it("design-018 R4: a specimen scrolled under the drawer's HEADER is bare board there — the mouse over it hovers nothing, a press there takes nothing (its drag scrolls the board); under the header the same specimen is hovered and taken", () => {
+    const r = rig();
+    const head = 49.5;   // the renderer's edge and clear header (desk DRAWER.arris + DRAWER.header)
+    const s0 = r.specimen("take:card");
+    // scrolled so the card's object crosses the header's foot: its top 30 px above it
+    const S = s0.y - (348 + head - 30);
+    r.ce.world.edit(trayEntity(r.world) as Entity).set(Tray, { ...r.tray(), scroll: S });
+    const pinned = (h?: number): TrayScreenFrame => ({ x: 40, y: 348, w: 720, h: 252, p: 1, max: 400, pitch: 40, scroll: S, ...(h !== undefined ? { head: h } : {}) });
+    r.pin(pinned(head));
+    r.step();
+    const s = r.specimen("take:card");
+    expect(s.y).toBeCloseTo(348 + head - 30, 9);
+    const x = s.x + s.w / 2;
+    const inHead = 348 + head - 10;
+    const under = 348 + head + 10;
+    r.mouse("move", x, inHead, 0);
+    expect(r.tray().hover).toBe("");
+    expect(r.ce.stack.readCursor()).toBe("default");
+    r.mouse("down", x, inHead, 1);
+    expect(r.press()).toMatchObject({ kind: "board", type: "" });
+    r.mouse("move", x, inHead - 12, 1);
+    expect([r.tray().take, r.tray().scroll]).toEqual(["", S + 12]);   // the board's drag, not a take
+    r.mouse("up", x, inHead - 12, 0);
+    r.ce.world.edit(trayEntity(r.world) as Entity).set(Tray, { ...r.tray(), scroll: S });
+    r.step();
+    r.mouse("move", x, under, 0);
+    expect(r.tray().hover).toBe("take:card");
+    r.mouse("down", x, under, 1);
+    expect(r.press()).toMatchObject({ kind: "specimen", type: "take:card" });
+    r.mouse("up", x, under, 0);
+    // control: a frame that names no header — the renderer's word before R4 — hovers the card at the same point in the header
+    r.pin(pinned());
+    r.mouse("move", x + 1, inHead, 0);
+    expect(r.tray().hover).toBe("take:card");
   });
 });

@@ -611,11 +611,11 @@ export function drawTray(pass: GPURenderPassEncoder, size: { readonly w: number;
   }
 }
 
-/** The drawer's face inside its edge as a clip box (CSS px), square — the tags' scissor. */
+/** The drawer's face inside its edge and under its header (design-018 R4) as a clip box (CSS px), square — the tags' scissor. */
 function faceBox(rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number }, vh: number): { cx: number; cy: number; hx: number; hy: number; r: number } {
   const x0 = rect.x + DRAWER.arris;
   const x1 = rect.x + rect.w - DRAWER.arris;
-  const y0 = rect.y + DRAWER.arris;
+  const y0 = rect.y + DRAWER.arris + DRAWER.header;
   const y1 = Math.max(vh, rect.y + rect.h);
   return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hx: (x1 - x0) / 2, hy: (y1 - y0) / 2, r: 0 };
 }
@@ -722,10 +722,10 @@ export class Ground {
   trayIdleAt(): number { return this.traySlots?.idleAt() ?? Number.POSITIVE_INFINITY; }
 }
 
-/** The tags' fade at the drawer's top edge (design-018 §4): the face's feather — from the face's top edge, over `DRAWER.fade`. */
+/** The tags' fade under the drawer's header (design-018 §4, R4): the face's feather — from the header's foot, over `DRAWER.fade`. */
 export function tagFadeOf(tray: TrayPass): { readonly top: number; readonly band: number } | undefined {
   const r = tray.laid?.rect;
-  return r === undefined ? undefined : { top: r.y + DRAWER.arris, band: DRAWER.fade };
+  return r === undefined ? undefined : { top: r.y + DRAWER.arris + DRAWER.header, band: DRAWER.fade };
 }
 
 /** The specimens' name tags this frame (K5a): each label centred under its specimen — below a shelf's plank — in screen px. */

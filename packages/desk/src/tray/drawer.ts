@@ -25,10 +25,19 @@ export const DRAWER = {
   /** The edge's inner shadow on the lamp's side (D-R1.2): black at this alpha just inside the edge, fading over this many px. */
   inner: { alpha: 0.18, width: 3 },
   /**
-   * The CONTENT's fade at the top edge (design-018 §4): the specimens, their shadows, their accessories and their tags fade out over
-   * this band (CSS px, 0.7 pitch), ending at the face's top edge — a feather on the face's portal clip; the board does not fade.
+   * The HEADER (design-018 R4 — James, 2026-09-28: "make the fade stronger and more gap, and design the filters nicely at that empty
+   * safe top space instead"): a CLEAR band this high under the face's top edge (inside the arris) where what hangs on the board — the
+   * specimens, their shadows, their accessories and their tags — and the holes are wholly gone: the plain face, on which the bar lays
+   * its category chips as label tape (`<TrayBar>`, @ice/react — the handle's `anchor().drawer.header`). The face's portal clip starts
+   * this far down, so nothing of the content is even drawn above it.
    */
-  fade: 28,
+  header: 48,
+  /**
+   * The CONTENT's fade under the header (design-018 §4, R4): the specimens, their shadows, their accessories, their tags and the holes
+   * fade in over this band (CSS px, 0.8 pitch) — `smoothstep(top + header, top + header + fade, y)`, `top` the face's top edge — the
+   * feather on the face's portal clip (R1's 28 px band at the edge itself, stretched and moved down: D-R4.1). The board does not fade.
+   */
+  fade: 32,
   /** The slide: widgetlab rev 1's curve. */
   slideMs: 340,
   curve: [0.32, 0.72, 0, 1] as const,
@@ -76,6 +85,16 @@ export function drawerSize(vw: number, vh: number): { readonly w: number; readon
 export function drawerRect(vw: number, vh: number, p: number): DrawerRect {
   const { w, h } = drawerSize(vw, vh);
   return { x: Math.round((vw - w) / 2), y: vh + SHADOW_REACH - (h + SHADOW_REACH) * p, w, h };
+}
+
+/**
+ * What of the board's CONTENT shows at screen `y` under a drawer drawn at `rect` (design-018 §4, R4) — the shaders' law on the CPU (the
+ * face's feather in `portal_cover`, `tray_board`'s holes, `tray_accessory`, the tags' draw): 0 above the face and in its header, the
+ * smoothstep over `fade` under it, 1 past it.
+ */
+export function contentShown(rect: DrawerRect, y: number): number {
+  const t = Math.min(Math.max((y - rect.y - DRAWER.arris - DRAWER.header) / DRAWER.fade, 0), 1);
+  return t * t * (3 - 2 * t);
 }
 
 /** The slide's ease: widgetlab rev 1's `cubic-bezier(0.32,0.72,0,1)`, the exact curve CSS runs (the kernel's). */

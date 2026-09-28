@@ -3,7 +3,7 @@
 // `subscribe(listener)`, over the real layer on the fake device (`desk-mount.ts`), stepped as the sleeping loop steps it. The chips'
 // model is the lay's; a category set through the door lays only its entries; the subscription hears each frame that moved what the
 // bar is placed from — the slide frame by frame, open or shut, the category, the hand — and nothing at rest, open or shut.
-import { Camera } from "@ice/core";
+import { Camera, specimensOf, trayEntity } from "@ice/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { type DeskMount, mountDesk } from "./desk-mount";
 
@@ -34,7 +34,11 @@ describe("the tray door (design-018 §5–§6)", () => {
     door.category("nope");
     await run(desk, 200);
     expect(door.category()).toBe("");
-    expect(door.state().specimens.length).toBe(6);
+    // all six laid again — the world's specimens: at scroll 0 the second line hangs below this 800 px view (design-018 R4 laid the
+    // first line under the drawer's header), so the drawn ones are the first line's four
+    const tray = trayEntity(desk.ce.world);
+    expect(tray === undefined ? 0 : specimensOf(desk.ce.world, tray).length).toBe(6);
+    expect(door.state().specimens.length).toBe(4);
   });
 
   it("tells its listeners after each frame that moved the drawer as drawn — the slide frame by frame, up to its open top — and the category; never at rest, open or shut, nor for a frame that moved nothing it says (a pan); nothing once unsubscribed", async () => {

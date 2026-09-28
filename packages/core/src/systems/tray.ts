@@ -56,6 +56,8 @@ import { heldEntity } from "./held";
  * the `scroll` as DRAWN — the fact's plus the band's shown pull — so a board point under the pointer is the one on screen. K9: the
  * `face`, the board's height the drawer shows inside its rim — the range is the content's foot plus a pitch less it (kernel
  * `trayScrollMax`), so the lay can clamp the scroll in the tick a new foot or face moves the range; absent, nothing clamps it.
+ * design-018 R4: the `head`, how far under its top nothing of the board's content shows (the renderer's clear HEADER, where a host lays
+ * the category chips) — a specimen scrolled under it is never hovered or taken there: a press there is the board's; absent, 0.
  */
 export interface TrayScreenFrame {
   readonly x: number;
@@ -67,6 +69,7 @@ export interface TrayScreenFrame {
   readonly pitch: number;
   readonly scroll: number;
   readonly face?: number;
+  readonly head?: number;
 }
 
 /** The pose seam: the renderer's word on where the drawer is — `undefined` before its first frame. */
@@ -159,6 +162,8 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       let handed = t.handed;
       const over = (x: number, y: number, pad: number): boolean =>
         frame !== undefined && x >= frame.x && x <= frame.x + frame.w && y >= frame.y - pad;
+      // design-018 R4: what hangs on the board shows only under its header — there a specimen scrolled beneath is bare board
+      const shows = (y: number): boolean => frame !== undefined && y >= frame.y + (frame.head ?? 0);
       // the drawer's OPEN rect (K5b): its outline at the full slide — the pose's box with its top the view's foot less its height
       const vh = world.getResource(Viewport)?.h ?? 0;
       const inOpen = (x: number, y: number): boolean => frame !== undefined && x >= frame.x && x <= frame.x + frame.w && y >= vh - frame.h;
@@ -202,7 +207,7 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
         if (!ctx.hasTag(p, HandledByWidget)) ctx.addTag(p, HandledByWidget);
         if (!ctx.hasTag(p, WheelHandled)) ctx.addTag(p, WheelHandled);
         // the specimen under the mouse (K5a): the board point as DRAWN — the pose's shown scroll, the band's pull in it
-        if (frame !== undefined && over(s.x, s.y, 0) && ctx.read(p, Pointer).device === "mouse") hover = specimenAt(world, tray, s.x - frame.x, s.y - frame.y + frame.scroll)?.type ?? "";
+        if (frame !== undefined && over(s.x, s.y, 0) && shows(s.y) && ctx.read(p, Pointer).device === "mouse") hover = specimenAt(world, tray, s.x - frame.x, s.y - frame.y + frame.scroll)?.type ?? "";
         const w = ctx.get(p, PointerWheel);
         if (w !== undefined && (w.dy !== 0 || w.dx !== 0 || w.pinch !== 0)) {
           // every wheel is the tray's while it is out — its clock is the band's let-go and the latch after a close (K9)
@@ -225,7 +230,7 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
         if (down) {
           const onBoard = over(s.x, s.y, 0);
           // K5b: a press on a specimen takes it (past the slop) — the grab point across the object as the board draws it
-          const hit = onBoard && frame !== undefined ? specimenAt(world, tray, s.x - frame.x, s.y - frame.y + frame.scroll) : undefined;
+          const hit = onBoard && shows(s.y) && frame !== undefined ? specimenAt(world, tray, s.x - frame.x, s.y - frame.y + frame.scroll) : undefined;
           const natural = hit === undefined ? undefined : widgetTypeFor(world, hit.type)?.defaultSize;
           const fit = hit !== undefined && natural !== undefined && natural.w > 0 && natural.h > 0 ? specimenFit(hit, natural) : undefined;
           const at = { x: s.x, y: s.y, scroll0: scroll + stretch, moved: false };

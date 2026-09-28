@@ -194,7 +194,7 @@ export class TrayPass {
       keepFine: [keep(fp, 210), keep(fp, 42), keep(fp, 105), 0],
       keepEdge: [keep(fp, 9), keep(fp, 18), keep(fp, 36), 0],
       accessory: [...T.accessory, T.accessoryShadow],
-      fade: [DRAWER.fade, 0, 0, 0],
+      fade: [DRAWER.fade, DRAWER.header, 0, 0],
     };
     this.tray.set(values);
     const gobo = grid.mat.gobo;

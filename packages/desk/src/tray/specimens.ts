@@ -78,15 +78,17 @@ export interface TraySpecimenEnv {
 }
 
 /**
- * The FACE the specimens show through: the outline inside the board's edge (the arris — design-018 §2: nothing hangs over it), its top
- * corners rounded as the arris's inner edge, its foot past the view's — and its top FEATHER (design-018 §4): what hangs there fades out
- * over `DRAWER.fade` into the board at its top edge, through every kind's own `portal_cover`.
+ * The FACE the specimens show through: the outline inside the board's edge (the arris — design-018 §2: nothing hangs over it), its foot
+ * past the view's, its top the HEADER's foot (design-018 R4: `DRAWER.header` under the edge, where nothing of them shows — the bar's
+ * chips lie there) — and its top FEATHER (design-018 §4): what hangs there fades in over `DRAWER.fade` below that, through every kind's
+ * own `portal_cover`. (Its top corners keep the arris's inner radius: at the header's foot they lie in the ramp's first fifth, beside the
+ * side border no specimen reaches.)
  */
 export function faceClip(rect: DrawerRect, vh: number): PortalClip {
   const a = DRAWER.arris;
   const x0 = rect.x + a;
   const x1 = rect.x + rect.w - a;
-  const y0 = rect.y + a;
+  const y0 = rect.y + a + DRAWER.header;
   const y1 = Math.max(vh, rect.y + rect.h) + DRAWER.radius;
   return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hx: (x1 - x0) / 2, hy: (y1 - y0) / 2, r: DRAWER.radius - a, feather: DRAWER.fade };
 }

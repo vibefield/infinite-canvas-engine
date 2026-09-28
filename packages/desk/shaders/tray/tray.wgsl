@@ -1,8 +1,8 @@
 // THE PEGBOARD TRAY (design-017 §5–§6; design-018 §2–§4) — the drawer, and the research board in it (research/sdf-pegboard, shader.js)
 // lying on the mat, shaded in CLOSED FORM for a head-on view: no march, no history, no jitter — every frame is final, so a scrolling
 // drawer is clean on every frame. Its edge is an arris in the face's material; its holes show the desk as drawn under it, black at the
-// board's shadow; what hangs on it fades at the top edge through the face's portal feather (every kind's `portal_cover`) and here, the
-// accessories. A PURE module: the uniform blocks arrive as parameters — `u` the mat's struct carrying the DESK's light (the colour law
+// board's shadow; under its top edge a clear HEADER (design-018 R4) where nothing hangs and no hole opens, then what hangs on it fades in
+// through the face's portal feather (every kind's `portal_cover`) and here, the accessories and the holes. A PURE module: the uniform blocks arrive as parameters — `u` the mat's struct carrying the DESK's light (the colour law
 // is mat.wgsl's own), `t` the tray's (src/tray/pass.ts) — and so does the blue noise.
 //
 // Board units are PITCHES (the research's 1). A board point is x from the drawer's left edge and Y down the board, Y split into a
@@ -308,14 +308,15 @@ fn tray_arris(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, o:
 }
 
 // The board to its edge, PREMULTIPLIED: the point under the carry, its hole — the front surface over it by its analytic coverage, and
-// where the surface is not, the desk seen through (black at the hole's alpha). THE HOLES FADE AT THE TOP EDGE as the specimens do
-// (James, 2026-09-28 — design-018 §4): within the face's feather (`fade.x` below the edge, the specimens' ramp `w`) a hole CLOSES into
-// the plain face — its opening scaled by `w`, what it no longer opens the plain face, its fillet's relief flattened into the face by the
-// same share — so at the edge the board is whole and a fade band below it every hole is as punched.
+// where the surface is not, the desk seen through (black at the hole's alpha). THE HOLES FADE AT THE TOP as the specimens do (James,
+// 2026-09-28 — design-018 §4, R3; R4): in the HEADER (`fade.y` under the edge's inside) the board is the plain face, and below it, over
+// the face's feather (`fade.x`, the specimens' ramp `w`), a hole OPENS — its opening scaled by `w`, what it does not open yet the plain
+// face, its fillet's relief rising out of the face by the same share — so the header is whole board and a band below it every hole is as
+// punched.
 fn tray_board(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, noise: f32) -> vec4f {
   let pt = tray_point(t, p);
   let h = peg_hole(t, pt);
-  let top = t.rect.y + t.shape.y;
+  let top = t.rect.y + t.shape.y + t.fade.y;
   let w = smoothstep(top, top + t.fade.x, p.y);
   let cg = clamp(0.5 + h.d / t.fp, 0.0, 1.0);   // the surface's analytic coverage as punched
   let open = (1.0 - cg) * w;                      // what of the pixel the hole still opens
@@ -437,8 +438,9 @@ fn tray_accessory(u: MatUniforms, t: TrayUniforms, a: TrayAccessory, frag: vec2f
   let p = frag / t.view.z;
   let px = 1.0 / t.view.z;
   let P = t.view.w;
-  // inside the board's edge — and faded out at its top as the specimens are (design-018 §4: the face's feather, over `fade.x`)
-  let top = t.rect.y + t.shape.y;
+  // inside the board's edge — gone in its header and faded in under it as the specimens are (design-018 §4, R4: the face's feather,
+  // over `fade.x` below the header's `fade.y`)
+  let top = t.rect.y + t.shape.y + t.fade.y;
   let inside = clamp(0.5 - (tray_outline(t, p) + t.shape.y) / px, 0.0, 1.0) * smoothstep(top, top + t.fade.x, p.y);
   if (inside <= 0.0) { return vec4f(0.0); }
   let L = t.lamp.xyz;

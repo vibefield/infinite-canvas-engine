@@ -99,14 +99,19 @@ export interface TrayLayout {
   readonly bottom: number;
 }
 
-/** The law's spacing, pitches: the side margin, the gap between neighbours, the first line's top, the clear row between lines. */
+/**
+ * The law's spacing, pitches: the side margin, the gap between neighbours, the first line's top, the clear row between lines. The first
+ * line lies below the drawer's HEADER and its fade (design-018 R4, D-R4.2 — the desk's `DRAWER`: the arris 1.5 px, the clear header 48,
+ * the ramp 32): at rest nothing laid is faded, every footprint at 99 % of the ramp or past it (2 pitches = 80 px ≥ 1.5 + 48 + 0.944·32;
+ * the desk's test holds the two numbers together — the kernel imports no drawer).
+ */
 export interface TraySpacing {
   readonly margin: number;
   readonly gap: number;
   readonly top: number;
   readonly clear: number;
 }
-export const TRAY_SPACING: TraySpacing = { margin: 0.5, gap: 1, top: 0.5, clear: 1 };
+export const TRAY_SPACING: TraySpacing = { margin: 0.5, gap: 1, top: 2, clear: 1 };
 
 const EPS = 1e-9;
 const whole = (v: number): boolean => Math.abs(v - Math.round(v)) < 1e-9;

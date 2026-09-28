@@ -5,7 +5,7 @@
 // scroll's range from the laid content and springs each hover. The ground draws the drawer UNDER the specimens (the board, then the
 // accessories), each specimen in its slot, the name tags, the RIM last; a composite kind's slot is made from its program.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { worldToScreen } from "@ice/kernel";
+import { layTray, TRAY_SPACING, type TrayHang, worldToScreen } from "@ice/kernel";
 import { Ground, type GroundFrameInputs } from "../src/ground";
 import type { KindPass, KindProgram } from "../src/kind";
 import type { ObjectContext, ObjectKind } from "../src/kinds/world";
@@ -15,7 +15,7 @@ import { MarksUniformsStruct, TRAY_TAG_STYLE, tagMarks } from "../src/marks/layo
 import { MARKS_SHADER_FILES, marksShaders } from "../src/marks/shaders";
 import { shaderText } from "../src/shaders";
 import { type Palette, themeFrom } from "../src/theme";
-import { DRAWER, drawerRect } from "../src/tray/drawer";
+import { contentShown, DRAWER, drawerRect } from "../src/tray/drawer";
 import { createTrayFlux } from "../src/tray/flux";
 import { TRAY_LOOK } from "../src/tray/look";
 import { TrayUniforms } from "../src/tray/layout";
@@ -106,7 +106,7 @@ describe("a specimen, recorded by its own kind", () => {
     const k = fakeKind("fake");
     expect(specimenFrames([specimen(k)], { rect: open, scroll: 400 }, env())).toEqual([]);
     expect(specimenFrames([specimen(k, { rect: { x: 100, y: 900, w: 160, h: 80 } })], { rect: open, scroll: 0 }, env())).toEqual([]);
-    expect(specimenFrames([specimen(k)], { rect: open, scroll: 150 }, env()).length).toBe(1);   // its tag and shadow still show
+    expect(specimenFrames([specimen(k)], { rect: open, scroll: 110 }, env()).length).toBe(1);   // its foot at the header's: its tag and shadow still show
   });
 
   it("its accessory's record: the quad holds its pegs and the accessory's own parts and shadow, not the specimen's body; the kind by index; up to four pegs", () => {
@@ -179,14 +179,40 @@ describe("the flux follows the laid content and the hover", () => {
   });
 });
 
-describe("the face the specimens show through (design-018 §2)", () => {
-  it("is the outline inside the board's edge — inset by the arris, its top corners the arris's inner edge, its foot past the view", () => {
+describe("the face the specimens show through (design-018 §2, §4, R4)", () => {
+  it("is the outline inside the board's edge — inset by the arris, its top the HEADER's foot (nothing of the content above it), its corners the arris's inner edge, its foot past the view", () => {
     const c = faceClip(open, 800);
-    expect([c.cx - c.hx, c.cy - c.hy, c.cx + c.hx, c.r]).toEqual([open.x + DRAWER.arris, open.y + DRAWER.arris, open.x + open.w - DRAWER.arris, DRAWER.radius - DRAWER.arris]);
-    expect([open.x + 1.5, open.y + 1.5, 8.5]).toEqual([c.cx - c.hx, c.cy - c.hy, c.r]);
+    expect([c.cx - c.hx, c.cy - c.hy, c.cx + c.hx, c.r]).toEqual([open.x + DRAWER.arris, open.y + DRAWER.arris + DRAWER.header, open.x + open.w - DRAWER.arris, DRAWER.radius - DRAWER.arris]);
+    expect([open.x + 1.5, open.y + 1.5 + 48, 8.5]).toEqual([c.cx - c.hx, c.cy - c.hy, c.r]);
     expect(c.cy + c.hy).toBeGreaterThan(800);
-    expect(c.feather).toBe(DRAWER.fade);   // its content fades out over the band at the top edge (design-018 §4)
-    expect(DRAWER.fade).toBe(28);
+    expect(c.feather).toBe(DRAWER.fade);   // its content fades in over the band under the header (design-018 §4, R4)
+    expect([DRAWER.header, DRAWER.fade]).toEqual([48, 32]);
+  });
+
+  it("the content's law on the CPU: gone in the header, the smoothstep over the fade under it, whole past it", () => {
+    const top = open.y + DRAWER.arris;
+    expect([open.y - 5, top, top + 24, top + DRAWER.header].map((y) => contentShown(open, y))).toEqual([0, 0, 0, 0]);
+    expect(contentShown(open, top + DRAWER.header + DRAWER.fade / 2)).toBeCloseTo(0.5, 12);
+    expect(contentShown(open, top + DRAWER.header + DRAWER.fade / 4)).toBeCloseTo(0.15625, 12);
+    expect(contentShown(open, top + DRAWER.header + DRAWER.fade)).toBe(1);
+    expect(contentShown(open, 799)).toBe(1);
+  });
+
+  it("at rest nothing laid is faded: the law's first line (kernel TRAY_SPACING.top) clears the header and its ramp — every footprint of every accessory at ≥ 99 % of it", () => {
+    const board = { ...open, y: 0 };   // board px: y down from the drawer's top at scroll 0
+    expect(contentShown(board, TRAY_SPACING.top * P)).toBeGreaterThanOrEqual(0.99);
+    const hangs: TrayHang[] = [
+      { w: 120, h: 120, accessory: "hook", pegs: [[-1, -0.5], [1, -0.5]] },
+      { w: 150, h: 100, accessory: "clip", pegs: [[0, -0.5]] },
+      { w: 143, h: 200, accessory: "shelf", pegs: [[-1.5, 0.5], [1.5, 0.5]] },
+      { w: 240, h: 160, accessory: "rail", pegs: [[-2.5, -0.5], [2.5, -0.5]] },
+      { w: 80, h: 80, accessory: "hook", pegs: [[0, -0.5]] },
+    ];
+    for (const width of [1120, 360]) {
+      const { placed } = layTray(hangs.map((hang, i) => ({ type: `t:${i}`, hang })), width, P);
+      expect(placed.length).toBe(hangs.length);
+      for (const p of placed.filter((q) => q.line === 0)) expect(contentShown(board, p.box.y0), `${p.type} at ${width}`).toBeGreaterThanOrEqual(0.99);
+    }
   });
 });
 
@@ -209,10 +235,10 @@ describe("the ground draws the specimens over the board, inside its edge", () =>
     const writes: { label: string; bytes: Uint8Array }[] = [];
     (device.queue as { writeBuffer: unknown }).writeBuffer = (buf: { label: string }, _off: number, data: Uint8Array) => { writes.push({ label: buf.label, bytes: new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)) }); };
     ground.render(inputs);
-    // the fade at the top edge (design-018 §4): the accessories' band in the tray's block, the tags' in the marks' — from the face's top
+    // the fade under the header (design-018 §4, R4): the accessories' band and the header in the tray's block, the tags' in the marks' — from the header's foot
     const f32 = (label: string, byte: number): number[] => { const w = writes.filter((x) => x.label === label).at(-1); if (w === undefined) throw new Error(`no ${label} upload`); return [...new Float32Array(w.bytes.buffer, byte, 4)]; };
-    expect(f32("tray/pegboard/uniforms", TrayUniforms.slots.fade.byte)).toEqual([DRAWER.fade, 0, 0, 0]);
-    expect(f32("marks/uniforms", MarksUniformsStruct.slots.fade.byte)).toEqual([Math.fround(open.y + DRAWER.arris), DRAWER.fade, 0, 0]);
+    expect(f32("tray/pegboard/uniforms", TrayUniforms.slots.fade.byte)).toEqual([DRAWER.fade, DRAWER.header, 0, 0]);
+    expect(f32("marks/uniforms", MarksUniformsStruct.slots.fade.byte)).toEqual([Math.fround(open.y + DRAWER.arris + DRAWER.header), DRAWER.fade, 0, 0]);
     // the plain kind's slot is spawned at once; the layered one's waits for its program
     let at = log.indexOf("debug tray/pegboard");
     expect(log.slice(at, at + 7)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "pipeline tray/pegboard/accessories", "draw 6,2,0,1", "debug end"]);

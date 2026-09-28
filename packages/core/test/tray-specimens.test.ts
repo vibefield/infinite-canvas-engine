@@ -181,29 +181,29 @@ describe("the tray's specimens", () => {
   });
 
   it("a range that moves under the scroll — a re-lay, the drawer's face — clamps it to the new end at rest; a band's pull is judged once it lets go; the rig's door takes any value until the range next moves (K9 S10)", () => {
-    const view = { w: 280, face: 147 };   // at 280 the two kinds hang on two lines (foot 370), at 720 on one (foot 210)
+    const view = { w: 280, face: 147 };   // at 280 the two kinds hang on two lines (foot 410), at 720 on one (foot 250) — the first line 2 pitches down (design-018 R4)
     const r = rig(view);
     r.pose(true);
     r.step(2);
     const t = () => r.world.read(r.tray(), Tray);
     const range = () => trayScrollMax(r.world.read(r.tray(), TrayContent).bottom, view.face, 40);
-    expect(range()).toBe(370 + 40 - 147);
+    expect(range()).toBe(410 + 40 - 147);
     scrollTray(r.world, range()); r.step(2);
-    expect(t().scroll).toBe(263);
+    expect(t().scroll).toBe(303);
     view.w = 720; r.step(2);                        // the window widens — one line: the range falls under the scroll
-    expect(range()).toBe(210 + 40 - 147);
-    expect(t().scroll).toBe(103);
+    expect(range()).toBe(250 + 40 - 147);
+    expect(t().scroll).toBe(143);
     scrollTray(r.world, 1e6 * 40); r.step(3);       // the door (rig:tray's 10⁶ rows): no range moved, nothing clamps it
     expect(t().scroll).toBe(1e6 * 40);
     view.face += 50; r.step(2);                     // the view grows taller, its face with it: the range moves — clamped
-    expect(t().scroll).toBe(210 + 40 - 197);
+    expect(t().scroll).toBe(250 + 40 - 197);
     // pulled past the end (the band's), the range moves under it: left be — and clamped once the pull lets go
-    r.ce.world.edit(r.tray()).set(Tray, { ...t(), scroll: 53, stretch: 30 });
+    r.ce.world.edit(r.tray()).set(Tray, { ...t(), scroll: 93, stretch: 30 });
     view.face += 20; r.step(2);
-    expect([t().scroll, t().stretch]).toEqual([53, 30]);
+    expect([t().scroll, t().stretch]).toEqual([93, 30]);
     r.ce.world.edit(r.tray()).set(Tray, { ...t(), stretch: 0 });
     r.step(2);
-    expect(t().scroll).toBe(210 + 40 - 217);
+    expect(t().scroll).toBe(250 + 40 - 217);
     // a face the renderer does not report clamps nothing (the range is its word)
     const bare = rig({ w: 720 });
     bare.pose(true); bare.step(2);
