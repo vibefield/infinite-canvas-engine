@@ -29,11 +29,24 @@ export async function acquire(opts: GpuOptions): Promise<Gpu> {
     opts.powerPreference ? { powerPreference: opts.powerPreference } : {},
   );
   if (!adapter) throw new Error("WebGPU: requestAdapter() returned null");
+  const limits = arrayLayerLimit(adapter);
   const device = await adapter.requestDevice({
     label: opts.label ?? "ground",
     requiredFeatures: [...new Set<GPUFeatureName>([...(opts.requiredFeatures ?? []), "timestamp-query"])].filter((f) => adapter.features.has(f)),
+    ...(limits === undefined ? {} : { requiredLimits: limits }),
   });
   return adopt(adapter, device, opts);
+}
+
+/**
+ * The one limit the desk asks above WebGPU's floor (K9 R1): the adapter's own `maxTextureArrayLayers` — a device asked for
+ * nothing gets the floor, 256, whatever the hardware holds (Apple 2048), and the kinds' shared thumbnail arrays (kit/arrays.ts
+ * `LayerArray`) stop there: the 257th picture has no layer, the 257th whiteboard no far-LOD thumbnail. On an adapter AT the floor
+ * this asks for 256 and changes nothing — the arrays' own reclaim and the boards' bare draw carry that cap honestly.
+ */
+export function arrayLayerLimit(adapter: Pick<GPUAdapter, "limits">): Record<string, number> | undefined {
+  const n = (adapter.limits as { maxTextureArrayLayers?: unknown } | undefined)?.maxTextureArrayLayers;
+  return typeof n === "number" && n >= 256 ? { maxTextureArrayLayers: n } : undefined;
 }
 
 /**

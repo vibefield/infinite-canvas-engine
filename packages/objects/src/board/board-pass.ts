@@ -115,6 +115,8 @@ interface BoardShared {
   readonly asked: Map<number, number>;
   /** K6b: the thumbnails' layer kept EMPTY — a board with no ink yet (its first replay the queue's) draws its melamine from it; taken on first need. */
   bare: number | null;
+  /** K9 R1: the drawn frames counted at the step (one per frame that drew boards — every slot's prepare of a frame shares it); a thumbnail's `drawnAt` is stamped from it, so the array full can tell a board drawn lately from one long off screen. */
+  frame: number;
   readonly blank: GPUTexture;
   readonly blankR: GPUTexture;
   readonly blankArray: GPUTexture;
@@ -140,7 +142,7 @@ interface BoardShared {
 }
 
 /** A board's far-LOD thumbnail: its layer, the level of its source's ink chain the layer starts at, that source's texels and density. */
-interface BoardThumb { readonly layer: number; base: number; size: readonly [number, number]; density: number; tier: number }
+interface BoardThumb { readonly layer: number; base: number; size: readonly [number, number]; density: number; tier: number; /** The drawn frame (`BoardShared.frame`) its board was last drawn in; −1 before any. */ drawnAt: number }
 
 /** Group 1 made again: the array (or its stand-in), each pool slot's ink (a blank where free), the live board's stroke and wet. */
 function bindPool(s: BoardShared): void {
@@ -189,7 +191,7 @@ export class BoardPass {
       // (with where its ink is — the pool slot, the live slot, the thumbnail's layer and base: the `tier`, K6a)
       pack: (b, _aux, into, slot) => {
         const r = shared.rasters.get(b.id);
-        const src = r ?? shared.thumbOf.get(b.id) ?? (shared.bare !== null ? BARE : undefined);
+        const src = inkOf(shared, b.id);
         if (src) into.set(boardValues(b, { size: src.size, density: src.density, wet: r?.wetting === true && shared.live === b.id }, tierOf(shared, b.id)), slot);
         return 0;
       },
@@ -261,7 +263,7 @@ export class BoardPass {
       rasters: new Map(), slots: 0,
       group1: undefined as unknown as GPUBindGroup,
       thumbs: new LayerArray(device, { label: "board/thumbnails", format: "rgba8unorm", side: BOARD_THUMB }),
-      thumbOf: new Map(), pool: Array.from({ length: BOARD_SLOTS }, () => null), live: null, asked: new Map(), drew: false, bare: null,
+      thumbOf: new Map(), pool: Array.from({ length: BOARD_SLOTS }, () => null), live: null, asked: new Map(), drew: false, bare: null, frame: 0,
       blank: device.createTexture({ label: "board/pool blank", size: [1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING }),
       blankR: device.createTexture({ label: "board/pool blank r8", size: [1, 1], format: "r8unorm", usage: GPUTextureUsage.TEXTURE_BINDING }),
       blankArray: device.createTexture({ label: "board/thumbnails (none yet)", size: [1, 1, 1], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING }),
@@ -358,12 +360,39 @@ export class BoardPass {
     const s = this.shared;
     if (s.bare !== null) return s.bare;
     const was = s.thumbs.version;
-    const layer = s.thumbs.take();
+    const layer = this.takeLayer();
     if (layer === null) return null;
     s.thumbs.fill(s.blank, 1, layer, 0);   // a layer given back holds a board's old thumbnail: filled from the 1 × 1 transparent
     s.bare = layer;
     if (s.thumbs.version !== was) bindPool(s);   // the array grew
     return layer;
+  }
+
+  /**
+   * A layer of the thumbnails' array (K9 R1) — the array's own while it has one; at the device's cap, RECLAIMED from the board
+   * that can best spare it: one whose raster the budget evicted (its thumbnail was its only ink on the device — replayed when it is
+   * next drawn, as after any eviction) and that was drawn neither in this frame nor the last, the least recently drawn of those;
+   * failing that, one of a board that HOLDS its raster (its thumbnail is cut again from it at its next commit or replay) drawn as
+   * long ago. Null when every thumbnail is a board's drawn lately — the caller draws without a layer, honestly.
+   */
+  private takeLayer(): number | null {
+    const s = this.shared;
+    const own = s.thumbs.take();
+    if (own !== null) return own;
+    let victim: number | null = null;
+    let oldest = Number.POSITIVE_INFINITY;
+    let spared = false;   // a victim with no raster is preferred over one holding its raster
+    for (const [id, t] of s.thumbOf) {
+      if (t.drawnAt >= s.frame - 1 || s.pool.includes(id) || s.live === id) continue;
+      const gone = !s.rasters.has(id);
+      if (gone && !spared) { spared = true; oldest = t.drawnAt; victim = id; continue; }
+      if (gone === spared && t.drawnAt < oldest) { oldest = t.drawnAt; victim = id; }
+    }
+    if (victim === null) return null;
+    const t = s.thumbOf.get(victim) as BoardThumb;
+    s.thumbOf.delete(victim);
+    s.thumbs.give(t.layer);
+    return s.thumbs.take();
   }
 
   /** Forget board `id` — its raster, its thumbnail's layer, its slot (it left the desk; a scene's board). */
@@ -399,9 +428,9 @@ export class BoardPass {
     let t = s.thumbOf.get(r.id);
     if (t === undefined) {
       const was = s.thumbs.version;
-      const layer = s.thumbs.take();
-      if (layer === null) return;   // the device holds no more layers: the board draws while it has a raster
-      t = { layer, base: 0, size: r.size, density: r.density, tier: 0 };
+      const layer = this.takeLayer();
+      if (layer === null) return;   // the device holds no more layers and none can be spared: the board draws while its raster is bound, bare otherwise (K9 R1)
+      t = { layer, base: 0, size: r.size, density: r.density, tier: 0, drawnAt: -1 };
       s.thumbOf.set(r.id, t);
       if (s.thumbs.version !== was) bindPool(s);   // the array grew
     }
@@ -434,6 +463,7 @@ export class BoardPass {
   step(): { readonly id: number; readonly density: number }[] {
     const s = this.shared;
     if (s.asked.size === 0 && !s.drew) return [];
+    if (s.drew) s.frame += 1;   // K9 R1: a drawn frame passed — what the thumbnails' `drawnAt` is stamped from
     s.drew = false;
     let moved = false;
     if (s.live !== null && !liveOf(s.rasters.get(s.live))) { s.live = null; moved = true; }
@@ -634,14 +664,15 @@ export class BoardPass {
       if (b.id === 0 && !s.rasters.has(0)) this.ensure(0, [BOARD.spec.width, BOARD.spec.height], 1);
       const r = s.rasters.get(b.id);
       const t = s.thumbOf.get(b.id);
+      const q = b.quad;
+      const seen = q.x1 >= x0 && q.x0 <= x1 && q.y1 >= y0 && q.y0 <= y1;
       // no ink yet (K6b — its first replay the queue's): its melamine drawn BARE, from the empty layer, until its turn
-      if (!r && !t && this.bareLayer() === null) continue;
+      // (K9 R1: no layer even for that — the array at the device's cap with none to spare — is a board NOT drawn; on screen, said: `dropped`)
+      if (!r && !t && this.bareLayer() === null) { if (seen) this.dropped += 1; continue; }
       if (drawn.length >= cap) { this.dropped += 1; continue; }
       // ON SCREEN it asks for the density its size wants (the step raises its raster to it); a frame only ADDS to the pool (the
       // step frees it between frames): a board on screen with a raster takes a free slot — one in the cull's margin draws its
       // thumbnail (unseen; a slot it took would be freed at the next step, every frame) — and the one laid on or drying the live slot
-      const q = b.quad;
-      const seen = q.x1 >= x0 && q.x0 <= x1 && q.y1 >= y0 && q.y0 <= y1;
       // K7b — THE FAR LOD: a board at the ladder's FIRST rung whose thumbnail is made draws from it — the rung-1 raster's own
       // texels (its chain's tail from the first level that fits BOARD_THUMB², a texel a unit) — so it asks for no raster and takes
       // no pool slot: the flat card draws it, nothing is replayed at low zoom, an evicted raster stays evicted. Not the live board,
@@ -653,7 +684,11 @@ export class BoardPass {
         if (seen && !far && !s.pool.includes(b.id)) { const free = s.pool.indexOf(null); if (free >= 0) { s.pool[free] = b.id; bind = true; } }
         if (s.live === null && (liveOf(r) || b.stroke !== undefined)) { s.live = b.id; bind = true; }
       }
-      if (t === undefined && r !== undefined && !s.pool.includes(b.id)) continue;   // a raster with no layer and no slot: nothing to draw it from
+      // K9 R1: a raster with no layer and no slot (the array at the device's cap, the pool full) — nothing to draw its INK from this
+      // frame: the board is drawn BARE (its melamine from the empty layer — honestly blank, never another board's layer) and counted
+      // in `dropped` when on screen, so the ground's stats say what the desk does not show; without even the empty layer it is not drawn
+      if (t === undefined && r !== undefined && !s.pool.includes(b.id)) { if (seen) this.dropped += 1; if (this.bareLayer() === null) continue; }
+      if (t !== undefined) t.drawnAt = s.frame;
       drawn.push(b);
       drawnKeys?.push(keys?.[i] as number);
       const facts = r === undefined ? 0 : (r.wetting ? 1 : 0) + 2 * r.density + 64 * r.size[0] + 64 * 8192 * r.size[1];
@@ -772,7 +807,19 @@ function tierOf(s: BoardShared, id: number): [number, number, number, number] {
   const t = s.thumbOf.get(id);
   const r = s.rasters.has(id);
   // a board with no ink yet reads the empty layer (K6b); one with a raster and no layer, as before, layer 0 behind its slot
-  return [t?.layer ?? (r ? 0 : (s.bare ?? 0)), t?.base ?? 0, r ? s.pool.indexOf(id) : -1, s.live === id ? 1 : 0];
+  // (K9 R1: one with a raster and no layer reads the empty layer — bare — unless a slot binds its raster; never layer 0, another board's)
+  return [t?.layer ?? s.bare ?? 0, t?.base ?? 0, r ? s.pool.indexOf(id) : -1, s.live === id ? 1 : 0];
+}
+
+/**
+ * The source board `id`'s record reads its ink's size and density from this frame: its raster while a pool slot or the live slot
+ * binds it, else its thumbnail (cut from that raster — the same texels), else the EMPTY layer (K6b — no ink yet; K9 R1 — a raster
+ * with no layer and no slot, drawn bare); undefined before the empty layer exists.
+ */
+function inkOf(s: BoardShared, id: number): { readonly size: readonly [number, number]; readonly density: number } | undefined {
+  const r = s.rasters.get(id);
+  if (r !== undefined && (s.pool.includes(id) || s.live === id)) return r;
+  return s.thumbOf.get(id) ?? (s.bare !== null ? BARE : undefined);
 }
 
 function concat(parts: readonly Float32Array[]): Float32Array {

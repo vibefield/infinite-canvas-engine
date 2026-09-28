@@ -89,7 +89,7 @@ describe("what each pass lets the card draw (K7b) — on a fake device", () => {
     expect(kind.cardSlot(3)).toBe(-1);   // past the list
   });
 
-  it("a board is the card's while it is drawn from its thumbnails' array — a board with no ink yet (its melamine from the empty layer) — and the pass's own once the pool binds its raster; one drawn by no one is no one's", async () => {
+  it("a board is the card's while it is drawn from its thumbnails' array — a board with no ink yet (its melamine from the empty layer), or one whose raster has no layer and no pool slot, drawn bare (K9 R1) — and the pass's own once the pool binds its raster", async () => {
     const s = await set();
     const kind = must(s.kinds.get(BOARD_KIND)).pass as BoardKind;
     const lamp = lampOf(MAT_GRID.plane);
@@ -99,11 +99,11 @@ describe("what each pass lets the card draw (K7b) — on a fake device", () => {
     };
     expect(kind.pass.ensure(1, [120, 80])).toBe(true);
     expect(kind.pass.ensure(2, [120, 80])).toBe(true);
-    // board 1: a raster, on screen — the pool binds it; board 2: a raster never replayed, off screen (nothing to draw it from);
-    // board 3: no ink at all — drawn bare from the thumbnails' empty layer
-    expect(kind.prepare({} as GPUCommandEncoder, ctx(), [board(1, 0), board(2, 9000), board(3, 600)])).toBe(2);
+    // board 1: a raster, on screen — the pool binds it; board 2: a raster never replayed, off screen (no thumbnail, no slot — drawn
+    // BARE from the empty layer, K9 R1); board 3: no ink at all — drawn bare from the thumbnails' empty layer
+    expect(kind.prepare({} as GPUCommandEncoder, ctx(), [board(1, 0), board(2, 9000), board(3, 600)])).toBe(3);
     expect(kind.cardSlot(0)).toBe(-1);
-    expect(kind.cardSlot(1)).toBe(-1);
+    expect(kind.cardSlot(1)).toBeGreaterThanOrEqual(0);
     expect(kind.cardSlot(2)).toBeGreaterThanOrEqual(0);
   });
 });

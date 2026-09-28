@@ -315,20 +315,26 @@ describe("Ground and the desk's passes on a fake device (no pixels: the oracle h
 
   it("the whiteboard's drawRange counts in the list it was handed: a board with nothing to draw it from draws nothing and shifts nothing; its whole range is draw()'s commands", async () => {
     const { device } = fakeDevice();
+    // the thumbnails' array capped at ONE layer (K9 R1): board 1's thumbnail takes it, so a board with a raster it cannot bind has no
+    // empty layer to be drawn bare from either — the one way a board in the list is not drawn at all
+    (device as unknown as { limits: Record<string, number> }).limits.maxTextureArrayLayers = 1;
     const mat = await CuttingMat.create(device, "bgra8unorm", matShaders(shaderText(MAT_SHADER_FILES)));
     const set = await createSlotSet(device, "bgra8unorm", mat, deskKinds());
     const kind = must(set.kinds.get(BOARD_KIND)).pass as BoardKind;
     const pass: BoardPass = kind.pass;
     expect(pass.ensure(1, [120, 80])).toBe(true); expect(pass.ensure(2, [120, 80])).toBe(true); expect(pass.ensure(3, [120, 80])).toBe(true);
+    pass.replay(1, []);   // board 1's thumbnail cut: the array's one layer
     const lamp = lampOf(MAT_GRID.plane);
     const board = (id: number, cx = id * 300): BoardInstance => {
       const G = resolveBoard({ cx, cy: 0, w: BOARD.spec.width, h: BOARD.spec.height }, BOARD_REST, lamp);   // on screen: they take the pool's slots (K6a)
       return { id, geometry: G, surface: [1, 1, 1], metal: [0.5, 0.5, 0.5], quad: quadOf(G) };
     };
     const ctx: SlotContext = { view: VIEW, fadeIn: DEFAULT_GRID.fadeIn, cfg: DEFAULT_MAT_CONFIG, frame: undefined, present: undefined, light: THEMES.light.matLight, lit: undefined, select: THEMES.light.select, theme: THEMES.light };
-    // board 2: a raster never replayed (no thumbnail) and off screen (no pool slot) — nothing to draw it from. (A board with NO ink at all
-    // is drawn bare since K6b — its melamine from the thumbnails' empty layer, while its first replay waits in the frame queue.)
+    // board 2: a raster never replayed (no thumbnail), off screen (no pool slot) and no empty layer left — nothing to draw it from; off
+    // screen, it is not a dropped draw either. (A board with NO ink at all is drawn bare since K6b — its melamine from the thumbnails'
+    // empty layer, while its first replay waits in the frame queue; since K9 R1 so is one whose raster has no layer and no slot.)
     expect(kind.prepare({} as GPUCommandEncoder, ctx, [board(1), board(2, 9000), board(3)])).toBe(2);
+    expect(pass.dropped).toBe(0);
     const log: string[] = [];
     const rp = recordingPass(log);
     kind.drawRange(rp, 0, 3);
