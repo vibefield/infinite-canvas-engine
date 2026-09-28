@@ -25,6 +25,9 @@ import {
   trayOpen,
   closeTray,
   heldEntity,
+  defineCanvasType,
+  defineTool,
+  tools,
 } from "@ice/core";
 import type { LayerFactory } from "@ice/dom";
 import { StrictMode, act, createElement, useState, type ReactElement } from "react";
@@ -51,6 +54,8 @@ defineWidget({
 });
 // …and an OPENABLE one: the hand's case of the inert desk (K9 S3's `unlessInert` test).
 defineWidget({ type: "rt:book", object: { name: "book" }, openable: true, defaultSize: { w: 200, h: 140 } });
+// …and one a TYPED canvas can place (K9 S8's tool-letter test: a typed engine wants an explicit widgets list).
+const PANBOX = defineWidget({ type: "rt:panbox", provides: ["widget"], defaultSize: { w: 10, h: 10 } });
 
 /**
  * A structural fake of the desk's layer factory (`deskLayer(…)` in production): react must treat
@@ -350,6 +355,28 @@ describe("default keymap", () => {
     expect(heldEntity(engine.world)).toBeUndefined();
     run(engine);
     expect(ran).toBe(3);
+  });
+
+  it("a tool's letter sets it only where the tool is LEGAL in the current canvas (K9 S8): on a canvas allowing pan alone, `v` and `c` set nothing (they threw before); a letter two tools share goes to the legal one — `h` is pan's, never the illegal tool registered after it", () => {
+    const PAN = tools.get("pan");
+    const SELECT = tools.get("select");
+    if (PAN === undefined || SELECT === undefined) throw new Error("no built-in tools");
+    // an ILLEGAL tool sharing pan's letter, registered after it: the old map kept the last entry per letter, so `h` set this one
+    const HPAN = tools.get("rt:hpan") ?? defineTool({ id: "rt:hpan", shortcut: "h" });
+    const PanOnly = defineCanvasType({ id: "rt.pan-only", semanticVersion: 1, semantic: { placement: { accepts: ["widget"] } }, presentation: { tools: { allowed: [PAN], default: PAN } } });
+    // a typed engine (the desk's shape): its tools name `select` though no canvas here allows it
+    const engine = createCanvasEngine({ widgets: [PANBOX], tools: [SELECT, PAN, HPAN], canvasTypes: [PanOnly], rootCanvas: PanOnly, presentationFallback: PanOnly });
+    engine.docs.create();
+    cleanups.push(() => engine.dispose());
+    const set = vi.spyOn(engine.ops, "setTool").mockImplementation(() => {});   // recorded, never thrown: the calls are the witness
+    cleanups.push(attachKeymap(engine, window));
+    const press = (key: string): void => { window.dispatchEvent(new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true })); };
+    press("v");
+    press("c");
+    expect(set).not.toHaveBeenCalled();
+    press("h");
+    expect(set).toHaveBeenCalledTimes(1);
+    expect(set).toHaveBeenCalledWith("pan");
   });
 });
 

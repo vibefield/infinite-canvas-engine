@@ -175,11 +175,24 @@ function defaultEntries(): KeymapEntry[] {
     entries.push({ key, run: unlessInert((e) => nudgeSelection(e, dx, dy)) });
     entries.push({ key, shift: true, run: unlessInert((e) => nudgeSelection(e, dx * 10, dy * 10)) });
   }
+  // A tool's letter sets that tool only where it is LEGAL — the current canvas's `tools()` (K9 S8: on the desk, whose canvas allows
+  // `desk.select` and pan alone, `v` and `c` threw "not legal in the current CanvasType" and `h` left it in pan for good). Tools may
+  // share a letter (core's `select` and the desk's `desk.select` both answer `v`): the first registered that is legal here takes it;
+  // none legal, the key does nothing (still matched — never the browser's).
+  const byLetter = new Map<string, string[]>();
   for (const tool of tools.all()) {
-    if (tool.shortcut !== undefined) {
-      const id = tool.id;
-      entries.push({ key: tool.shortcut, run: (e) => e.ops.setTool(id) });
-    }
+    if (tool.shortcut === undefined) continue;
+    byLetter.set(tool.shortcut, [...(byLetter.get(tool.shortcut) ?? []), tool.id]);
+  }
+  for (const [key, ids] of byLetter) {
+    entries.push({
+      key,
+      run: (e) => {
+        const legal = e.canvas.tools();
+        const id = ids.find((t) => legal.some((tool) => tool.id === t));
+        if (id !== undefined) e.ops.setTool(id);
+      },
+    });
   }
   return entries;
 }

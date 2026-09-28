@@ -25,8 +25,12 @@ function builtin(id: string): Tool {
   return tool;
 }
 
-/** The desk's select tool: the bare mat pans, shift-drag draws the vellum marquee; a drag on an object moves it. */
-export const deskSelect: Tool = defineTool({ id: "desk.select", route: { canvasDrag: "pan", canvasDragShift: "marquee" } });
+/**
+ * The desk's select tool: the bare mat pans, shift-drag draws the vellum marquee; a drag on an object moves it. It answers `v` — core's
+ * select's letter — since core's select is compiled but never legal on the desk, and the keymap binds a letter only to a tool legal in
+ * the current canvas (K9 S8: `v` threw on the desk, and `h` left it in pan with no letter back).
+ */
+export const deskSelect: Tool = defineTool({ id: "desk.select", shortcut: "v", route: { canvasDrag: "pan", canvasDragShift: "marquee" } });
 
 /** The tools the engine compiles — a typed engine must name `select` even when no canvas allows it. */
 export const DESK_TOOLS: readonly Tool[] = [builtin("select"), deskSelect, builtin("pan")];
