@@ -226,6 +226,22 @@ try {
     await q("window.__desk.tray.scroll(0)"); await settle();
   }
 
+  // 6c (K9, S10). a resize that moves the scroll's range under it clamps the scroll to the new end, in the frames the resize itself
+  //    draws — no input after it (p9: a taller view, the drawer's face with it, left it 123 px past its content; the next wheel jumped)
+  {
+    const end0 = (await tray()).frame.max;
+    await q(`window.__desk.tray.scroll(${end0})`); await settle();
+    await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 1080, deviceScaleFactor: 2, mobile: false });
+    await sleep(600); await settle();
+    const tall = await tray();
+    await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
+    await sleep(600); await settle();
+    const back = await tray();
+    check(tall.frame.max < end0 && tall.facts.scroll === tall.frame.max && tall.facts.stretch === 0 && back.frame.max === end0 && back.facts.scroll === tall.frame.max,
+      `a taller view (the face ${tall.frame.face} px) shrinks the range under the scroll, ${end0} → ${tall.frame.max}, and the scroll follows it to the new end with no input after the resize: ${tall.facts.scroll}; back at 800 high the range is ${back.frame.max} again and the scroll stays at ${back.facts.scroll} (nothing jumps)`);
+    await q("window.__desk.tray.scroll(0)"); await settle();
+  }
+
   // 7. the desk inert while open: a drag on the note moves nothing and selects nothing; the drawer stays
   const p0 = await q(`window.__desk.entity(${note})`);
   await mouse("mouseMoved", 300, 250); await mouse("mousePressed", 300, 250, { buttons: 1 });

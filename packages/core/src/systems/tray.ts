@@ -34,9 +34,9 @@
  * frame (its rect mid-slide, the scroll range its layout gives), so a hit and the clamp agree with the pixels. Nothing here reads a
  * kind or a pixel; opening a drawer cancels every gesture in flight (`CancelRequest`, read by the `ctl:spawn` sweep this tick).
  */
-import type { Component, Entity, System, TickSystem, World } from "@vibecook/strata-ecs";
+import type { Component, Entity, System, SystemCtx, TickSystem, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem, defineTickSystem } from "@vibecook/strata-ecs";
-import { layTray, specimenFit, type TrayItem } from "@ice/kernel";
+import { layTray, specimenFit, type TrayItem, trayScrollMax } from "@ice/kernel";
 import { Specimen, Tray, TrayContent, TrayIntent, TrayPress } from "../catalog/desk";
 import { HandledByWidget, LocalPointer, Pointer, PointerButtons, PointerMods, PointerScreen, PointerWheel, WentCancelled, WentDown, WentUp, WheelHandled } from "../catalog/pointer";
 import { ChildOf, Position, Size } from "../catalog/scene";
@@ -52,7 +52,9 @@ import { heldEntity } from "./held";
 /**
  * The drawer ON SCREEN as the renderer drew it this frame, CSS px: its outline box (top-left, width, full height — the part below
  * the view included), the slide `p` (0 closed … 1 open), the scroll range `max` the laid content gives, the board's `pitch`, and
- * the `scroll` as DRAWN — the fact's plus the band's shown pull — so a board point under the pointer is the one on screen.
+ * the `scroll` as DRAWN — the fact's plus the band's shown pull — so a board point under the pointer is the one on screen. K9: the
+ * `face`, the board's height the drawer shows inside its rim — the range is the content's foot plus a pitch less it (kernel
+ * `trayScrollMax`), so the lay can clamp the scroll in the tick a new foot or face moves the range; absent, nothing clamps it.
  */
 export interface TrayScreenFrame {
   readonly x: number;
@@ -63,6 +65,7 @@ export interface TrayScreenFrame {
   readonly max: number;
   readonly pitch: number;
   readonly scroll: number;
+  readonly face?: number;
 }
 
 /** The pose seam: the renderer's word on where the drawer is — `undefined` before its first frame. */
@@ -319,9 +322,23 @@ export function hungTypes(world: World): WidgetType[] {
  * takes it). Laid once the renderer has said how wide the drawer is; re-laid when that width, the pitch or the entries change (a
  * kind registered), a specimen whose kind left destroyed; after a reset the new tray entity is laid afresh. `TrayContent` records
  * what was laid — the content's foot is the renderer's scroll range. A tick system: its spawns are the scheduler's, once a frame.
+ * K9 (S10, D-K9-c.2): when that range MOVES — a lay (the width, the kinds) or the drawer's face (the view's height) — a scroll past its
+ * new end with nothing stretching is clamped to it in the same tick, so no frame draws blank board past the content and the next wheel
+ * starts from the end; only on a move, so the rig's door (`scrollTray`) still takes any value until the range next moves.
  */
 export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot }): TickSystem {
   let laidKey = "";
+  let rangeKey = "";
+  const clampToRange = (ctx: SystemCtx, tray: Entity, frame: TrayScreenFrame, bottom: number): void => {
+    if (frame.face === undefined) return;
+    const range = trayScrollMax(bottom, frame.face, frame.pitch);
+    const key = `${tray}|${range}`;
+    if (key === rangeKey) return;
+    const t = ctx.read(tray, Tray);
+    if (t.stretch !== 0) return;   // the band's pull (a wheel's, a finger's) is its own: judged once it lets go
+    rangeKey = key;
+    if (t.scroll > range) ctx.edit(tray).set(Tray, { ...t, scroll: range });
+  };
   return defineTickSystem(
     (ctx) => {
       const tray: Entity | undefined = world.firstOf(trayQ);
@@ -331,7 +348,7 @@ export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot 
       const content = ctx.get(tray, TrayContent);
       const types = hungTypes(world);
       const key = `${tray}|${content?.laid ?? 0}|${frame.w}|${frame.pitch}|${types.map((t) => t.type).join(",")}`;
-      if (key === laidKey) return;
+      if (key === laidKey) { clampToRange(ctx, tray, frame, content?.bottom ?? 0); return; }
       const items: TrayItem[] = types.map((t) => {
         const e = t.tray as NonNullable<WidgetType["tray"]>;
         return { type: t.type, hang: e.hang, ...(e.category !== undefined ? { category: e.category } : {}), ...(e.order !== undefined ? { order: e.order } : {}) };
@@ -363,7 +380,8 @@ export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot 
       if (content === undefined) ctx.addComponent(tray, TrayContent, next);
       else ctx.edit(tray).set(TrayContent, next);
       laidKey = `${tray}|${next.laid}|${frame.w}|${frame.pitch}|${types.map((t) => t.type).join(",")}`;
+      clampToRange(ctx, tray, frame, layout.bottom);
     },
-    { name: "trayLay", access: { write: [Position, Size, TrayContent] } },
+    { name: "trayLay", access: { write: [Position, Size, TrayContent, Tray] } },
   );
 }

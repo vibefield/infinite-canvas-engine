@@ -175,7 +175,8 @@ export const HeldTapMemo = defineResource(
  * rubber band's pull past an end (raw px, signed; 0 at rest); `lip`, the mouse over the lip of a closed drawer (its one hover fact);
  * `wheelAt`, the frame clock (ms) of the last scroll input (every wheel the drawer takes while out, a drag on its board) — the band
  * lets go once it is quiet, and a drawer shut before then keeps the wheel until it is (K9). Never in the document, never synced:
- * a peer's tray is its own. Writers: the tray ops (ops/tray.ts) and `trayInput`; the renderer reads it, and owns the motion (the
+ * a peer's tray is its own. Writers: the tray ops (ops/tray.ts) and `trayInput` — and `trayLay`, which clamps `scroll` when a lay
+ * or the drawer's face moves its range (K9, D-K9-c.2); the renderer reads it, and owns the motion (the
  * slide, the lip's lift, the band's settle — flux). The entity is ensured at install and after every reset (a document switch
  * closes the tray); it roots the tray's runtime canvas (K5's specimens will be its children).
  */
