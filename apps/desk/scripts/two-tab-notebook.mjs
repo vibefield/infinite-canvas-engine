@@ -4,6 +4,8 @@
 // draws it; A turns a page (→) and B's `spread` and its book in hand follow (the sheet turned there too); ⌘Z in A takes the ink
 // back and B's page is clean again.
 
+import { dblClick } from "./timing.mjs";
+
 export async function notebookAcrossRoom(t) {
   const { A, B, front, settle, mouse, key, check, until, sleep, K } = t;
   for (const T of [A, B]) await T.q("window.__desk.setCamera({ x: 2600, y: -100, zoom: 1 })");
@@ -22,7 +24,7 @@ export async function notebookAcrossRoom(t) {
   const pickUp = async (T, id) => {
     await front(T);
     await settle(T);
-    for (const [type, clickCount] of [["mousePressed", 1], ["mouseReleased", 1], ["mousePressed", 2], ["mouseReleased", 2]]) { await T.tab.send("Input.dispatchMouseEvent", { type, x: 400, y: 400, button: "left", clickCount }); await sleep(16); }
+    await dblClick(T.tab, 400, 400, { move: false });   // the four events as one batch (K-H — timing.mjs)
     const h = await until(async () => { const h = await T.q("window.__desk.hand()"); return h?.settled === true && h.e === 1 && h.entity === id ? h : null; }, 3000);
     await settle(T);
     return h;

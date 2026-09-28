@@ -23,31 +23,24 @@
 // `desk.event` child — the text and A's seeds, the same hand — arrives on B's pad and B's print lays it; ⌘Z in A takes it off both.
 // Exit 0 = passed.
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
+import { dblClick, watchdog } from "./timing.mjs";
 import { notebookAcrossRoom } from "./two-tab-notebook.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
 const repo = resolve(app, "../..");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function freePort(from) {
-  for (let port = from; port < from + 40; port++) {
-    const free = await new Promise((r) => { const s = createServer(); s.once("error", () => r(false)); s.listen(port, "127.0.0.1", () => s.close(() => r(true))); });
-    if (free) return port;
-  }
-  throw new Error(`no free CDP port in ${from}…${from + 39}`);
-}
 const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
 const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
-const chrome = await launchChrome({ port: await freePort(9611), headless: !process.env.DESK_HEADED });
+const chrome = await launchChrome({ headless: !process.env.DESK_HEADED });
 let done = false;
 async function cleanup() { if (done) return; done = true; try { await chrome.close(); } catch {} try { server.kill("SIGKILL"); } catch {} }
-setTimeout(async () => { console.log("WATCHDOG"); await cleanup(); process.exit(2); }, 300_000).unref();
+const kick = watchdog(300_000, cleanup);   // no row in 300 s: a hang (K-H — a slow host is not one)
 let pass = 0;
 let failN = 0;
-const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; };
+const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; kick(); };
 
 /** Poll `fn` until it answers truthy or `ms` pass; the last answer. */
 async function until(fn, ms) {
@@ -250,7 +243,7 @@ try {
   check(typeof wbB === "number", `the whiteboard spawned in A reaches B (key ${wbKey}: A's #${wbA}, B's #${wbB})`);
   await front(A);
   await settle(A);
-  for (const [type, clickCount] of [["mousePressed", 1], ["mouseReleased", 1], ["mousePressed", 2], ["mouseReleased", 2]]) { await A.tab.send("Input.dispatchMouseEvent", { type, x: 600, y: 400, button: "left", clickCount }); await sleep(16); }
+  await dblClick(A.tab, 600, 400, { move: false });   // the four events as one batch (K-H — timing.mjs)
   const handA = await until(async () => { const h = await A.q("window.__desk.hand()"); return h?.settled === true && h.e === 1 ? h : null; }, 3000);
   check(handA !== null && handA.entity === wbA, "A picks the board up (a double-click)");
   // the melamine's top-left on the desk is (2400 − 240 + 9, 300 − 160 + 9); in hand a desk point is at the frame's centre + (p − c)·s

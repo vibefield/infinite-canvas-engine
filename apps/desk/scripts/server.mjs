@@ -39,8 +39,10 @@ const server = createServer(async (req, res) => {
       "cross-origin-resource-policy": "same-origin",
     });
     res.end(body);
-  } catch {
-    res.writeHead(404, { "content-type": "text/plain" }).end("not found");
+  } catch (e) {
+    // 404 is a file's ABSENCE, and only that; anything else (a loaded host's EMFILE, a read that failed) is a 500 the rigs' fetches retry (K-H)
+    const absent = e?.code === "ENOENT" || e?.code === "ENOTDIR" || e?.message === "not a file";
+    res.writeHead(absent ? 404 : 500, { "content-type": "text/plain" }).end(absent ? "not found" : `error ${e?.code ?? e}`);
   }
 });
 

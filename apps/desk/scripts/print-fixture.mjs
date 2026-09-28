@@ -10,11 +10,11 @@
 //   pnpm --filter ./apps/desk build && tsx scripts/print-fixture.mjs [--write]
 import { spawn } from "node:child_process";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { ORACLE_SCENES } from "@ice/objects/oracle/scenes.mjs";
 import { launchChrome, openTab } from "./cdp.mjs";
+import { watchdog } from "./timing.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -108,19 +108,12 @@ export function compareSheet(name, sheet) {
 async function main() {
   if (!existsSync(resolve(app, "dist/rig.html"))) { console.log("PREFLIGHT FAIL: the desk's build is missing — pnpm --filter ./apps/desk build"); process.exit(1); }
   const sheets = printedSheets();
-  async function freePort(from) {
-    for (let port = from; port < from + 40; port++) {
-      const free = await new Promise((r) => { const s = createServer(); s.once("error", () => r(false)); s.listen(port, "127.0.0.1", () => s.close(() => r(true))); });
-      if (free) return port;
-    }
-    throw new Error(`no free CDP port in ${from}…${from + 39}`);
-  }
   const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
   const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
-  const chrome = await launchChrome({ port: await freePort(9671), headless: !process.env.DESK_HEADED });
+  const chrome = await launchChrome({ headless: !process.env.DESK_HEADED });
   let failures = 0;
   const cleanup = async () => { try { await chrome.close(); } catch {} try { server.kill("SIGKILL"); } catch {} };
-  setTimeout(async () => { console.log("WATCHDOG"); await cleanup(); process.exit(2); }, 300_000).unref();
+  const kick = watchdog(300_000, cleanup);   // no row in 300 s: a hang (K-H — a slow host is not one)
   try {
     const tab = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html`);
     await tab.send("Runtime.enable");

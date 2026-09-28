@@ -18,10 +18,10 @@
 // the table is printed; 1 for a failed preflight or a throw; 2 for the watchdog.
 import { execFileSync, spawn } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { loadavg, tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { launchChrome, openTab } from "./cdp.mjs";
+import { watchdog } from "./timing.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -103,13 +103,6 @@ if (proto) {
   execFileSync(join(proto, "node_modules/.bin/vite"), ["build", "--config", config], { cwd: proto, stdio: "inherit" });
 }
 
-async function freePort(from) {
-  for (let port = from; port < from + 40; port++) {
-    const free = await new Promise((r) => { const s = createServer(); s.once("error", () => r(false)); s.listen(port, "127.0.0.1", () => s.close(() => r(true))); });
-    if (free) return port;
-  }
-  throw new Error(`no free CDP port in ${from}…${from + 39}`);
-}
 const serve = async (root) => {
   const child = spawn(process.execPath, [resolve(here, "server.mjs"), root, "0"], { stdio: ["ignore", "pipe", "inherit"] });
   const port = await new Promise((r) => child.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
@@ -119,10 +112,10 @@ const serve = async (root) => {
 let threw = false;
 const deskServer = await serve(repo);
 const protoServer = pages ? await serve(pages) : null;
-const chrome = await launchChrome({ port: await freePort(9551), headless: !process.env.DESK_HEADED });
+const chrome = await launchChrome({ headless: !process.env.DESK_HEADED });
 let done = false;
 async function cleanup() { if (done) return; done = true; try { await chrome.close(); } catch {} for (const s of [deskServer, protoServer]) try { s?.child.kill("SIGKILL"); } catch {} }
-setTimeout(async () => { console.log("WATCHDOG"); await cleanup(); process.exit(2); }, 2_400_000).unref();
+const kick = watchdog(2_400_000, cleanup);   // no row in 2400 s: a hang (K-H — a slow host is not one)
 
 const front = (tab) => tab.send("Page.bringToFront");
 async function openPage(url, ready) {

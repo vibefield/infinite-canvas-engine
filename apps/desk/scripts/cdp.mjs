@@ -1,13 +1,19 @@
 // Minimal Chrome DevTools Protocol driver. No dependencies: Node's global
 // WebSocket + fetch are enough to launch a browser, open a tab and evaluate.
 import { spawn } from "node:child_process";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
 const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
 
-export async function launchChrome({ port = 9333, headless = false, extraArgs = [] } = {}) {
+/**
+ * Launch a Chrome to drive. `port` 0 (the default, K-H): Chrome binds a free port ITSELF and writes it to its profile's
+ * `DevToolsActivePort` — the bind is atomic, so a rig never drives another rig's Chrome (a port probed free and released,
+ * then taken by another session's launch before this one bound it, answered `/json/version` from THAT browser). The
+ * returned `port` is the one bound.
+ */
+export async function launchChrome({ port = 0, headless = false, extraArgs = [] } = {}) {
   const profile = await mkdtemp(join(tmpdir(), "magnet-bench-"));
   const args = [
     `--remote-debugging-port=${port}`,
@@ -33,25 +39,36 @@ export async function launchChrome({ port = 9333, headless = false, extraArgs = 
   const stderr = [];
   child.stderr.on("data", (b) => stderr.push(String(b)));
 
-  const deadline = Date.now() + 20_000;
+  // a loaded host starts a browser slowly (20 s was seen to lapse at load 13 on a cold start): a minute, or the child's exit
+  const deadline = Date.now() + 60_000;
+  let bound = port;
   let version = null;
-  while (Date.now() < deadline) {
-    try {
-      const res = await fetch(`http://127.0.0.1:${port}/json/version`);
-      if (res.ok) {
-        version = await res.json();
-        break;
-      }
-    } catch {}
+  while (Date.now() < deadline && child.exitCode === null) {
+    if (bound === 0) {
+      try {
+        const first = Number((await readFile(join(profile, "DevToolsActivePort"), "utf8")).split("\n")[0]);
+        if (first > 0) bound = first;
+      } catch {}
+    }
+    if (bound !== 0) {
+      try {
+        const res = await fetch(`http://127.0.0.1:${bound}/json/version`);
+        if (res.ok) {
+          version = await res.json();
+          break;
+        }
+      } catch {}
+    }
     await new Promise((r) => setTimeout(r, 120));
   }
   if (version === null) {
     child.kill("SIGKILL");
-    throw new Error(`chrome did not expose CDP on ${port}: ${stderr.join("").slice(-800)}`);
+    await rm(profile, { recursive: true, force: true }).catch(() => {});
+    throw new Error(`chrome did not expose CDP (port ${bound === 0 ? "never written" : bound}${child.exitCode !== null ? `, exited ${child.exitCode}` : ""}): ${stderr.join("").slice(-800)}`);
   }
   return {
     child,
-    port,
+    port: bound,
     profile,
     version,
     stderr,
@@ -104,13 +121,20 @@ export async function until(fn, ms) {
   return v;
 }
 
+/**
+ * Open a tab. `DESK_CPU_THROTTLE=n` (K-H) slows its renderer n× (`Emulation.setCPUThrottlingRate`): a loaded host on demand, in this
+ * browser alone — the red proofs of the gate's load races run under it, never under load made for the purpose on a shared machine.
+ */
 export async function openTab(port, url) {
   const res = await fetch(`http://127.0.0.1:${port}/json/new?${encodeURIComponent(url)}`, {
     method: "PUT",
   });
   if (!res.ok) throw new Error(`open tab failed: ${res.status} ${await res.text()}`);
   const target = await res.json();
-  return connect(target.webSocketDebuggerUrl, target);
+  const tab = connect(target.webSocketDebuggerUrl, target);
+  const rate = Number(process.env.DESK_CPU_THROTTLE ?? 1);
+  if (rate > 1) await tab.send("Emulation.setCPUThrottlingRate", { rate });
+  return tab;
 }
 
 export function connect(wsUrl, target) {

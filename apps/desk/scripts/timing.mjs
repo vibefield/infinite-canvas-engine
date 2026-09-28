@@ -92,13 +92,37 @@ export async function twoWitnesses(measure, judge) {
 
 /**
  * A double-click as ONE batch (K-H): the four mouse events sent back to back without awaiting each other, so they reach the
- * page in order with no round trip between them — the desk pairs its two taps on the frames that recognise them (nav-tap.ts,
- * ≤ `multiTapWindowMs` of `now`), and four awaited round trips with a sleep between each spent that window on a loaded host.
- * The events carry their own timestamps 20 ms apart (a person's quick double-click). Resolves when Chrome acknowledged all four.
+ * page in order with no round trip between them — the desk pairs its two taps on the frames that RECOGNISE them (nav-tap.ts,
+ * held.ts: ≤ `multiTapWindowMs` 280 ms of `now`), and four awaited round trips with a 16 ms sleep after each spent that window
+ * on a loaded host. Measured on the calendar's tape (the rig:open row, 80 trials a build at load 17–137): the batch reaches the
+ * page in 4–31 ms and the desk recognises the two taps a frame or two apart, as it does the awaited four. The events carry their
+ * own timestamps 20 ms apart (a person's quick double-click). `move`: a mouseMoved to the point first (rig:open's helper had one;
+ * rig:nav's and rig:interact's did not). Resolves when Chrome has acknowledged all four.
  */
-export async function dblClick(tab, x, y, extra = {}) {
-  await tab.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, ...extra });
+export async function dblClick(tab, x, y, { move = true, ...extra } = {}) {
+  if (move) await tab.send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, ...extra });
   const t = Date.now() / 1000;
   const steps = [["mousePressed", 1], ["mouseReleased", 1], ["mousePressed", 2], ["mouseReleased", 2]];
   await Promise.all(steps.map(([type, clickCount], i) => tab.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount, timestamp: t + i * 0.02, ...extra })));
+}
+
+/**
+ * A PROGRESS watchdog (K-H): the rig exits 2 when `quietMs` pass with no row reported — `kick()`, called by every row — or the whole
+ * run outlasts `totalMs` (four quiet spans by default: a loop that reports forever is still a hang). A rig's watchdog was ONE span for
+ * the whole run, so a loaded host that slowed every row killed a rig that was making progress: rig:parity reached 63 of its 106
+ * scenes in 1,230 s at load 280 (19.5 s a scene, two captures each), bound for its 1,800 s watchdog. A hang still ends in `quietMs`.
+ */
+export function watchdog(quietMs, cleanup, { totalMs = 4 * quietMs } = {}) {
+  const t0 = Date.now();
+  let last = t0;
+  const timer = setInterval(async () => {
+    const now = Date.now();
+    if (now - last <= quietMs && now - t0 <= totalMs) return;
+    clearInterval(timer);
+    console.log(`WATCHDOG — ${now - last > quietMs ? `no row in ${((now - last) / 1000).toFixed(0)} s` : `the run past ${(totalMs / 1000).toFixed(0)} s`}`);
+    await cleanup();
+    process.exit(2);
+  }, 1000);
+  timer.unref();
+  return () => { last = Date.now(); };
 }

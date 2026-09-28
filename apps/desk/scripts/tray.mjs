@@ -13,34 +13,26 @@
 // ghost's first, measured), the ways back (Esc, over the drawer, inside it) making nothing and leaving nothing in undo, the ghost flying
 // home shrinking, into a mini mat by the kinds' rules, the plugin kind taken too, idle after. Exit 0 = every row passed.
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 import { decodePng } from "./png.mjs";
-import { hostLoad, median, minOf } from "./timing.mjs";
+import { hostLoad, median, minOf, watchdog } from "./timing.mjs";
 import { layTray, PEG_LATTICE } from "../../../packages/kernel/src/tray.ts";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
 const repo = resolve(app, "../..");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function freePort(from) {
-  for (let port = from; port < from + 40; port++) {
-    const free = await new Promise((r) => { const s = createServer(); s.once("error", () => r(false)); s.listen(port, "127.0.0.1", () => s.close(() => r(true))); });
-    if (free) return port;
-  }
-  throw new Error(`no free CDP port in ${from}…${from + 39}`);
-}
 const t0 = Date.now();
 const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
 const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
-const chrome = await launchChrome({ port: await freePort(9611), headless: !process.env.DESK_HEADED });
+const chrome = await launchChrome({ headless: !process.env.DESK_HEADED });
 let done = false;
 async function cleanup() { if (done) return; done = true; try { await chrome.close(); } catch {} try { server.kill("SIGKILL"); } catch {} }
-setTimeout(async () => { console.log("WATCHDOG"); await cleanup(); process.exit(2); }, 180_000).unref();
+const kick = watchdog(180_000, cleanup);   // no row in 180 s: a hang (K-H — a slow host is not one)
 let pass = 0;
 let failN = 0;
-const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; };
+const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; kick(); };
 
 // the curve (cubic-bezier(0.32,0.72,0,1)) — the kernel's, restated for the witness: x(u) solved by bisection, y(u) read
 const bez = (a, b, u) => 3 * (1 - u) * (1 - u) * u * a + 3 * (1 - u) * u * u * b + u * u * u;
@@ -91,10 +83,16 @@ try {
   //      every slide after it is one frame per frame of motion (row 2)
   const first0 = await q("window.__desk.submits().total");
   await q("window.__desk.tray.open()"); await settle(); await sleep(300); await settle();
+  // the setup DONE, not two 4 s settles and a sleep standing in for it (K-H): the desk SETTLED, however long a slow host takes (30 s
+  // at most). Twice at load 150–193, with another session's oracle on the GPU, the first open drew 17 frames, not its ~26, before
+  // the settles gave up unsettled; the rest of its setup landed in the next open, and the slide row below counted it as the slide's
+  // (24 submits for 21 frames of motion). Shutting the first open after ONE frame puts the setup's tail in the slide's window here too
+  let firstSettled = (await settle()).settled;
+  for (let i = 0; i < 7 && !firstSettled; i++) firstSettled = (await settle()).settled;
   const firstOpen = (await q("window.__desk.submits().total")) - first0;
   const slots = (await tray()).slots;
   await q("window.__desk.tray.close()"); await settle();
-  check(slots === 6 && firstOpen > 0, `the first open made the six specimens' slots (${slots}) — ${firstOpen} submits, the slide's and the setup's, once`);
+  check(slots === 6 && firstOpen > 0 && firstSettled, `the first open made the six specimens' slots (${slots}) — ${firstOpen} submits, the slide's and the setup's, once; the desk settled after it: ${firstSettled}`);
 
   // 2. `a` opens it, on the curve — sampled on the frame clock; the motion's wall time
   const lit0 = await shot();
@@ -359,13 +357,21 @@ try {
   const memOpen = await ledger();
   const tilesOpen = await q("window.__desk.handle.local('calendar')?.tiles().resident ?? -1");
   await q("window.__desk.tray.close()"); await settle();
-  await sleep(6000);
-  const memShut = await ledger();
-  const tilesShut = await q("window.__desk.handle.local('calendar')?.tiles().resident ?? -1");
+  // the let-go WAITED FOR (K-H), not 6 s of wall time against LAYER_IDLE_MS 5000: the let-go is a registered wake, late on a loaded host;
+  // 12 s at most, and the time it took printed
+  const shut0 = Date.now();
+  let memShut = await ledger();
+  let tilesShut = await q("window.__desk.handle.local('calendar')?.tiles().resident ?? -1");
+  while (Date.now() - shut0 < 12000 && !(memShut.notebook < memOpen.notebook / 4 && memShut.calendar < memOpen.calendar / 4 && tilesShut === 0)) {
+    await sleep(250);
+    memShut = await ledger();
+    tilesShut = await q("window.__desk.handle.local('calendar')?.tiles().resident ?? -1");
+  }
+  const shutS = ((Date.now() - shut0) / 1000).toFixed(1);
   const mb = (b) => (b / 1048576).toFixed(1);
   check(memOpen.notebook > 0 && memOpen.calendar > 0 && memShut.notebook < memOpen.notebook / 4 && memShut.calendar < memOpen.calendar / 4, `the tray's notebook and calendar layers let go once undrawn (each row under a quarter of its open size): the ledger's notebook ${mb(memOpen.notebook)} → ${mb(memShut.notebook)} MB, calendar ${mb(memOpen.calendar)} → ${mb(memShut.calendar)} MB, open → 6 s after the drawer shut`);
   // K5b: the pad specimen PRINTS its month with the desk's print (its tray pass reads the root's tiles) — and lets it go with the drawer shut
-  check(tilesOpen > 0 && tilesShut === 0, `the pad specimen's print is the desk's, and let go with the drawer: its tiles resident ${tilesOpen} open → ${tilesShut} 6 s after it shut`);
+  check(tilesOpen > 0 && tilesShut === 0, `the pad specimen's print is the desk's, and let go with the drawer: its tiles resident ${tilesOpen} open → ${tilesShut} ${shutS} s after it shut (the layers' let-go 5 s)`);
 
   // S10. TAKING ONE (design-017 §9; K5b): a press on a specimen + 4 px lifts a COPY (the specimen stays hung); out of the drawer it slides
   //      away and the desk takes it — the insert ghost under the same grab point (no centre-snap), the ordinary drag, ONE create, selected,
@@ -494,10 +500,13 @@ try {
     // THE HAND-OFF: out through the top in one move, then still — the frame that hands it and the first the ghost is drawn coincide
     const top = lifted.frame.y;
     await front();
-    // the trace's evaluate is SENT before the move (CDP keeps the order; `qa` would await `front()` first and let the move pass it)
-    const tracing = tab.evaluate(traceJs(40), { awaitPromise: true, timeoutMs: 20000 });
+    // the trace RUNNING before the move (K-H): K5b sent its evaluate first, but CDP orders its own messages only — the input reaches the
+    // page's main thread by another road, and at load 290 the move landed first and the handing frame went unsampled (−1). So the
+    // sampler starts, the rig waits in the page for its FIRST sample, and only then moves; the frames before the move read "lift"
+    await qa("(() => { const out = (window.__trayTrace = []); const f = () => { const s = window.__desk.tray.state(); out.push({ carried: s.carried, facts: window.__desk.tray.facts(), p: s.p }); if (out.length < 60) requestAnimationFrame(f); }; requestAnimationFrame(f); return 0; })()");
+    await qa("new Promise((r) => { const f = () => (window.__trayTrace.length > 0 ? r(0) : requestAnimationFrame(f)); f(); })");
     await mouse("mouseMoved", g[0] + 20, top - 24, { buttons: 1 });
-    const trace = await tracing;
+    const trace = await qa("new Promise((r) => { const f = () => (window.__trayTrace.length >= 60 ? r(window.__trayTrace) : requestAnimationFrame(f)); f(); })");
     const i0 = trace.findIndex((t) => t.carried.some((c) => c.phase === "handing"));
     const i1 = trace.findIndex((t) => t.carried.some((c) => c.phase === "grow"));
     const hand = i0 >= 0 ? trace[i0].carried.find((c) => c.phase === "handing") : undefined;

@@ -22,6 +22,7 @@ import inkUrl from "@ice/objects/oracle/fixtures/assets/ink-note-1.r8?url";
 import photoMetaUrl from "@ice/objects/oracle/fixtures/assets/photo-1.json?url";
 import photoUrl from "@ice/objects/oracle/fixtures/assets/photo-1.rgba?url";
 import { PRINT_FIXTURES, type PrintMeta, printSheetOf } from "@ice/objects/oracle/prints.mjs";
+import { bytesOf, fetchRetry, jsonOf } from "./rig/fetch-retry";   // the rigs' fetches, retried (K-H)
 
 /** The page's door for the rig (and a person at the console). */
 export interface DeskParity {
@@ -62,16 +63,6 @@ function fail(e: unknown): void {
   failEl.hidden = false;
 }
 
-async function bytesOf(url: string): Promise<Uint8Array<ArrayBuffer>> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${url}: ${res.status}`);
-  return new Uint8Array(await res.arrayBuffer());
-}
-async function jsonOf<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${url}: ${res.status}`);
-  return (await res.json()) as T;
-}
 
 async function boot(): Promise<void> {
   if (!navigator.gpu) throw new Error("WebGPU is not available here — check chrome://gpu");
@@ -110,7 +101,7 @@ async function boot(): Promise<void> {
   const prints: Record<string, ReturnType<typeof printSheetOf>> = {};
   for (const name of PRINT_FIXTURES) {
     const base = new URL(`../../../packages/objects/oracle/fixtures/assets/${name}`, location.href).href;
-    const [metaRes, binRes] = await Promise.all([fetch(`${base}.json`), fetch(`${base}.bin`)]);
+    const [metaRes, binRes] = await Promise.all([fetchRetry(`${base}.json`), fetchRetry(`${base}.bin`)]);
     if (!metaRes.ok || !binRes.ok) continue;   // not committed yet: its scenes cannot be drawn (the oracle says so too)
     const bytes = new Uint8Array(await new Response((await binRes.blob()).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
     prints[name] = printSheetOf((await metaRes.json()) as PrintMeta, bytes);

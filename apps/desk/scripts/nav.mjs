@@ -14,35 +14,28 @@
 //
 //   pnpm --filter ./packages/objects oracle && pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:nav
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { NAV_SCENES } from "@ice/objects/oracle/scenes.mjs";
 import { layoutMarks } from "../../../packages/desk/src/marks/layout.ts";
 import { markDistance } from "../../../packages/desk/src/marks/mirror.ts";
 import { flightOpacity } from "../../../packages/desk/src/nav/flight.ts";
 import { faultsOf, launchChrome, openTab, until, watchPage } from "./cdp.mjs";
+import { dblClick, watchdog } from "./timing.mjs";
 import { decodePng } from "./png.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
 const repo = resolve(app, "../..");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function freePort(from) {
-  for (let port = from; port < from + 40; port++) {
-    const free = await new Promise((r) => { const s = createServer(); s.once("error", () => r(false)); s.listen(port, "127.0.0.1", () => s.close(() => r(true))); });
-    if (free) return port;
-  }
-  throw new Error(`no free CDP port in ${from}…${from + 39}`);
-}
 const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
 const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
-const chrome = await launchChrome({ port: await freePort(9611), headless: !process.env.DESK_HEADED });
+const chrome = await launchChrome({ headless: !process.env.DESK_HEADED });
 let done = false;
 async function cleanup() { if (done) return; done = true; try { await chrome.close(); } catch {} try { server.kill("SIGKILL"); } catch {} }
-setTimeout(async () => { console.log("WATCHDOG"); await cleanup(); process.exit(2); }, 480_000).unref();
+const kick = watchdog(480_000, cleanup);   // no row in 480 s: a hang (K-H — a slow host is not one)
 let pass = 0;
 let failN = 0;
-const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; };
+const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; kick(); };
 const near = (a, b, eps = 1e-9) => Math.abs(a - b) <= eps;
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
 /**
@@ -113,7 +106,7 @@ try {
   const land = async () => { let w = 0; while (w < 4000) { await sleep(50); w += 50; if (!(await q("window.__desk.flight()"))) return true; } return false; };
   const frame = () => q("(() => { const s = window.__desk.stats(); return { portals: s.frame ? s.frame.portals : -1, outgoing: s.frame ? s.frame.outgoing !== null : null, objects: s.objects, active: s.active }; })()");
   const mouse = async (type, x, y, extra = {}) => tab.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1, ...extra });
-  const dbl = async (x, y) => { for (const [type, clickCount] of [["mousePressed", 1], ["mouseReleased", 1], ["mousePressed", 2], ["mouseReleased", 2]]) { await tab.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount }); await sleep(16); } };
+  const dbl = (x, y) => dblClick(tab, x, y, { move: false });   // the four events as one batch (K-H — timing.mjs)
   const byName = Object.fromEntries(NAV_SCENES.map((s) => [s.name, s.scene]));
   const rest = { ...byName["nav-enter-p0"], nav: undefined };   // the desk of four mini mats at 1:1, no flight
 
@@ -136,9 +129,11 @@ try {
   const f0 = await q("window.__desk.flight()");
   const z0 = (await q("window.__desk.camera()")).zoom;
   check(f0 && f0.kind === "enter" && (await q("window.__desk.depth()")) === 1, `enter: the desk cut at once (depth 1) and a flight is on — c0 zoom ${f0?.c0.zoom.toFixed(3)} → c1 zoom ${f0?.c1.zoom.toFixed(3)}`);
-  await sleep(120);
-  const z1 = (await q("window.__desk.camera()")).zoom;
-  check(z1 > z0, `the camera is flying in (zoom ${z0.toFixed(3)} → ${z1.toFixed(3)} in 120 ms)`);
+  // the flight's first step, not 120 ms of wall time standing in for it (K-H): a sleep that must cover the cut frame and a spring frame
+  // reads the camera unmoved when a loaded host's frames are slower than that; its wall time printed beside
+  const tf = Date.now();
+  const z1 = (await until(async () => { const z = (await q("window.__desk.camera()")).zoom; return z > z0 ? z : null; }, 3000)) ?? (await q("window.__desk.camera()")).zoom;
+  check(z1 > z0, `the camera is flying in (zoom ${z0.toFixed(3)} → ${z1.toFixed(3)} ${Date.now() - tf} ms after the cut)`);
   await q("window.__desk.pinFlight(0.5)");
   await settle();
   const mid = await frame();

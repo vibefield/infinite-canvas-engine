@@ -15,7 +15,7 @@ import { BLANK_SHEET, type CommittedSheet, type PrintMeta, PRINT_ZONE, printShee
 import photoMetaUrl from "@ice/objects/oracle/fixtures/assets/photo-1.json?url";
 import photoUrl from "@ice/objects/oracle/fixtures/assets/photo-1.rgba?url";
 import { deskBlobs } from "../blobs";
-import { bytesOf } from "../fixtures";
+import { bytesOf, fetchRetry, jsonOf } from "./fetch-retry";
 import type { PrintFixture } from "../rig-door";
 import type { SpawnSpec } from "../scene";
 import type { OracleNote } from "./stage";
@@ -187,10 +187,11 @@ function committedPrint(name: string): Promise<CommittedSheet> {
   if (p === undefined) {
     const base = new URL(`../../../packages/objects/oracle/fixtures/assets/${name}`, location.href).href;
     p = (async () => {
-      const [meta, bin] = await Promise.all([fetch(`${base}.json`).then((r) => { if (!r.ok) throw new Error(`${name}.json: ${r.status}`); return r.json() as Promise<PrintMeta>; }), fetch(`${base}.bin`).then((r) => { if (!r.ok) throw new Error(`${name}.bin: ${r.status}`); return r.blob(); })]);
+      const [meta, bin] = await Promise.all([fetchRetry(`${base}.json`).then((r) => { if (!r.ok) throw new Error(`${name}.json: ${r.status}`); return r.json() as Promise<PrintMeta>; }), fetchRetry(`${base}.bin`).then((r) => { if (!r.ok) throw new Error(`${name}.bin: ${r.status}`); return r.blob(); })]);
       const bytes = new Uint8Array(await new Response(bin.stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
       return printSheetOf(meta, bytes);
     })();
+    p.catch(() => committed.delete(name));   // a failed fetch is not kept (K-H)
     committed.set(name, p);
   }
   return p;
@@ -256,7 +257,8 @@ export type { PrintFixture };
 let fixture: Promise<{ readonly bytes: Uint8Array<ArrayBuffer>; readonly w: number; readonly h: number }> | null = null;
 /** The fixture put in the desk's BlobStore and PRELOADED on the photo kind — so the scene's first frame has its picture. */
 export async function printFixture(handle: DeskLayerHandle): Promise<PrintFixture> {
-  fixture ??= Promise.all([bytesOf(photoUrl), fetch(photoMetaUrl).then((r) => r.json() as Promise<{ w: number; h: number }>)]).then(([bytes, meta]) => ({ bytes, w: meta.w, h: meta.h }));
+  // a failed fetch is not kept (K-H): the next scene fetches again
+  fixture ??= Promise.all([bytesOf(photoUrl), jsonOf<{ w: number; h: number }>(photoMetaUrl)]).then(([bytes, meta]) => ({ bytes, w: meta.w, h: meta.h }), (e: unknown) => { fixture = null; throw e; });
   const f = await fixture;
   const hash = await deskBlobs.put(f.bytes, RGBA_TYPE);
   await (handle.local("photo") as Prints | undefined)?.preload(hash, f.w, f.h);

@@ -9,13 +9,7 @@ import glyphsUrl from "@ice/objects/oracle/fixtures/assets/glyphs-mono-2x.r8?url
 import inkMetaUrl from "@ice/objects/oracle/fixtures/assets/ink-note-1.json?url";
 import inkUrl from "@ice/objects/oracle/fixtures/assets/ink-note-1.r8?url";
 import type { GlyphAtlasMeta } from "@ice/desk";
-import { bytesOf } from "../fixtures";
-
-async function jsonOf<T>(url: string): Promise<T> {
-  const res = await fetch(url);
-  if (!res.ok) throw new Error(`${url}: ${res.status}`);
-  return (await res.json()) as T;
-}
+import { bytesOf, jsonOf } from "./fetch-retry";
 
 /** The oracle's fixtures, the same bytes it reads from disk. */
 export interface OracleFixtures {
@@ -29,6 +23,6 @@ export interface OracleFixtures {
 let fixtures: Promise<OracleFixtures> | null = null;
 export const oracleFixtures = (): Promise<OracleFixtures> => {
   fixtures ??= Promise.all([bytesOf(goboCUrl), bytesOf(goboBUrl), bytesOf(glyphsUrl), jsonOf<GlyphAtlasMeta>(glyphMetaUrl), bytesOf(inkUrl), jsonOf<OracleFixtures["inkMeta"]>(inkMetaUrl)])
-    .then(([goboC, goboB, glyphs, glyphMeta, ink, inkMeta]) => ({ goboC, goboB, glyphs, glyphMeta, ink, inkMeta }));
+    .then(([goboC, goboB, glyphs, glyphMeta, ink, inkMeta]) => ({ goboC, goboB, glyphs, glyphMeta, ink, inkMeta }), (e: unknown) => { fixtures = null; throw e; });   // a failed fetch is not kept (K-H)
   return fixtures;
 };

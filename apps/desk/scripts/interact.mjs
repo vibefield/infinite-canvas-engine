@@ -19,31 +19,24 @@
 // goes in, one ⌘Z undoing both; a long-press hold on the drag's exit tick is the drag's (arbitration
 // decides once per tick). Exit 0 = every check passed.
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
+import { dblClick, watchdog } from "./timing.mjs";
 import { kindsRig } from "./interact-kinds.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
 const repo = resolve(app, "../..");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function freePort(from) {
-  for (let port = from; port < from + 40; port++) {
-    const free = await new Promise((r) => { const s = createServer(); s.once("error", () => r(false)); s.listen(port, "127.0.0.1", () => s.close(() => r(true))); });
-    if (free) return port;
-  }
-  throw new Error(`no free CDP port in ${from}…${from + 39}`);
-}
 const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
 const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
-const chrome = await launchChrome({ port: await freePort(9531), headless: !process.env.DESK_HEADED });
+const chrome = await launchChrome({ headless: !process.env.DESK_HEADED });
 let done = false;
 async function cleanup() { if (done) return; done = true; try { await chrome.close(); } catch {} try { server.kill("SIGKILL"); } catch {} }
-setTimeout(async () => { console.log("WATCHDOG"); await cleanup(); process.exit(2); }, 300_000).unref();
+const kick = watchdog(300_000, cleanup);   // no row in 300 s: a hang (K-H — a slow host is not one)
 let pass = 0;
 let failN = 0;
-const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; };
+const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; kick(); };
 const near = (a, b, eps = 1e-6) => Math.abs(a - b) <= eps;
 
 try {
@@ -243,11 +236,15 @@ try {
   let lit = null;
   const trace13 = [];
   const reach = B13.y - A13.y;   // how far up B's top must go to meet A's
-  for (let d = 0; d <= reach + 30; d += 2) {
+  // PACED BY THE DESK (K-H): the rows went red on MAIN at load ≥ 190 (2 of 3) with no guide met at all — the loop's 2 px steps, 60 ms
+  // of wall time apart, took the drag's 10 px slop over several SLOW frames, and the desk's clamped clock passed the 500 ms long
+  // press first: B never moved (reproduced under DESK_CPU_THROTTLE=6, 3 of 3). So the first move crosses the slop at once (at 12 px,
+  // where the 2 px steps crossed it: B's lag and the geometry after are the same), and every step waits in the page until the desk
+  // has taken that move — its pointer at the point — then reads the marks it drew and B's place TOGETHER (one frame's state, never
+  // two round trips a frame apart); 3 s without the move taken: read what stands
+  for (let d = 12; d <= reach + 30; d += 2) {
     await mouse("mouseMoved", B13.cx, B13.cy - d);
-    await sleep(60);
-    const mk = await marks();
-    const now = await entity(b);
+    const { mk, now } = await q(`new Promise((r) => { const D = window.__desk; const t0 = performance.now(); const f = () => { const p = D.pointer(); if ((p !== null && Math.abs(p.y - ${B13.cy - d}) < 0.5) || performance.now() - t0 > 3000) r({ mk: D.marks(), now: D.entity(${b}) }); else requestAnimationFrame(f); }; f(); })`);
     const guide = (mk?.guides ?? []).find((g) => g.axis === "y" && near(g.at, A13.y, 0.51));
     trace13.push(`${d}:${now.y}/${(mk?.guides ?? []).map((g) => g.at).join("+")}`);
     if (guide && near(now.y, A13.y, 1e-6)) { lit = { guide, y: now.y, strike: mk.strike }; break; }
@@ -399,7 +396,7 @@ try {
   //     (B, dropped in at 8b) selects it, and its BRACKETS stand where the ENTERED camera draws it — the marks are the root slot's,
   //     and once entered the root slot IS the mat's inside, its members under the entered camera; the menu's anchor goes with them.
   //     Then back out: Escape puts the pen down, a second leaves the frame.
-  const dbl = async (x, y) => { for (const [type, clickCount] of [["mousePressed", 1], ["mouseReleased", 1], ["mousePressed", 2], ["mouseReleased", 2]]) { await tab.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount }); await sleep(16); } };
+  const dbl = (x, y) => dblClick(tab, x, y, { move: false });   // the four events as one batch (K-H — timing.mjs)
   const land = async () => { for (let w = 0; w < 4000; w += 50) { await sleep(50); if (!(await q("window.__desk.flight()"))) return true; } return false; };
   await sleep(250);   // clear of the deselect's tap window
   await mouse("mouseMoved", 400, 700);

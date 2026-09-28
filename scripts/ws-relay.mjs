@@ -54,4 +54,12 @@ wss.on("connection", (socket, req) => {
   socket.on("error", () => socket.close());
 });
 
-console.log(`ws-relay listening on ws://localhost:${PORT}  (rooms via URL path; set PORT to override)`);
+// "listening" is said once the port is BOUND, naming the port bound — `PORT=0` asks the OS for a free one, so a harness reads the
+// port back from this line and never probes one free and loses it before the bind (K-H: rig:collab's relay-port race)
+wss.on("listening", () => {
+  console.log(`ws-relay listening on ws://localhost:${wss.address().port}  (rooms via URL path; set PORT to override)`);
+});
+wss.on("error", (e) => {
+  console.error(`ws-relay: ${e.message}`);
+  process.exit(1);
+});

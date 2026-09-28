@@ -6,9 +6,9 @@
  * swapped for the frame WITHOUT the whiteboard (a mismatched A/A) fail by tens of deviations. A habit of 0.3 % on a silent host is
  * not a broken method; the desk drawing beside the batches is; a failed witness is re-measured once and judged pooled (D-KH.3).
  */
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 // @ts-expect-error — a rig harness module (plain ESM, no declarations)
-import { aaVerdict, minOf, twoWitnesses } from "../scripts/timing.mjs";
+import { aaVerdict, dblClick, minOf, twoWitnesses, watchdog } from "../scripts/timing.mjs";
 
 interface Kc {
   readonly samples: { readonly base: number[]; readonly control: number[]; readonly board?: number[] };
@@ -113,5 +113,58 @@ describe("two witnesses (D-KH.3)", () => {
 
   it("minOf is the minimum", () => {
     expect(minOf([0.334, 0.301, 0.21, 0.29])).toBe(0.21);
+  });
+});
+
+describe("a double-click as one batch (K-H)", () => {
+  it("sends its four events before the first is acknowledged, 20 ms apart by their own timestamps", async () => {
+    const sent: { type: string; clickCount?: number; timestamp?: number }[] = [];
+    let ackFirst: () => void = () => {};
+    const tab = {
+      send: (_method: string, p: { type: string; clickCount?: number; timestamp?: number }) => {
+        sent.push(p);
+        return p.type === "mousePressed" && p.clickCount === 1 ? new Promise<void>((r) => { ackFirst = r; }) : Promise.resolve();
+      },
+    };
+    const done = dblClick(tab, 10, 20, { move: false });
+    for (let i = 0; i < 4; i++) await Promise.resolve();
+    expect(sent.map((p) => `${p.type} ${p.clickCount}`)).toEqual(["mousePressed 1", "mouseReleased 1", "mousePressed 2", "mouseReleased 2"]);
+    ackFirst();
+    await done;
+    const ts = sent.map((p) => p.timestamp ?? 0);
+    for (let i = 1; i < 4; i++) expect((ts[i] ?? 0) - (ts[i - 1] ?? 0)).toBeCloseTo(0.02, 5);   // seconds since the epoch: f64 holds ~0.2 µs
+  });
+
+  it("moves to the point first unless told not to", async () => {
+    const sent: string[] = [];
+    await dblClick({ send: async (_m: string, p: { type: string }) => { sent.push(p.type); } }, 1, 2);
+    expect(sent[0]).toBe("mouseMoved");
+    expect(sent).toHaveLength(5);
+  });
+});
+
+describe("the progress watchdog (K-H)", () => {
+  afterEach(() => { vi.useRealTimers(); vi.restoreAllMocks(); });
+  const arm = (quietMs: number, totalMs?: number) => {
+    vi.useFakeTimers();
+    const exit = vi.spyOn(process, "exit").mockImplementation((() => undefined) as never);
+    vi.spyOn(console, "log").mockImplementation(() => {});
+    const cleaned: number[] = [];
+    const kick = watchdog(quietMs, async () => { cleaned.push(Date.now()); }, totalMs === undefined ? {} : { totalMs });
+    return { exit, kick, cleaned };
+  };
+
+  it("a rig that reports rows lives past its old one-span budget; one that goes quiet dies after the quiet span", async () => {
+    const { exit, kick } = arm(10_000);
+    for (let i = 0; i < 6; i++) { await vi.advanceTimersByTimeAsync(5_000); kick(); }   // 30 s of rows, 5 s apart: 3× the old one span
+    expect(exit).not.toHaveBeenCalled();
+    await vi.advanceTimersByTimeAsync(12_000);   // then nothing
+    expect(exit).toHaveBeenCalledWith(2);
+  });
+
+  it("a run that reports forever still ends at its total", async () => {
+    const { exit, kick } = arm(10_000, 60_000);
+    for (let i = 0; i < 20 && !exit.mock.calls.length; i++) { await vi.advanceTimersByTimeAsync(5_000); kick(); }
+    expect(exit).toHaveBeenCalledWith(2);
   });
 });

@@ -37,11 +37,10 @@
 // DESK_STRESS_GATE=1, every gate held); 1 for a failed preflight, a throw or a failed gate; 2 for the watchdog.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { loadavg } from "node:os";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
-import { aaVerdict, hostLoad, twoWitnesses } from "./timing.mjs";
+import { aaVerdict, hostLoad, twoWitnesses, watchdog } from "./timing.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -118,25 +117,18 @@ export function writtenScene() {
 const die =(what, cmd) => { console.log(`PREFLIGHT FAIL: ${what}\n  produce it with:  ${cmd}`); process.exit(1); };
 if (!existsSync(resolve(app, "dist/rig.html"))) die("the desk's build is missing (apps/desk/dist/rig.html)", "pnpm --filter ./apps/desk build");
 
-async function freePort(from) {
-  for (let port = from; port < from + 40; port++) {
-    const free = await new Promise((r) => { const s = createServer(); s.once("error", () => r(false)); s.listen(port, "127.0.0.1", () => s.close(() => r(true))); });
-    if (free) return port;
-  }
-  throw new Error(`no free CDP port in ${from}…${from + 39}`);
-}
 const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
 const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
 // V8's gc() exposed and a young generation big enough that a 120-frame batch never scavenges (the heap's growth IS the allocation):
 // its size PINNED, min and max (K7a — a max alone let it start small and scavenge mid-batch, so the growth read the scavenger's
 // phase: 42 or 122 KB of a pan that allocated 500 KB a frame); precise heap readings
-const chrome = await launchChrome({ port: await freePort(9611), headless: !process.env.DESK_HEADED, extraArgs: ["--js-flags=--expose-gc --min-semi-space-size=128 --max-semi-space-size=128", "--enable-precise-memory-info"] });
+const chrome = await launchChrome({ headless: !process.env.DESK_HEADED, extraArgs: ["--js-flags=--expose-gc --min-semi-space-size=128 --max-semi-space-size=128", "--enable-precise-memory-info"] });
 let done = false;
 async function cleanup() { if (done) return; done = true; try { await chrome.close(); } catch {} try { server.kill("SIGKILL"); } catch {} }
-setTimeout(async () => { console.log("WATCHDOG"); await cleanup(); process.exit(2); }, 900_000).unref();
+const kick = watchdog(900_000, cleanup);   // no row in 900 s: a hang (K-H — a slow host is not one)
 let pass = 0;
 let failN = 0;
-const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; };
+const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; kick(); };
 const gate = (ok, msg) => { if (GATE) check(ok, `GATE  ${msg}`); else console.log(`  ${ok ? "ok  " : "MISS"}  gate  ${msg}`); };
 const rows = [];
 const report = {};

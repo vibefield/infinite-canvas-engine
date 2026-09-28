@@ -21,10 +21,10 @@
 // throw; 2 for the watchdog. `pnpm run gate:landing` runs it.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { ORACLE_SCENES } from "@ice/objects/oracle/scenes.mjs";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
+import { watchdog } from "./timing.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -66,22 +66,15 @@ const missing = scenes.filter((sc) => !existsSync(resolve(repo, `packages/object
 if (missing.length) die(`${missing.length} of ${scenes.length} oracle render(s) missing from packages/objects/oracle/results (first: oracle-${missing[0].name}.rgba)`, "pnpm --filter ./packages/objects oracle");
 
 /** A CDP port nothing listens on — never drive another session's Chrome by accident. */
-async function freePort(from) {
-  for (let port = from; port < from + 40; port++) {
-    const free = await new Promise((r) => { const s = createServer(); s.once("error", () => r(false)); s.listen(port, "127.0.0.1", () => s.close(() => r(true))); });
-    if (free) return port;
-  }
-  throw new Error(`no free CDP port in ${from}…${from + 39}`);
-}
 
 let threw = false;
 let failures = 0;
 const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
 const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
-const chrome = await launchChrome({ port: await freePort(9471), headless: !process.env.DESK_HEADED });
+const chrome = await launchChrome({ headless: !process.env.DESK_HEADED });
 let done = false;
 async function cleanup() { if (done) return; done = true; try { await chrome.close(); } catch {} try { server.kill("SIGKILL"); } catch {} }
-setTimeout(async () => { console.log("WATCHDOG"); await cleanup(); process.exit(2); }, 1_800_000).unref();   // 49+ scenes took 14 min at load 400–700
+const kick = watchdog(300_000, cleanup, { totalMs: 7_200_000 });   // no scene in 300 s: a hang; the run at most 120 min (K-H — a slow host is not one: 49+ scenes took 14 min at load 400–700, 63 of 106 took 20.5 min at load 280)
 
 const front = (tab) => tab.send("Page.bringToFront");
 /** The frame the page drew is presented: to the front, two frames, a beat for the compositor. */
@@ -106,7 +99,14 @@ const diffJs = (png, name) => `(async () => {
   const img = new Image(); img.src = "data:image/png;base64,${png}"; await img.decode();
   const c = new OffscreenCanvas(img.width, img.height); const g = c.getContext("2d"); g.drawImage(img, 0, 0);
   const a = g.getImageData(0, 0, img.width, img.height).data;
-  const res = await fetch("/packages/objects/oracle/results/oracle-${name}.rgba", { cache: "no-store" }); if (!res.ok) return { error: "fetch " + res.status };
+  // the Node render, fetched with retries (K-H): under load a local fetch is dropped now and then ("Failed to fetch") or the server
+  // answers a transient 5xx — retried with backoff, six tries; a 404 is the file's absence and final
+  let res = null;
+  for (let i = 0; i < 6; i++) {
+    try { res = await fetch("/packages/objects/oracle/results/oracle-${name}.rgba", { cache: "no-store" }); if (res.ok || res.status === 404) break; } catch (e) { if (i === 5) return { error: "fetch " + e }; }
+    await new Promise((w) => setTimeout(w, 100 * 2 ** i));
+  }
+  if (!res.ok) return { error: "fetch " + res.status };
   const b = new Uint8Array(await res.arrayBuffer()); if (b.length !== a.length) return { error: "size " + img.width + "x" + img.height + " (" + a.length + " bytes) vs " + b.length };
   let maxD = 0; let over4 = 0; let differ = 0; const n = img.width * img.height;
   for (let i = 0; i < n; i++) { const o = i * 4; const d = Math.max(Math.abs(a[o] - b[o]), Math.abs(a[o + 1] - b[o + 1]), Math.abs(a[o + 2] - b[o + 2])); if (d > maxD) maxD = d; if (d > 4) over4++; if (d > 0) differ++; }
@@ -163,6 +163,7 @@ try {
     else if (!clean(r)) failures += 1;
     const detail = r.error === undefined ? `maxΔ ${r.maxD} · ${r.differ} px differ · over4 ${r.over4Pct}% · ${r.w}×${r.h}` : `ERROR ${r.error}`;
     console.log(`${clean(r) ? "PASS" : excused ? "KEPT" : "FAIL"}  ${sc.name.padEnd(24)} ${detail.padEnd(46)} ${r.portals}${note}`);
+    kick();
   }
   const errs = await tab.evaluate("window.__parity.state.errors", { timeoutMs: 20000 });
   const scoped = await tab.evaluate("window.__parity.state.scoped", { timeoutMs: 20000 });

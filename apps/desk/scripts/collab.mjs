@@ -12,39 +12,36 @@
 //
 //   pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:collab
 import { spawn } from "node:child_process";
-import { createServer } from "node:net";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
+import { watchdog } from "./timing.mjs";
 import { decodePng } from "./png.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
 const repo = resolve(app, "../..");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-async function freePort(from) {
-  for (let port = from; port < from + 40; port++) {
-    const free = await new Promise((r) => { const s = createServer(); s.once("error", () => r(false)); s.listen(port, "127.0.0.1", () => s.close(() => r(true))); });
-    if (free) return port;
-  }
-  throw new Error(`no free port in ${from}…${from + 39}`);
-}
 const t0 = Date.now();
 const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
 const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
-// THE RELAY: `pnpm relay`'s server, verbatim, on a port of the rig's own — its log counts the room's sockets
-const RELAY_PORT = await freePort(19301);
+// THE RELAY: `pnpm relay`'s server, verbatim, on a port of its OWN binding (K-H): `PORT=0` — the OS picks a free port as the relay
+// binds it, and its "listening" line, said once bound, names it. The rig used to probe 19301 free on 127.0.0.1 and let it go before
+// the relay bound the wildcard — a port another session's rig could take between the two — and read a "listening" printed before
+// the bind; its log counts the room's sockets
 const relayLog = [];
-const relay = spawn(process.execPath, [resolve(repo, "scripts/ws-relay.mjs")], { cwd: repo, env: { ...process.env, PORT: String(RELAY_PORT) }, stdio: ["ignore", "pipe", "pipe"] });
+const relay = spawn(process.execPath, [resolve(repo, "scripts/ws-relay.mjs")], { cwd: repo, env: { ...process.env, PORT: "0" }, stdio: ["ignore", "pipe", "pipe"] });
 relay.stdout.on("data", (b) => relayLog.push(...String(b).split("\n").filter(Boolean)));
 relay.stderr.on("data", (b) => relayLog.push(`stderr ${String(b).trim()}`));
-for (let i = 0; i < 100 && !relayLog.some((l) => l.includes("listening")); i++) await sleep(50);
-const chrome = await launchChrome({ port: await freePort(9651), headless: !process.env.DESK_HEADED });
+for (let i = 0; i < 600 && !relayLog.some((l) => l.includes("listening")); i++) await sleep(50);
+const RELAY_PORT = Number(relayLog.find((l) => l.includes("listening"))?.match(/ws:\/\/localhost:(\d+)/)?.[1] ?? 0);
+if (!(RELAY_PORT > 0)) { console.log(`the relay never said it was listening: ${relayLog.join(" | ")}`); relay.kill("SIGKILL"); server.kill("SIGKILL"); process.exit(1); }
+const chrome = await launchChrome({ headless: !process.env.DESK_HEADED });
 let done = false;
 async function cleanup() { if (done) return; done = true; try { await chrome.close(); } catch {} try { server.kill("SIGKILL"); } catch {} try { relay.kill("SIGKILL"); } catch {} }
-setTimeout(async () => { console.log("WATCHDOG"); await cleanup(); process.exit(2); }, 240_000).unref();
+const kick = watchdog(240_000, cleanup);   // no row in 240 s: a hang (K-H — a slow host is not one)
 let pass = 0;
 let failN = 0;
-const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; };
+const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; kick(); };
 /** Poll `fn` until it answers truthy or `ms` pass; the last answer. */
 async function until(fn, ms) {
   const start = Date.now();
@@ -77,8 +74,13 @@ try {
   const key = async (T, k, code, vk, modifiers = 0) => { await T.tab.send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code, windowsVirtualKeyCode: vk, modifiers }); await T.tab.send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code, windowsVirtualKeyCode: vk, modifiers }); };
   const K = (k) => JSON.stringify(k);
   const roleOf = (T) => T.q("(() => { const d = window.__desk.engine.docs; return d.current() !== undefined && d.presence() !== undefined; })()");
-  const sockets = relayLog.filter((l) => l.includes(`room=${JSON.stringify(room)}`) && l.startsWith("+ connect")).length;
-  check((await roleOf(A)) && (await roleOf(B)) && sockets === 2, `two tabs joined room ${room} THROUGH THE RELAY (ws://127.0.0.1:${RELAY_PORT}: ${sockets} sockets in the room), each with its document and its presence`);
+  // conditions, not the moment B's page said ready (K-H): each tab's document and presence, then the relay's own log of the room's two
+  // sockets — its lines cross a pipe, and the count was read before B's line had arrived
+  const joined = await until(async () => (await roleOf(A)) && (await roleOf(B)), 20000);
+  const socketsIn = () => relayLog.filter((l) => l.includes(`room=${JSON.stringify(room)}`) && l.startsWith("+ connect")).length;
+  await until(() => socketsIn() >= 2, 10000);
+  const sockets = socketsIn();
+  check(joined && sockets === 2, `two tabs joined room ${room} THROUGH THE RELAY (ws://127.0.0.1:${RELAY_PORT}: ${sockets} sockets in the room), each with its document and its presence`);
   for (const T of [A, B]) await T.q("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 }); window.__desk.ambient('still')");
 
   // ---- an ADD in A reaches B
