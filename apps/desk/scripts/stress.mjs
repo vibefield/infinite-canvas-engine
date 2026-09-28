@@ -678,7 +678,7 @@ try {
     check(bound !== null && rn?.slotted >= 1 && rn?.built >= 1, `pictures: a print zoomed large gets its DETAIL — fetched, decoded again and bound ${bound === null ? "never" : `${fmt(bound.ms, 0)} ms after the camera moved`} (${rn?.details} detail, ${rn?.slotted} bound, ${MB(rn?.bytes.details ?? 0)}); the thumbnail drew it meanwhile`);
     check(row(near, "photo") <= near.budget.cap && (near.ledger?.total ?? Number.POSITIVE_INFINITY) <= near.budget.cap, `pictures: zoomed large, the photo kind ${MB(row(near, "photo"))} and the whole ledger ${MB(near.ledger?.total ?? 0)} within the budget's ${MB(near.budget.cap)}`);
     report.pictures = { pictures: pics, far, near, run: g, bound };
-    rows.push(["pictures (20 × 4096²)", `${MB(far.ledger?.total ?? 0)} live · photo ${MB(row(far, "photo"))} · 20 prints = ${g.byKind.photo} draw`, `zoom 4 on one: photo ${MB(row(near, "photo"))}, its detail bound in ${bound === null ? "—" : fmt(bound.ms, 0)} ms · calendar ${MB(row(far, "calendar"))} · notebook ${MB(row(far, "notebook"))} with none on the desk · budget cap ${MB(far.budget.cap)}`, load()]);
+    rows.push(["pictures (20 × 4096²)", `${MB(far.ledger?.total ?? 0)} live · photo ${MB(row(far, "photo"))} · 20 prints = ${(g.byKind.photo ?? 0) + (g.byKind.card ?? 0)} draw`, `zoom 4 on one: photo ${MB(row(near, "photo"))}, its detail bound in ${bound === null ? "—" : fmt(bound.ms, 0)} ms · calendar ${MB(row(far, "calendar"))} · notebook ${MB(row(far, "notebook"))} with none on the desk · budget cap ${MB(far.budget.cap)}`, load()]);
   }
 
   // ── boards (K6a, K-L4): TWENTY whiteboards with strokes, sibling after sibling in a row 700 units apart — a run of boards is ONE
@@ -732,7 +732,7 @@ try {
     check(memWalk.budget.evictions > 0 && walked[0]?.density === null && walked[0]?.thumb === true, `boards: walked past at zoom 1 their rasters overran the budget — ${memWalk.budget.evictions} evictions, board 0's raster gone, its thumbnail kept (the budget ${MB(memWalk.budget.used)} of ${MB(memWalk.budget.cap)})`);
     check(back0?.density === null && back0?.thumb === true && backFrames <= 6 && back1?.density === 4 && back1?.bound === true && replays2 > replays1, `boards: board 0 on screen again — its thumbnail drew it in the frame it came back while its replay waited in the frame queue (K6b); the queue's turn replayed it at its rung (4 texels a unit) ${backFrames} frame(s) after, bound (${JSON.stringify(back0)} → ${JSON.stringify(back1)}; ${replays2 - replays1} replays)`);
     report.boards = { far, memFar, run: g, walked, memWalk, back: [back0, back1] };
-    rows.push(["boards (20, a run)", `20 boards = ${g.byKind.board} draw · far: board ${MB(row(memFar, "board"))}`, `walked at zoom 1: ${memWalk.budget.evictions} evictions, board ${MB(row(memWalk, "board"))}; back: replayed and bound`, load()]);
+    rows.push(["boards (20, a run)", `20 boards = ${(g.byKind.board ?? 0) + (g.byKind.card ?? 0)} draw · far: board ${MB(row(memFar, "board"))}`, `walked at zoom 1: ${memWalk.budget.evictions} evictions, board ${MB(row(memWalk, "board"))}; back: replayed and bound`, load()]);
   }
 
   // ── zoom-written (K6b, design-016 §1.3 · §6): THE WRITTEN DESK (`writtenScene`, a fresh one each round, settled at zoom 1) zoomed

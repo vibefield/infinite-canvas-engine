@@ -12,10 +12,11 @@
 //   DESK_SCALE_N=10000 (objects) · DESK_SCALE_ROUNDS=7 · DESK_SCALE_GATE=1 (the gates assert — the exit code is the verdict)
 //   DESK_SCALE_OUT=<dir> (the JSON of every round; default apps/desk/results)
 //
-// THE METHOD (K-H's discipline for timing rows): every timed batch follows an UNTIMED warm batch of the same frames (the GPU's clock
-// ramps after a rest, the JIT settles); each timed row is a median over its frames, then the MIN and the median over ROUNDS rounds —
-// the gates read the min (load only ever adds time; the best round is the machine's cost) and the load average is printed beside
-// it; the tab is brought to front before every frame wait (a hidden tab never fires rAF); the GPU is drained around the batches.
+// THE METHOD — K-H's (timing.mjs, the pattern every timing row follows): every timed batch follows an UNTIMED warm batch of the same
+// frames (the GPU's clock ramps after a rest, the JIT settles); each timed row is a median over its frames, then the MIN and the
+// median over ≥ 5 ROUNDS — a cost gate reads the MIN (load only ever adds time: `minOf`), the host's load beside it (`hostLoad`);
+// the GPU drained around the batches (holdCost); the tab brought to front before every frame wait (a hidden tab never fires rAF);
+// a PROGRESS watchdog every row kicks; Chrome on a port of its own.
 //
 // THE SCENARIOS. `stage`: the scene spawned into the world and settled — the time it took, the members, what the root slot draws
 // at zoom 0.2 and how many lie on screen. `pan`: 120 frames of the camera moving 8 CSS px a frame at zoom 0.2 — the step's ms (JS
@@ -27,15 +28,14 @@
 // the page alone (every task the main thread ran). `memory`: the GPU ledger by label and the raster budget, the pictures resident.
 // Exit code: 0 once the table is printed (and under DESK_SCALE_GATE=1 every gate held); 1 for a preflight, a throw or a failed
 // check or gate; 2 for the watchdog. The CHECKS are counters (a pan's draws and passes, idle's submits): load cannot bend them;
-// the clocks are GATES. gate:landing runs the LIGHT version — N 3,000 (≈ 2,000 drawn at zoom 0.2, as at 10,000), 3 rounds, no
+// the clocks are GATES. gate:landing runs the LIGHT version — N 3,000 (≈ 2,000 drawn at zoom 0.2, as at 10,000), 5 rounds, no
 // zoom sweep; the full one (N 10,000, 7 rounds, every scenario — the spawn alone takes minutes: strata's O(n²) placement) beside it.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
-import { createServer } from "node:net";
-import { loadavg } from "node:os";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 import { PICTURES, scaleScene } from "./scale-scene.mjs";
+import { hostLoad, median, minOf, watchdog } from "./timing.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -47,9 +47,8 @@ const GATE = process.env.DESK_SCALE_GATE === "1";
 const OUT = resolve(process.env.DESK_SCALE_OUT ?? resolve(app, "results"));
 mkdirSync(OUT, { recursive: true });
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const load = () => loadavg()[0].toFixed(2);
-const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.length === 0 ? Number.NaN : s.length % 2 ? s[(s.length - 1) / 2] : (s[s.length / 2 - 1] + s[s.length / 2]) / 2; };
-const min = (xs) => Math.min(...xs);
+const load = hostLoad;   // K-H (timing.mjs): the host's 1/5/15-min load beside every timed number
+const min = minOf;
 const max = (xs) => Math.max(...xs);
 const fmt = (x, d = 2) => (Number.isFinite(x) ? x.toFixed(d) : "—");
 const kb = (b) => `${(b / 1024).toFixed(1)} KB`;
@@ -60,25 +59,21 @@ const pct = (xs, q) => { const s = [...xs].sort((a, b) => a - b); return s.lengt
 const die = (what, cmd) => { console.log(`PREFLIGHT FAIL: ${what}\n  produce it with:  ${cmd}`); process.exit(1); };
 if (!existsSync(resolve(app, "dist/rig.html"))) die("the desk's build is missing (apps/desk/dist/rig.html)", "pnpm --filter ./apps/desk build");
 
-async function freePort(from) {
-  for (let port = from; port < from + 40; port++) {
-    const free = await new Promise((r) => { const s = createServer(); s.once("error", () => r(false)); s.listen(port, "127.0.0.1", () => s.close(() => r(true))); });
-    if (free) return port;
-  }
-  throw new Error(`no free CDP port in ${from}…${from + 39}`);
-}
 const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
 const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
 // V8's gc() exposed and a young generation PINNED big enough that a 120-frame batch never scavenges (the heap's growth IS the
 // allocation — stress.mjs, K7a); precise heap readings
-const chrome = await launchChrome({ port: await freePort(9651), headless: !process.env.DESK_HEADED, extraArgs: ["--js-flags=--expose-gc --min-semi-space-size=128 --max-semi-space-size=128", "--enable-precise-memory-info"] });
+// every Chrome on a port of its own (K-H: `launchChrome` asks the OS for one — two rigs never race for a port)
+const chrome = await launchChrome({ headless: !process.env.DESK_HEADED, extraArgs: ["--js-flags=--expose-gc --min-semi-space-size=128 --max-semi-space-size=128", "--enable-precise-memory-info"] });
 let done = false;
 async function cleanup() { if (done) return; done = true; try { await chrome.close(); } catch {} try { server.kill("SIGKILL"); } catch {} }
-setTimeout(async () => { console.log("WATCHDOG"); await cleanup(); process.exit(2); }, 2_400_000).unref();
+// a PROGRESS watchdog (K-H): exit 2 when no row is reported in 900 s — the spawn of 10,000 is a row of its own (strata's O(n²)
+// placement takes minutes), so the run's whole length is bounded by its rows, not by one span
+const kick = watchdog(900_000, cleanup, { totalMs: 5_400_000 });
 let pass = 0;
 let failN = 0;
-const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; };
-const gate = (ok, msg) => { if (GATE) check(ok, `GATE  ${msg}`); else console.log(`  ${ok ? "ok  " : "MISS"}  gate  ${msg}`); };
+const check = (ok, msg) => { kick(); console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); ok ? pass++ : failN++; };
+const gate = (ok, msg) => { kick(); if (GATE) check(ok, `GATE  ${msg}`); else console.log(`  ${ok ? "ok  " : "MISS"}  gate  ${msg}`); };
 const rows = [];
 const report = {};
 
