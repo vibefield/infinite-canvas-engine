@@ -657,7 +657,10 @@ try {
     check(row(far, "photo") <= far.budget.cap && Math.abs(row(far, "photo") - photoBudget) <= 0.05 * row(far, "photo"), `pictures: the photo kind's memory is the budget's to see — the ledger's photo ${MB(row(far, "photo"))} (the thumbnail array, its details, the records), the budget's photo ${MB(photoBudget)}, the cap ${MB(far.budget.cap)} (before K6a: 1,712 MB, outside the budget)`);
     // A RUN OF 20 PRINTS = ONE DRAW (K-L4): the twenty are sibling after sibling — the armed pan's frames draw them as one instanced draw
     const g = await armedPan(camFar);
-    check(g.byKind.photo === 1 && g.instancesByKind.photo >= 19, `pictures: a run of ${g.instancesByKind.photo} prints is ONE draw (${g.byKind.photo} photo draw a frame, ${g.instancesByKind.photo} instances; before K6a a draw and a bind group a print)`);
+    // (K7b: a print whose detail is not bound is a FLAT CARD — the run is the card's draw then)
+    const pd = (g.byKind.photo ?? 0) + (g.byKind.card ?? 0);
+    const pi = (g.instancesByKind.photo ?? 0) + (g.instancesByKind.card ?? 0);
+    check(pd === 1 && pi >= 19, `pictures: a run of ${pi} prints is ONE draw (${g.byKind.photo ?? 0} photo + ${g.byKind.card ?? 0} card draws a frame; before K6a a draw and a bind group a print)`);
     // one print LARGE on screen: the camera over print 0 at zoom 4 — its detail fetched (decoded again) and bound; how long it took
     await q(`window.__desk.setCamera({ x: ${prints[0].x} - 600 / 4, y: ${prints[0].y} - 400 / 4, zoom: 4 })`);
     const tz = performance.now();
@@ -697,7 +700,10 @@ try {
     console.log(`  far (zoom 0.08)      ${memoryLine(memFar)} · densities ${far.map((r) => r?.density ?? "—").join(" ")}`);
     check(ids.length === 20 && far.every((r) => r?.thumb && r.density === 1), `boards: far (zoom 0.08) each raster at its ZOOM RUNG — ${far.filter((r) => r?.density === 1).length} of ${ids.length} at 1 texel a unit, each with its thumbnail; the board row ${MB(row(memFar, "board"))} (the law's fixed 4 texels a unit: 20 × 18.3 MB)`);
     const g = await armedPan(camFar);
-    check(g.byKind.board === 1 && g.instancesByKind.board === 20, `boards: a run of ${g.instancesByKind.board} boards is ONE draw (${g.byKind.board} board draw a frame; before K6a a draw and a bind group a board)`);
+    // (K7b: far — the ladder's first rung — a board draws its thumbnail as a FLAT CARD, no pool slot: the run is the card's draw)
+    const bd = (g.byKind.board ?? 0) + (g.byKind.card ?? 0);
+    const bi = (g.instancesByKind.board ?? 0) + (g.instancesByKind.card ?? 0);
+    check(bd === 1 && bi === 20, `boards: a run of ${bi} boards is ONE draw (${g.byKind.board ?? 0} board + ${g.byKind.card ?? 0} card draws a frame; before K6a a draw and a bind group a board)`);
     // walked past at zoom 1, board after board
     const replays0 = await q(`window.__desk.handle.local("board").replays()`);
     for (let i = 0; i < 20; i++) {

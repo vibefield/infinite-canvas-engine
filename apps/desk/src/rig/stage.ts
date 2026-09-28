@@ -217,9 +217,10 @@ async function spawnDesk(host: SceneHost, fx: Awaited<ReturnType<typeof oracleFi
       handle.desk.wake("pin");
       if (!ok) throw new Error("desk: the ink pages refused the committed raster");
     } else if (n.asset !== undefined) throw new Error(`desk: unknown note asset "${n.asset}"`);
-    // the writing the far LOD greeks (frame.mjs `childrenOf`: x0 = the hand's pad, em = its size)
-    // through the handle's generic door (K8a — `pinAsset`): the asset is the paper kind's own shape (`PaperAsset`), never the desk's
-    if (n.greek !== undefined && n.greek.length > 0) handle.pinAsset(e, { greek: { x0: HAND.pad, em: HAND.size, lines: n.greek.map(([y, width]) => ({ y, width })) } } satisfies PaperAsset);
+    // the writing the far LOD greeks (frame.mjs `childrenOf`: x0 = the hand's pad, em = its size) — and NONE where the still states
+    // none: since K7b a small note greeks its own text's layout, which Node (no text metrics) cannot lay out — a still's lines are the
+    // lines; through the handle's generic door (K8a — `pinAsset`): the asset is the paper kind's own shape (`PaperAsset`), never the desk's
+    handle.pinAsset(e, { greek: { x0: HAND.pad, em: HAND.size, lines: (n.greek ?? []).map(([y, width]) => ({ y, width })) } } satisfies PaperAsset);
   }
   for (let i = 0; i < mats.length; i++) {
     const inside = mats[i]?.inside;

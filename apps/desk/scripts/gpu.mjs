@@ -141,7 +141,8 @@ try {
   const run1 = await frames(24, cam1);
   const timed1 = run1.filter((f) => f.timing === "timed");
   const last1 = run1.at(-1);
-  check(run1.length > 0 && run1.every((f) => f.byKind.paper?.draws === 1 && f.byKind.paper?.instances === N), `${N} notes in ONE run: ONE instanced draw of ${N} in every frame (${run1.length} frames: paper ${JSON.stringify(last1?.byKind.paper)}; the frame ${last1?.counts.draws} draws, ${last1?.counts.pipelines} pipelines, ${last1?.counts.bindGroups} bind groups)`);
+  // (K7b: a note is a FLAT CARD — the one pipeline every card-material kind draws through, `card/flat`)
+  check(run1.length > 0 && run1.every((f) => f.byKind.card?.draws === 1 && f.byKind.card?.instances === N), `${N} notes in ONE run: ONE instanced draw of ${N} in every frame (${run1.length} frames: card ${JSON.stringify(last1?.byKind.card)}; the frame ${last1?.counts.draws} draws, ${last1?.counts.pipelines} pipelines, ${last1?.counts.bindGroups} bind groups)`);
 
   // ── the span on a multi-pass frame (the notebook's shadow, its layer, the ground): first begin → last end, > 0 — and never a sum.
   //    A sum misleads BOTH ways on this Mac (D-K2.4, measured at K2: 52 of 60 frames sum > span, 8 span > sum): the tiler keeps
@@ -182,7 +183,9 @@ try {
   await settle();
   const run2 = await frames(8, cam2);
   const last2 = run2.at(-1);
-  check(run2.length > 0 && last2?.byKind.paper?.draws === 2 && last2?.byKind.paper?.instances === 5 && last2?.byKind.photo?.draws === 2 && last2?.byKind.photo?.instances === 3, `notes · print · notes · print · print: the note run cut in two, the two prints side by side one draw (K6a) — paper ${JSON.stringify(last2?.byKind.paper)}, photo ${JSON.stringify(last2?.byKind.photo)}`);
+  // K7b (design-016 §6 K7): the notes and the prints are FLAT CARDS — the interleaved row is one run, ONE draw (before: the note
+  // run cut in two by the prints, paper 2 draws / 5 + photo 2 / 3 since K6a); a print with its detail bound would be its pass's own
+  check(run2.length > 0 && last2?.byKind.card?.draws === 1 && last2?.byKind.card?.instances === 8 && (last2?.byKind.paper?.draws ?? 0) === 0 && (last2?.byKind.photo?.draws ?? 0) === 0, `notes · print · notes · print · print: ONE draw of the eight, the flat card's (K7b) — card ${JSON.stringify(last2?.byKind.card)}, paper ${JSON.stringify(last2?.byKind.paper ?? null)}, photo ${JSON.stringify(last2?.byKind.photo ?? null)}`);
 
   // ── memory: the ledger's rows sum to its total; the calendar's printed tiles are uploads (copyExternalImageToTexture)
   const m = last2?.memory;

@@ -110,7 +110,7 @@ fn shade_paper(P: Paper, u: MatUniforms, k: PaperUniforms, p: vec2f, px: f32, cs
   // out; under its low edge the lines alone and no fibre is computed. The lamp's shading of the curl stays (it reads at any size).
   // Above the band `fine` is 1: the full path, the very arithmetic it always was.
   let size = 2.0 * max(P.half.x, P.half.y) / css;
-  let far = smoothstep(k.far.y, k.far.x, size);
+  let far = 1.0 - smoothstep(k.far.x, k.far.y, size);   // edges ascending: a descending smoothstep is undefined in Metal (two Dawns differ)
   let fine = 1.0 - far;
 
   // The sheet: its height, its normal, the lamp — the flat strip reads 1, the curl turns toward or from the light.

@@ -26,7 +26,9 @@
 // draws at the far end. `idle`: 240 frames at rest at zoom 0.2 — submits (0), the engine's steps and its ms a second, then 1 s of
 // the page alone (every task the main thread ran). `memory`: the GPU ledger by label and the raster budget, the pictures resident.
 // Exit code: 0 once the table is printed (and under DESK_SCALE_GATE=1 every gate held); 1 for a preflight, a throw or a failed
-// check or gate; 2 for the watchdog.
+// check or gate; 2 for the watchdog. The CHECKS are counters (a pan's draws and passes, idle's submits): load cannot bend them;
+// the clocks are GATES. gate:landing runs the LIGHT version — N 3,000 (≈ 2,000 drawn at zoom 0.2, as at 10,000), 3 rounds, no
+// zoom sweep; the full one (N 10,000, 7 rounds, every scenario — the spawn alone takes minutes: strata's O(n²) placement) beside it.
 import { spawn } from "node:child_process";
 import { existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
@@ -238,6 +240,10 @@ try {
     s.batch = { ms: { median: median(batch.map((b) => b.ms)), min: min(batch.map((b) => b.ms)) }, cpu: { median: median(batch.map((b) => b.cpu)), min: min(batch.map((b) => b.cpu)) } };
     console.log(`  saturated batch      the frame at rest: GPU-bound ${fmt(s.batch.ms.median)} ms/frame (min ${fmt(s.batch.ms.min)}) · its recording (prepare + encode) ${fmt(s.batch.cpu.median)} ms (min ${fmt(s.batch.cpu.min)})`);
     check(g.timed >= g.frames / 2 && !g.quantised, `pan (armed): the real frames' GPU spans read back — ${g.timed} of ${g.frames} timed, none quantised`);
+    // K7b — the counters, not the clock (load cannot bend them): the interleaved notes, prints and boards are the FLAT CARD's one run
+    // (before: 610 draws at zoom 0.2), and the far LOD rasters and replays nothing on a pan (before: 272 board stamps, 366 passes a frame)
+    check((g.byKind.card ?? 0) <= 2 && (g.instancesByKind.card ?? 0) >= 0.8 * (g.instances - (g.instancesByKind.minimat ?? 0)), `pan: the interleaved flat objects are ONE run — the flat card ${g.byKind.card ?? 0} draw(s) of ${g.instancesByKind.card ?? 0} instances, ${g.draws} draws and ${g.pipelines} pipelines a frame in all`);
+    check(g.passes <= 4 && s.bytes.median <= 64 * 1024, `pan: the far LOD makes nothing on a pan — ${g.passes} passes a frame (no raster, no replay), ${kb(s.bytes.median)} uploaded a frame`);
     gate(s.stepMs.min <= 2, `pan: main-thread JS ≤ 2 ms/frame at ${s.drawn} drawn — the best round's median ${fmt(s.stepMs.min)} ms (the rounds' median ${fmt(s.stepMs.median)}; load ${s.loads.join(" ")})`);
     gate(s.batch.ms.min <= 8.33, `pan: the frame's GPU work (saturated batch) ≤ 8.33 ms — ${fmt(s.batch.ms.min)} ms at best (median ${fmt(s.batch.ms.median)})`);
     rows.push(["pan (zoom 0.2)", `JS ${fmt(s.stepMs.median)} (min ${fmt(s.stepMs.min)}) ms · GPU span p50 ${fmt(g.span.p50)} · batch ${fmt(s.batch.ms.median)} ms`, `${g.draws} draws · ${g.pipelines} pipelines · ${g.bindGroups} bind groups · ${g.instances} instances · ${s.drawn} drawn · ${kb(s.bytes.median)} up · ${kb(s.alloc.median)} alloc · recording ${fmt(s.batch.cpu.median)} ms`, s.loads.join(" ")]);
@@ -317,7 +323,7 @@ try {
     report.idle = idle;
     console.log(`\n-- idle · ${per.length} rounds × 240 frames at zoom 0.2, then 1 s of the page alone · load ${idle.loads.join(" ")} --`);
     console.log(`  submits ${idle.submits} (the most in a round) · engine steps ${idle.steps} · ${fmt(idle.stepMsPerS, 3)} ms/s · the loop asleep ${idle.asleep} · the whole page ${fmt(idle.page.median, 3)} ms/s (min ${fmt(idle.page.min, 3)})`);
-    gate(idle.submits === 0 && idle.asleep, `idle: 0 submits over 240 frames at rest with ${N} objects, the loop asleep (${idle.submits} submits, ${idle.steps} steps)`);
+    check(idle.submits === 0 && idle.asleep, `idle: 0 submits over 240 frames at rest with ${N} objects, the loop asleep (${idle.submits} submits, ${idle.steps} steps)`);
     gate(idle.stepMsPerS <= 0.1, `idle: the engine's main thread ≤ 0.1 ms per 1 s (${fmt(idle.stepMsPerS, 3)} ms)`);
     rows.push(["idle (zoom 0.2)", `${idle.submits} submits · ${idle.steps} steps`, `${fmt(idle.stepMsPerS, 3)} ms/s engine · the page ${fmt(idle.page.median, 3)} ms/s (min ${fmt(idle.page.min, 3)})`, idle.loads.join(" ")]);
   }
