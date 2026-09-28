@@ -117,7 +117,7 @@ try {
       return { x: Number(m[1]), y: Number(m[2]), shown: getComputedStyle(chip).display !== 'none' && r.width > 0, chip: { x: r.left + 3, y: r.top + r.height / 2 } };
     }
     return null; })()`);
-  const pixel = async (T, x, y) => { const png = decodePng(Buffer.from((await T.tab.send("Page.captureScreenshot", { format: "png" })).data, "base64")); const o = (Math.floor(y * 2) * png.width + Math.floor(x * 2)) * 4; return [png.rgba[o], png.rgba[o + 1], png.rgba[o + 2]]; };
+  const pixel = async (T, x, y) => { const png = decodePng(Buffer.from((await T.tab.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true })).data, "base64")); const o = (Math.floor(y * 2) * png.width + Math.floor(x * 2)) * 4; return [png.rgba[o], png.rgba[o + 1], png.rgba[o + 2]]; };
   /** Tab `T` shows `peer`'s cursor where `peerTab`'s pointer is, through T's own camera (to 0.5 px), its chip in the peer's colour. */
   const shows = async (T, peerTab, peer, label) => {
     await front(T);

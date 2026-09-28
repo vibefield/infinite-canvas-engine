@@ -81,7 +81,7 @@ try {
   // pixels: captured, decoded in the page, kept by key; a diff counts differing pixels and their box
   const shot = async (name) => {
     await front(); await settle();
-    const { data } = await tab.send("Page.captureScreenshot", { format: "png" });
+    const { data } = await tab.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true });
     if (shots) writeFileSync(resolve(shots, `sticky-${name}.png`), Buffer.from(data, "base64"));
     return q(`(async () => { const img = new Image(); img.src = "data:image/png;base64,${data}"; await img.decode();
       const c = new OffscreenCanvas(img.width, img.height); const g = c.getContext("2d"); g.drawImage(img, 0, 0);

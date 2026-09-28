@@ -102,7 +102,7 @@ try {
   const q = (js) => tab.evaluate(js, { timeoutMs: 15000 });
   const settle = () => tab.evaluate("window.__desk.settle(6000)", { awaitPromise: true, timeoutMs: 20000 });
   const scene = async (s) => { const r = await tab.evaluate(`window.__desk.setScene(${JSON.stringify(s)})`, { awaitPromise: true, timeoutMs: 60000 }); await settle(); return r; };
-  const png = async () => { await tab.send("Page.bringToFront"); await settle(); return (await tab.send("Page.captureScreenshot", { format: "png" })).data; };
+  const png = async () => { await tab.send("Page.bringToFront"); await settle(); return (await tab.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true })).data; };
   const land = async () => { let w = 0; while (w < 4000) { await sleep(50); w += 50; if (!(await q("window.__desk.flight()"))) return true; } return false; };
   const frame = () => q("(() => { const s = window.__desk.stats(); return { portals: s.frame ? s.frame.portals : -1, outgoing: s.frame ? s.frame.outgoing !== null : null, objects: s.objects, active: s.active }; })()");
   const mouse = async (type, x, y, extra = {}) => tab.send("Input.dispatchMouseEvent", { type, x, y, button: "left", clickCount: 1, ...extra });

@@ -40,25 +40,32 @@ export function decodePng(buf) {
   const rgba = new Uint8Array(width * height * 4);
   let prev = new Uint8Array(stride);
   let cur = new Uint8Array(stride);
+  // one loop per filter, the filter read once a row (K-H: a 2400 × 1600 capture decoded in 0.5–1.3 s on a loaded host with the
+  // filter tested per byte — a rig decodes a dozen and more); an RGBA row lands with one copy
   for (let y = 0; y < height; y++) {
-    const filter = raw[y * (stride + 1)];
-    const line = raw.subarray(y * (stride + 1) + 1, (y + 1) * (stride + 1));
-    for (let x = 0; x < stride; x++) {
-      const a = x >= ch ? cur[x - ch] : 0;
-      const b = prev[x];
-      const c = x >= ch ? prev[x - ch] : 0;
-      let v = line[x];
-      if (filter === 1) v += a;
-      else if (filter === 2) v += b;
-      else if (filter === 3) v += (a + b) >> 1;
-      else if (filter === 4) v += paeth(a, b, c);
-      else if (filter !== 0) throw new Error(`PNG filter ${filter}`);
-      cur[x] = v & 255;
-    }
-    for (let x = 0; x < width; x++) {
-      const s = x * ch;
-      const d = (y * width + x) * 4;
-      rgba[d] = cur[s]; rgba[d + 1] = cur[s + 1]; rgba[d + 2] = cur[s + 2]; rgba[d + 3] = ch === 4 ? cur[s + 3] : 255;
+    const at = y * (stride + 1);
+    const filter = raw[at];
+    const line = raw.subarray(at + 1, at + 1 + stride);
+    if (filter === 0) cur.set(line);
+    else if (filter === 1) {
+      for (let x = 0; x < ch; x++) cur[x] = line[x];
+      for (let x = ch; x < stride; x++) cur[x] = (line[x] + cur[x - ch]) & 255;
+    } else if (filter === 2) {
+      for (let x = 0; x < stride; x++) cur[x] = (line[x] + prev[x]) & 255;
+    } else if (filter === 3) {
+      for (let x = 0; x < ch; x++) cur[x] = (line[x] + (prev[x] >> 1)) & 255;
+      for (let x = ch; x < stride; x++) cur[x] = (line[x] + ((cur[x - ch] + prev[x]) >> 1)) & 255;
+    } else if (filter === 4) {
+      for (let x = 0; x < ch; x++) cur[x] = (line[x] + prev[x]) & 255;   // paeth(0, b, 0) = b
+      for (let x = ch; x < stride; x++) cur[x] = (line[x] + paeth(cur[x - ch], prev[x], prev[x - ch])) & 255;
+    } else throw new Error(`PNG filter ${filter}`);
+    if (ch === 4) rgba.set(cur, y * width * 4);
+    else {
+      for (let x = 0; x < width; x++) {
+        const s = x * 3;
+        const d = (y * width + x) * 4;
+        rgba[d] = cur[s]; rgba[d + 1] = cur[s + 1]; rgba[d + 2] = cur[s + 2]; rgba[d + 3] = 255;
+      }
     }
     const t = prev;
     prev = cur;

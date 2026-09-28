@@ -104,7 +104,7 @@ try {
   await tab.send("Page.bringToFront");
   const q = (js) => tab.evaluate(js, { timeoutMs: 20000 });
   const scene = (s) => tab.evaluate(`window.__desk.setScene(${JSON.stringify(s)}).then(() => window.__desk.settle(6000))`, { awaitPromise: true, timeoutMs: 60000 });
-  const shot = async () => decodePng(Buffer.from((await tab.send("Page.captureScreenshot", { format: "png" })).data, "base64"));
+  const shot = async () => decodePng(Buffer.from((await tab.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true })).data, "base64"));
   /** What the root mat's last frame uploaded: the camera, the view, the rulers' on/margin/band, the origin row and the five levels' sites. */
   const uniforms = () => q(`(() => { const m = window.__desk.handle.ground().mat; const U = m.uniforms; const f = new Float32Array(U.bytes); const S = U.def.slots;
     const at = (k) => { const a = /^array<vec4f, (\\d+)>$/.exec(S[k].type); return Array.from(f.subarray(S[k].byte / 4, S[k].byte / 4 + (a ? Number(a[1]) * 4 : S[k].n))); };

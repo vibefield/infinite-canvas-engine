@@ -65,7 +65,7 @@ export async function calendarRig(t) {
     let prev = null;
     for (let i = 0; i < 6; i++) {
       await tab.send("Page.bringToFront");
-      const { data } = await tab.send("Page.captureScreenshot", { format: "png" });
+      const { data } = await tab.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true });
       if (data === prev) break;
       prev = data;
       await sleep(50);

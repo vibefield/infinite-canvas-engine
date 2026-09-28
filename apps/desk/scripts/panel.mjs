@@ -82,7 +82,7 @@ try {
   for (const theme of ["dark", "light"]) {
     await q(`(() => { const s = ${row("theme")}.querySelector('select'); s.value = '${theme}'; s.dispatchEvent(new Event('change', { bubbles: true })); })()`);
     const drawn = await settle();
-    const shot = (await tab.send("Page.captureScreenshot", { format: "png" })).data;
+    const shot = (await tab.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true })).data;
     if (process.env.DESK_RIG_OUT) { mkdirSync(process.env.DESK_RIG_OUT, { recursive: true }); writeFileSync(resolve(process.env.DESK_RIG_OUT, `panel-${theme}.png`), Buffer.from(shot, "base64")); }
     check((await q("window.__desk.theme()")) === theme && drawn.settled && (await q("window.__desk.panel.open")), `${theme}: the panel's select switched the desk to ${await q("window.__desk.theme()")}, drawn with the panel open`);
   }

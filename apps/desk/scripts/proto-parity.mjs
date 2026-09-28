@@ -150,7 +150,7 @@ async function capture(tab) {
   let prev = null;
   for (let i = 0; i < 6; i++) {
     await front(tab);
-    const { data } = await tab.send("Page.captureScreenshot", { format: "png" });
+    const { data } = await tab.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true });
     if (data === prev) return data;
     prev = data;
     await settle(tab);

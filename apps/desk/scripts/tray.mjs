@@ -53,7 +53,7 @@ try {
   const click = async (x, y) => { await mouse("mouseMoved", x, y); await mouse("mousePressed", x, y, { buttons: 1 }); await sleep(30); await mouse("mouseReleased", x, y); };
   const key = async (k, code, vk) => { await front(); await tab.send("Input.dispatchKeyEvent", { type: "keyDown", key: k, code, windowsVirtualKeyCode: vk, text: k.length === 1 ? k : undefined }); await tab.send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code, windowsVirtualKeyCode: vk }); };
   const settle = () => qa("window.__desk.settle(4000)");
-  const shot = async () => { await front(); const { data } = await tab.send("Page.captureScreenshot", { format: "png" }); return decodePng(Buffer.from(data, "base64")); };
+  const shot = async () => { await front(); const { data } = await tab.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true }); return decodePng(Buffer.from(data, "base64")); };
   const idle = (n = 240) => qa(`(async () => { await window.__desk.settle(4000); const b = window.__desk.submits().total; await new Promise((r) => { let i = 0; const f = () => { if (++i >= ${n}) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); }); return window.__desk.submits().total - b; })()`);
   const tray = () => q("({ ...window.__desk.tray.state(), facts: window.__desk.tray.facts() })");
   const lum = (img, x, y) => { const i = (y * img.width + x) * 4; return 0.2126 * img.rgba[i] + 0.7152 * img.rgba[i + 1] + 0.0722 * img.rgba[i + 2]; };
@@ -96,7 +96,13 @@ try {
 
   // 2. `a` opens it, on the curve — sampled on the frame clock; the motion's wall time
   const lit0 = await shot();
-  const sub0 = await q("window.__desk.submits().total");
+  // ONE FRAME'S COUNT, FRAME BY FRAME (K-H): a sampler IN THE PAGE reads the drawer's p, the frames the desk drew and the submits,
+  // every frame, beside the trace — running before the toggle (its first sample waited for), until 60 frames after the drawer
+  // arrived. The row counted submits from before the trace to after a settle against the trace's frames in motion — a window a slow
+  // host fills with frames the slide did not make (the first open's tail: 24 for 21) and that the trace, stopping at 620 ms of wall
+  // time, empties (6 frames in motion sampled and 22 drawn, at 6× throttle); and a frame that also lays a layer submits twice
+  await qa("(() => { const d = window.__desk; const out = (window.__slideFrames = []); let rest = -1; const f = () => { const p = d.tray.state().p; out.push({ p, drawn: d.handle.redraws(), sub: d.submits().total }); if (p === 1 && rest < 0) rest = out.length; if ((rest < 0 || out.length - rest < 60) && out.length < 600) requestAnimationFrame(f); }; requestAnimationFrame(f); return 0; })()");
+  await qa("new Promise((r) => { const f = () => (window.__slideFrames.length > 0 ? r(0) : requestAnimationFrame(f)); f(); })");
   const trace = await qa("window.__desk.tray.trace(420)");   // toggles: opens
   const near = (t) => trace.reduce((a, b) => (Math.abs(b.t - t) < Math.abs(a.t - t) ? b : a));
   const rows = [0, 170, 340].map((t) => { const o = near(t); return { t: o.t, p: o.p, want: ease(o.t / 340) }; });
@@ -106,10 +112,16 @@ try {
     `the slide on cubic-bezier(0.32,0.72,0,1): ${rows.map((r) => `p(${r.t.toFixed(0)} ms) ${r.p.toFixed(4)}`).join(" · ")} — every one of ${trace.length} frames on the curve (worst ${worst.toExponential(1)})`);
   check(reached !== undefined && reached.t >= 340 && reached.t < 340 + 40 && trace.filter((o) => o.t < 323).every((o) => o.p < 1),
     `it arrives at 340 ms and not before (first p = 1 at t ${reached?.t.toFixed(1)} ms of the frame clock, ${reached?.wall.toFixed(0)} ms of wall time after the toggle)`);
+  const slideFrames = await qa("new Promise((r) => { const f = () => { const o = window.__slideFrames; const rest = o.findIndex((x) => x.p === 1); if (o.length >= 600 || (rest >= 0 && o.length - rest >= 60)) r(o); else requestAnimationFrame(f); }; f(); })", 60000);
+  const slideSteps = slideFrames.slice(1).map((o, i) => ({ dp: o.p - slideFrames[i].p, dd: o.drawn - slideFrames[i].drawn, ds: o.sub - slideFrames[i].sub }));
+  const slideFirst = slideSteps.findIndex((x) => x.dp > 0);
+  const slideLast = slideSteps.findLastIndex((x) => x.dp > 0);
+  const slideMoving = slideSteps.slice(slideFirst, slideLast + 1);
+  const slideBegan = slideSteps.slice(0, Math.max(slideFirst, 0)).reduce((a, x) => a + x.dd, 0);
+  const slideRest = slideSteps.slice(slideLast + 1);
+  check(slideFirst >= 0 && slideMoving.length >= 5 && slideMoving.every((x) => x.dp > 0 && x.dd === 1) && slideBegan <= 1 && slideRest.length >= 59 && slideRest.every((x) => x.dd === 0 && x.ds === 0),
+    `one frame per frame of motion: each of the slide's ${slideMoving.length} frames in motion drew one frame (${slideMoving.map((x) => x.dd).join("")}; ${slideMoving.reduce((a, x) => a + x.ds, 0)} submits), ${slideBegan} as it began, then asleep — ${slideRest.reduce((a, x) => a + x.dd, 0)} frames, ${slideRest.reduce((a, x) => a + x.ds, 0)} submits in the ${slideRest.length} frames after`);
   await settle();
-  const slid = (await q("window.__desk.submits().total")) - sub0;
-  const moving = trace.filter((o) => o.p < 1).length;
-  check(slid >= moving && slid <= moving + 2, `one frame per frame of motion: ${slid} submits for the slide's ${moving} frames in motion (+ its last), then asleep`);
   s = await tray();
   check(s.facts.open === true && s.frame.p === 1 && s.frame.y === 448 && s.frame.h === 352 && s.frame.w === 1120 && Math.abs(s.laid.dim - 0.1) < 1e-9,
     `open: rect y ${s.frame.y} h ${s.frame.h} (448 · 352, ≈ 44 % of 800), the dim at ${s.laid?.dim} by day`);
@@ -502,11 +514,12 @@ try {
     await front();
     // the trace RUNNING before the move (K-H): K5b sent its evaluate first, but CDP orders its own messages only — the input reaches the
     // page's main thread by another road, and at load 290 the move landed first and the handing frame went unsampled (−1). So the
-    // sampler starts, the rig waits in the page for its FIRST sample, and only then moves; the frames before the move read "lift"
-    await qa("(() => { const out = (window.__trayTrace = []); const f = () => { const s = window.__desk.tray.state(); out.push({ carried: s.carried, facts: window.__desk.tray.facts(), p: s.p }); if (out.length < 60) requestAnimationFrame(f); }; requestAnimationFrame(f); return 0; })()");
+    // sampler starts, the rig waits in the page for its FIRST sample, and only then moves
+    await qa("(() => { const out = (window.__trayTrace = []); let shut = -1; const f = () => { const s = window.__desk.tray.state(); const facts = window.__desk.tray.facts(); out.push({ carried: s.carried, facts, p: s.p }); if (facts.open === false && shut < 0) shut = out.length; if ((shut < 0 || out.length - shut < 40) && out.length < 600) requestAnimationFrame(f); }; requestAnimationFrame(f); return 0; })()");
     await qa("new Promise((r) => { const f = () => (window.__trayTrace.length > 0 ? r(0) : requestAnimationFrame(f)); f(); })");
     await mouse("mouseMoved", g[0] + 20, top - 24, { buttons: 1 });
-    const trace = await qa("new Promise((r) => { const f = () => (window.__trayTrace.length >= 60 ? r(window.__trayTrace) : requestAnimationFrame(f)); f(); })");
+    // until 40 frames after the drawer shut (600 at most): the frames before the move — a few, or forty at load 337 — are "lift"
+    const trace = await qa("new Promise((r) => { const f = () => { const o = window.__trayTrace; const shut = o.findIndex((x) => x.facts.open === false); if (o.length >= 600 || (shut >= 0 && o.length - shut >= 40)) r(o); else requestAnimationFrame(f); }; f(); })", 60000);
     const i0 = trace.findIndex((t) => t.carried.some((c) => c.phase === "handing"));
     const i1 = trace.findIndex((t) => t.carried.some((c) => c.phase === "grow"));
     const hand = i0 >= 0 ? trace[i0].carried.find((c) => c.phase === "handing") : undefined;

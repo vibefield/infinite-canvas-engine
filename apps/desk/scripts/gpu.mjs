@@ -130,7 +130,7 @@ try {
   await frames(40, cam1);
   const slot = await q(`({ head: document.querySelector('.ice-gpu-head')?.textContent ?? '', sects: Array.from(document.querySelectorAll('.ice-gpu-sect')).map((e) => e.textContent), cells: Array.from(document.querySelectorAll('.ice-gpu-cell b')).map((e) => e.textContent) })`);
   const shotPath = resolve(OUT, "gpu-dock.png");
-  writeFileSync(shotPath, Buffer.from((await tab.send("Page.captureScreenshot", { format: "png" })).data, "base64"));
+  writeFileSync(shotPath, Buffer.from((await tab.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true })).data, "base64"));
   const live = /gpu\s*\d+\.\d+\s*ms/.test(slot.head) && slot.sects.some((s) => s.startsWith("passes · frame")) && slot.sects.some((s) => s.startsWith("memory ·")) && Number(slot.cells[0]) > 0;
   check(live, `the slot reads live numbers after a camera move — "${slot.head.replace(/\s+/g, " ").slice(0, 60)}", ${slot.sects.find((s) => s.startsWith("passes")) ?? "no passes"}, draws ${slot.cells[0]} (shot: ${shotPath})`);
   await tilde();
