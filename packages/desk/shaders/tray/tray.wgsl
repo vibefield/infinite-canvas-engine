@@ -308,14 +308,30 @@ fn tray_arris(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, o:
 }
 
 // The board to its edge, PREMULTIPLIED: the point under the carry, its hole — the front surface over it by its analytic coverage, and
-// where the surface is not, the desk seen through (black at the hole's alpha).
+// where the surface is not, the desk seen through (black at the hole's alpha). THE HOLES FADE AT THE TOP EDGE as the specimens do
+// (James, 2026-09-28 — design-018 §4): within the face's feather (`fade.x` below the edge, the specimens' ramp `w`) a hole CLOSES into
+// the plain face — its opening scaled by `w`, what it no longer opens the plain face, its fillet's relief flattened into the face by the
+// same share — so at the edge the board is whole and a fade band below it every hole is as punched.
 fn tray_board(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, noise: f32) -> vec4f {
   let pt = tray_point(t, p);
   let h = peg_hole(t, pt);
-  let c = clamp(0.5 + h.d / t.fp, 0.0, 1.0);
+  let top = t.rect.y + t.shape.y;
+  let w = smoothstep(top, top + t.fade.x, p.y);
+  let cg = clamp(0.5 + h.d / t.fp, 0.0, 1.0);   // the surface's analytic coverage as punched
+  let open = (1.0 - cg) * w;                      // what of the pixel the hole still opens
   var col = vec4f(0.0);
-  if (c > 0.0) { col = vec4f(peg_surface(ht, u, t, pt, h, t.fp, noise), 1.0) * c; }
-  if (c < 1.0) { col += vec4f(0.0, 0.0, 0.0, peg_through(u, t, pt, h, t.fp) * (1.0 - c)); }
+  if (w < 1.0) {
+    // in the band: the plain face where the hole has closed, and the fillet (within `hole.z` of it) turning to the face
+    var plain = h;
+    plain.d = 1.0e3;
+    let face = peg_surface(ht, u, t, pt, plain, t.fp, noise);
+    var s = face;
+    if (cg > 0.0 && h.d < t.hole.z) { s = mix(face, peg_surface(ht, u, t, pt, h, t.fp, noise), w); }
+    col = vec4f(s, 1.0) * cg + vec4f(face, 1.0) * ((1.0 - cg) * (1.0 - w));
+  } else if (cg > 0.0) {
+    col = vec4f(peg_surface(ht, u, t, pt, h, t.fp, noise), 1.0) * cg;
+  }
+  if (open > 0.0) { col += vec4f(0.0, 0.0, 0.0, peg_through(u, t, pt, h, t.fp) * open); }
   return col;
 }
 

@@ -181,6 +181,43 @@ try {
     if (!(lit1.rgba[i] >= lit1.rgba[i + 1] && lit1.rgba[i + 1] >= lit1.rgba[i + 2] && lum(lit1, x, y) > 120)) notchDesk++;
   }
   check(notchN > 0 && notchDesk === 0, `no notch: the top edge's centre is board — the ${notchN} px 1–7 px under the edge within 24 of its centre all the tan face (${notchDesk} not)`);
+  // (e) THE HOLES FADE AT THE TOP EDGE (James, 2026-09-28 — design-018 §4): within the face's feather a hole CLOSES into the plain face
+  //     as the specimens fade — its opening the specimens' ramp, smoothstep over the fade band (`DRAWER.fade`, 28) below the edge's inside.
+  //     The bare board scrolled so row 0's lit patch (row 3b's point: ¼ + 0.04, ¾ + 0.12 of its cell) sits 6 · 12 · 18 · 24 px under the
+  //     edge: its OPENING — how far its luminance has gone from the face's (the same screen row, `onFace`) toward the open holes' (row 1,
+  //     a pitch lower, past the band) — rises as the ramp does; row 1's holes are as punched
+  const fadeRows = [];
+  for (const d of [6, 12, 18, 24]) {
+    const S = (0.75 + 0.12) * 40 - 1.5 - d;   // row 0's point at y = top + d, top = the frame's y + the arris (1.5)
+    await q(`window.__desk.tray.scroll(${S})`); await settle();
+    const img = await shot();
+    const fr = (await tray()).frame;
+    const at = (row) => {
+      const out = [];
+      for (let col = 0; col < 28; col++) {
+        const hx = col + 0.25 + (row & 1 ? 0.5 : 0);
+        if (hx < 0.75 || hx > fr.w / 40 - 0.75) continue;
+        const x = Math.round((fr.x + (hx + 0.04) * 40) * 2);
+        const y = Math.round((fr.y + (row + 0.75 + 0.12) * 40 - S) * 2);
+        if (!nearNote(x, y, 40)) out.push([x, y]);
+      }
+      return out;
+    };
+    const L9 = (x, y) => { let v = 0; for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) v += lum(img, x + i, y + j); return v / 9; };
+    const h0 = at(0);
+    const h1 = at(1);
+    const y0 = h0[0]?.[1] ?? 0;
+    const face = [];
+    for (let x = Math.round(fr.x * 2) + 80; x < Math.round((fr.x + fr.w) * 2) - 80; x += 2) if (onFace(fr, x, y0, S)) face.push(lum(img, x, y0));
+    const Lf = face.reduce((a, b) => a + b, 0) / Math.max(face.length, 1);
+    const Lo = h1.map(([x, y]) => L9(x, y)).reduce((a, b) => a + b, 0) / Math.max(h1.length, 1);
+    const mean = h0.map(([x, y]) => (Lf - L9(x, y)) / (Lf - Lo)).reduce((a, b) => a + b, 0) / Math.max(h0.length, 1);
+    const t = d / 28;
+    fadeRows.push({ d, n: h0.length, mean, want: t * t * (3 - 2 * t), Lf, Lo });
+  }
+  await q("window.__desk.tray.scroll(0)"); await settle();
+  check(fadeRows.every((r) => r.n >= 10 && Math.abs(r.mean - r.want) < 0.12 && r.Lf - r.Lo > 60) && fadeRows.every((r, i) => i === 0 || r.mean > (fadeRows[i - 1]?.mean ?? 0)),
+    `the holes fade at the top edge as the specimens do — each row's opening against the ramp: ${fadeRows.map((r) => `${r.d} px ${r.mean.toFixed(2)} (${r.want.toFixed(2)})`).join(" · ")}, rising, over ${fadeRows[0]?.n} holes a row; row 1 as punched (the face ${fadeRows[0]?.Lf.toFixed(0)}, the open holes ${fadeRows[0]?.Lo.toFixed(0)})`);
   const deskBefore = lum(lit0, 1200, 200);
   const deskAfter = lum(lit1, 1200, 200);
   check(Math.abs(deskAfter / deskBefore - 0.9) < 0.03, `the desk dims 10 % by day: luminance ${deskBefore.toFixed(1)} → ${deskAfter.toFixed(1)} (× ${(deskAfter / deskBefore).toFixed(3)})`);

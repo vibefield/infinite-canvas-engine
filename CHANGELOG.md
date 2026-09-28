@@ -935,6 +935,11 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
     `layerCompositeLayout(device, label)`; `BoxTargets(…, samples, view)` binds the slot's view block).
   - Witnesses: rig:tray (a) the fade — seven kinds on the smoothstep's quarters, the tags and the accessories on its ramp · (b) the
     holes see the desk · (c) no notch · (d) shut, no tray draw; the five tray stills re-blessed, the other 107 scenes byte-identical.
+  - **The holes fade at the top edge too** (James, 2026-09-28): within the same band a hole CLOSES into the plain face as the
+    specimens fade — its opening scaled by their ramp (`tray.wgsl tray_board`: what it no longer opens is the face, its fillet's
+    relief flattened by the same share), so the board is whole at the edge and every hole is as punched a band below it; the row
+    that peeked 3 px under the edge at rest (D-R1.7) is gone with it. rig:tray (e) reads the opening 0.13 · 0.41 · 0.72 · 0.95 at
+    6 · 12 · 18 · 24 px under the edge against the ramp's 0.12 · 0.39 · 0.71 · 0.94; the five tray stills re-blessed again.
 
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 
