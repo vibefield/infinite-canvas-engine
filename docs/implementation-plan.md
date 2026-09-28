@@ -1496,7 +1496,7 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   across FW-B and FW-A. NOT MET and owed: §11.4's idle main-thread ≤ 0.1 ms/s (2.07–2.56 measured — registered wakes); a
   relation-only reparent leaves `Selected`/`Held` standing; a kind-declared input lease behind the seam's two DOM exceptions.
 
-## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a, K5a, K6b, K5b and K7a LANDED 2026-09-27 · K-H and K8a LANDED 2026-09-28)**
+## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a, K5a, K6b, K5b and K7a LANDED 2026-09-27 · K-H, K8a and K7b LANDED 2026-09-28)**
 
 *(Numbering note: next free after M20. James's five asks of 2026-09-26 — "we do need the dynamic rulers, do port them from
 ground demo"; "do we have proper profiler on webgpu part?"; "how is our multi objects performance? are you utilizing best
@@ -1574,7 +1574,11 @@ drawn by the desk, its specimens the kinds' own draws, taking one through core's
 - **K8a — plugin parity, the open seams** (**LANDED 2026-09-28**, fourteen commits → `a2e0028`, rebased over K5b, K7a
   and K-H; a fixer proved a two-tab red a harness race main shares, 2 of 30, and fixed the row): services by typed key, the desk's ONE editor leased through declared text parts, placement and accepts by
   provides-keys, chip finishes, the container's own face law, plugin glyphs, kind-declared menu acts, `pinAsset`.
-- K7b — scale (built; rebasing over K-H and K8a) · K8b — the desk clock · K9 — the review and its
+- **K7b — scale** (**LANDED 2026-09-28**, seven commits → `c31c61e`, rebased by its builder over K-H and K8a): `rig:scale`
+  (10k, mixed order, real pictures; its light run in the gate), ONE flat-card pipeline composed from the kinds' own
+  `CardMaterial`s (ON by default, D-K7b.2), the far LOD (greeked notes, no rasters below 48 px). Zoom 0.2: draws 674 → 19,
+  memory inside its budget; pan JS 2.30 ms and the 10k budget still MISS. Graded: ci 0, gate:landing 0 (sixteen rigs).
+- K8b — the desk clock (building) · K9 — the review and its
   fixes: planned (design-016 §8; K5, K6, K7 and K8 each split in two so no builder carries more than its context holds).
 
 **Exit:** design-016 §6's gates on `rig:stress` and a new `rig:scale` (10,000 objects, mixed order, real pictures) with

@@ -860,6 +860,19 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   `rasters`, `remake`, `wake` — stay fields); `insideViewOfFace` takes the container's radius; `@ice/objects` no longer
   exports `DESK_OBJECT` (it is `@ice/desk`'s).
 
+<!-- design-016 K7b (2026-09-28) -->
+- **Scale: the flat-card pipeline, the far LOD, `rig:scale`** (design-016 §6, K-L2 · K-L4): a kind declares a
+  `CardMaterial` — its own WGSL functions over uniquely named bindings — and `card/card.ts` composes every material into ONE
+  pipeline with a dispatch, so interleaved notes, prints and whiteboards draw as ONE run (byte-identical to each kind's own
+  pixels: 0 of 3,840,000 px differ; no kind is named). `CardPass.on` switches it; it is ON by default (D-K7b.2 — on this
+  Apple GPU draws cost nothing and the composed shader ~5 % GPU, but hundreds of draws cost CPU and driver time elsewhere).
+  The far LOD: a note below [48, 64] CSS px greeks its writing with its chip's lines and holds no raster (a crossfade across
+  the band — 0 px differ at either end), a board at rung 1 takes no slot and asks nothing, prints show their thumbnail
+  tier (D-K7b.3; 24 far scenes re-blessed). `rig:scale`: 10,000 objects in mixed kind order with real pictures — its light
+  run (N 3,000, ≈ 2,000 drawn at zoom 0.2) joins `gate:landing` (sixteen rigs), the full run beside it. At zoom 0.2: draws
+  674 → 19, GPU 4.79 → 4.60 ms (min), the pan's JS 2.84 → 2.30 ms, memory under its budget (23,744 → 117 evictions); idle
+  asleep. Still MISSED: the pan's JS ≤ 2 ms and the 256 MB budget at the full 10,000 (board thumbnails at scale).
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 
