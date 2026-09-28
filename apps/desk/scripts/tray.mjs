@@ -69,6 +69,9 @@ try {
     return { open: root.dataset.open, visible: root.dataset.visible, x0: pill.left, y0: pill.top, x1: pill.right, y1: pill.bottom, toggle: { x: tr.left + tr.width / 2, y: tr.top + tr.height / 2, expanded: t.getAttribute("aria-expanded") },
       chips: [...root.querySelectorAll(".ice-tb-chip")].map((c) => { const r = c.getBoundingClientRect(); return { id: c.dataset.category, label: c.textContent, pressed: c.getAttribute("aria-pressed"), x: r.left + r.width / 2, y: r.top + r.height / 2 }; }) }; })()`;
   const bar = () => q(BAR);
+  // the board's own FACE at a device pixel for a shown scroll: clear of every punched hole by 1.5 CSS px (the lattice's CPU mirror) — a
+  // hole shows the desk under the drawer (design-018 §3), which does not scroll with the board
+  const onFace = (rect, xd, yd, S) => { const c = cellOf(pointAt((xd / 2 - rect.x) / 40, yd / 2 - rect.y, 40, carry(S, 40))); return !punched(c, rect.w / 40) || holeSdf(c.qx, c.qy) * 40 > 1.5; };
 
   // a still desk (no wind frames), a note on it and one under where the drawer comes
   await q("window.__desk.ambient('still'); window.__desk.setTheme('light')");
@@ -89,6 +92,18 @@ try {
   await mouse("mouseMoved", 600, 400); await settle();
   check(atFoot.facts.open === false && atFoot.frame.y === s.frame.y,
     `closed, the mouse at the bottom centre lifts nothing: the drawer's top stays at y ${atFoot.frame.y} (${s.frame.y})`);
+  // (d) SHUT, IT DRAWS NOTHING (design-018 §5, §8 R1 d): the frames the desk draws with the drawer shut — a note selected, then not —
+  //     carry no tray draw (the lip's quad and the rim were two in every such frame); the GPU profiler counts draws by the pipeline's kind
+  const shutDraws = await qa(`(async () => {
+    const g = window.__desk.perf.gpu(); const release = g.arm(); g.take();
+    window.__desk.engine.ops.setSelection([${note}], 'replace'); await window.__desk.settle(4000);
+    window.__desk.engine.ops.setSelection([], 'replace'); await window.__desk.settle(4000);
+    await new Promise((r) => setTimeout(r, 300));
+    const frames = g.take().filter((f) => f.kind === 'frame'); release();
+    return { frames: frames.length, draws: frames.reduce((a, f) => a + f.counts.draws, 0), tray: frames.reduce((a, f) => a + (f.byKind.tray?.draws ?? 0), 0), p: window.__desk.tray.state().p };
+  })()`);
+  check(shutDraws.p === 0 && shutDraws.frames >= 2 && shutDraws.draws > 0 && shutDraws.tray === 0,
+    `shut, the drawer draws nothing: ${shutDraws.frames} frames the desk drew (a selection set and cleared) — ${shutDraws.draws} draws, ${shutDraws.tray} of them the tray's`);
 
   // K5a: the FIRST open makes, once, what the specimens need (the composite kinds' tray passes, their slots) — its submits are that setup's;
   //      every slide after it is one frame per frame of motion (row 2)
@@ -153,6 +168,19 @@ try {
   const dark = inside.filter((i) => lum(lit1, i % lit1.width, Math.floor(i / lit1.width)) < 110).length / inside.length;
   const faceL = inside.map((i) => lum(lit1, i % lit1.width, Math.floor(i / lit1.width))).sort((a, b) => a - b)[Math.floor(inside.length * 0.6)];
   check(dark > 0.12 && dark < 0.19 && faceL > 165 && faceL < 200, `the board: holes darken ${(dark * 100).toFixed(1)} % of it (the stadium's 15.7 % of a cell), the face's luminance ${faceL.toFixed(0)} (≈ #cdb491's 182)`);
+  // (c) NO NOTCH (design-018 §2, §5; §8 R1 c): the top edge's centre is BOARD — the tan face under its lit edge (R ≥ G ≥ B, bright),
+  //     never the desk seen through a finger notch (56 × 8 was cut there). The lattice's own holes are skipped: at scroll 0 the tips of
+  //     the row above the board's top (its centres ¼ pitch over it) show 3.2 px under the edge — the board runs on above the window
+  const litRect = (await tray()).frame;
+  let notchN = 0;
+  let notchDesk = 0;
+  for (let y = 900; y < 914; y++) for (let x = 1152; x < 1248; x++) {
+    if (!onFace(litRect, x, y, 0)) continue;
+    const i = (y * lit1.width + x) * 4;
+    notchN++;
+    if (!(lit1.rgba[i] >= lit1.rgba[i + 1] && lit1.rgba[i + 1] >= lit1.rgba[i + 2] && lum(lit1, x, y) > 120)) notchDesk++;
+  }
+  check(notchN > 0 && notchDesk === 0, `no notch: the top edge's centre is board — the ${notchN} px 1–7 px under the edge within 24 of its centre all the tan face (${notchDesk} not)`);
   const deskBefore = lum(lit0, 1200, 200);
   const deskAfter = lum(lit1, 1200, 200);
   check(Math.abs(deskAfter / deskBefore - 0.9) < 0.03, `the desk dims 10 % by day: luminance ${deskBefore.toFixed(1)} → ${deskAfter.toFixed(1)} (× ${(deskAfter / deskBefore).toFixed(3)})`);
@@ -183,8 +211,7 @@ try {
 
   // 4. a scroll of Δ moves the pattern by exactly Δ: the carry's uniforms, and the pixels shifted by Δ·dpr — the board's own FACE: a hole
   //    shows the desk under the drawer (design-018 §3), which does not scroll with the board, so the compare reads the pixels clear of
-  //    every punched hole by 1.5 CSS px at their scroll (the lattice's CPU mirror)
-  const onFace = (rect, xd, yd, S) => { const c = cellOf(pointAt((xd / 2 - rect.x) / 40, yd / 2 - rect.y, 40, carry(S, 40))); return !punched(c, rect.w / 40) || holeSdf(c.qx, c.qy) * 40 > 1.5; };
+  //    every punched hole (`onFace`)
   const S0 = 13;
   const D = 17;
   await q(`window.__desk.tray.scroll(${S0})`); await settle();
