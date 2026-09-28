@@ -3,7 +3,9 @@
 A desk kind that is **not ICE's** (design-016 K8b): an analogue desk clock written the way a VibeField plugin kind is — in its
 own package, importing ICE only through the umbrella's **published** entries (`@vibecook/ice`, `@vibecook/ice/desk`,
 `@vibecook/ice/desk/kit`, `@vibecook/ice/desk/engine`). `test/imports.test.ts` and the dependency-cruiser rule
-`examples-import-only-the-published-entries` fail on anything else. It is never published.
+`examples-import-only-the-published-entries` fail on anything else, and `pnpm --filter @ice-examples/desk-clock dts:check` (the
+last step of `gate:landing`, after `pack:audit` builds the umbrella) compiles it against the umbrella's BUILT `.d.ts` with
+`skipLibCheck: false` and holds every name it imports to a declaration there. It is never published.
 
 | seam | what the clock declares |
 |---|---|

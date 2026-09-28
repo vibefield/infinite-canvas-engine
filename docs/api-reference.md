@@ -320,6 +320,31 @@ engine names a kind:
 - **Menu acts**: `defineObject({ menu })` (core's `MenuActionDef`) — the anchor's `menu` carries a selection's shared acts
   (`withKindActs`), the React menu shows them first and runs `ops.runMenuAction`.
 - **Stills**: `handle.pinAsset(entity, asset)` — a kind's own asset (`ctx.asset`) in the shape the kind defines.
+- **A kind's logic: its desk state, drivers, or a behavior (D-K8b.1)** — design-015 §5.2 planned `behaviors: [noteTyping]` on core's
+  `defineBehavior`; as built, the desk's hands-on logic is desk-local DRIVERS. A plugin kind uses the same three the built-ins use,
+  each for its own kind of state (design-015's law: facts in the world, flux outside it):
+  1. its **desk state** — `ObjectKind.local(host)` → `KindLocal` (`tick`, `due`, `landed`, `forget`) — for what it DRAWS from flux
+     and WHEN the desk must wake for it: per desk, never in the document, never polled (`due` is the registered wake, K7a). The desk
+     clock is this alone: its hands read the host's clock, `due` is the wall's next second (or minute) a drawn clock needs;
+  2. **drivers** — `defineObject({ drivers })` → a `KindDriver` made per desk from `KindDriverHost`, ticked before the kinds' clocks
+     — for what FOLLOWS INPUT on one desk (a pen, a carry, a leaf, a typing session): the hand onto the kind's flux, writing facts only
+     through the document's doors at the gesture's end. Desk-local because that flux is per view (two desks on one document have two
+     pens) and because a driver reads the builder (geometry as drawn, the hand), which core's systems never see;
+  3. **`defineBehavior`** — core's (design-009), passed through `defineObject({ behaviors })` as for any widget — for logic whose STATE
+     IS A FACT the world must sync, undo or keep across views (`store: "durable"` data riding the object, `"runtime"` state every peer
+     projects). Not for typing: a typing session's live text is flux written under the gesture's claim and committed whole at its end
+     (design-015 §6.1, D2c) — a behavior's durable store would sync every keystroke — so `noteTyping` stays a driver, and the plan's
+     `behaviors: [noteTyping]` is superseded. In short: drawn from time or a device → `local` with `due`; worked by hand → `drivers`;
+     durable or peer-shared logic → `behaviors`.
+
+**The worked third-party kind (design-016 K8b)** — `examples/desk-clock` (`@ice-examples/desk-clock`, private, never published): an
+analogue desk clock in a package of its own that imports ICE only as `@vibecook/ice`, `@vibecook/ice/desk`, `/desk/kit` and
+`/desk/engine` — its own WGSL (`kitWgsl(["view", "portal", "sdf", "light"])`), its pass, durable props, a registered wake, a tray
+entry, a menu act and held tools with their own glyphs, a chip, a round pick, a still's time through `pinAsset` — registered by
+apps/desk beside the six (`c`, `s`) and drawn in the golden through the oracle's OPEN kind list (`createOracleDesk({ objects })`; a
+scene's `objects: [{ type, x, y, props, asset }]`). Its walls: `test/imports.test.ts` and the cruiser rule
+`examples-import-only-the-published-entries` (the published entries only, never `/desk/objects`), and `dts:check` — it compiles against
+the umbrella's BUILT `.d.ts` (`skipLibCheck: false`) and every name it imports is declared there; `rig:clock` witnesses it live.
 
 **`@ice/objects`** is `@vibecook/ice/desk/objects` (design-016 K4b: the six reference kinds' own package, built on the three desk
 entries alone, exactly as a plugin kind is): `Note`/`NOTE_TYPE`, `MiniMat`, `Notebook`, `Board`, `Calendar`, `Photo`,

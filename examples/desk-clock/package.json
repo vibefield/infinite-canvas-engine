@@ -10,7 +10,8 @@
   },
   "scripts": {
     "typecheck": "tsc --noEmit",
-    "test": "vitest run"
+    "test": "vitest run",
+    "dts:check": "node scripts/dts-check.mjs"
   },
   "peerDependencies": {
     "@vibecook/ice": "^0.13.0"
