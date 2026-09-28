@@ -87,4 +87,11 @@ export function frame(device: GPUDevice, encoders: readonly [string, readonly st
     device.queue.submit([enc.finish()]);
   }
 }
-export const settle = (): Promise<unknown> => new Promise((r) => setTimeout(r, 5));
+/**
+ * Let the simulated GPU's readbacks land (K-H): twenty turns of the event loop, never a wall-clock sleep. A readback is a chain of
+ * timer hops (`mapAsync` resolves on a 0 ms timer, the profiler's ring takes it on); a 5 ms sleep raced it, and at load 259 ci went red
+ * with one frame's flush uncounted (gpu-profiler: n 5, not 6) — a turn is a turn however slow the host.
+ */
+export const settle = async (): Promise<void> => {
+  for (let i = 0; i < 20; i++) await new Promise((r) => setTimeout(r, 0));
+};
