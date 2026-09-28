@@ -180,7 +180,7 @@ describe("the pool and the thumbnails on a fake device", () => {
     expect(ink.stats()).toEqual({ boards: 1, inked: 1, thumbed: 1, rastered: 1, bound: 1, layers: 2, capacity: 4 });
     pass.evict(id);   // the budget's eviction: the raster goes, the thumbnail stays, the board stays inked
     expect(ink.stats()).toMatchObject({ boards: 1, inked: 1, thumbed: 1, rastered: 0, bound: 0 });
-    ink.forget(E(7));
+    ink.forget?.(E(7));
     expect(ink.stats()).toMatchObject({ boards: 0, inked: 0, thumbed: 0, layers: 1 });   // the empty layer alone remains
   });
 
