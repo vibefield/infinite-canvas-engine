@@ -890,6 +890,23 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   plugin kind's logic is its desk state (`local`), drivers (input on one desk) or `defineBehavior` (a fact to sync, undo
   or keep) — design-015 §5.2's `behaviors: [noteTyping]` is superseded (typing is flux committed whole).
 
+<!-- design-018 R2 — the tray's bar and its filters (2026-09-28) -->
+- **The drawer's handle is DOM: `<TrayBar>`** (design-018 §5; `@ice/react`): one pill in the selection menu's ink, reading the desk
+  handle's `tray` door structurally — at the view's foot while the drawer is shut ("Objects", the pegboard glyph; `a` still toggles),
+  riding the drawer's top edge while it is out, `min(vh − 16, drawer.y − 10)` frame by frame (no render per frame, no rAF of its
+  own), stepping aside in hand and when nothing hangs. Its downs are chrome's (`data-canvas-interactive`): a click on it never
+  reaches the desk. apps/desk mounts it beside `<SelectionMenu>`; the menu's `--ice-menu-*` values now live once, both islands declaring them.
+- **The tray filters by category** (design-018 §6): a runtime `Tray.category` ("" all) beside `open`, set by core's
+  `setTrayCategory(world, id)` — the lay hangs only its entries, the board starts again at its top, and a category the frame hangs
+  none of falls back to all; `trayCategories(world)` lists what the current frame hangs (`{ id, label, count }`, in the lay's
+  order), with `trayCategory` and `trayEntryCount`. The bar's chips show them — All · Paper · Surfaces (· Things with the example
+  clock); a plugin's `category` is its own chip. The built-in id `surface` is now `surfaces`.
+- **The tray door hears the drawer** (`DeskLayerHandle.tray`): `category(id?)`, `categories()`, `anchor()` (`TrayAnchor` — the drawer
+  as drawn, the view, the hand, the entries, the chips) and `subscribe(listener)`, told after each frame that moved it, never at rest.
+  `rig:tray` drives the bar by real clicks on its rect (its button, the chips, the plugin's own chip); the rigs that hold the page's
+  pixels to the renderer's hide it through the desk's door, `__desk.bar(false)` — rig:world, nav, portal, sticky, ruler, open and
+  rig:tray's pixel rows (rig:parity's page has no chrome; rig:collab, clock, gpu and panel read nothing it covers).
+
 <!-- design-015 D5b (2026-09-26) -->
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 
@@ -1075,6 +1092,11 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   wires them generically (the kind-drivers seam, D7), so a third-party openable kind gets its driver too.
 - **`desk.calendar`'s `month` default** is `""` (it was the literal `"2026-09"`): a pad spawned without a month shows the
   month of its own today, in its zone.
+
+<!-- design-018 R2 (2026-09-28) -->
+- **The tray's lip as INPUT** (design-018 §5): `Tray.lip` (its hover fact), `TrayPress` kind `lip` and `TRAY_INPUT.handlePx` /
+  `lipDragPx` / `lipPadPx` — a shut drawer takes no pointer, and a press at the bottom centre is the desk's; the lip's "pointer"
+  cursor went with them (the lip's drawing and its lift are R1's). The built-in tray category id `surface` (now `surfaces`).
 
 ### Fixed
 
@@ -1359,6 +1381,14 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   added: golden 112); between-frame GPU work is its own profiler frame (R7); rig:scale's memory rows are checks (R5).
 - **An on-screen whiteboard past the raster pool no longer re-asks a raster every frame** (D-K9-d.4, found by the fix
   wave's own gate on a quiet host — K6a/K6b's residency: made, never bound, evicted, asked again; 17,149 → 171 evictions).
+
+<!-- design-018 R2 (2026-09-28) -->
+- **A click on DOM chrome over an object no longer lends it the editor**: the desk's DOM halves listen on the container in the
+  capture phase, before any handler of the chrome's, and `tapHit` read the live hit under the pointer — a click on the selection
+  menu, or on the tray's bar at the view's foot, over a note began typing into it. `tapHit` answers no object for a pointer the
+  ingest marked `OverInteractive`.
+- **A press the open drawer took, shut under it (Esc, `a`), is let go**: it fell into the lip's branch, and a board press dragged
+  10 px up after Esc opened the drawer again.
 
 ## [0.13.0] — 2026-09-07
 
