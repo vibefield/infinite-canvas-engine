@@ -61,7 +61,7 @@ describe("the pool and the thumbnails on a fake device", () => {
     return { kind, pass, raster };
   }
 
-  it("K7b — the FAR LOD: a board at the ladder's FIRST rung (zoom·dpr ≤ 0.5) with its thumbnail cut takes NO pool slot and asks for no raster — the flat card draws it from the thumbnail; the slot it held near is freed at the next step; one with no thumbnail yet still asks (to cut one)", async () => {
+  it("K7b — the FAR LOD: a board at the ladder's FIRST rung (zoom·dpr ≤ 0.5) with its thumbnail cut takes NO pool slot and asks for no raster — the flat card draws it from the thumbnail; the slot it held near is freed at the next step, which it never wakes the loop for; one with no thumbnail yet still asks (to cut one)", async () => {
     const { kind, pass, raster } = await root();
     raster(1, 1);                                              // rastered at rung 1 and replayed: its thumbnail cut
     expect(pass.thumbed(1)).toBe(true);
@@ -71,8 +71,8 @@ describe("the pool and the thumbnails on a fake device", () => {
     pass.step();
     const far = { ...VIEW, zoom: 0.2 };                        // zd 0.4: rung 1
     expect(kind.prepare({} as GPUCommandEncoder, ctx(far), [board(1)])).toBe(1);   // far: it asks NOTHING…
-    expect(pass.stepOwed).toBe(true);                          // …yet the frame drew it: the step it owes frees the slot it held
-    expect(pass.step()).toEqual([]);
+    expect(pass.stepOwed).toBe(false);                         // …so it owes no step (no wake of its own: the loop may sleep)…
+    expect(pass.step()).toEqual([]);                           // …and the step the next tick takes anyway — the frame drew it — frees its slot
     expect(pass.bound(1)).toBe(false);
     expect(kind.prepare({} as GPUCommandEncoder, ctx(far), [board(1)])).toBe(1);
     expect(kind.cardSlot(0)).toBeGreaterThanOrEqual(0);        // the flat card's
@@ -80,6 +80,15 @@ describe("the pool and the thumbnails on a fake device", () => {
     expect(pass.stepOwed).toBe(false);                         // nothing asked, nothing bound: the loop may sleep
     expect(kind.prepare({} as GPUCommandEncoder, ctx(far), [board(1), board(2)])).toBe(2);   // board 2: no ink yet, bare…
     expect(pass.step().map((r) => r.id)).toEqual([2]);        // …asks, to cut its thumbnail; board 1 does not
+  });
+
+  it("K7b: the tray's specimen board (id 0 — its one clean raster, K5a) is never FAR: at the first rung with its thumbnail cut it is bound and asked as it always was (far, it cost rig:tray's slide two frames in five runs)", async () => {
+    const { kind, pass, raster } = await root();
+    raster(0, 1);
+    expect(pass.thumbed(0)).toBe(true);
+    expect(kind.prepare({} as GPUCommandEncoder, ctx({ ...VIEW, zoom: 0.2 }), [board(0)])).toBe(1);
+    expect(pass.bound(0)).toBe(true);
+    expect(pass.stepOwed).toBe(true);
   });
 
   it("a board on screen with a raster takes a pool slot — BOARD_SLOTS of them, the rest drawn from their thumbnails; one in the cull's margin takes none", async () => {

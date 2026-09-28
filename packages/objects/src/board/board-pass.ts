@@ -448,7 +448,9 @@ export class BoardPass {
   }
 
   /** The last frame's asks still unanswered (K7a): the next tick owes them a `step` — a slot freed, a board raised to its rung. */
-  get stepOwed(): boolean { const s = this.shared; return s.asked.size > 0 || (s.drew && s.pool.some((id) => id !== null && s.live !== id)); }
+  // (K7b: a board gone FAR asks nothing, so it owes no step: the slot it held is freed by the step the next tick takes anyway — a
+  // wake of its own was a frame the loop did not need: rig:tray's slide drew two more than its motion)
+  get stepOwed(): boolean { return this.shared.asked.size > 0; }
 
   /** The raster's size in texels, or null. */
   sizeOf(id: number): readonly [number, number] | null { return this.shared.rasters.get(id)?.size ?? null; }
@@ -642,9 +644,10 @@ export class BoardPass {
       const seen = q.x1 >= x0 && q.x0 <= x1 && q.y1 >= y0 && q.y0 <= y1;
       // K7b — THE FAR LOD: a board at the ladder's FIRST rung whose thumbnail is made draws from it — the rung-1 raster's own
       // texels (its chain's tail from the first level that fits BOARD_THUMB², a texel a unit) — so it asks for no raster and takes
-      // no pool slot: the flat card draws it, nothing is replayed at low zoom, an evicted raster stays evicted. Not the live board.
+      // no pool slot: the flat card draws it, nothing is replayed at low zoom, an evicted raster stays evicted. Not the live board,
+      // nor the tray's specimen (id 0: its one clean raster, K5a — bound and asked as it always was; far, it cost the slide frames)
       const rung = boardRung(zd * b.geometry.scale);
-      const far = rung === 1 && t !== undefined && s.live !== b.id && b.stroke === undefined;
+      const far = b.id !== 0 && rung === 1 && t !== undefined && s.live !== b.id && b.stroke === undefined;
       if (seen && !far) s.asked.set(b.id, Math.max(s.asked.get(b.id) ?? 0, rung));
       if (r) {
         if (seen && !far && !s.pool.includes(b.id)) { const free = s.pool.indexOf(null); if (free >= 0) { s.pool[free] = b.id; bind = true; } }
