@@ -320,6 +320,16 @@ engine names a kind:
 - **Menu acts**: `defineObject({ menu })` (core's `MenuActionDef`) — the anchor's `menu` carries a selection's shared acts
   (`withKindActs`), the React menu shows them first and runs `ops.runMenuAction`.
 - **Stills**: `handle.pinAsset(entity, asset)` — a kind's own asset (`ctx.asset`) in the shape the kind defines.
+- **Wakes — a desk at rest takes no step** (design-015 §2.4, design-016 K7a): the loop sleeps unless something is due, and a
+  kind that does not say when it is due pays the whole desk's idle. `KindLocal.due(now)` — asked after each of the kind's ticks:
+  `now` while a motion runs, a later time (a caret's blink, a layer let go), `Infinity` until a fact, an input or a wake moves
+  it. **Absent while `tick` is declared, the kind is due EVERY frame and the desk never sleeps** — every frame ticks every kind
+  and asks every driver; nothing is submitted, so no submit count shows it (the desk layer says it once a page on the console,
+  naming the kind). `KindHost.wake()` — something landed outside a frame (a picture decoded, a tile printed, a detail
+  fetched): the kind is ticked at the next frame and a sleeping loop wakes for it; never called, the arrival shows only when
+  something else wakes the desk. `KindPass.idleAt(ms)` — when a layered pass's `idle(ms)` next lets a device target go (the
+  tray's slots, K5a): absent, the release waits for a step taken anyway, so a desk asleep since the drawer shut keeps that
+  memory. (`LendHost.wake`, above, is the same word for a lent service.)
 - **A kind's logic: its desk state, drivers, or a behavior (D-K8b.1)** — design-015 §5.2 planned `behaviors: [noteTyping]` on core's
   `defineBehavior`; as built, the desk's hands-on logic is desk-local DRIVERS. A plugin kind uses the same three the built-ins use,
   each for its own kind of state (design-015's law: facts in the world, flux outside it):

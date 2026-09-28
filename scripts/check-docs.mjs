@@ -30,6 +30,7 @@ const ROWS = [
   ["the JSDoc names no module that is not an entry (`@ice/desk/host`)", jsdoc, /`@ice\/desk\/host`/, true],
   ["the JSDoc points a caller at <Desk>/EngineProvider, not <InfiniteCanvas>, for the menu's engine", ["packages/react/src/selection-menu.tsx"], /`<InfiniteCanvas>` provides one|outside `<InfiniteCanvas>`/, true],
   ["the ground's device doc says no three adopts it", ["packages/desk/src/ground.ts"], /three adopts/, true],
+  ["the plugin-parity list names the wakes a kind declares and what a missing one costs (K9)", ["docs/api-reference.md"], /`KindLocal\.due\(now\)`[\s\S]*desk never sleeps[\s\S]*`KindHost\.wake\(\)`[\s\S]*`KindPass\.idleAt\(ms\)`/, false],
 ];
 
 const bad = [];

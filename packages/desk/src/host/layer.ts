@@ -399,6 +399,14 @@ function kindsOf(types: readonly WidgetType[], extra: readonly KindProgram[]): {
   return { kinds: [...byName.values()], objectKinds };
 }
 
+/** The kinds told, once a page, that a local `tick` with no `due` keeps the desk awake (K9: nothing else would tell a plugin's author). */
+const toldAwake = new Set<string>();
+function tellAwake(kind: string): void {
+  if (toldAwake.has(kind)) return;
+  toldAwake.add(kind);
+  console.warn(`[ice] desk: the kind "${kind}" declares a local \`tick\` and no \`due\` — it is due every frame, so the desk never sleeps. Declare \`KindLocal.due(now)\`: now while it moves, a later time, or Infinity until a fact, an input or \`KindHost.wake\` moves it (design-016 K7a).`);
+}
+
 export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
   return (ctx) => {
     const { host, world } = ctx;
@@ -479,7 +487,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const remake = (e: Entity): void => { builder.remake(e); if (compose.trayShows(e)) compose.wake("ink"); };
     for (const k of objectKinds) {
       const local = k.local?.({ pass: () => ground?.pass(k.name), use: services.use, children, drawn, budget, rasters, remake, wake: () => wakeKind(k.name) });
-      if (local !== undefined) locals.set(k.name, local);
+      if (local === undefined) continue;
+      locals.set(k.name, local);
+      if (local.tick !== undefined && local.due === undefined) tellAwake(k.name);
     }
     const keeps = (owner: string, key: string): boolean => locals.get(owner)?.keeps?.(key) ?? false;
     const readMarquee = ctx.readMarquee;
