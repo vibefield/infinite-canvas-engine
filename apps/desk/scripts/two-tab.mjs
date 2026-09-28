@@ -21,7 +21,9 @@
 //
 // THE CALENDAR ACROSS THE ROOM (D3t-c): A selects a day on a desk calendar and writes a line on it through the one editor; its ONE
 // `desk.event` child — the text and A's seeds, the same hand — arrives on B's pad and B's print lays it; ⌘Z in A takes it off both.
-// Exit 0 = passed.
+//
+// THE TRAY ACROSS THE ROOM (K9): A opens its pegboard drawer — B's, its own runtime fact, stays shut — and a note taken off A's board is
+// ONE commit that reaches B where A made it. Exit 0 = passed.
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
@@ -330,6 +332,35 @@ try {
   const offB = await until(async () => !(await B.q(`window.__desk.calendar.entries(${padB})`)).some((e) => e.text === "dentist 3pm"), 3000);
   check(offA && offB, `⌘Z in A takes the line off in ONE step (A: ${offA}) — and off B's pad (B: ${offB})`);
   await front(A);
+
+  // THE TRAY ACROSS THE ROOM (K9, law #7): the drawer is each view's own runtime fact — open in A, B's stays shut — and a note TAKEN off
+  // A's pegboard (pressed on its specimen, carried out, dropped on the desk) is ONE commit that reaches B's document where A made it
+  for (const T of [A, B]) await T.q("window.__desk.setCamera({ x: -6000, y: -6000, zoom: 1 })");   // a bare stretch of desk in both
+  await settle(A);
+  await A.q("window.__desk.tray.open()");
+  await sleep(500); await settle(A);
+  const trayOpenA = await A.q("window.__desk.tray.facts().open");
+  const trayOpenB = await B.q("window.__desk.tray.facts().open");
+  const spec = await A.q("window.__desk.tray.state().specimens.find((s) => s.type === 'desk.note')?.object ?? null");
+  const beforeTake = new Set(await A.q("window.__desk.entities().map((e) => e.id)"));
+  const tc0 = await A.q("window.__desk.room.commits()");
+  const tg = spec === null ? [600, 600] : [(spec.x0 + spec.x1) / 2, (spec.y0 + spec.y1) / 2];
+  await mouse(A, "mouseMoved", tg[0], tg[1]); await mouse(A, "mousePressed", tg[0], tg[1]); await sleep(30);
+  for (let i = 1; i <= 8; i++) { await mouse(A, "mouseMoved", tg[0] + ((300 - tg[0]) * i) / 8, tg[1] + ((250 - tg[1]) * i) / 8); await sleep(30); }
+  await sleep(150);
+  await mouse(A, "mouseReleased", 300, 250);
+  await settle(A);
+  const takenA = (await A.q("window.__desk.entities().map((e) => ({ id: e.id, type: e.type, x: e.x, y: e.y }))")).filter((e) => !beforeTake.has(e.id));
+  const takeCommits = (await A.q("window.__desk.room.commits()")) - tc0;
+  const takenKey = takenA.length === 1 ? await A.q(`window.__desk.room.key(${takenA[0].id})`) : null;
+  const trayShutA = (await A.q("window.__desk.tray.facts().open")) === false;
+  await front(B);
+  const takenB = takenKey === null ? null : await until(() => B.q(`window.__desk.room.resolve(${K(takenKey)})`), 8000);
+  const takenBAt = typeof takenB === "number" ? await B.q(`window.__desk.entity(${takenB})`) : null;
+  const trayOpenBAfter = await B.q("window.__desk.tray.facts().open");
+  await front(A);
+  check(trayOpenA && !trayOpenB && spec !== null && takenA.length === 1 && takenA[0].type === "desk.note" && takeCommits === 1 && trayShutA && takenBAt !== null && takenBAt.x === takenA[0].x && takenBAt.y === takenA[0].y && !trayOpenBAfter,
+    `the tray across the room (K9): A's drawer open, B's its own and shut (${trayOpenB}); a note taken off A's pegboard is ONE commit (${takeCommits}) — A's #${takenA[0]?.id} at (${takenA[0]?.x}, ${takenA[0]?.y}), A's drawer slid away (${trayShutA}) — and B has it where A made it (#${takenB} at (${takenBAt?.x}, ${takenBAt?.y})); B's drawer never opened (${trayOpenBAfter})`);
 
   logs.push(...(await faultsOf(A.tab, A.name)), ...(await faultsOf(B.tab, B.name)));   // the faults each engine CONTAINED (D7)
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
