@@ -414,12 +414,24 @@ try {
   const pMade = (await pents()).filter((e) => !pBefore.has(e.id));
   const pUndo = await plug.evaluate("window.__desk.engine.docs.undo()", { timeoutMs: 20000 }); await pf(2);
   const pGone = (await pents()).every((e) => pBefore.has(e.id));
+  // K9 (S13): the plugin kind is judged as the built-ins are, by the placement authority — a mini mat holds what provides
+  // `CONTAINABLE` and the swatch provides `DESK_OBJECT` alone, so inside an entered one it does not hang (the note does); at the desk it does
+  const pqa = (js) => plug.evaluate(js, { awaitPromise: true, timeoutMs: 30000 });
+  await pqa("(async () => { window.__desk.tray.close(); await window.__desk.settle(4000); })()");
+  const pmm = await plug.evaluate("window.__desk.spawn('desk.minimat', { name: 'In' }, { x: 600, y: 300 })", { timeoutMs: 20000 }); await pf(2);
+  await pqa(`(async () => { window.__desk.engine.ops.enterContainer(${pmm}, { transition: "none" }); await window.__desk.settle(4000); window.__desk.tray.open(); await window.__desk.settle(4000); })()`);
+  const pInside = (await plug.evaluate("window.__desk.tray.specimens()", { timeoutMs: 20000 })).map((s) => s.type);
+  const pTakes = await plug.evaluate(`window.__desk.engine.placement.canIngress("rig.swatch", ${pmm}).ok`, { timeoutMs: 20000 });
+  await pqa(`(async () => { window.__desk.tray.close(); await window.__desk.settle(4000); window.__desk.engine.ops.exitContainer({ transition: "none" }); await window.__desk.settle(4000); window.__desk.tray.open(); await window.__desk.settle(4000); })()`);
+  const pBack = (await plug.evaluate("window.__desk.tray.specimens()", { timeoutMs: 20000 })).map((s) => s.type);
   const plugFaults = await plug.evaluate("window.__desk.faults ?? []", { timeoutMs: 20000 });
   await plug.close?.();
   check(plugHeld.length === 7 && plugOn !== undefined && plugWant !== undefined && plugOn.x === plugWant.x && plugOn.y === plugWant.y && plugDrawn?.kind === "paper" && plugDrawn.accessory === "clip" && plugFaults.length === 0 && held.every((h) => h.type !== "rig.swatch"),
     `a plugin kind by its entry alone: with it registered the world holds ${plugHeld.length} (rig.swatch at ${plugOn?.x},${plugOn?.y} — the law's ${plugWant?.x},${plugWant?.y}), drawn by its kind on its clip; without it, none (${held.length})`);
   check(pMade.length === 1 && pMade[0].type === "rig.swatch" && pMade[0].selected && pUndo === true && pGone,
     `…and TAKEN as the built-ins are (K5b): dragged off its clip to the desk, one made (${pMade.map((m) => `${m.type}${m.selected ? ", selected" : ""}`).join(" · ") || "none"}), one undo step takes it back (${pUndo}, gone ${pGone})`);
+  check(pTakes === false && !pInside.includes("rig.swatch") && pInside.includes("desk.note") && pBack.includes("rig.swatch"),
+    `…and judged as the built-ins are (K9): inside an entered mini mat — whose ingress refuses it (${pTakes}) — it does not hang (${pInside.join(", ")}); at the desk it does (${pBack.length} hung)`);
   await front();
 
   // 9. THE COST (design-017 §6.7): the drawer open at 2400 × 1600 — n of it alone per batch, and whole frames with it open and closed,
