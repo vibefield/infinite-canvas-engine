@@ -186,6 +186,13 @@ export const Tray = defineComponent("Tray", {
   stretch: field("f64", { default: 0 }),
   lip: field("bool", { default: false }),
   wheelAt: field("f64", { default: 0 }),
+  /**
+   * K9 (S11, D-K9-c.3): the last wheel `dy` the drawer scrolled by, and how many deltas in a row have SHRUNK while pushing the band
+   * further — a fading tail (the OS's momentum decays; a push does not, steadily). At `TRAY_INPUT.fadeDeltas` the band lets go and
+   * the rest of that tail is spent — swallowed, scroll and band untouched — until a reversal, a growing delta or quiet.
+   */
+  wheelDy: field("f64", { default: 0 }),
+  fade: field("u32", { default: 0 }),
   /** K5a: the type of the specimen under the mouse while the drawer is out ("" — none): the hover that lifts it (flux). */
   hover: field("string", { default: "" }),
   /**

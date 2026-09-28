@@ -308,6 +308,28 @@ describe("open — the desk is inert, the drawer scrolls (design-017 §4)", () =
     expect(r.cam()).not.toEqual(c0);
   });
 
+  it("past an end, a FADING tail — each delta smaller than the last — lets the band go after three and spends the rest (K9 S11); a steady push holds it until the wheel is quiet", () => {
+    const r = rig();
+    openTray(r.world); r.step();
+    scrollTray(r.world, r.max - 30); r.step();
+    const pulls: number[] = [];
+    let dy = 40;
+    for (let i = 0; i < 12; i++) { r.wheel(400, 500, { dy: Math.round(dy) }); pulls.push(r.tray().stretch); dy *= 0.9; }
+    // 40 fills the scroll's last 30 and pulls 10; 36 and 32, each smaller, pull on; 29 — the third smaller — lets it go
+    expect(pulls.slice(0, 4)).toEqual([10, 46, 78, 0]);
+    expect(pulls.slice(4).every((s) => s === 0)).toBe(true);   // the rest of the tail is spent: the band stays home
+    expect(r.tray().scroll).toBe(r.max);
+    r.wheel(400, 500, { dy: -20 });                             // a reversal ends the spent tail: it scrolls back
+    expect(r.tray().scroll).toBe(r.max - 20);
+    // control: a steady push past the end (equal deltas, a hand holding it there) keeps the band until the wheel is quiet
+    r.step(Math.ceil(TRAY_INPUT.letGoMs / 16) + 1);
+    scrollTray(r.world, r.max); r.step();
+    for (let i = 0; i < 6; i++) r.wheel(400, 500, { dy: 20 });
+    expect(r.tray().stretch).toBe(120);
+    r.step(Math.ceil(TRAY_INPUT.letGoMs / 16) + 1);
+    expect(r.tray().stretch).toBe(0);
+  });
+
   it("a drag on the board scrolls it by the pointer's travel, into the band past an end, which lets go after the release", () => {
     const r = rig();
     openTray(r.world); r.step();

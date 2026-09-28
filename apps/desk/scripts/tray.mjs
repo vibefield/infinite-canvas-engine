@@ -242,6 +242,35 @@ try {
     await q("window.__desk.tray.scroll(0)"); await settle();
   }
 
+  // 6d (K9, S11). the band lets go on a FADING tail — p9's fling, measured frame by frame in the page: 70 synthetic deltas decaying ×0.95
+  //    from 60, a frame apart, toward the top from scroll 120 (the fact's pull and the band as shown, each frame). K5's band held for the
+  //    whole tail (p9: its last delta at 3.4 s, the band home 0.2 s after it); now it lets go on the third shrinking delta it takes, is
+  //    home while the tail still arrives, and the rest of the tail never pulls it again. A run with a frame gap ≥ `letGoMs` (the quiet
+  //    let-go would blur the two rules) is tried again, ≤ 3
+  {
+    let m = null;
+    for (let tries = 1; tries <= 3; tries++) {
+      await q("window.__desk.tray.scroll(120)"); await settle();
+      m = await qa(`new Promise((res) => { const el = document.elementFromPoint(1100, 650); const rec = []; let i = 0; let dy = -60; let last = 0; let gap = 0; let end = -1;
+        const f = (t) => { if (last > 0) gap = Math.max(gap, t - last); last = t;
+          if (i < 70) { el.dispatchEvent(new WheelEvent("wheel", { clientX: 1100, clientY: 650, deltaX: 0, deltaY: Math.round(dy), deltaMode: 0, bubbles: true, cancelable: true })); dy *= 0.95; i += 1; if (i === 70) end = t; }
+          rec.push({ t, s: window.__desk.tray.facts().stretch, b: window.__desk.tray.state().band });
+          if (end < 0 || t - end < 500) requestAnimationFrame(f); else res({ rec, gap, end, tries: ${tries} }); };
+        requestAnimationFrame(f); })`, 60000);
+      if (m.gap < 120) break;
+    }
+    const r = m.rec;
+    const i0 = r.findIndex((x) => x.s !== 0);
+    const i1 = i0 < 0 ? -1 : r.findIndex((x, i) => i > i0 && x.s === 0);
+    const i2 = i1 < 0 ? -1 : r.findIndex((x, i) => i > i1 && Math.abs(x.b) < 0.5);
+    const again = i1 < 0 || r.some((x, i) => i > i1 && x.s !== 0);
+    const peak = Math.max(...r.map((x) => Math.abs(x.b)));
+    const ms = (i) => (i < 0 ? Number.NaN : r[i].t - r[i0].t);
+    check(m.gap < 120 && i0 >= 0 && i1 > i0 && i1 - i0 <= 4 && i2 > i1 && r[i2].t < m.end && !again,
+      `a fading tail lets the band go on its third shrinking delta: pulled for ${i1 - i0} frames (${ms(i1).toFixed(0)} ms, the band ${peak.toFixed(1)} px at most), home ${ms(i2).toFixed(0)} ms after the pull began — the tail's last delta ${(m.end - r[i0].t).toFixed(0)} ms after it; never pulled again (${!again}); frame gaps ≤ ${m.gap.toFixed(0)} ms${m.tries > 1 ? ` (${m.tries} tries)` : ""}`);
+    await q("window.__desk.tray.scroll(0)"); await settle();
+  }
+
   // 7. the desk inert while open: a drag on the note moves nothing and selects nothing; the drawer stays
   const p0 = await q(`window.__desk.entity(${note})`);
   await mouse("mouseMoved", 300, 250); await mouse("mousePressed", 300, 250, { buttons: 1 });
