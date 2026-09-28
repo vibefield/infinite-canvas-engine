@@ -5,9 +5,9 @@
 // world half on the prototype's own laws — the same numbers the oracle's scene builder computes
 // for the same object (frame.mjs `noteGeometry` / `matGeometry`, byte for byte): resolve, record,
 // hit, reach, theme.
-import { createWorld, type Entity, STRATUM_BANDS, widgets } from "@ice/core";
+import { STRATUM_BANDS, widgets } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { CONTAINABLE, DESK_OBJECT, FLUX_REST, isObjectKind, type ObjectContext, PINNABLE, rectOf, DEFAULT_GRID, FIT, PORTAL_GATE, defineObject, driversOf, hostOf, objectKindOf, NO_DOCS, type KindDriverHost, MAT_GRID } from "@ice/desk";
+import { CONTAINABLE, DESK_OBJECT, FLUX_REST, isObjectKind, type ObjectContext, PINNABLE, rectOf, DEFAULT_GRID, FIT, PORTAL_GATE, defineObject, driversOf, hostOf, objectKindOf, MAT_GRID } from "@ice/desk";
 import { minimatKind, miniMatReach } from "../src/minimat/kind";
 import { paperKind, paperReach } from "../src/paper/kind";
 import { DEFAULT_MINIMAT_LAW, faceOf, pickMiniMat, resolveMiniMat } from "../src/minimat/minimat";
@@ -219,25 +219,7 @@ describe("the kinds' drivers are DECLARED, never wired by name (D7 #5, D-D7-A.3)
     expect(hostOf(undefined)).toBeUndefined();
   });
 
-  it("a third-party kind declares a driver in `defineObject` and the desk finds it by the OBJECT: a host makes it from what it lends and ticks it", () => {
-    const made: string[] = [];
-    const Third =
-      widgets.get("d7:third") ??
-      defineObject({
-        type: "d7:third",
-        kind: paperKind(),
-        drivers: (h) => ({ follow: (now) => { made.push(`follow ${now} ${h.isKind(7 as Entity)}`); }, idle: () => made.length > 0 }),
-      });
-    const make = driversOf(Third);
-    expect(make).toBeDefined();
-    const host: KindDriverHost = {
-      world: createWorld(), docs: NO_DOCS, local: undefined, look: () => undefined, isKind: (e) => e === 7, kind: () => undefined, provides: () => undefined,
-      geometryOf: () => undefined, heldToWorld: () => undefined, hand: () => undefined, refused: () => {}, wake: () => {},
-    };
-    const d = make?.(host);
-    expect(d?.idle?.()).toBe(false);
-    d?.follow(16);
-    expect(made).toEqual(["follow 16 true"]);
-    expect(d?.idle?.()).toBe(true);
-  });
+  // the THIRD-PARTY kind (design-016 K8b): until K8b this row declared one over `paperKind()` imported from the reference kinds; the
+  // real one is a package of its own — examples/desk-clock/test/clock.test.ts finds the desk clock by its OBJECT through the SDK's
+  // doors (its kind, tray entry, menu act, held tools, provides) and declares drivers on a plugin kind the way this row did
 });

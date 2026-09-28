@@ -60,9 +60,11 @@ describe("the desk clock imports the umbrella's published entries alone (K8b)", 
   const shipped = [...walk(join(PKG, "src")), ...walk(join(PKG, "oracle"))];
   const units = walk(join(PKG, "test"));
 
-  it("finds the package's modules", () => {
-    expect(shipped.length).toBeGreaterThan(0);
+  it("finds the package's modules, and they really consume ICE — through the four entries a kind is written against", () => {
+    expect(shipped.length).toBeGreaterThan(5);
     expect(units.length).toBeGreaterThan(0);
+    const ice = shipped.flatMap((f) => specifiersOf(readFileSync(f, "utf8"))).filter((s) => s.startsWith("@vibecook/ice"));
+    expect(new Set(ice)).toEqual(new Set(["@vibecook/ice", "@vibecook/ice/desk", "@vibecook/ice/desk/kit", "@vibecook/ice/desk/engine"]));
   });
 
   it("every specifier its shipped modules name is a published entry or a module of its own", () => {
