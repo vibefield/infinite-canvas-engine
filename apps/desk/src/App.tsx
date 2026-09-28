@@ -48,10 +48,12 @@ const MENU_ACTIONS: readonly SelectionAction[] = [SEND, ...defaultSelectionActio
 /** The mat's lattice cell at zoom 1, world units — the desk's ⇧ nudge (*Marks on the Mat*: "⇧ arrows nudge 20, one lattice cell"). */
 const LATTICE_CELL = 20;
 
+/** The page's word on an end it came to: what failed, in words — the stack is the console's (K9: never a raw trace on the page). */
 function fail(e: unknown): void {
   const el = document.getElementById("fail");
   if (el === null) return;
-  el.textContent = e instanceof Error ? (e.stack ?? e.message) : String(e);
+  if (e instanceof Error) console.error("[desk] the fail screen:", e);
+  el.textContent = e instanceof Error ? e.message : String(e);
   el.hidden = false;
 }
 

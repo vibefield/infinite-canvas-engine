@@ -1,4 +1,4 @@
-// rig:lifetime — THE APP'S LIFETIME (K9: surface S1, S5, S9): what `<App>`'s mount starts, the cleanup it hands `<Desk>` ends;
+// rig:lifetime — THE APP'S LIFETIME (K9: surface S1, S5, S9, S14): what `<App>`'s mount starts, the cleanup it hands `<Desk>` ends;
 // what the app makes once, it makes once; and an end the page comes to is said on the page.
 //
 // THE DEV SERVER — Vite's own (`createServer` over the app's vite.config.ts in middleware mode, behind this rig's http server on a
@@ -14,7 +14,8 @@
 // THE PRODUCT (dist/index.html, served as the other rigs serve it): a theme pinned with `d` holds while the OS's appearance moves
 // — the controls made at other renders, never pinned, flipped the desk back (the OS leading an unpinned desk is the row's
 // control: the emulated appearance reaches the page, so the pinned half cannot pass by hearing nothing); and the device lost
-// after the boot (the layer ends, its canvas gone) puts "the GPU was lost — reload" on the fail screen, never a blank page.
+// after the boot (the layer ends, its canvas gone) puts "the GPU was lost — reload" on the fail screen, never a blank page; no
+// WebGPU at all puts the reason there in words, never a raw stack.
 // Exit 0 = every check passed.
 //
 //   pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:lifetime
@@ -75,14 +76,14 @@ const osScheme = (tab, value) => tab.send("Emulation.setEmulatedMedia", { featur
  * A tab at `url` (the OS's appearance `scheme` from its first script), the counters in before the page's first script; `booted`
  * once the desk says ready or the fail screen shows (≤ 3 min).
  */
-async function page(url, { scheme = "light" } = {}) {
+async function page(url, { scheme = "light", preload = "" } = {}) {
   const tab = await openTab(chrome.port, "about:blank");
   const logs = [];
   await tab.send("Runtime.enable"); await tab.send("Log.enable"); await tab.send("Page.enable");
   watchPage(tab, logs);
   await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
   await osScheme(tab, scheme);
-  await tab.send("Page.addScriptToEvaluateOnNewDocument", { source: COUNTERS });
+  await tab.send("Page.addScriptToEvaluateOnNewDocument", { source: COUNTERS + preload });
   await tab.send("Page.navigate", { url });
   const q = async (js, awaitPromise = false) => { await tab.send("Page.bringToFront"); return tab.evaluate(js, { awaitPromise, timeoutMs: 30_000 }); };
   let booted = false;
@@ -174,6 +175,13 @@ try {
   check(lostText?.startsWith("the GPU was lost — reload") === true && canvases === 0, `the device lost after the boot: the page says "${lostText === null ? "nothing — a blank page" : lostText.split("\n")[0]}" (${canvases} canvas left)`);
   // the layer's own report of the loss belongs on the console; anything else the loss brought is a page error
   product.logs.push(...product.logs.splice(quiet).filter((l) => !l.startsWith("console.error [ice] desk: the device was lost ")));
+
+  // …and the end a product can come to before it boots: no WebGPU at all — the page says why in words, never a raw stack
+  const bare = await page(PRODUCT, { preload: "Object.defineProperty(Navigator.prototype, 'gpu', { get: () => undefined, configurable: true });" });
+  const bareText = await bare.q(FAIL_TEXT);
+  check(bare.booted && bareText !== null && bareText.includes("WebGPU is unavailable here") && !/\n\s+at |^Error: /.test(bareText), `no WebGPU: the page says "${bareText?.slice(0, 110) ?? "nothing"}"${bareText !== null && /\n\s+at /.test(bareText) ? " — AND A STACK TRACE" : ""}`);
+  // the layer's report of the refusal and the fail screen's own trace belong on the console; anything else is a page error
+  product.logs.push(...bare.logs.filter((l) => !/^console\.error \[(ice\] desk: no desk — |desk\] the fail screen: )/.test(l)));
 
   const logs = [...room.logs, ...desk.logs, ...product.logs];
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
