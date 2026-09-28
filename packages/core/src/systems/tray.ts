@@ -7,11 +7,9 @@
  * drawer is out (l1-pick; K9 law #1: without that, the DOM-at-event-time halves read a live hit THROUGH the drawer). While an
  * object is in hand the tray stands aside (the hand's frame never draws it).
  *
- *  - CLOSED, only the lip's HANDLE is the tray's — its finger notch, `handlePx` either side of the centre (D-K3.10: the lip is drawn
- *    the drawer's whole width, but a strip that wide would take the view's bottom edge from the desk — a calendar filling the view
- *    has its foot there): the mouse over it is `Tray.lip` (the hover that lifts the lip); a press there is `TrayPress lip`
- *    (`HandledByWidget` — never a desk gesture) and a click, or a drag up past `lipDragPx`, opens the drawer. Everything else — the
- *    rest of the lip included — is the desk's, untouched.
+ *  - CLOSED, the drawer takes no pointer (design-018 §5, R2 — the lip's handle, its hover and its press retired): a press at the
+ *    bottom centre is the desk's like any other. What opens the drawer is the app's — the `a` key, and the DOM bar (`<TrayBar>`,
+ *    @ice/react), whose down never reaches the canvas as a press. Only a wheel stream it took while out stays its own (below).
  *  - OPEN, the desk is INERT: every local pointer gets the one-tick `HandledByWidget` and `WheelHandled`, each tick, as the hand's
  *    do — so "the wheel never moves the camera" is not a rule the camera keeps; it is a fact the camera never hears about. Over the
  *    drawer the wheel scrolls it (`dy`; the OS's momentum arrives as deltas and is applied as it comes — no inertia of ours; ⌘/ctrl
@@ -77,8 +75,8 @@ export interface TrayPoseSource { frame(): TrayScreenFrame | undefined }
 /** The stack's slot for the pose source — a mutable box, so the renderer can arrive after install (as `heldPose`). */
 export interface TrayPoseSlot { current: TrayPoseSource | null }
 
-/** The tray's input numbers (design-017 §7): a click's slop, the lip's drag up that opens, its handle's reach either side of the centre and its hit pad above what is drawn, how long the scroll input must be quiet before the band lets go — and (K9, D-K9-c.3) how many shrinking deltas in a row a fading tail pushes the band before it lets go. */
-export const TRAY_INPUT = { slopPx: 4, lipDragPx: 10, handlePx: 60, lipPadPx: 8, letGoMs: 120, fadeDeltas: 3 } as const;
+/** The tray's input numbers (design-017 §7): a click's slop, how long the scroll input must be quiet before the band lets go — and (K9, D-K9-c.3) how many shrinking deltas in a row a fading tail pushes the band before it lets go. (design-018 §5: the lip's drag, handle and pad retired with it.) */
+export const TRAY_INPUT = { slopPx: 4, letGoMs: 120, fadeDeltas: 3 } as const;
 
 const trayQ = defineQuery([Tray]);
 /** A tray press on no specimen (K5b): its take fields at rest. */
@@ -139,7 +137,7 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       if (heldEntity(world) !== undefined) {
         // the hand's focus: the tray stands aside, its presses let go (a take among them — put back)
         for (const r of b) { const p = b.entity(r); if (ctx.has(p, TrayPress)) ctx.removeComponent(p, TrayPress); }
-        if (t.lip || (t.hover ?? "") !== "" || (t.take ?? "") !== "") ctx.edit(tray).set(Tray, { ...t, lip: false, hover: "", take: "" });
+        if ((t.hover ?? "") !== "" || (t.take ?? "") !== "") ctx.edit(tray).set(Tray, { ...t, hover: "", take: "" });
         return;
       }
       const frame = opts.pose.current?.frame();
@@ -151,7 +149,6 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       let wheelAt = t.wheelAt;
       let wheelDy = t.wheelDy;
       let fade = t.fade;
-      let lip = false;
       let hover = "";
       let dragging = false;
       let take = t.take ?? "";
@@ -165,9 +162,6 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       // the drawer's OPEN rect (K5b): its outline at the full slide — the pose's box with its top the view's foot less its height
       const vh = world.getResource(Viewport)?.h ?? 0;
       const inOpen = (x: number, y: number): boolean => frame !== undefined && x >= frame.x && x <= frame.x + frame.w && y >= vh - frame.h;
-      // the lip's handle: the notch, `handlePx` either side of the drawer's centre
-      const onHandle = (x: number, y: number): boolean =>
-        frame !== undefined && Math.abs(x - (frame.x + frame.w / 2)) <= TRAY_INPUT.handlePx && y >= frame.y - TRAY_INPUT.lipPadPx;
       for (const r of b) {
         const p = b.entity(r);
         const s = ctx.read(p, PointerScreen);
@@ -199,25 +193,9 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
             ctx.removeComponent(p, TrayPress);
             continue;
           }
-          const onLip = onHandle(s.x, s.y);
-          if (onLip && ctx.read(p, Pointer).device === "mouse") lip = true;
-          if (down && onLip) {
-            ctx.addComponent(p, TrayPress, { kind: "lip", x: s.x, y: s.y, scroll0: scroll, moved: false, ...NO_TAKE });
-            if (!ctx.hasTag(p, HandledByWidget)) ctx.addTag(p, HandledByWidget);
-            continue;
-          }
-          if (press === undefined) continue;
-          // a lip press (its down was stamped, so no recognizer ever saw it): a click or a drag up opens
-          const moved = press.moved || Math.hypot(s.x - press.x, s.y - press.y) > TRAY_INPUT.slopPx;
-          const ended = ctx.hasTag(p, WentUp) || ctx.hasTag(p, WentCancelled);
-          const up = press.y - s.y >= TRAY_INPUT.lipDragPx;
-          if (up || (ctx.hasTag(p, WentUp) && !moved)) {
-            open = true;
-            lip = false;
-            cancelActiveGestures(world);
-            ctx.removeComponent(p, TrayPress);
-          } else if (ended) ctx.removeComponent(p, TrayPress);
-          else if (moved !== press.moved) ctx.edit(p).set(TrayPress, { ...press, moved });
+          // a press the open drawer took (its board, the dimmed desk), shut under it — Esc, the key, a peer's op: let go. A closed
+          // drawer takes no press (design-018 §5: the lip's handle retired — the bottom centre is the desk's like anywhere else)
+          if (press !== undefined) ctx.removeComponent(p, TrayPress);
           continue;
         }
         // OPEN: the desk is inert — picking, the recognizers and both wheel consumers skip this pointer this tick
@@ -314,10 +292,10 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       // the band lets go once the scroll input is quiet — never under a finger still dragging the board — and as the drawer closes
       if (stretch !== 0 && ((!dragging && now - wheelAt > TRAY_INPUT.letGoMs) || !open)) stretch = 0;
       if (!open) { hover = ""; if (handed === t.handed) take = ""; }
-      if (open !== t.open || scroll !== t.scroll || stretch !== t.stretch || wheelAt !== t.wheelAt || lip !== t.lip || hover !== t.hover
+      if (open !== t.open || scroll !== t.scroll || stretch !== t.stretch || wheelAt !== t.wheelAt || hover !== t.hover
         || take !== t.take || takeU !== t.takeU || takeV !== t.takeV || takeX !== t.takeX || takeY !== t.takeY || handed !== t.handed
         || wheelDy !== t.wheelDy || fade !== t.fade) {
-        ctx.edit(tray).set(Tray, { open, scroll, stretch, lip: open ? false : lip, wheelAt, wheelDy, fade, hover, take, takeU, takeV, takeX, takeY, handed });
+        ctx.edit(tray).set(Tray, { open, scroll, stretch, wheelAt, wheelDy, fade, hover, take, takeU, takeV, takeX, takeY, handed });
       }
     },
     { name: "trayInput", access: { write: [Tray, TrayPress] } },

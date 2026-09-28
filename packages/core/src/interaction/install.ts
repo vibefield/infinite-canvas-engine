@@ -214,7 +214,7 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
     // wireSync AFTER spatialSync (both SpatialVersion writers), BEFORE picking —
     // which now narrow-phases wire entries against wireSync's cached cubics.
     // pressWheel beside it (D3t-a): a press holding a `WheelTurns` widget takes its pointer's wheel from both wheel consumers too.
-    // trayInput right after the hand's (design-017 §4, K3): the pegboard drawer's lip, its wheel and its inert desk, in the same vocabulary
+    // trayInput right after the hand's (design-017 §4, K3): the pegboard drawer's wheel, its board and its inert desk, in the same vocabulary
     engine.addSystems("react", createHeldInput(world, { pose: heldPose }), createTrayInput(world, { pose: trayPose }), createTrayLay(world, { pose: trayPose, placement: opts.placement }), createPressWheel(world), pick.spatialSync, wireSync, pick.picking),
     engine.addSystems("ctl:spawn", l2.cancelSweep, l2.recognizerSpawn, l2.wheelSpawn, l2.recognizerIntegrity),
     engine.addSystems(

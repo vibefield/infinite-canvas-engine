@@ -1,7 +1,7 @@
 // @vitest-environment node
 // THE TRAY (design-017 §2, §4; K3): `Tray` is the pegboard drawer's fact — one runtime entity per view, ensured at install and after a
-// reset — and its ops and `trayInput` its only writers. Closed, the lip alone is the tray's: its hover, and a click or a drag up that
-// opens; open, the desk is INERT (no pick, no selection, no move, no camera — each negative with its control), the wheel over the
+// reset — and its ops and `trayInput` its only writers. Closed, the drawer takes no pointer (design-018 §5 — the lip's handle, its
+// hover and its press retired: the bottom centre is the desk's); open, the desk is INERT (no pick, no selection, no move, no camera — each negative with its control), the wheel over the
 // drawer scrolls it (⌘-wheel and pinch swallowed), past an end into the band that lets go when the wheel is quiet, a drag on the board
 // scrolls it, a click on the dimmed desk closes it, a press on DOM chrome stays the chrome's. Opening cancels a gesture in flight and is
 // refused with an object in hand. Through the REAL stack; the pose seam is what the renderer would publish.
@@ -87,7 +87,7 @@ describe("the Tray fact (design-017 §2)", () => {
     const r = rig();
     const e = trayEntity(r.world);
     expect(e).toBeDefined();
-    expect(r.tray()).toMatchObject({ open: false, scroll: 0, stretch: 0, lip: false });
+    expect(r.tray()).toMatchObject({ open: false, scroll: 0, stretch: 0 });
     openTray(r.world);
     const s = r.ce.docs.current();
     s?.close();
@@ -126,55 +126,25 @@ describe("the Tray fact (design-017 §2)", () => {
   });
 });
 
-describe("closed — the lip (design-017 §4)", () => {
-  it("the mouse over the lip's handle (its notch) is the lip's hover fact — the hand's cursor, a thing to pull — and leaving it clears both", () => {
+describe("closed — the drawer takes no pointer (design-018 §5)", () => {
+  it("a press at the bottom centre, where the lip's handle was — on the strip the pose still draws — is the desk's: the desk's cursor, a click leaves the drawer shut, a drag up opens nothing, a press-drag is a desk gesture", () => {
     const r = rig();
-    expect(r.ce.stack.readCursor()).toBe("default");
-    r.mouse("move", 400, 590, 0); r.step();
-    expect(r.tray().lip).toBe(true);
-    expect(r.ce.stack.readCursor()).toBe("pointer");
-    r.mouse("move", 400, 583, 0); r.step();   // within the pad above what is drawn
-    expect(r.tray().lip).toBe(true);
-    r.mouse("move", 400, 300, 0); r.step();
-    expect(r.tray().lip).toBe(false);
-    expect(r.ce.stack.readCursor()).toBe("default");
-    r.mouse("move", 20, 594, 0); r.step();    // beside the drawer
-    expect(r.tray().lip).toBe(false);
-    r.mouse("move", 400 + TRAY_INPUT.handlePx + 30, 594, 0); r.step();   // on the lip, beside its handle: the desk's
-    expect(r.tray().lip).toBe(false);
-  });
-
-  it("a click on the lip's handle opens the drawer; a drag up from it opens it too; a press beside the handle — on the lip or off it — is the desk's", () => {
-    const r = rig();
-    r.tap(400, 594);
-    expect(trayOpen(r.world)).toBe(true);
-    closeTray(r.world); r.step();
-    r.mouse("move", 380, 594, 0); r.step();
-    r.mouse("down", 380, 594, 1); r.step();
-    r.mouse("move", 380, 594 - TRAY_INPUT.lipDragPx + 1, 1); r.step();
-    expect(trayOpen(r.world)).toBe(false);   // not yet: under the drag's threshold
-    r.mouse("move", 380, 594 - TRAY_INPUT.lipDragPx - 2, 1); r.step();
-    expect(trayOpen(r.world)).toBe(true);
-    r.mouse("up", 380, 580, 0); r.step();
-    closeTray(r.world); r.step();
-    r.tap(20, 594);    // beside the drawer: the desk's
-    r.tap(200, 594);   // on the lip, beside its handle: the desk's too
-    expect(trayOpen(r.world)).toBe(false);
-  });
-
-  it("a press on the handle never becomes a desk gesture, dragged sideways (control: the same drag on the lip beside the handle IS the desk's)", () => {
-    const r = rig();
-    const gesture = (x: number, y: number): boolean => {
+    const gesture = (x: number, y: number, dx: number, dy: number): boolean => {
       let live = false;
       r.mouse("move", x, y, 0); r.step();
       r.mouse("down", x, y, 1); r.step();
-      for (let i = 1; i <= 8; i++) { r.mouse("move", x + i * 15, y, 1); r.step(); if (r.world.firstOf(activeQ) !== undefined) live = true; }
-      r.mouse("up", x + 120, y, 0); r.step(2);
+      for (let i = 1; i <= 8; i++) { r.mouse("move", x + i * dx, y + i * dy, 1); r.step(); if (r.world.firstOf(activeQ) !== undefined) live = true; }
+      r.mouse("up", x + 8 * dx, y + 8 * dy, 0); r.step(2);
       return live;
     };
-    expect(gesture(150, 594)).toBe(true);   // control: the lip beside the handle is the desk's — a press-drag there is a gesture
-    expect(gesture(350, 594)).toBe(false);  // the handle's press is the tray's
-    expect(trayOpen(r.world)).toBe(false);  // …and a sideways drag does not open
+    r.mouse("move", 400, 590, 0); r.step();
+    expect(r.ce.stack.readCursor()).toBe("default");   // not a thing to pull: the desk's
+    r.tap(400, 594);
+    expect(trayOpen(r.world)).toBe(false);
+    expect(gesture(380, 594, 0, -5)).toBe(true);       // a drag up from the centre: the desk's gesture, and no drawer
+    expect(trayOpen(r.world)).toBe(false);
+    expect(gesture(350, 594, 15, 0)).toBe(true);       // …and sideways
+    expect(trayOpen(r.world)).toBe(false);
   });
 });
 

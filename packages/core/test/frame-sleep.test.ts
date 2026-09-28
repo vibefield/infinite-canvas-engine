@@ -254,9 +254,9 @@ describe("the registered wakes — due while their work is pending", () => {
     ce.world.setResource(CoreCamera, { x: cam?.x ?? 0, y: cam?.y ?? 0, zoom: cam?.zoom ?? 1, gesturing: false });
     const tray = ce.world.firstOf(defineQuery([Tray]));
     if (tray !== undefined) {
-      ce.world.edit(tray).set(Tray, { ...ce.world.read(tray, Tray), open: true, scroll: 0, stretch: 12, lip: false });
+      ce.world.edit(tray).set(Tray, { ...ce.world.read(tray, Tray), open: true, scroll: 0, stretch: 12 });
       expect(pending()).toBe("band");
-      ce.world.edit(tray).set(Tray, { ...ce.world.read(tray, Tray), open: false, scroll: 0, stretch: 0, lip: false });
+      ce.world.edit(tray).set(Tray, { ...ce.world.read(tray, Tray), open: false, scroll: 0, stretch: 0 });
     }
     // a press held: a recognizer is alive (a long-press timer) until the release is processed and it is reaped
     const DOWN: InputEvent = { kind: "down", pointerId: "mouse", device: "mouse", screenX: 400, screenY: 300, buttons: 1, mods: NO_MODS };

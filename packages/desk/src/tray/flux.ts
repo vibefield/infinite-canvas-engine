@@ -16,7 +16,6 @@ export interface TrayFacts {
   readonly open: boolean;
   readonly scroll: number;
   readonly stretch: number;
-  readonly lip: boolean;
   /** K5a: the specimen under the mouse ("" none) — its hover lifts it. */
   readonly hover?: string;
   /** K5a: the laid content's foot (board px) — the scroll's range — and the lay count (the specimens moved when it does). */
@@ -85,8 +84,8 @@ export function createTrayFlux(): TrayFlux {
     read(f) {
       if (f === undefined) { const had = facts !== null; facts = null; return had; }
       const was = facts;
-      if (was !== null && was.open === f.open && was.scroll === f.scroll && was.stretch === f.stretch && was.lip === f.lip && was.hover === (f.hover ?? "") && was.bottom === (f.bottom ?? 0) && was.laid === (f.laid ?? 0)) return false;
-      facts = { open: f.open, scroll: f.scroll, stretch: f.stretch, lip: f.lip, hover: f.hover ?? "", bottom: f.bottom ?? 0, laid: f.laid ?? 0 };
+      if (was !== null && was.open === f.open && was.scroll === f.scroll && was.stretch === f.stretch && was.hover === (f.hover ?? "") && was.bottom === (f.bottom ?? 0) && was.laid === (f.laid ?? 0)) return false;
+      facts = { open: f.open, scroll: f.scroll, stretch: f.stretch, hover: f.hover ?? "", bottom: f.bottom ?? 0, laid: f.laid ?? 0 };
       const target = f.open ? 1 : 0;
       if (target !== to) { from = p; to = target; t0 = -1; }
       return true;
@@ -103,10 +102,10 @@ export function createTrayFlux(): TrayFlux {
       p = from + (to - from) * slideEase(k);
       const sliding = from !== to && k < 1;
       if (k >= 1) from = to;   // a finished tween is at rest where it ended
-      // the lip's lift (closed only: open, the lip is the drawer)
-      [lift, liftV] = spring(lift, liftV, f.lip && !f.open ? 1 : 0, DRAWER.liftHz, 1, dt);
-      const lifting = !settled(lift, liftV, f.lip && !f.open ? 1 : 0, EPS);
-      if (!lifting) { lift = f.lip && !f.open ? 1 : 0; liftV = 0; }
+      // the lip's lift: at rest — its hover fact retired with its handle (design-018 §5)
+      [lift, liftV] = spring(lift, liftV, 0, DRAWER.liftHz, 1, dt);
+      const lifting = !settled(lift, liftV, 0, EPS);
+      if (!lifting) { lift = 0; liftV = 0; }
       // the band: tracks the pull exactly while the fact holds one; carried home by its spring when it lets go
       let settling = false;
       if (f.stretch !== 0) { shown = band(f.stretch); shownV = 0; }

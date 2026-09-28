@@ -172,19 +172,19 @@ export const HeldTapMemo = defineResource(
 /**
  * Runtime, ONE per view: THE TRAY (design-016 §7, K-L6; design-017 §2 — K3) — the pegboard drawer's facts. `open`; `scroll`, CSS px
  * of board past its top, within `[0, max]` (the renderer's word on `max` rides the tray pose seam, systems/tray.ts); `stretch`, the
- * rubber band's pull past an end (raw px, signed; 0 at rest); `lip`, the mouse over the lip of a closed drawer (its one hover fact);
- * `wheelAt`, the frame clock (ms) of the last scroll input (every wheel the drawer takes while out, a drag on its board) — the band
- * lets go once it is quiet, and a drawer shut before then keeps the wheel until it is (K9). Never in the document, never synced:
+ * rubber band's pull past an end (raw px, signed; 0 at rest); `wheelAt`, the frame clock (ms) of the last scroll input (every wheel
+ * the drawer takes while out, a drag on its board) — the band lets go once it is quiet, and a drawer shut before then keeps the wheel
+ * until it is (K9). Never in the document, never synced:
  * a peer's tray is its own. Writers: the tray ops (ops/tray.ts) and `trayInput` — and `trayLay`, which clamps `scroll` when a lay
  * or the drawer's face moves its range (K9, D-K9-c.2); the renderer reads it, and owns the motion (the
- * slide, the lip's lift, the band's settle — flux). The entity is ensured at install and after every reset (a document switch
- * closes the tray); it roots the tray's runtime canvas (K5's specimens will be its children).
+ * slide, the band's settle — flux). The entity is ensured at install and after every reset (a document switch
+ * closes the tray); it roots the tray's runtime canvas (K5's specimens will be its children). design-018 §5 (R2): the lip's hover
+ * fact retired with its handle — a closed drawer takes no pointer; its handle is the app's DOM bar (`<TrayBar>`, @ice/react).
  */
 export const Tray = defineComponent("Tray", {
   open: field("bool", { default: false }),
   scroll: field("f64", { default: 0 }),
   stretch: field("f64", { default: 0 }),
-  lip: field("bool", { default: false }),
   wheelAt: field("f64", { default: 0 }),
   /**
    * K9 (S11, D-K9-c.3): the last wheel `dy` the drawer scrolled by, and how many deltas in a row have SHRUNK while pushing the band
@@ -257,15 +257,15 @@ export const TrayContent = defineComponent("TrayContent", {
 export const Specimen = defineTag("Specimen");
 
 /**
- * Runtime, on a local pointer: a press the TRAY took (design-017 §4) — on the lip of a closed drawer (`lip`: a click or a drag up
- * opens it), on the open drawer (`board`: a drag scrolls it), on the dimmed desk (`desk`: released unmoved, it closes the drawer).
+ * Runtime, on a local pointer: a press the TRAY took (design-017 §4) — on the open drawer (`board`: a drag scrolls it), on the dimmed
+ * desk (`desk`: released unmoved, it closes the drawer); a closed drawer takes none (design-018 §5: the lip's `lip` press retired).
  * Where it began (CSS px), the scroll it began from, whether it moved past the slop. K5b (§9): on a SPECIMEN (`specimen`: past the
  * slop its copy lifts; out of the drawer it is handed to the desk) — its `type`, the grab point `u`/`v` across the object as drawn,
  * the specimen's centre on screen `homeX`/`homeY`; and, once handed, the take CARRIED (`carry`: the insert ghost's drag is this
  * pointer's — released back over the drawer as drawn, still sliding away, it is cancelled and the ghost flies home).
  */
 export const TrayPress = defineComponent("TrayPress", {
-  kind: field(enumOf(["lip", "board", "desk", "specimen", "carry"]), { default: "desk" }),
+  kind: field(enumOf(["board", "desk", "specimen", "carry"]), { default: "desk" }),
   x: field("f64", { default: 0 }),
   y: field("f64", { default: 0 }),
   scroll0: field("f64", { default: 0 }),

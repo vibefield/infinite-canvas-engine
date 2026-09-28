@@ -148,7 +148,7 @@ describe("a specimen, recorded by its own kind", () => {
 });
 
 describe("the flux follows the laid content and the hover", () => {
-  const opened = { open: true, scroll: 0, stretch: 0, lip: false };
+  const opened = { open: true, scroll: 0, stretch: 0 };
   it("takes the scroll's range from the content's foot", () => {
     const f = createTrayFlux();
     f.read({ ...opened, bottom: 606, laid: 1 });

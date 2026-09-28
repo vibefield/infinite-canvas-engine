@@ -302,7 +302,7 @@ describe("the tray pass on a fake device", () => {
 });
 
 describe("the flux (tray/flux.ts — the motion lives in the renderer)", () => {
-  const closed = { open: false, scroll: 0, stretch: 0, lip: false };
+  const closed = { open: false, scroll: 0, stretch: 0 };
   const opened = { ...closed, open: true };
 
   it("slides on the drawer's curve by the frame clock, from where it is on a reversal; at rest it is not live", () => {
@@ -331,20 +331,6 @@ describe("the flux (tray/flux.ts — the motion lives in the renderer)", () => {
     expect(f.step(2604, 1200, 800)?.p).toBeCloseTo(p0 * (1 - slideEase(0.5)), 12);
     expect(f.step(2774, 1200, 800)?.p).toBe(0);
     expect(f.live()).toBe(false);
-  });
-
-  it("lifts the lip on its spring toward the hover fact — only while closed — and settles", () => {
-    const f = createTrayFlux();
-    f.read({ ...closed, lip: true });
-    let t = 0;
-    f.step(t, 1200, 800);
-    for (let i = 0; i < 6; i++) { t += 16; f.step(t, 1200, 800); }
-    expect(f.state().lift).toBeGreaterThan(0.3);
-    expect(f.live()).toBe(true);
-    for (let i = 0; i < 120; i++) { t += 16; f.step(t, 1200, 800); }
-    expect(f.state().lift).toBe(1);
-    expect(f.live()).toBe(false);
-    expect(f.frame()?.y).toBe(800 - DRAWER.lipHover);
   });
 
   it("shows the band's pull exactly while the fact holds one, and carries it home on its spring when it lets go", () => {

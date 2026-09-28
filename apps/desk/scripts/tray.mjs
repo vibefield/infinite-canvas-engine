@@ -1,5 +1,5 @@
 // rig:tray — THE PEGBOARD TRAY (design-017 §10; K3), on the product desk in headless Chrome (rig.html, 1200 × 800 at dpr 2 = the
-// 2400 × 1600 the budget names). Open and close by `a`, by the lip, by Esc and by a click on the dimmed desk; the drawer's rect; the
+// 2400 × 1600 the budget names). Open and close by `a`, by Esc and by a click on the dimmed desk; the drawer's rect; the
 // slide on its curve (sampled on the frame clock at t ≈ 0 · 170 · 340 ms, and the motion's wall time); a scroll of Δ moves the
 // pattern by exactly Δ — the carry's uniforms and a screenshot shift-compare; exact 10⁶ rows down (the same carry fraction, the same
 // holes); the wheel over the drawer scrolls it and never moves the camera — nor does the rest of a flick shut mid-way (K9); the desk inert while open; 0 submits at rest open and
@@ -73,13 +73,12 @@ try {
     `closed: the lip — rect x ${s.frame?.x} y ${s.frame?.y} w ${s.frame?.w} (40 · 788 · 1120), no dim (${s.laid?.dim})`);
   const restClosed = await idle();
   check(restClosed === 0, `closed at rest: ${restClosed} submits over 240 frames`);
-  // the lip lifts under the mouse (and not beside it), and settles back when it leaves
+  // design-018 §5: the lip's hover retired with its handle — the mouse at the bottom centre lifts nothing (the drawer as drawn stays)
   await mouse("mouseMoved", 600, 795); await settle();
-  const lifted = await tray();
+  const atFoot = await tray();
   await mouse("mouseMoved", 600, 400); await settle();
-  const fell = await tray();
-  check(lifted.facts.lip === true && lifted.frame.y === 782 && fell.facts.lip === false && fell.frame.y === 788,
-    `hovered, the lip lifts to ${800 - lifted.frame.y} px (18) and falls back to ${800 - fell.frame.y} (12) when the mouse leaves`);
+  check(atFoot.facts.open === false && atFoot.frame.y === s.frame.y,
+    `closed, the mouse at the bottom centre lifts nothing: the drawer's top stays at y ${atFoot.frame.y} (${s.frame.y})`);
 
   // K5a: the FIRST open makes, once, what the specimens need (the composite kinds' tray passes, their slots) — its submits are that setup's;
   //      every slide after it is one frame per frame of motion (row 2)
@@ -281,14 +280,15 @@ try {
   const sel = await q("window.__desk.selection()");
   check(p1.x === p0.x && p1.y === p0.y && sel.length === 0 && (await tray()).facts.open === true, `inert: a drag on the note moved it (${p0.x},${p0.y}) → (${p1.x},${p1.y}), selected ${sel.length}, the drawer still open`);
 
-  // 8. a click on the dimmed desk closes it (selecting nothing); the lip's click opens it; Esc closes it; `a` again
+  // 8. a click on the dimmed desk closes it (selecting nothing); a click where the lip's handle was is the desk's (design-018 §5);
+  //    Esc closes it; `a` again
   await click(300, 250); await sleep(150);
   s = await tray();
   check(s.facts.open === false && (await q("window.__desk.selection()")).length === 0, "a click on the dimmed desk closed it, and selected nothing under it");
   await settle();
   await click(600, 794); await sleep(150);
-  check((await tray()).facts.open === true, "a click on the lip opened it");
-  await settle();
+  check((await tray()).facts.open === false && (await q("window.__desk.selection()")).length === 0, "a click at the bottom centre, where the lip's handle was, is the bare desk's: the drawer stays shut (design-018 §5)");
+  await q("window.__desk.tray.open()"); await settle();
   await key("Escape", "Escape", 27); await sleep(150);
   check((await tray()).facts.open === false, "Esc closed it");
   await settle();

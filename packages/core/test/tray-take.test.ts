@@ -224,20 +224,20 @@ describe("taking one (design-017 §9)", () => {
     expect((r.world.get(spec, props as never) as { word?: string } | undefined)?.word).toBe("hi");
   });
 
-  it("handed through the finger notch while the drawer is still drawn sliding away: the ghost's synthetic down is the ghost's, never the lip's", () => {
+  it("handed out through the top edge's centre while the drawer is still drawn sliding away: the ghost's synthetic down is the ghost's — a closed drawer takes no press (design-018 §5)", () => {
     const r = rig();
     r.lift("take:note", 0.5, 0.5);
-    // out through the top edge at the drawer's centre (400), 3 px above it — where the lip's handle and its pad will be as it slides
+    // out through the top edge at the drawer's centre (400), 3 px above it — where the lip's handle and its pad were, before they retired
     r.mouse("move", 400, 345, 1);
     expect(r.tray().handed).toBe(1);
     r.pin({ x: 40, y: 352, w: 720, h: 252, p: 0.98, max: 400, pitch: 40, scroll: 0 });   // the renderer's drawer, a frame into its slide
     const g = r.ghosts()[0] as Entity;
-    r.mouse("move", 410, 330, 1);   // the synthetic down lands on the handle (|400 − 400| ≤ 60, 345 ≥ 352 − 8)
+    r.mouse("move", 410, 330, 1);   // the synthetic down lands where the handle was (|400 − 400| ≤ 60, 345 ≥ 352 − 8)
     r.mouse("move", 420, 300, 1);
     r.mouse("move", 430, 280, 1);
     expect(r.world.has(g, Grab)).toBe(true);
     expect(r.world.read(g, Position)).toEqual({ x: 430 - 50, y: 280 - 50 });
-    expect(r.tray().open).toBe(false);   // …and no lip press opened the drawer again
+    expect(r.tray().open).toBe(false);   // …and nothing opened the drawer again
     r.pin(null);
     r.mouse("up", 430, 280, 0);
     r.step(3);
@@ -259,7 +259,7 @@ describe("taking one (design-017 §9)", () => {
     expect(r.ce.docs.undo()).toBe(false);
   });
 
-  it("the drawer shut under a take (Esc's way: `closeTray`) puts it back — and the pointer is not the lip's", () => {
+  it("the drawer shut under a take (Esc's way: `closeTray`) puts it back — and the pointer keeps no press", () => {
     const r = rig();
     const { x, y } = r.lift("take:note");
     closeTray(r.world);
@@ -299,7 +299,7 @@ describe("taking one (design-017 §9)", () => {
     expect(r.press()).toBeUndefined();
   });
 
-  it("once the drawer has slid shut, a release where it stood open lands the take — that rect is the desk's again (K9 S2); so is the lip's strip beside the notch (D-K9-c.1)", () => {
+  it("once the drawer has slid shut, a release where it stood open lands the take — that rect is the desk's again (K9 S2); so is the strip at the view's foot (D-K9-c.1)", () => {
     const r = rig();
     const { x } = r.lift("take:note", 0.5, 0.5);
     r.mouse("move", x, 300, 1);                     // handed: the drawer shuts, and the renderer's word is that it has (p 0)
@@ -314,7 +314,7 @@ describe("taking one (design-017 §9)", () => {
     expect(r.ce.docs.undo()).toBe(true);
     r.step(2);
     expect(r.twins("take:note")).toEqual([]);
-    // …and on the strip the shut drawer still shows at the view's foot (its 12 px lip, 588 … 600), beside the notch
+    // …and on the strip at the view's foot (588 … 600, where this pose still draws a shut drawer's lip), beside its centre
     openTray(r.world); r.step(2);
     const again = r.lift("take:note", 0.5, 0.5);
     r.mouse("move", again.x, 300, 1);

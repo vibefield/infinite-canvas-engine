@@ -22,7 +22,7 @@ export function ensureTray(world: World): Entity {
   const existing = world.firstOf(trayQ);
   if (existing !== undefined) return existing;
   return world.spawn({
-    components: [[Tray, { open: false, scroll: 0, stretch: 0, lip: false, wheelAt: 0, hover: "" }], [TrayContent, { width: 0, bottom: 0, laid: 0 }]],
+    components: [[Tray, { open: false, scroll: 0, stretch: 0, wheelAt: 0, hover: "" }], [TrayContent, { width: 0, bottom: 0, laid: 0 }]],
     tags: [Container],
   });
 }
@@ -38,18 +38,18 @@ export function trayOpen(world: World): boolean {
   return e !== undefined && world.get(e, Tray)?.open === true;
 }
 
-const write = (world: World, patch: Partial<{ open: boolean; scroll: number; stretch: number; lip: boolean; hover: string }>): void => {
+const write = (world: World, patch: Partial<{ open: boolean; scroll: number; stretch: number; hover: string }>): void => {
   const e = ensureTray(world);
   const cur = world.read(e, Tray);
   const next = { ...cur, ...patch };
-  if (next.open !== cur.open || next.scroll !== cur.scroll || next.stretch !== cur.stretch || next.lip !== cur.lip || next.hover !== cur.hover) world.edit(e).set(Tray, next);
+  if (next.open !== cur.open || next.scroll !== cur.scroll || next.stretch !== cur.stretch || next.hover !== cur.hover) world.edit(e).set(Tray, next);
 };
 
 /** Open the drawer: refused (false) while an object is in hand; every gesture in flight is cancelled. */
 export function openTray(world: World): boolean {
   if (heldEntity(world) !== undefined) return false;
   if (!trayOpen(world)) cancelActiveGestures(world);
-  write(world, { open: true, lip: false });
+  write(world, { open: true });
   return true;
 }
 
