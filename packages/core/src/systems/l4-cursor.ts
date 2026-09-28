@@ -8,7 +8,8 @@
  * (2) `ActiveTool` override — pan tool → "grab"; (3) else the mouse pointer's
  * `Targets` kind — a `HandleSpec` → directional resize, an entity with
  * `Position` (widget) → "default", `CanvasSurface`/none → "default".
- * The pegboard tray's lip under the mouse (design-017 §4, K3) is a thing to pull: "pointer", over everything but the hand's.
+ * The pegboard tray's lip under the mouse (design-017 §4, K3) is a thing to pull: "pointer", over everything but the hand's; a
+ * specimen on its board a thing to take, "grab", its copy lifted "grabbing" (K9).
  * Above all of them (design-015 §8, D3t-a): with an object IN HAND, the mode in hand's own
  * `cursor` (its `HeldToolDef.cursor` — "none" where the tool draws itself: the board's marker) while
  * the mouse is over the object's drawing surface (`HeldPointer.part` "content") or presses the tool.
@@ -35,6 +36,7 @@ import {
   HandleSpec,
   Held,
   Tray,
+  TrayPress,
   HeldPointer,
   HeldPress,
   HeldTool,
@@ -76,10 +78,26 @@ function heldToolCursor(world: World): string | undefined {
   return over ? cursor : undefined;
 }
 
-/** The pegboard tray's lip under the mouse (design-017 §4, K3 — `Tray.lip`, the tray input's hover fact): a thing to pull, the hand. */
+/**
+ * The pegboard tray under the mouse (design-017 §4, K3 — the tray input's facts): its lip a thing to pull (`Tray.lip`, the hand); K9 (S12):
+ * a specimen a thing to take (`Tray.hover`, the open hand), its copy lifted off the board (`Tray.take`) and, handed to the desk, carried
+ * to its drop (the mouse's `TrayPress carry` — the ticks before the ghost's own drag is recognized included): the closed one.
+ */
 function trayCursor(world: World): string | undefined {
   const tray = world.firstOf(trayQ);
-  return tray !== undefined && world.get(tray, Tray)?.lip === true ? "pointer" : undefined;
+  const t = tray === undefined ? undefined : world.get(tray, Tray);
+  if (t === undefined) return undefined;
+  if ((t.take ?? "") !== "") return "grabbing";
+  let carried = false;
+  world.query(localPointerQ).each((b) => {
+    for (const r of b) {
+      const p = b.entity(r);
+      if (world.read(p, Pointer).device === "mouse" && world.get(p, TrayPress)?.kind === "carry") carried = true;
+    }
+  });
+  if (carried) return "grabbing";
+  if ((t.hover ?? "") !== "") return "grab";
+  return t.lip ? "pointer" : undefined;
 }
 
 /** `HandleSpec.anchor` → CSS directional-resize cursor (design-003 §7). */

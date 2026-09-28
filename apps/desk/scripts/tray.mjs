@@ -372,15 +372,18 @@ try {
   await mouse("mouseMoved", nx, ny); await settle();
   const hovered = await tray();
   const liftFrames = (await q("window.__desk.submits().total")) - h0;
+  const cursorAt = (x, y) => q(`getComputedStyle(document.elementFromPoint(${x}, ${y})).cursor`);   // the reflector's, inherited
+  const curOn = await cursorAt(nx, ny);
   const H1 = await shot();
   let grew = 0; let gn = 0;
   for (let y = Math.floor(noteAt.screen.y0 * 2); y < (noteAt.screen.y1 + 30) * 2; y += 2) for (let x = Math.floor(noteAt.screen.x0 * 2); x < (noteAt.screen.x1 + 30) * 2; x += 2) { grew += Math.abs(lum(H1, x, y) - lum(H0, x, y)); gn++; }
   const restHover = await idle(120);
   await mouse("mouseMoved", 1100, 650); await settle();
   const dropped = await tray();
+  const curOff = await cursorAt(1100, 650);
   const restDown = await idle(120);
-  check(hovered.facts.hover === "desk.note" && hovered.hovers["desk.note"] === 1 && liftFrames > 3 && grew / gn > 1 && restHover === 0 && dropped.facts.hover === "" && Object.keys(dropped.hovers).length === 0 && restDown === 0,
-    `the hover: the note under the mouse lifts (${hovered.hovers["desk.note"]}, ${liftFrames} frames, mean |Δ| ${(grew / gn).toFixed(2)} round it — its shadow grew), asleep hovered (${restHover}); off it, down (${JSON.stringify(dropped.hovers)}), asleep (${restDown})`);
+  check(hovered.facts.hover === "desk.note" && hovered.hovers["desk.note"] === 1 && liftFrames > 3 && grew / gn > 1 && restHover === 0 && dropped.facts.hover === "" && Object.keys(dropped.hovers).length === 0 && restDown === 0 && curOn === "grab" && curOff !== "grab",
+    `the hover: the note under the mouse lifts (${hovered.hovers["desk.note"]}, ${liftFrames} frames, mean |Δ| ${(grew / gn).toFixed(2)} round it — its shadow grew), asleep hovered (${restHover}); off it, down (${JSON.stringify(dropped.hovers)}), asleep (${restDown}); the cursor over it "${curOn}", off it "${curOff}" (K9)`);
   // S8. a PLUGIN fixture kind — declared in the app, not in @ice/objects — hangs on the tray by its entry alone
   const plug = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html?trayPlugin=1`);
   await plug.send("Runtime.enable");

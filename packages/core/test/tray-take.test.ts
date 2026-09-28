@@ -395,4 +395,33 @@ describe("taking one (design-017 §9)", () => {
     expect(r.press()).toBeUndefined();
     expect(r.ce.docs.undo()).toBe(false);
   });
+
+  it("the cursor says what the board offers (K9 S12): over a specimen the open hand (`grab`), its copy lifted the closed one (`grabbing`) — and still after the hand-off, the ghost's drag; the bare board the default", () => {
+    const r = rig();
+    const s = r.specimen("take:note");
+    const x = s.x + s.w / 2;
+    const y = s.y + s.h / 2;
+    r.mouse("move", x, y, 0);
+    expect(r.ce.stack.readCursor()).toBe("grab");
+    r.mouse("down", x, y, 1);
+    expect(r.ce.stack.readCursor()).toBe("grab");        // pressed, within the slop: nothing lifted yet
+    r.mouse("move", x + 6, y, 1);
+    expect(r.tray().take).toBe("take:note");
+    expect(r.ce.stack.readCursor()).toBe("grabbing");
+    r.mouse("move", x + 6, 300, 1);                      // out of the drawer: handed, the ghost's drag
+    r.mouse("move", x + 20, 280, 1);
+    expect(r.tray().take).toBe("");                      // the drawer shut, the ghost's drag not yet recognized: still the take's
+    expect(r.ce.stack.readCursor()).toBe("grabbing");
+    r.mouse("move", x + 30, 260, 1);
+    const g = r.ghosts()[0] as Entity;
+    expect(r.world.has(g, Grab)).toBe(true);
+    expect(r.ce.stack.readCursor()).toBe("grabbing");
+    r.mouse("up", x + 30, 260, 0);
+    r.step(3);
+    r.ce.docs.undo(); r.step(2);
+    openTray(r.world); r.step(2);
+    r.mouse("move", 700, 580, 0);                        // the board where nothing hangs
+    expect(r.tray().hover).toBe("");
+    expect(r.ce.stack.readCursor()).toBe("default");
+  });
 });
