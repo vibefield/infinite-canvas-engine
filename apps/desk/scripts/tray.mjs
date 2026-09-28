@@ -604,6 +604,32 @@ try {
     check(noteIn !== undefined && noteIn.parent === mm && bookOn !== undefined && bookOn.parent === rootParent,
       `into a mini mat by the kinds' rules: a note dropped on it went inside (its parent ${noteIn?.parent}, the mat ${mm}); a notebook did not — drop: never (its parent ${bookOn?.parent}, the desk's ${rootParent})`);
   }
+
+  // K9 law #1 (design-017 §4 "anywhere else — inert"): a click on a SPECIMEN hanging over a note under the drawer changes nothing under
+  // it — the editor lent to nothing (the desk's tap reads the pick, which answers the bare canvas while the drawer is out), nothing
+  // selected, the drawer still open; shut, the same click lends the editor to that note (control). The note is spawned under the note
+  // specimen's centre (world from screen through the camera), and undone after.
+  {
+    const o = await specimenIn("desk.note");
+    const c = [(o.x0 + o.x1) / 2, (o.y0 + o.y1) / 2];
+    await q("window.__desk.tray.close()"); await settle();
+    const cam = await q("window.__desk.camera()");
+    const underNote = await q(`window.__desk.spawn('desk.note', { seed: 9 }, { x: ${cam.x + c[0] / cam.zoom}, y: ${cam.y + c[1] / cam.zoom} })`);
+    await frames(2);
+    await q("window.__desk.tray.open()"); await slide(); await settle();
+    await click(c[0], c[1]); await frames(4);
+    const lent = await q("window.__desk.note.editing()");
+    const sel = await q("window.__desk.selection()");
+    const stillOpen = (await tray()).facts.open;
+    await q("window.__desk.tray.close()"); await settle();
+    await click(c[0], c[1]); await frames(4);
+    const lentShut = await q("window.__desk.note.editing()");
+    await q("window.__desk.handle.editor().blur()"); await frames(2);
+    await q("window.__desk.engine.ops.setSelection([], 'replace')");
+    await undo(); await frames(2);   // the note away again
+    check(lent === -1 && sel.length === 0 && stillOpen === true && lentShut === underNote,
+      `inert under the drawer: a click on the note specimen over a note lent the editor to ${lent} (−1: nothing), selected ${sel.length}, the drawer ${stillOpen ? "still open" : "SHUT"}; shut, the same click lends it to that note (${lentShut}, the note ${underNote})`);
+  }
   await q("window.__desk.tray.close()"); await settle();
   const restAfter = await idle(240);
   check(restAfter === 0, `at rest after all of it, the drawer shut: ${restAfter} submits over 240 frames`);

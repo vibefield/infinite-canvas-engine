@@ -59,6 +59,7 @@ import {
   Size,
   Targets,
   TouchesExact,
+  Tray,
 } from "../catalog";
 import { Active } from "../catalog/camera-derived";
 import { WidgetEquipped } from "../widget/define-widget";
@@ -71,6 +72,8 @@ import { POINTER_DEFAULTS } from "../settings/defaults";
 const IDENTITY_CAM: CameraState = { x: 0, y: 0, zoom: 1 };
 
 const canvasSurfaceQ = defineQuery([CanvasSurface]);
+// The pegboard drawer's fact (design-017 §2): while it is out the desk is INERT to the pointer, and the pick reads that itself — see `picking`.
+const trayQ = defineQuery([Tray]);
 // Nav gating at ARCHETYPE level (design-004 §7): the union of these two is
 // exactly `Position+Size ∧ (¬WidgetEquipped ∨ Active)` — equipped widgets are
 // hittable only while Active (in-frame); chrome/pre-equip entities always.
@@ -287,6 +290,15 @@ export function createPickingSystems(
   };
 
   const versions = makeVersionGuard(world, [PointerVersion, SpatialVersion]);
+  // The drawer out = the desk inert to the pointer (design-017 §4). `trayInput` stamps every local pointer `HandledByWidget` for
+  // that, but it runs in THIS phase and a tag is a structural write — it lands at the phase boundary, after this has picked — so
+  // the query's `Not(HandledByWidget)` never sees it (the hand's stamp the same: "picking still runs", install.ts) and the
+  // DOM-at-event-time halves (the editor's tap, the calendar's days) read a LIVE hit through the drawer (K9 law #1). So the pick
+  // reads the fact itself: while `Tray.open`, every local pointer touches the bare canvas and names no part — what rose under
+  // it settles, and nothing under the drawer can be lent, selected or written on. `trayWasOpen` runs it once on each flip of the
+  // fact (a drawer opened by key, the pointer still: the hovered note must still let go; shut again: the hit must come back).
+  const trayIsOpen = (): boolean => { const t = world.firstOf(trayQ); return t !== undefined && world.read(t, Tray).open; };
+  let trayWasOpen = false;
   const picking = defineSystem(
     pointerQ,
     (b, ctx) => {
@@ -295,9 +307,25 @@ export function createPickingSystems(
       const canvas = ctx.firstOf(canvasSurfaceQ);
       const deadBandWorld =
         (ctx.getResource(PointerSettings) ?? POINTER_DEFAULTS).hoverReleaseDeadBandPx / zoom;
+      const inert = trayIsOpen();
+      trayWasOpen = inert;
 
       for (const r of b) {
         const p = b.entity(r);
+        if (inert) {
+          // the desk under the drawer is bare to this pointer: the canvas surface is its exact hit and its target (as on the empty
+          // desk), its part none — the same answers the pointer gets off every object, so every consumer reads "nothing here"
+          if (canvas !== undefined) {
+            if (ctx.getRelation(p, TouchesExact) !== canvas) ctx.setRelation(p, TouchesExact, canvas);
+            if (ctx.getRelation(p, Targets) !== canvas) ctx.setRelation(p, Targets, canvas);
+          }
+          if (frames.current !== null) {
+            const cur = ctx.get(p, PointerPart);
+            if (cur === undefined) ctx.addComponent(p, PointerPart, { part: "" });
+            else if (cur.part !== "") ctx.edit(p).set(PointerPart, { part: "" });
+          }
+          continue;
+        }
         const s = ctx.read(p, PointerScreen);
         const w = screenToWorld(s.x, s.y, cam ?? IDENTITY_CAM);
         const rWorld = (ctx.get(p, PointerRadius)?.r ?? 0) / zoom;
@@ -349,7 +377,7 @@ export function createPickingSystems(
     // subscribes Tier-1 to `PointerPart` is the one who pays, and wants a
     // `{ coarse: false }` collector instead — the same shape as the `Position`
     // finding against `cursorVisualPoles` (D-C4.9).
-    { name: "picking", access: { write: [PointerPart] }, runIf: () => versions() || frames.current?.live?.() === true },
+    { name: "picking", access: { write: [PointerPart] }, runIf: () => versions() || frames.current?.live?.() === true || trayIsOpen() !== trayWasOpen },
   );
 
   // clearCaches (nav seam, design-004 §7): re-arm the seed — the next tick

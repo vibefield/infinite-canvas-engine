@@ -8,17 +8,23 @@
 import { describe, expect, it } from "vitest";
 import {
   Camera,
+  CanvasSurface,
   closeTray,
   createCanvasEngine,
   defineWidget,
   GestureActive,
+  LocalPointer,
   NO_MODS,
   openTray,
+  Pointer,
+  PointerPart,
   Position,
   scrollBy,
   scrollTray,
   Selected,
+  Targets,
   toggleTray,
+  TouchesExact,
   Tray,
   TRAY_INPUT,
   trayEntity,
@@ -26,6 +32,7 @@ import {
   Viewport,
   defineQuery,
   widgets,
+  type Entity,
   type InputMods,
   type TrayScreenFrame,
 } from "../src";
@@ -203,6 +210,34 @@ describe("open — the desk is inert, the drawer scrolls (design-017 §4)", () =
     r.tap(400, 500);
     expect(trayOpen(r.world)).toBe(true);
     expect(r.world.hasTag(r.low, Selected)).toBe(false);
+  });
+
+  it("the PICK is inert too (K9 law #1): while the drawer is out the mouse touches the bare canvas — over the note under the drawer and over the note on the dimmed desk alike, no part named — a note hovered as the drawer opens is let go without a move, and the hit comes back the tick the drawer shuts (control)", () => {
+    const r = rig();
+    const mouseQ = defineQuery([Pointer, LocalPointer]);
+    const mouse = (): Entity => { let e: Entity | undefined; r.world.query(mouseQ).each((b) => { for (const row of b) e = b.entity(row); }); if (e === undefined) throw new Error("no mouse pointer"); return e; };
+    const canvas = r.world.firstOf(defineQuery([CanvasSurface]));
+    expect(canvas).toBeDefined();
+    // the drawer shut, the note above it is hovered: its exact hit and its target
+    r.mouse("move", 150, 150, 0); r.step();
+    expect(r.world.getRelation(mouse(), TouchesExact)).toBe(r.note);
+    expect(r.world.getRelation(mouse(), Targets)).toBe(r.note);
+    // opened by the key (the op), the pointer STILL: the pick runs on the flip alone and the note is let go — the hit is the canvas
+    openTray(r.world); r.step();
+    expect(r.world.getRelation(mouse(), TouchesExact)).toBe(canvas);
+    expect(r.world.getRelation(mouse(), Targets)).toBe(canvas);
+    expect(r.world.get(mouse(), PointerPart)?.part ?? "").toBe("");
+    // a move onto the note UNDER the drawer (its centre), and back onto the one on the dimmed desk: the canvas both times, every tick
+    r.mouse("move", 400, 500, 0); r.step(3);
+    expect(r.world.getRelation(mouse(), TouchesExact)).toBe(canvas);
+    expect(r.world.getRelation(mouse(), Targets)).toBe(canvas);
+    r.mouse("move", 150, 150, 0); r.step(3);
+    expect(r.world.getRelation(mouse(), TouchesExact)).toBe(canvas);
+    expect(r.world.hasTag(r.note, Selected)).toBe(false);
+    // control: shut again, the pointer still — the pick runs on the flip and the note is the hit again at once
+    closeTray(r.world); r.step();
+    expect(r.world.getRelation(mouse(), TouchesExact)).toBe(r.note);
+    expect(r.world.getRelation(mouse(), Targets)).toBe(r.note);
   });
 
   it("the wheel over the drawer scrolls it and never moves the camera; ⌘-wheel and a pinch there, and any wheel on the dimmed desk, do nothing (control: closed, the wheel zooms)", () => {

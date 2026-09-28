@@ -5,7 +5,7 @@
 // object declares (`defineObject({ host: { text } })`). Here a THIRD-PARTY kind of the test's own — no reference kind in sight — takes
 // text two ways: a part the desk routes a TAP to, and a part its own DOM half leases at event time. The halves are made at the
 // mount, before the device boots, so the page is happy-dom's and the GPU never answers (the layer stays `pending`).
-import { createCanvasEngine, type WidgetType } from "@ice/core";
+import { closeTray, createCanvasEngine, openTray, type WidgetType } from "@ice/core";
 import { afterEach, describe, expect, it } from "vitest";
 import { EDITOR_ATTR } from "../src/host/editor";
 import { deskLayer } from "../src/host/layer";
@@ -153,6 +153,26 @@ describe("the ONE editor is the desk's, and a plugin kind LEASES it through the 
     expect(handle.editor().lease()).toBeUndefined();
     answer = true;
     tap(container, 5, 5);
+    expect(handle.editor().lease()?.part).toBe("label.text");
+  });
+
+  it("the pegboard drawer OUT (design-017 §4; K9 law #1): the tap's object is NONE, as in hand — the parts are told a known pointer with nothing under it, and a part that keeps the contract lends nothing; shut again, the same tap is the part's", () => {
+    const told: Told = { calls: [], value: "", alive: true };
+    const taps: TextTap[] = [];
+    const Label = defineObject({
+      type: "test.label-inert", version: 1, props: {}, kind: labelKind("label-inert"),
+      // the contract (kit/editor.ts `TextTap`): `found` with no `hit` is a pointer the stack knows touching nothing — not this part's tap
+      host: { text: () => [{ part: "label.text", tap: (t) => { taps.push(t); return t.found && t.hit === undefined ? undefined : { lease: lineLease("label.text", told) }; } }] },
+    });
+    const { ce, handle, container } = mountDesk([Label]);
+    openTray(ce.world);
+    tap(container, 40, 30);
+    // the stack never ran here, so the pointer is unknown to it — yet the drawer's inert desk answers as the hand does: known, nothing
+    expect(taps).toEqual([{ wx: 40, wy: 30, found: true, hit: undefined }]);
+    expect(handle.editor().lease()).toBeUndefined();
+    closeTray(ce.world);
+    tap(container, 40, 30);
+    expect(taps[1]).toEqual({ wx: 40, wy: 30, found: false, hit: undefined });
     expect(handle.editor().lease()?.part).toBe("label.text");
   });
 

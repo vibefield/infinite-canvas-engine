@@ -16,7 +16,7 @@
 // drew (the builder's `heldToWorld`, as core maps `HeldPointer`). The world half is objects/calendar-writing.ts (the sessions) and
 // the `PadSelection` fact this writes; objects/calendar-hand.ts marks it on the pad each frame.
 
-import { Active, Camera, CanvasSurface, defineQuery, type Entity, GestureSettings, guardedTransaction, HeldIntent, heldEntity, LocalPointer, Pointer, Position, PrefabId, setWidgetProps, Size, TouchesExact, type WidgetType, type World } from "@ice/core";
+import { Active, Camera, CanvasSurface, defineQuery, type Entity, GestureSettings, guardedTransaction, HeldIntent, heldEntity, LocalPointer, Pointer, Position, PrefabId, setWidgetProps, Size, TouchesExact, trayOpen, type WidgetType, type World } from "@ice/core";
 import { dayOr, monthKeyOf, PadSelection } from "../data";
 import { isSpan } from "../events";
 import { CALENDAR, type CalendarLaw } from "../law";
@@ -380,6 +380,9 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput |
     if (d === null || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.altKey) return null;
     const slop = world.getResource(GestureSettings)?.dragSlopPx ?? 10;
     if (Math.hypot(ev.clientX - d.x, ev.clientY - d.y) > slop) return null;
+    // the pegboard drawer out: the desk is inert (design-017 §4) — `bareUnder` calls the canvas bare, so it cannot be the guard here;
+    // a click on a specimen over a pad under the drawer selects no day and begins no writing (K9 law #1)
+    if (trayOpen(world)) return null;
     const held = heldEntity(world);
     if (held === undefined && !bareUnder(d.type, d.id)) return null;
     return partAtClient(ev.clientX, ev.clientY);

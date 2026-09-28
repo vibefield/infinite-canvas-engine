@@ -1,8 +1,11 @@
 /**
  * TRAY INPUT (design-016 §7; design-017 §4 — K3) — the pegboard drawer's share of the pointer, beside the hand's (systems/held.ts)
  * and in its vocabulary. Right after `heldInput` at the head of `react`: the ingest's one-tick tags are flushed by then (a press is
- * visible), and what this stamps flushes before `ctl`, so picking, the recognizers and both wheel consumers never hear of what the
- * tray takes. While an object is in hand the tray stands aside (the hand's frame never draws it).
+ * visible), and what this stamps flushes before `ctl`, so the recognizers and both wheel consumers never hear of what the tray
+ * takes. PICKING does not hear it either way — it runs in this same phase, before the stamp lands (a tag is a structural write,
+ * applied at the phase boundary) — so it reads `Tray.open` itself and answers the bare canvas for every local pointer while the
+ * drawer is out (l1-pick; K9 law #1: without that, the DOM-at-event-time halves read a live hit THROUGH the drawer). While an
+ * object is in hand the tray stands aside (the hand's frame never draws it).
  *
  *  - CLOSED, only the lip's HANDLE is the tray's — its finger notch, `handlePx` either side of the centre (D-K3.10: the lip is drawn
  *    the drawer's whole width, but a strip that wide would take the view's bottom edge from the desk — a calendar filling the view
