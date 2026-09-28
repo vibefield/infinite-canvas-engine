@@ -183,7 +183,7 @@ APIs, and this repo tracks them closely (eight releases absorbed to date).
 ```sh
 pnpm install
 pnpm run ci            # typecheck + lint + tests + import walls + gen:check — the merge gate
-pnpm run gate:landing  # the pixel gate: the desk's Dawn oracle → the apps/desk build → its fifteen rigs → pack:audit
+pnpm run gate:landing  # the pixel gate: the desk's Dawn oracle → the apps/desk build → its sixteen rigs → pack:audit
 ```
 
 `ci` is the merge gate; `gate:landing` is required at every landing and is kept out
