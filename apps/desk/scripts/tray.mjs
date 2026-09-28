@@ -110,8 +110,11 @@ try {
   const reached = trace.find((o) => o.p === 1);
   check(rows.every((r) => Math.abs(r.p - r.want) < 1e-6) && worst < 1e-6 && rows[0].p === 0,
     `the slide on cubic-bezier(0.32,0.72,0,1): ${rows.map((r) => `p(${r.t.toFixed(0)} ms) ${r.p.toFixed(4)}`).join(" · ")} — every one of ${trace.length} frames on the curve (worst ${worst.toExponential(1)})`);
-  check(reached !== undefined && reached.t >= 340 && reached.t < 340 + 40 && trace.filter((o) => o.t < 323).every((o) => o.p < 1),
-    `it arrives at 340 ms and not before (first p = 1 at t ${reached?.t.toFixed(1)} ms of the frame clock, ${reached?.wall.toFixed(0)} ms of wall time after the toggle)`);
+  // the FIRST frame at or past 340 ms of the frame clock, whatever the frame rate (K-H): the bound was 340 + 40 ms, one frame at 25 fps, and
+  // at 8× throttle the first frame past 340 came at 383.3 ms — the frame before it still short of 340 is the claim, not the host's frame time
+  const beforeReached = trace[trace.indexOf(reached) - 1];
+  check(reached !== undefined && reached.t >= 340 && beforeReached !== undefined && beforeReached.t < 340 && trace.filter((o) => o.t < 323).every((o) => o.p < 1),
+    `it arrives at 340 ms and not before (first p = 1 at t ${reached?.t.toFixed(1)} ms of the frame clock — the frame before it at ${beforeReached?.t.toFixed(1)} — ${reached?.wall.toFixed(0)} ms of wall time after the toggle)`);
   const slideFrames = await qa("new Promise((r) => { const f = () => { const o = window.__slideFrames; const rest = o.findIndex((x) => x.p === 1); if (o.length >= 600 || (rest >= 0 && o.length - rest >= 60)) r(o); else requestAnimationFrame(f); }; f(); })", 60000);
   const slideSteps = slideFrames.slice(1).map((o, i) => ({ dp: o.p - slideFrames[i].p, dd: o.drawn - slideFrames[i].drawn, ds: o.sub - slideFrames[i].sub }));
   const slideFirst = slideSteps.findIndex((x) => x.dp > 0);
@@ -274,8 +277,13 @@ try {
   // S6. the band carries them: a wheel past the end pulls the board AND the specimens by the band's shown pull, then lets them go
   await q(`window.__desk.tray.scroll(${s.frame.max})`); await settle();
   await mouse("mouseMoved", 1100, 650);
+  // the PULL read IN THE PAGE, every frame from before the first wheel (K-H): the band lets go 120 ms of `now` after the last wheel,
+  // and a read two frames after the wheels' round trips came after it at load 400 (pulled 0 px). The frame of the deepest pull is read
+  await qa("(() => { const out = (window.__bandFrames = []); let seen = -1; const f = () => { const st = window.__desk.tray.state(); out.push(st); if (st.facts.stretch > 0) seen = out.length; if ((seen < 0 || out.length - seen < 20) && out.length < 900) requestAnimationFrame(f); }; requestAnimationFrame(f); return 0; })()");
+  await qa("new Promise((r) => { const f = () => (window.__bandFrames.length > 0 ? r(0) : requestAnimationFrame(f)); f(); })");
   for (let i = 0; i < 4; i++) { await mouse("mouseWheel", 1100, 650, { deltaX: 0, deltaY: 60 }); await sleep(12); }
-  const pulled = await q("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r(window.__desk.tray.state()))))");
+  const bandFrames = await qa("new Promise((r) => { const f = () => { const o = window.__bandFrames; const seen = o.findLastIndex((x) => x.facts.stretch > 0); if (o.length >= 900 || (seen >= 0 && o.length - 1 - seen >= 20)) r(o); else requestAnimationFrame(f); }; f(); })", 60000);
+  const pulled = bandFrames.reduce((a, b) => (b.facts.stretch > a.facts.stretch ? b : a));
   const carried = pulled.specimens.length > 0 && pulled.specimens.every((q) => { const w = held.find((h) => h.type === q.type); return w !== undefined && Math.abs(q.screen.y0 - (pulled.frame.y + w.y - pulled.frame.scroll)) < 1e-9; }) && Math.abs(pulled.frame.scroll - (pulled.facts.scroll + pulled.band)) < 1e-9;
   await sleep(300); await settle();   // quiet past the let-go (120 ms), then the settle's spring
   const let0 = await tray();
@@ -406,9 +414,6 @@ try {
     }
     return sp.object;
   };
-  /** Carried poses, one sample per animation frame, for `n` frames. */
-  const traceJs = (n) => `new Promise((r) => { const out = []; let i = 0; const f = () => { const s = window.__desk.tray.state(); out.push({ carried: s.carried, facts: window.__desk.tray.facts(), p: s.p }); if (++i >= ${n}) r(out); else requestAnimationFrame(f); }; requestAnimationFrame(f); })`;
-  const traceCarried = (n) => qa(traceJs(n));
   const frames = (n) => qa(`new Promise((r) => { let i = 0; const f = () => { if (++i >= ${n}) r(true); else requestAnimationFrame(f); }; requestAnimationFrame(f); })`);
   /** Press `type`'s specimen at (u, v) across its object and carry it to `to` in steps; `release` at the end (default). */
   const carryOut = async (type, u, v, to, { release = true, steps = 8 } = {}) => {
@@ -498,9 +503,13 @@ try {
     const o = await specimenIn("desk.note");
     const spec0 = (await tray()).specimens.find((x) => x.type === "desk.note");
     const g = [o.x0 + 0.5 * (o.x1 - o.x0), o.y0 + 0.5 * (o.y1 - o.y0)];
-    await mouse("mouseMoved", g[0], g[1]); await mouse("mousePressed", g[0], g[1], { buttons: 1 }); await frames(1);
-    await mouse("mouseMoved", g[0] + 2, g[1] - 2, { buttons: 1 }); await frames(3);
-    const within = await tray();
+    // the press to the move past the slop in as few round trips as the rows allow (K-H): the desk's long press is 500 ms of its clamped
+    // clock, and at load 337 (and 8× throttle) a frame waited after the press, three after the move within the slop and a round trip
+    // for the read handed the press that clock first — the copy never lifted. The state within the slop is read IN THE PAGE, two
+    // frames after that move was taken, in the same evaluate
+    await mouse("mouseMoved", g[0], g[1]); await mouse("mousePressed", g[0], g[1], { buttons: 1 });
+    await mouse("mouseMoved", g[0] + 2, g[1] - 2, { buttons: 1 });
+    const within = await qa("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(() => r({ ...window.__desk.tray.state(), facts: window.__desk.tray.facts() }))))");
     await mouse("mouseMoved", g[0] + 20, g[1] - 30, { buttons: 1 }); await frames(30);
     const lifted = await tray();
     const copy = lifted.carried.find((c) => c.phase === "lift");
@@ -538,6 +547,16 @@ try {
 
   // the ways back — Esc mid-drag, a release back over the drawer, a release inside it: NOTHING in undo (a sentinel spawned just before
   // is what one undo takes back), no object made, and the ghost flying HOME shrinking to nothing
+  /** The carried poses, one sample a frame, IN THE PAGE from BEFORE `act` (K-H): the sampler runs (its first sample waited for), then the act
+   *  — a release, Esc — then frames until the hand is empty for 10 (600 at most). the trace used to start AFTER the act's round trip, and at
+   *  load 400 the glide back was over but for its last frame ("inside": 1 frame of "back" sampled) */
+  const traceAround = async (act) => {
+    await qa("(() => { const out = (window.__carryTrace = []); let empty = 0; const f = () => { const s = window.__desk.tray.state(); out.push({ carried: s.carried, facts: window.__desk.tray.facts(), p: s.p }); empty = s.carried.length === 0 ? empty + 1 : 0; if (!(window.__carryActed && empty >= 10) && out.length < 600) requestAnimationFrame(f); else window.__carryDone = true; }; window.__carryActed = false; window.__carryDone = false; requestAnimationFrame(f); return 0; })()");
+    await qa("new Promise((r) => { const f = () => (window.__carryTrace.length > 0 ? r(0) : requestAnimationFrame(f)); f(); })");
+    await act();
+    await q("window.__carryActed = true");
+    return qa("new Promise((r) => { const f = () => (window.__carryDone ? r(window.__carryTrace) : requestAnimationFrame(f)); f(); })", 60000);
+  };
   const wayBack = async (how) => {
     const sentinel = await q("window.__desk.spawn('desk.note', { seed: 5 }, { x: 1000, y: 150 })");
     await frames(2);
@@ -545,15 +564,13 @@ try {
     let homes = [];
     if (how === "inside") {
       await carryOut("desk.note", 0.5, 0.5, [700, 600], { release: false, steps: 4 });
-      await mouse("mouseReleased", 700, 600, { buttons: 0 });
-      homes = await traceCarried(24);
+      homes = await traceAround(() => mouse("mouseReleased", 700, 600, { buttons: 0 }));
     } else {
       await carryOut("desk.note", 0.5, 0.5, [600, 250], { release: false });
-      if (how === "esc") { await key("Escape", "Escape", 27); homes = await traceCarried(34); await mouse("mouseReleased", 600, 250, { buttons: 0 }); }
+      if (how === "esc") { homes = await traceAround(() => key("Escape", "Escape", 27)); await mouse("mouseReleased", 600, 250, { buttons: 0 }); }
       else {
         for (let i = 1; i <= 6; i++) { await mouse("mouseMoved", 600, 250 + (i * (680 - 250)) / 6, { buttons: 1 }); await frames(2); }
-        await mouse("mouseReleased", 600, 680, { buttons: 0 });
-        homes = await traceCarried(34);
+        homes = await traceAround(() => mouse("mouseReleased", 600, 680, { buttons: 0 }));
       }
     }
     await frames(4);
