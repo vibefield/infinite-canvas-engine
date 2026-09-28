@@ -279,6 +279,35 @@ describe("open — the desk is inert, the drawer scrolls (design-017 §4)", () =
     expect(r.tray().stretch).toBe(0);
   });
 
+  it("shut mid-flick, the rest of its momentum stays the tray's until the wheel goes quiet — the desk never zooms (K9 S7); quiet, the wheel is the desk's again", () => {
+    const r = rig();
+    openTray(r.world); r.step();
+    const c0 = r.cam();
+    let dy = 40;
+    for (let i = 0; i < 24; i++) {
+      if (i === 6) closeTray(r.world);   // Esc's way, the momentum still arriving — a frame apart, decaying as the OS sends it
+      r.wheel(400, 500, { dy: Math.max(1, Math.round(dy)) });
+      dy *= 0.9;
+    }
+    expect(trayOpen(r.world)).toBe(false);
+    r.step(3);
+    expect(r.cam()).toEqual(c0);
+    // …a stream the DIMMED desk swallowed (never over the drawer) running on as a click there shuts the drawer: the same
+    r.step(Math.ceil(TRAY_INPUT.letGoMs / 16) + 1);
+    openTray(r.world); r.step();
+    for (let i = 0; i < 4; i++) r.wheel(150, 150, { dy: 20 });
+    r.tap(150, 150);
+    expect(trayOpen(r.world)).toBe(false);
+    for (let i = 0; i < 6; i++) r.wheel(150, 150, { dy: 20 });
+    r.step(3);
+    expect(r.cam()).toEqual(c0);
+    // quiet `letGoMs`: the latch lets go, and the wheel zooms the desk (control)
+    r.step(Math.ceil(TRAY_INPUT.letGoMs / 16) + 1);
+    r.wheel(400, 500, { dy: 30 });
+    r.step(2);
+    expect(r.cam()).not.toEqual(c0);
+  });
+
   it("a drag on the board scrolls it by the pointer's travel, into the band past an end, which lets go after the release", () => {
     const r = rig();
     openTray(r.world); r.step();

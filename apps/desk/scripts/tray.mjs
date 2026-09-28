@@ -2,7 +2,7 @@
 // 2400 × 1600 the budget names). Open and close by `a`, by the lip, by Esc and by a click on the dimmed desk; the drawer's rect; the
 // slide on its curve (sampled on the frame clock at t ≈ 0 · 170 · 340 ms, and the motion's wall time); a scroll of Δ moves the
 // pattern by exactly Δ — the carry's uniforms and a screenshot shift-compare; exact 10⁶ rows down (the same carry fraction, the same
-// holes); the wheel over the drawer scrolls it and never moves the camera; the desk inert while open; 0 submits at rest open and
+// holes); the wheel over the drawer scrolls it and never moves the camera — nor does the rest of a flick shut mid-way (K9); the desk inert while open; 0 submits at rest open and
 // closed (240 frames each), one frame per frame of motion; the drawer's GPU cost at 2400 × 1600 (≤ 0.3 ms: a saturated batch of it
 // alone, drained around, medians and minima of 7 rounds with the load beside them); the night; no page errors. K5a — THE SPECIMENS:
 // the six kinds in the world where the lattice law lays them (read back; never Active, selected or durable), every peg on a punched
@@ -197,6 +197,34 @@ try {
   check(w1 > w0 && w2 === w1 && cam1.x === cam0.x && cam1.y === cam0.y && cam1.zoom === cam0.zoom,
     `the wheel over the drawer scrolled it ${w0} → ${w1} px; ⌘-wheel there and a wheel on the desk: ${w2}; the camera ${JSON.stringify(cam1)} unmoved`);
   await q("window.__desk.tray.scroll(0)");
+
+  // 6b (K9, S7). shut mid-flick, the rest of the flick stays the tray's until the wheel goes quiet — the desk never zooms. A flick is
+  //    24 decaying deltas (× 0.9) a FRAME apart, dispatched in the page (the adapter's own listener takes them: the first six must
+  //    scroll the drawer, or the row has nothing to say), the drawer shut by its op (Esc's) before the 7th. The latch runs on the
+  //    frame clock (design-017's let-go clock): a flick with a frame gap ≥ `letGoMs` is not this row's case — tried again, ≤ 3
+  {
+    let fl = null;
+    for (let tries = 1; tries <= 3; tries++) {
+      await q("window.__desk.tray.scroll(0)"); await settle();
+      const camA = await q("window.__desk.camera()");
+      const s0 = (await tray()).facts.scroll;
+      const run = await qa(`new Promise((res) => { const el = document.elementFromPoint(1100, 650); let i = 0; let dy = 60; let last = 0; let gap = 0; let s6 = 0;
+        const f = (t) => { if (i > 0) gap = Math.max(gap, t - last); last = t;
+          if (i === 6) { s6 = window.__desk.tray.facts().scroll; window.__desk.tray.close(); }
+          el.dispatchEvent(new WheelEvent("wheel", { clientX: 1100, clientY: 650, deltaX: 0, deltaY: Math.max(1, Math.round(dy)), deltaMode: 0, bubbles: true, cancelable: true }));
+          dy *= 0.9; i += 1; if (i < 24) requestAnimationFrame(f); else res({ gap, s6 }); };
+        requestAnimationFrame(f); })`);
+      await sleep(300); await settle();
+      const camB = await q("window.__desk.camera()");
+      fl = { ...run, s0, shut: (await tray()).facts.open === false, moved: camB.x !== camA.x || camB.y !== camA.y || camB.zoom !== camA.zoom, camB, tries };
+      if (fl.moved) await q(`window.__desk.setCamera(${JSON.stringify(cam0)})`);   // a red here must not move every row after it
+      await q("window.__desk.tray.open()"); await settle();
+      if (run.gap < 120) break;
+    }
+    check(fl.gap < 120 && fl.s6 > fl.s0 && fl.shut && !fl.moved,
+      `shut mid-flick (its op before the 7th of 24 decaying deltas a frame apart, frame gaps ≤ ${fl.gap.toFixed(0)} ms), the rest never reached the desk: the first six scrolled the drawer ${fl.s0} → ${fl.s6} px; the camera ${JSON.stringify(fl.camB)} ${fl.moved ? "MOVED" : "unmoved"}${fl.tries > 1 ? ` (${fl.tries} tries)` : ""}`);
+    await q("window.__desk.tray.scroll(0)"); await settle();
+  }
 
   // 7. the desk inert while open: a drag on the note moves nothing and selects nothing; the drawer stays
   const p0 = await q(`window.__desk.entity(${note})`);

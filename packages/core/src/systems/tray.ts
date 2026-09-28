@@ -17,7 +17,8 @@
  *    drawer the wheel scrolls it (`dy`; the OS's momentum arrives as deltas and is applied as it comes — no inertia of ours; ⌘/ctrl
  *    and a pinch are swallowed) and a press-drag scrolls it; past an end the rest is the band's `stretch` (a reversal unwinds it
  *    first), which lets go once the scroll input has been quiet `letGoMs`. A click on the dimmed desk — pressed and released there,
- *    unmoved — closes it.
+ *    unmoved — closes it. Shut, the wheel stays the tray's until it has been quiet `letGoMs` (K9): a flick's momentum still
+ *    arriving as the drawer shuts never zooms the desk.
  *  - K5b, TAKING ONE (design-017 §9): a press on a SPECIMEN is `TrayPress specimen` — its type, the grab point across the object as the
  *    board draws it (kernel `specimenFit`), the specimen's centre on screen. Past the slop its COPY lifts (`Tray.take` and the pointer:
  *    the renderer's flux draws it; the specimen stays hung); a press on a specimen never scrolls the board. Out of the drawer's open
@@ -167,6 +168,13 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
         const down = ctx.hasTag(p, WentDown) && !chrome && ((ctx.get(p, PointerButtons)?.buttons ?? 0) & 1) !== 0;
         const press = ctx.get(p, TrayPress);
         if (!open) {
+          // K9 (S7): the wheel stays the tray's until it goes quiet — the rest of a stream it took while out (a trackpad's momentum
+          // still arriving as the drawer shut: Esc, the key, a take handed out) would zoom the desk; swallowed, each keeping the latch
+          const lw = ctx.get(p, PointerWheel);
+          if (lw !== undefined && (lw.dy !== 0 || lw.dx !== 0 || lw.pinch !== 0) && wheelAt > 0 && now - wheelAt < TRAY_INPUT.letGoMs) {
+            if (!ctx.hasTag(p, WheelHandled)) ctx.addTag(p, WheelHandled);
+            wheelAt = now;
+          }
           if (press?.kind === "carry") {
             // K5b: the take handed to the desk — the insert ghost's drag is this pointer's (its synthetic down included: never the
             // lip's). Released back over the drawer AS DRAWN this frame — still sliding away — the gesture is cancelled — this tick's
@@ -210,11 +218,12 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
         // the specimen under the mouse (K5a): the board point as DRAWN — the pose's shown scroll, the band's pull in it
         if (frame !== undefined && over(s.x, s.y, 0) && ctx.read(p, Pointer).device === "mouse") hover = specimenAt(world, tray, s.x - frame.x, s.y - frame.y + frame.scroll)?.type ?? "";
         const w = ctx.get(p, PointerWheel);
-        if (w !== undefined && (w.dy !== 0 || w.dx !== 0 || w.pinch !== 0) && over(s.x, s.y, 0)) {
+        if (w !== undefined && (w.dy !== 0 || w.dx !== 0 || w.pinch !== 0)) {
+          // every wheel is the tray's while it is out — its clock is the band's let-go and the latch after a close (K9)
+          wheelAt = now;
           const mods = ctx.get(p, PointerMods);
-          if (w.pinch === 0 && mods?.ctrl !== true && mods?.meta !== true && w.dy !== 0) {
+          if (over(s.x, s.y, 0) && w.pinch === 0 && mods?.ctrl !== true && mods?.meta !== true && w.dy !== 0) {
             ({ scroll, stretch } = scrollBy(scroll, stretch, w.dy, max));
-            wheelAt = now;
           }
         }
         if (down) {
