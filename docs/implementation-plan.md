@@ -1611,7 +1611,7 @@ the load beside every number; the committed golden byte-identical through every 
 against the public entries alone and a third-party kind in its own package on the desk and in the tray; the tray's
 witnesses (design-017 §10); ci + `gate:landing` exit 0 on every landing, graded by the orchestrator on the exact SHA.
 
-## M22 — The tray, refined (design-018) — **LANDED 2026-09-28 (R2, then R1 rebased over it; the 0.14.0 release cut, now carrying M20, M21 and M22, is James's)**
+## M22 — The tray, refined (design-018) — **LANDED 2026-09-28 (R2, then R1 rebased over it, then R3 — the holes' fade; the 0.14.0 release cut, now carrying M20, M21 and M22, is James's)**
 
 James's visual refine round on M21's pegboard tray (2026-09-28, verbatim in design-018 §0): the border "too thick and
 unnatural"; no finger notch — "we should have a dom button that toggles this tray, let's keep things simple"; a "subtle
@@ -1641,14 +1641,18 @@ dts:check — all exit 0).
   with no code of its own, the notebook and the calendar at the kit's layered composite (group opacity, D-R1.6), the
   accessories and the tags on the same ramp; the five tray stills re-blessed, the other 107 byte-identical; the drawer's GPU
   cost unchanged (bare 0.240 → 0.234 ms, K-H interleaved).
+- **R3 — the holes fade too** (**LANDED 2026-09-28**, `3b9f352`; James on M22 as landed: "the edge fade should also fade the peg
+  hole as well"): within the specimens' 28 px band a hole CLOSES into the plain face by their ramp (`tray_board` scales its opening
+  by `w`; its fillet flattens by the same share), so the board is whole at the edge; D-R1.7's row peeking under the edge at rest is
+  gone with it. rig:tray (e) reads the opening 0.13 · 0.41 · 0.72 · 0.95 at 6 · 12 · 18 · 24 px against the ramp's 0.12 · 0.39 ·
+  0.71 · 0.94 (R1's shader: 1.00 throughout); the five tray stills re-blessed again, the other 107 byte-identical.
 
 **M22 as landed.** The five asks: the border is a board's edge, not a frame; the notch and the lip are gone and a DOM
 pill toggles the drawer; content dissolves into the board at the top edge; the holes show the cutting mat under the board
 in the board's own shadow (the orchestrator's call over baking the mat's colour — see design-018 §3); the chips filter the
 board by category. James's calls, each one line: the hole style (see-through; "baked" not built, D-R1.3); the board's
-height (`PEG.gap` / `thick`); the corner radius 10; the fade band 28; the inner shadow (D-R1.2); the row of holes peeking
-3 px under the edge at rest (D-R1.7 — `rowPhase` 0.75 → 0.6 in kernel `PEG_LATTICE` and desk `PEG` flips it); the bar's
-word "Objects", its glyph and the chips' ids. Owed: the desk's hover still rises under DOM chrome (l1-pick does not read
+height (`PEG.gap` / `thick`); the corner radius 10; the fade band 28; the inner shadow (D-R1.2); the bar's word "Objects", its
+glyph and the chips' ids. (D-R1.7, the row of holes peeking under the edge at rest, closed with R3.) Owed: the desk's hover still rises under DOM chrome (l1-pick does not read
 `OverInteractive`); an accessory's shadow darkens the holes it falls on; rig:tray takes ≈ 137 s; a lamp push configured to
 0 would make `normalize(shadow.zw)` NaN.
 
