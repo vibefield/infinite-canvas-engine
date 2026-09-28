@@ -15,9 +15,12 @@ export const PEG = {
   holeHalf: 0.2,
   /** The smooth-max fillet on the punched rims. */
   rimK: 0.018,
-  /** The hardboard's thickness, and the spacer gap to the wall behind it. */
-  thick: 0.3,
-  gap: 0.6,
+  /**
+   * The hardboard's thickness, and its height off the mat: it LIES on it (design-018 §3 — the research's spacer and wall retired) —
+   * a 4 mm board on a hair of air, 0.13 pitch in all: the height the drawer's own lamp shadow is pushed by (8 px at the HOME lamp).
+   */
+  thick: 0.1,
+  gap: 0.03,
   /** The phase (§6.1): holes at x = c + ¼ + ½·(r odd) from the drawer's left edge, rows at Y = r + ¾ below its top at scroll 0. */
   colPhase: 0.25,
   rowPhase: 0.75,

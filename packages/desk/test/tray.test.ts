@@ -21,7 +21,8 @@ import { carry, cellOf, holeCentre, holeSdf, PEG, type PegPoint, pointAt, punche
 import { HASH_SIZE, hashTexels, keep } from "../src/tray/pass";
 import { TrayAccessoryStruct, TrayUniforms } from "../src/tray/layout";
 import { TRAY_SHADER_FILES, trayShaders } from "../src/tray/shaders";
-import { type Palette, themeFrom } from "../src/theme";
+import { TRAY_LOOK } from "../src/tray/look";
+import { type Palette, TRAY, themeFrom } from "../src/theme";
 import { fakeDevice, fakeSurface, installGpuFlags } from "./fake-gpu";
 
 /**
@@ -203,6 +204,21 @@ describe("the drawer (tray/drawer.ts)", () => {
     expect(DRAWER.radius).toBe(10);
     expect(DRAWER.arris).toBe(1.5);
     expect("rim" in DRAWER).toBe(false);
+    expect(DRAWER.inner).toEqual({ alpha: 0.18, width: 3 });   // the lip's faint shadow on the board, the lamp's side (D-R1.2)
+  });
+
+  it("lies ON the mat (design-018 §3): a thin board a hair above it — as high as the drawer's own lamp shadow is pushed, one light", () => {
+    const L = TRAY_LOOK.lamp;
+    const H = (PEG.thick + PEG.gap) * P;   // CSS px from the mat to the board's face
+    expect(PEG.thick).toBeLessThanOrEqual(0.15);
+    expect(PEG.gap).toBeLessThanOrEqual(0.2);
+    expect(Math.abs((H * Math.hypot(L[0], L[1])) / L[2] - DRAWER.shadow.lamp.push)).toBeLessThan(0.5);
+  });
+
+  it("shows the desk through its holes — the research's plaster wall and its colour retired from the record and the look", () => {
+    expect(TrayUniforms.fields.map(([n]) => n)).not.toContain("wall");
+    expect("wall" in TRAY.research).toBe(false);
+    expect("wall" in TRAY_LOOK).toBe(false);
   });
 
   it("slides on widgetlab rev 1's curve, cubic-bezier(0.32,0.72,0,1) over 340 ms", () => {

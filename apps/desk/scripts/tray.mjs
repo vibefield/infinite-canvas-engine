@@ -23,6 +23,7 @@ import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 import { decodePng } from "./png.mjs";
 import { hostLoad, median, minOf, watchdog } from "./timing.mjs";
 import { layTray, PEG_LATTICE } from "../../../packages/kernel/src/tray.ts";
+import { carry, cellOf, holeSdf, pointAt, punched } from "../../../packages/desk/src/tray/lattice.ts";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -72,7 +73,7 @@ try {
   // a still desk (no wind frames), a note on it and one under where the drawer comes
   await q("window.__desk.ambient('still'); window.__desk.setTheme('light')");
   const note = await q("window.__desk.spawn('desk.note', { seed: 7 }, { x: 300, y: 250 })");
-  await q("window.__desk.spawn('desk.note', { seed: 11 }, { x: 600, y: 640 })");
+  const under = await q("window.__desk.spawn('desk.note', { seed: 11 }, { x: 600, y: 640 })");
   await settle();
   const cam0 = await q("window.__desk.camera()");
 
@@ -144,15 +145,46 @@ try {
   // 3. what it draws: the face's colour, the holes' share of the board, the dimmed desk above it — the board BARE (its specimens pinned away, K5a)
   await q("window.__desk.tray.pin({ bare: true })"); await settle();
   const lit1 = await shot();
-  const inside = []; for (let y = 1000; y < 1560; y += 3) for (let x = 180; x < 2220; x += 3) inside.push(y * lit1.width + x);
+  // the note laid under the drawer, on screen in device px (design-018 §3: the holes over it show it — row 3b), kept out of the hole share
+  const un = await q(`window.__desk.entity(${under})`);
+  const uBox = [(un.x - cam0.x) * cam0.zoom * 2, (un.y - cam0.y) * cam0.zoom * 2, (un.x + un.w - cam0.x) * cam0.zoom * 2, (un.y + un.h - cam0.y) * cam0.zoom * 2];
+  const nearNote = (x, y, m) => x >= uBox[0] - m && x <= uBox[2] + m && y >= uBox[1] - m && y <= uBox[3] + m;
+  const inside = []; for (let y = 1000; y < 1560; y += 3) for (let x = 180; x < 2220; x += 3) if (!nearNote(x, y, 40)) inside.push(y * lit1.width + x);
   const dark = inside.filter((i) => lum(lit1, i % lit1.width, Math.floor(i / lit1.width)) < 110).length / inside.length;
   const faceL = inside.map((i) => lum(lit1, i % lit1.width, Math.floor(i / lit1.width))).sort((a, b) => a - b)[Math.floor(inside.length * 0.6)];
   check(dark > 0.12 && dark < 0.19 && faceL > 165 && faceL < 200, `the board: holes darken ${(dark * 100).toFixed(1)} % of it (the stadium's 15.7 % of a cell), the face's luminance ${faceL.toFixed(0)} (≈ #cdb491's 182)`);
   const deskBefore = lum(lit0, 1200, 200);
   const deskAfter = lum(lit1, 1200, 200);
   check(Math.abs(deskAfter / deskBefore - 0.9) < 0.03, `the desk dims 10 % by day: luminance ${deskBefore.toFixed(1)} → ${deskAfter.toFixed(1)} (× ${(deskAfter / deskBefore).toFixed(3)})`);
+  // 3b. THE HOLES SEE THE DESK (design-018 §3): a hole shows what lies under the drawer AS DRAWN, in the board's shadow — black laid over
+  //     it — so through each hole's lit patch (below and right of its centre, clear of the lamp's crescent) the open frame is the shut one
+  //     (lit0, the same pixel) times ONE factor for all three channels, the dim's and the light's share: the note laid under the drawer
+  //     keeps its yellow, the bare mat its green (the research's plaster showed a grey in every hole)
+  const patch = (img, x, y) => { const c = [0, 0, 0]; for (let j = -1; j <= 1; j++) for (let i = -1; i <= 1; i++) { const k = ((y + j) * img.width + x + i) * 4; for (let n = 0; n < 3; n++) c[n] += img.rgba[k + n] / 9; } return c; };
+  const through = { note: [], mat: [] };
+  for (let row = 0; row < 8; row++) for (let col = 0; col < 28; col++) {
+    const hx = col + 0.25 + (row & 1 ? 0.5 : 0);
+    if (hx < 0.75 || hx > 28 - 0.75) continue;
+    const x = Math.round((40 + (hx + 0.04) * 40) * 2);
+    const y = Math.round((448 + (row + 0.75 + 0.12) * 40) * 2);
+    const shut = patch(lit0, x, y);
+    const open = patch(lit1, x, y);
+    const k = open.map((v, n) => v / Math.max(shut[n], 1));
+    const h = { k, open };
+    if (x > uBox[0] + 16 && x < uBox[2] - 16 && y > uBox[1] + 16 && y < uBox[3] - 16) through.note.push(h);
+    else if (!nearNote(x, y, 40)) through.mat.push(h);
+  }
+  const oneFactor = (h) => Math.max(...h.k) - Math.min(...h.k) < 0.08 && Math.min(...h.k) > 0.7 && Math.max(...h.k) < 0.98;
+  const yellow = (h) => h.open[0] > h.open[2] + 40 && h.open[1] > h.open[2] + 40;
+  const green = (h) => h.open[1] > 1.15 * h.open[0] && h.open[1] > 1.15 * h.open[2];
+  const kOf = (hs) => hs.flatMap((h) => h.k);
+  check(through.note.length >= 4 && through.note.every((h) => oneFactor(h) && yellow(h)) && through.mat.length >= 40 && through.mat.every((h) => oneFactor(h) && green(h)),
+    `the holes see the desk as drawn: ${through.note.length} holes over the note laid under the drawer keep its yellow (e.g. ${through.note[0]?.open.map((v) => v.toFixed(0)).join(",")}), ${through.mat.length} over the bare mat its green (e.g. ${through.mat[0]?.open.map((v) => v.toFixed(0)).join(",")}) — each the shut frame × one factor for all three channels (${Math.min(...kOf(through.note), ...kOf(through.mat)).toFixed(3)} … ${Math.max(...kOf(through.note), ...kOf(through.mat)).toFixed(3)}; the dim's 0.9)`);
 
-  // 4. a scroll of Δ moves the pattern by exactly Δ: the carry's uniforms, and the pixels shifted by Δ·dpr
+  // 4. a scroll of Δ moves the pattern by exactly Δ: the carry's uniforms, and the pixels shifted by Δ·dpr — the board's own FACE: a hole
+  //    shows the desk under the drawer (design-018 §3), which does not scroll with the board, so the compare reads the pixels clear of
+  //    every punched hole by 1.5 CSS px at their scroll (the lattice's CPU mirror)
+  const onFace = (rect, xd, yd, S) => { const c = cellOf(pointAt((xd / 2 - rect.x) / 40, yd / 2 - rect.y, 40, carry(S, 40))); return !punched(c, rect.w / 40) || holeSdf(c.qx, c.qy) * 40 > 1.5; };
   const S0 = 13;
   const D = 17;
   await q(`window.__desk.tray.scroll(${S0})`); await settle();
@@ -165,10 +197,10 @@ try {
   let moved = 0;
   let sum = 0;
   let n = 0;
-  for (let y = 940; y < 1560 - 2 * D; y += 1) for (let x = 140; x < 2260; x += 2) { const d = Math.abs(lum(B, x, y) - lum(A, x, y + 2 * D)); maxd = Math.max(maxd, d); sum += d; n++; if (d > 0) moved++; }
+  for (let y = 940; y < 1560 - 2 * D; y += 1) for (let x = 140; x < 2260; x += 2) { if (!onFace(lb.rect, x, y, S0 + D)) continue; const d = Math.abs(lum(B, x, y) - lum(A, x, y + 2 * D)); maxd = Math.max(maxd, d); sum += d; n++; if (d > 0) moved++; }
   // the same board point is reached by two float paths (its rows on screen plus a different fraction of one): exact, but for an f32's
   // rounding across a quantisation step — at most one step, on a vanishing share of the pixels
-  check(maxd <= 1 && moved / n < 1e-3, `the board ${D} px on is the same pixels ${2 * D} device px up: ${moved} of ${n.toLocaleString()} px differ (max |Δ| ${maxd.toFixed(2)} — an f32's rounding, ≤ 1 step), mean ${(sum / n).toFixed(4)}`);
+  check(maxd <= 1 && moved / n < 1e-3, `the board ${D} px on is the same pixels ${2 * D} device px up (its face — the holes show the unscrolled desk): ${moved} of ${n.toLocaleString()} px differ (max |Δ| ${maxd.toFixed(2)} — an f32's rounding, ≤ 1 step), mean ${(sum / n).toFixed(4)}`);
 
   // 5. exact 10⁶ rows down: the same fraction of a row, the same holes where they were (an even carry keeps the stagger)
   await q(`window.__desk.tray.scroll(${1e6 * 40 + S0})`); await settle();
@@ -388,7 +420,7 @@ try {
   await q("window.__desk.tray.scroll(0)"); await settle();
   // S5. a scroll of Δ moves board and specimens by Δ: every rect on screen by exactly Δ (read back); the pixels Δ·dpr up — the board and
   //     the flat kinds to a float's rounding; the notebook and the calendar are seen through the desk eye (their kinds' own 3D law: a
-  //     book passing the view's centre turns a little, D-K5a.3) — bounded, never a jump
+  //     book passing the view's centre turns a little, D-K5a.3) — bounded, never a jump. Clear of the holes (row 4: they show the desk)
   await q(`window.__desk.tray.scroll(${S0})`); await settle();
   const SA = await shot(); const ra = (await tray()).specimens;
   await q(`window.__desk.tray.scroll(${S0 + D})`); await settle();
@@ -396,7 +428,9 @@ try {
   const rectsOk = ra.length > 0 && ra.every((a) => { const b = rb.find((q) => q.type === a.type); return b !== undefined && b.screen.y0 === a.screen.y0 - D && b.screen.x0 === a.screen.x0 && b.screen.y1 === a.screen.y1 - D; });
   const eyed = ra.filter((q) => q.kind === "notebook" || q.kind === "calendar").map((q) => [q.screen.x0 - 12, q.screen.x1 + 30]);
   let flatMax = 0; let flatMoved = 0; let flatN = 0; let eyeMax = 0;
+  const sRect = (await tray()).frame;
   for (let y = 940; y < 1560 - 2 * D; y += 1) for (let x = 140; x < 2260; x += 2) {
+    if (!onFace(sRect, x, y, S0 + D)) continue;
     const d = Math.abs(lum(SB, x, y) - lum(SA, x, y + 2 * D));
     if (eyed.some(([x0, x1]) => x / 2 >= x0 && x / 2 <= x1)) { eyeMax = Math.max(eyeMax, d); continue; }
     flatMax = Math.max(flatMax, d); flatN++; if (d > 1) flatMoved++;

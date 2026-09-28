@@ -11,17 +11,16 @@ export const TrayUniforms = defineStruct("TrayUniforms", [
   ["frac", "f32"],       // …and the fraction of a row, the only part of the scroll in an f32
   ["fp", "f32"],         // pitches per device px — the footprint every band fades by
   ["dim", "f32"],        // the dim's alpha this frame
-  ["shape", "vec4f"],    // the top corners' radius, the arris (the board's edge), —, — — CSS px
+  ["shape", "vec4f"],    // the top corners' radius, the arris (the board's edge) — CSS px; its inner shadow's alpha, its width (CSS px)
   ["hole", "vec4f"],     // the stadium's radius and straight half-length, the rim fillet k, the solid side border — pitches
-  ["depth", "vec4f"],    // the board's thickness, the gap to the wall — pitches; the phase: columns, rows
+  ["depth", "vec4f"],    // the board's thickness, its height off the mat — pitches; the phase: columns, rows
   ["lamp", "vec4f"],     // the unit direction to the lamp (x right, y down, z toward the eye), its angular radius (rad)
   ["room", "vec4f"],     // the room's shadow round the outline: σ, α — CSS px; —, —
   ["shadow", "vec4f"],   // the lamp's shadow: σ, α, its push along the lamp's ground direction (x, y) — CSS px
   ["face", "vec4f"],     // the tempered face, linear
   ["faceSrgb", "vec4f"], // …and its configured byte (sRGB): the plain face's colour lit flat
   ["edge", "vec4f"],     // the punched fibre, linear
-  ["wall", "vec4f"],     // the plaster, linear
-  ["cavity", "vec4f"],   // the room's light on the wall in a hole: at its edge, at its heart, over what width (pitches)
+  ["cavity", "vec4f"],   // the room's light on the mat in a hole: at its edge, at its heart, over what width (pitches)
   ["keepFace", "vec4f"], // each band's share at this footprint (tray.wgsl, the research's fade): the face's grain (≈ 19 a pitch), —, 85, 190…
   ["keepFine", "vec4f"], // …its 210 (bump) · 42 · 105 (flecks)…
   ["keepEdge", "vec4f"], // …and the punched fibre's 9 · 18 · 36

@@ -270,20 +270,21 @@ export const MARKS = {
 } as const;
 
 /**
- * THE PEGBOARD TRAY (design-017 §6.5–§6.6; K3) — the research board (research/sdf-pegboard, shader.js) under the desk's light. The
- * face is its own render's (preview.jpg): lit flat, a flat face is drawn at this byte (the paper's law — a configured byte is the
- * drawn byte). The punched edge keeps the research's edge/face albedo ratio; the plaster is its WALL_ALB. The cavity is the share of
- * the room's light on the wall in a hole — at the hole's edge, at its heart, over what width (pitches) — fitted to the render's
- * shadowed wall (#45443f). The LAMP is the research's HOME lamp (D-K3.4, decided): from the upper left at 48°, so light clears the
- * slots and lays its patches on the plaster behind — its direction as the research states it (shader.js `lightDir`: azimuth from
- * the eye's axis toward +x, elevation up the board, degrees), its angular radius the research's too (D-K3.5); the colour law and
- * the room are the desk's.
+ * THE PEGBOARD TRAY (design-017 §6.5–§6.6; K3; design-018 §3) — the research board (research/sdf-pegboard, shader.js) under the desk's
+ * light, lying ON the mat. The face is its own render's (preview.jpg): lit flat, a flat face is drawn at this byte (the paper's law — a
+ * configured byte is the drawn byte). The punched edge keeps the research's edge/face albedo ratio. A hole shows the DESK as drawn under
+ * it (design-018 §3 — the research's plaster wall retired): the cavity is the share of the room's light that reaches the mat through a
+ * hole — at the hole's edge, at its heart, over what width (pitches) — kept near 1, so the densest hole is the mat's own shade under a
+ * leaf (one shadow language). The LAMP is the research's HOME lamp (D-K3.4, decided): from the upper left at 48°, so its light lays a
+ * patch through each slot on the mat, a shadow crescent along the lamp's side — its direction as the research states it (shader.js
+ * `lightDir`: azimuth from the eye's axis toward +x, elevation up the board, degrees), its angular radius the research's too (D-K3.5);
+ * the colour law and the room are the desk's.
  */
 export const TRAY = {
   face: { token: "research/sdf-pegboard preview.jpg — the face, lit flat", css: "#cdb491" },
-  /** shader.js FACE_ALB · EDGE_ALB · WALL_ALB, linear. */
-  research: { face: [0.42, 0.26, 0.135], edge: [0.56, 0.41, 0.25], wall: [0.74, 0.72, 0.68] },
-  cavity: { edge: 0.1, heart: 0.22, width: 0.13 },
+  /** shader.js FACE_ALB · EDGE_ALB, linear. */
+  research: { face: [0.42, 0.26, 0.135], edge: [0.56, 0.41, 0.25] },
+  cavity: { edge: 0.9, heart: 1, width: 0.1 },
   lamp: { azimuth: -36, elevation: 48 },
   lampSize: 0.06,
   /**

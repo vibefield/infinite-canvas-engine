@@ -214,7 +214,7 @@ fn tray_lit(u: MatUniforms, t: TrayUniforms, alb: vec3f, n: vec3f, vis: f32, noi
   return c + glint * spec;
 }
 
-// ---- the board: the face and the rim fillet, and the wall through a hole
+// ---- the board: the face and the rim fillet, and the desk through a hole
 // The front surface at a board point: the face, or — within k of a hole — the fillet. On smax(slab, −hole, k) = 0 seen head-on the
 // surface's blend weight is h = √(d/k) for d ∈ [0,k], and its normal normalize(((h − 1)·∇d, h)) sweeps from the hole's wall to the
 // face: the rim's lit edge and its shadowed one, in the paler punched fibre where the normal is steep (the research's faceness).
@@ -237,28 +237,30 @@ fn peg_surface(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: PegPoint
   return tray_lit(u, t, alb, n, 1.0, noise);
 }
 
-// The wall seen through a hole. THE TWO PLANES (§6.4): the ray from the wall toward the lamp crosses the back face at A and the front
-// face at B; the wall is lit iff both lie in the SAME hole — B's, with A tested against it (a convex prism holds the segment iff it
-// holds both ends) — the penumbra from the SDF distance, widened by the lamp's size over each plane's depth. The room's light reaches
-// the wall through the hole, cut by the cavity: darker toward the hole's edges.
-fn peg_wall(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: PegPoint, h: PegHole, fp: f32, noise: f32) -> vec3f {
+// Through a hole: THE DESK AS DRAWN (design-018 §3). A hole is cut through the board, so it shows what lies under the drawer this
+// frame — the mat's green, its grid lines, the leaf shadows, anything laid there — in the board's shadow: premultiplied BLACK over the
+// frame, at the alpha that leaves `f` of the light. THE TWO PLANES (design-017 §6.4) give the lamp at the mat: the ray from the mat
+// toward the lamp crosses the board's back face at A and its front face at B; the mat is lit iff both lie in the SAME hole — B's, with
+// A tested against it (a convex prism holds the segment iff it holds both ends) — the penumbra from the SDF distance, widened by the
+// lamp's size over each plane's height. The room's light reaches the mat through the hole, cut by the cavity. f = a·cav + (1 − a)·vis,
+// `a` the room's share (the mat's own shade-in-shadow: shade_mat at gobo 0) — ENCODED as the mat's own chain encodes its shade (its
+// grade lives in pow-2.2 space), so the densest hole is the mat's shade under a leaf — over the desk dimmed as the rest of it is.
+fn peg_through(u: MatUniforms, t: TrayUniforms, p: PegPoint, h: PegHole, fp: f32) -> f32 {
   let L = t.lamp.xyz;
-  let off = L.xy / max(L.z, 1.0e-3);
+  let lz = max(L.z, 1.0e-3);
+  let off = L.xy / lz;
   let thick = t.depth.x;
   let gap = t.depth.y;
   let hb = peg_hole(t, peg_move(p, off * (gap + thick)));
   let da = peg_stadium(t, hb.q - off * thick).x;
-  // the penumbra: the lamp's angular radius over the ray's length to each plane's edge (depth / L_z), and a pixel
-  let wa = t.lamp.w * gap / max(L.z, 1.0e-3) + fp;
-  let wb = t.lamp.w * (gap + thick) / max(L.z, 1.0e-3) + fp;
+  // the penumbra: the lamp's angular radius over the ray's length to each plane's edge (height / L_z), and a pixel
+  let wa = t.lamp.w * gap / lz + fp;
+  let wb = t.lamp.w * (gap + thick) / lz + fp;
   let vis = smoothstep(-wb, wb, -hb.d) * smoothstep(-wa, wa, -da);
   let cav = mix(t.cavity.x, t.cavity.y, smoothstep(0.0, t.cavity.z, -h.d));
-  // the room's share in the mat's shadow (shade_mat at gobo 0): the wall takes a·cav of the room and (1 − a)·vis of the lamp
   let a = 1.0 - u.gobo.z * (1.0 - u.gobo.w);
-  let s = (a * cav + (1.0 - a) * vis) / (a + (1.0 - a) * vis);
-  let plaster = 1.0 + 0.10 * (peg_band(ht, p, 2u, 2u, 0xe17u).x - 0.5);
-  // the wall faces the eye: its relief is exactly 1 and the lamp's glint on it nothing — the colour law alone, on its byte
-  return tray_colour(u, clamp(night_encode(t.wall.xyz * (s * plaster)), vec3f(0.0), vec3f(1.0)), vis, noise);
+  let f = a * cav + (1.0 - a) * vis;
+  return 1.0 - (1.0 - t.dim) * pow(f, 1.0 / 2.2);
 }
 
 // ---- the drawer
@@ -303,14 +305,15 @@ fn tray_arris(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, o:
   return tray_lit(u, t, t.face.xyz * (1.0 + face.g), n, 1.0, noise);
 }
 
-// The board to its edge: the point under the carry, its hole, the front surface over the hole by its analytic coverage.
-fn tray_board(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, noise: f32) -> vec3f {
+// The board to its edge, PREMULTIPLIED: the point under the carry, its hole — the front surface over it by its analytic coverage, and
+// where the surface is not, the desk seen through (black at the hole's alpha).
+fn tray_board(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, noise: f32) -> vec4f {
   let pt = tray_point(t, p);
   let h = peg_hole(t, pt);
   let c = clamp(0.5 + h.d / t.fp, 0.0, 1.0);
-  var col = vec3f(0.0);
-  if (c > 0.0) { col = peg_surface(ht, u, t, pt, h, t.fp, noise); }
-  if (c < 1.0) { col = mix(peg_wall(ht, u, t, pt, h, t.fp, noise), col, c); }
+  var col = vec4f(0.0);
+  if (c > 0.0) { col = vec4f(peg_surface(ht, u, t, pt, h, t.fp, noise), 1.0) * c; }
+  if (c < 1.0) { col += vec4f(0.0, 0.0, 0.0, peg_through(u, t, pt, h, t.fp) * (1.0 - c)); }
   return col;
 }
 
@@ -330,10 +333,11 @@ fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_
   // and a scrolled board is then the same pixels, moved
   var bn = vec3f(0.5);
   if (u.night.x > 0.0) { bn = textureSampleLevel(noise_tex, noise_samp, frag * u.noise.z + u.noise.xy, 0.0).rgb; }
-  // DEEP INSIDE — clear of the rounded corners, the edge and two px more: covered, no edge, no shadow, no outline to evaluate
-  let m = t.shape.y + 2.0;
+  // DEEP INSIDE — clear of the rounded corners, the edge, its inner shadow and two px more: no edge, no shadow, no outline to evaluate
+  // (premultiplied — a hole's alpha is its shadow over the desk, no longer 1)
+  let m = t.shape.y + t.shape.w + 2.0;
   if ((p.x > t.rect.x + m) && (p.x < t.rect.x + t.rect.z - m) && (p.y > t.rect.y + t.shape.x + m)) {
-    return vec4f(tray_board(ht, u, t, p, bn.y), 1.0);
+    return tray_board(ht, u, t, p, bn.y);
   }
   let o = tray_outline(t, p);
   let cover = clamp(0.5 - o / px, 0.0, 1.0);
@@ -346,12 +350,24 @@ fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_
     under = vec4f(0.0, 0.0, 0.0, 1.0 - (1.0 - room) * (1.0 - lamp) * (1.0 - t.dim));
   }
   if (cover <= 0.0) { return under; }
-  // the edge within `A` of the outline, the board inside it — blended across the pixel where they meet
+  // the edge within `A` of the outline, the board inside it — blended across the pixel where they meet (premultiplied)
   let k = clamp(0.5 + (o + t.shape.y) / px, 0.0, 1.0);
-  var col = vec3f(0.0);
-  if (k > 0.0) { col = tray_arris(ht, u, t, p, o, bn.y); }
-  if (k < 1.0) { col = mix(tray_board(ht, u, t, p, bn.y), col, k); }
-  return vec4f(col * cover, cover) + under * (1.0 - cover);
+  var col = vec4f(0.0);
+  if (k > 0.0) { col = vec4f(tray_arris(ht, u, t, p, o, bn.y), 1.0); }
+  if (k < 1.0) {
+    var b = tray_board(ht, u, t, p, bn.y);
+    // the edge's INNER SHADOW (D-R1.2): the window's lip over the board on the lamp's side — black at up to `shape.z`, fading over
+    // `shape.w` px inside the edge, where the outline faces the lamp (the push of the drawer's lamp shadow points away from it)
+    if (t.shape.z > 0.0 && -o - t.shape.y < t.shape.w) {
+      let e = 0.5;
+      let g = normalize(vec2f(tray_outline(t, p + vec2f(e, 0.0)) - tray_outline(t, p - vec2f(e, 0.0)), tray_outline(t, p + vec2f(0.0, e)) - tray_outline(t, p - vec2f(0.0, e))) + vec2f(1.0e-6, 0.0));
+      let facing = max(dot(g, -normalize(t.shadow.zw)), 0.0);
+      let sh = t.shape.z * facing * (1.0 - smoothstep(0.0, t.shape.w, -o - t.shape.y));
+      b = vec4f(b.rgb * (1.0 - sh), 1.0 - (1.0 - b.a) * (1.0 - sh));
+    }
+    col = mix(b, col, k);
+  }
+  return col * cover + under * (1.0 - cover);
 }
 
 // ---- the accessories (K5a): what the specimens hang on, plugged into real holes — SKÅDIS's hook, shelf, clip and rail seen head-on, in
