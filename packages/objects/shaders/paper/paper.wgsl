@@ -136,8 +136,13 @@ fn shade_paper(P: Paper, u: MatUniforms, k: PaperUniforms, p: vec2f, px: f32, cs
     let edge = P.wipe.x + P.marks.x * (P.wipe.z - P.wipe.x + k.knobs.y);
     ink *= 1.0 - smoothstep(edge - k.knobs.y, edge, nq.x);
   }
-  // K7b: the greeked lines in the raster's place — crossfaded within the band, alone under it (where no raster is held)
-  if (far > 0.0 && P.greek.z > 0.5) { ink = mix(ink, paper_greek(P, k, nq, px), far); }
+  // K7b: the greeked lines in the raster's place — crossfaded within the band, alone under it (where no raster is held).
+  // K9 R6: and held at FULL while the sheet holds no raster at any size (`layer < 0` — its ink is on the frame queue's way, or
+  // was let go at far and not yet laid on the way back): the greek stands in for the writing until the raster lands, never a
+  // blank sheet. The fibre keeps the band's word (`fine`): the paper's grain is the size's, not the raster's.
+  var greeked = far;
+  if (P.layer < 0 && P.greek.z > 0.5) { greeked = 1.0; }
+  if (greeked > 0.0 && P.greek.z > 0.5) { ink = mix(ink, paper_greek(P, k, nq, px), greeked); }
   albedo = mix(albedo, P.ink.xyz, ink * P.ink.w);
   // the lamp's shading, in the display's own gamma (the mat's law: a linear multiply shows as shade^(1/2.2))
   albedo = albedo * pow(max(diffuse, 0.0), 1.0 / 2.2);

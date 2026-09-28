@@ -71,8 +71,15 @@ export const DESK = [
   { x: 985, y: 555, w: 250, h: 190, name: "Reading list", inside: insideD },
   { x: 1120, y: 745, w: 170, h: 140, name: "Empty", inside: { notes: [], minimats: [] } },
 ];
-// (the desk's own notes carry no text: the oracle renders none, so a written one would read blank here and in the hand in Chrome)
+// (the desk's own notes carry no text: the oracle renders none, so a written one would read blank here and in the hand in Chrome.
+// The first stands for a WRITTEN note — its greek stated — whose ink is never laid: at far it greeks (K7b's zoom and nav
+// goldens), and since K9 R6 at ANY size while it holds no raster, so the desk-z1, near-z2.2, far-z0.35, selected-held, chain and
+// nav-enter-p0 stills show its greek at full where they showed a blank sheet; the second carries no greek — a blank sheet at every size)
 export const deskNotes = [note(700, 610, 23), note(640, 80, 27, { greek: undefined })];
+// K9 R6 — THE PENDING RASTER: a written note (its greek stated, as the desk states it from the layout) whose ink is not laid —
+// on the frame queue's way, or let go at far and not yet back — draws its greek at FULL at any size, never a blank sheet; the
+// blank note beside it (no greek) is the contrast. Before K9 R6 the first sheet read blank at zoom 1 (far = 0 above 64 CSS px).
+ORACLE_SCENES.push({ name: "paper-greek-pending-z1", scene: { ...paperBase, zoom: 1, notes: [{ x: 300, y: 250, seed: 7, text: "", greek: greek3 }, { x: 560, y: 330, seed: 11, text: "" }] } });
 const mmBase = { ...base, theme: "light", mat: matStill, camX: 0, camY: 0 };
 export const MINIMAT_SCENES = [
   { name: "minimat-desk-z1", sealed: true, lod: true, scene: { ...mmBase, zoom: 1, minimats: DESK, notes: deskNotes } },
