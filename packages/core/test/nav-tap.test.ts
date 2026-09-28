@@ -42,14 +42,16 @@ function rig() {
   const inner = ce.ops.spawnWidget("navtap:box", { x: 10, y: 10, w: 50, h: 50, parent: folder, undoable: false });
   ce.world.sync();
   step(5);
-  const mouse = (kind: "down" | "move" | "up", x: number, y: number, buttons: number): void => {
-    ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: NO_MODS });
+  const mouse = (kind: "down" | "move" | "up", x: number, y: number, buttons: number, tMs?: number): void => {
+    ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: NO_MODS, ...(tMs !== undefined ? { tMs } : {}) });
   };
-  /** One instant tap: down on one tick, up on the next. */
-  const tap = (x: number, y: number): void => { mouse("move", x, y, 0); step(); mouse("down", x, y, 1); step(); mouse("up", x, y, 0); step(); };
+  /** One instant tap: down on one tick, up on the next — `tMs` the down EVENT's own time (the adapter's `e.timeStamp`), when the test gives one. */
+  const tap = (x: number, y: number, tMs?: number): void => { mouse("move", x, y, 0); step(); mouse("down", x, y, 1, tMs); step(); mouse("up", x, y, 0); step(); };
+  /** The main thread stalled for `ms`: the next frame's `now` jumps by it (the events meanwhile keep their own times). */
+  const stall = (ms: number): void => { now += ms; ce.step(now); };
   const depth = () => ce.nav.depth();
   const flight = () => ce.world.getResource(NavTransition);
-  return { ce, world: ce.world, step, tap, depth, flight, folder, inner };
+  return { ce, world: ce.world, step, tap, stall, depth, flight, folder, inner };
 }
 
 describe("the double-tap (design-015 §9, D-D2b.1)", () => {
@@ -108,6 +110,21 @@ describe("the double-tap (design-015 §9, D-D2b.1)", () => {
     // and the memo is that last tap: a tap back at (450, 300) pairs with it
     r.tap(450, 300);
     expect(r.depth()).toBe(1);
+  });
+
+  it("the pair is judged on the taps' OWN times (K9 S6 — K-H's product call): two taps 110 ms apart by their events with a 400 ms main-thread stall between them still fly in; two taps 400 ms apart by their events on adjacent frames do not (control)", () => {
+    const r = rig();
+    r.tap(400, 300, 5000);
+    expect(r.depth()).toBe(0);
+    r.stall(400);   // the frames' now 400+ ms apart — past the window; the events 110 apart
+    r.tap(400, 300, 5110);
+    expect(r.depth()).toBe(1);
+    expect(r.flight()?.kind).toBe("enter");
+    // control: back at the root, two taps whose EVENTS are 400 ms apart though their frames are adjacent — a fresh first tap, not the gesture
+    const r2 = rig();
+    r2.tap(400, 300, 6000);
+    r2.tap(400, 300, 6400);
+    expect(r2.depth()).toBe(0);
   });
 });
 

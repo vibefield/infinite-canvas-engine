@@ -19,8 +19,9 @@ import type { Entity, System, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem, field } from "@vibecook/strata-ecs";
 import { CanvasSurface } from "../catalog/camera-derived";
 import { HeldIntent } from "../catalog/desk";
-import { Captures, Down, DownPart, GesturePhases as P, Tap } from "../catalog/gesture";
+import { Captures, Down, DownPart, GesturePhases as P, Tap, Watches } from "../catalog/gesture";
 import { Container } from "../catalog/graph";
+import { PointerButtons } from "../catalog/pointer";
 import { GestureSettings } from "../catalog/settings-resources";
 import { FrameInfo } from "../engine/frame-info";
 import { currentNavEntry } from "../nav/nested-canvas";
@@ -79,7 +80,14 @@ export function createNavTap(world: World, opts: NavTapOpts = {}): System {
         const gs = world.getResource(GestureSettings);
         const windowMs = gs?.multiTapWindowMs ?? GESTURE_DEFAULTS.multiTapWindowMs;
         const slopPx = gs?.multiTapSlopPx ?? GESTURE_DEFAULTS.multiTapSlopPx;
-        const now = world.getResource(FrameInfo)?.now ?? down.ms;
+        // The tap's time is its down EVENT's own (K9 S6 — K-H's product call): the pointer this recognizer watches carries
+        // `PointerButtons.downMs` = the adapter's `e.timeStamp` (l0-input), kept through the release — so a main-thread stall
+        // between two taps (their frames 400 ms apart, their events 110) still pairs them, and two events 400 ms apart on adjacent
+        // frames do not. 0 (a synthetic input with no time) falls back to the frame's `now`; never the frame CLOCK (its dt is
+        // clamped, and the loop sleeps between taps — taps seconds apart could pair).
+        const watched = ctx.getRelations(rec, Watches)[0];
+        const downMs = watched !== undefined && ctx.isAlive(watched) ? (ctx.get(watched, PointerButtons)?.downMs ?? 0) : 0;
+        const now = downMs !== 0 ? downMs : (world.getResource(FrameInfo)?.now ?? down.ms);
         const memo = world.getResource(NavTapMemo);
         const seq = (memo?.seq ?? 0) + 1;
         const pairs =

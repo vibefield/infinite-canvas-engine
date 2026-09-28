@@ -61,15 +61,17 @@ function rig() {
   let now = 1000;
   const step = (n = 1): void => { for (let i = 0; i < n; i++) { now += 16; ce.step(now); } };
   step(5);
-  const mouse = (kind: "down" | "move" | "up", x: number, y: number, buttons: number, mods: InputMods = NO_MODS): void => {
-    ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods });
+  const mouse = (kind: "down" | "move" | "up", x: number, y: number, buttons: number, mods: InputMods = NO_MODS, tMs?: number): void => {
+    ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods, ...(tMs !== undefined ? { tMs } : {}) });
   };
+  /** The main thread stalled for `ms`: the next frame's `now` jumps by it (the events meanwhile keep their own times). */
+  const stall = (ms: number): void => { now += ms; ce.step(now); };
   const wheel = (x: number, y: number, w: { dx?: number; dy?: number; pinch?: number }, mods: InputMods = NO_MODS): void => {
     ce.stack.queue.enqueue({ kind: "wheel", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: 0, mods, wheel: { dx: w.dx ?? 0, dy: w.dy ?? 0, pinch: w.pinch ?? 0 } });
     step();
   };
-  /** One instant tap: down on one tick, up on the next. */
-  const tap = (x: number, y: number): void => { mouse("move", x, y, 0); step(); mouse("down", x, y, 1); step(); mouse("up", x, y, 0); step(); };
+  /** One instant tap: down on one tick, up on the next — `tMs` the down EVENT's own time (the adapter's `e.timeStamp`), when the test gives one. */
+  const tap = (x: number, y: number, tMs?: number): void => { mouse("move", x, y, 0); step(); mouse("down", x, y, 1, NO_MODS, tMs); step(); mouse("up", x, y, 0); step(); };
   const drag = (from: readonly [number, number], to: readonly [number, number], mods: InputMods = NO_MODS): void => {
     mouse("move", from[0], from[1], 0, mods); step();
     mouse("down", from[0], from[1], 1, mods); step();
@@ -90,7 +92,7 @@ function rig() {
   const held = () => ce.world.hasTag(book, Held);
   const view = () => ce.world.get(book, HeldView);
   const pointer = (): Entity | undefined => ce.world.firstOf(pointerQ);
-  return { ce, world: ce.world, step, mouse, wheel, tap, drag, cam, held, view, pointer, book, note, folder, FRAME, setSettled: (s: boolean) => { settled = s; }, clock: () => now };
+  return { ce, world: ce.world, step, stall, mouse, wheel, tap, drag, cam, held, view, pointer, book, note, folder, FRAME, setSettled: (s: boolean) => { settled = s; }, clock: () => now };
 }
 
 describe("ops.open / ops.putDown — the one writer of Held (design-015 §8)", () => {
@@ -282,6 +284,21 @@ describe("the ways back by pointer, and the pointer in the object's frame", () =
     r.tap(400, 300);
     r.tap(400, 300);
     expect(r.held()).toBe(false);
+  });
+
+  it("two taps on the object pair on the taps' OWN times (K9 S6): a 400 ms main-thread stall between two taps 110 ms apart by their events still puts it down; two taps 400 ms apart by their events on adjacent frames do not (control)", () => {
+    const r = rig();
+    r.ce.ops.open(r.book);
+    r.step();
+    r.tap(400, 300, 5000);
+    r.stall(400);
+    r.tap(400, 300, 5110);
+    expect(r.held()).toBe(false);
+    r.ce.ops.open(r.book);
+    r.step();
+    r.tap(400, 300, 6000);
+    r.tap(400, 300, 6400);
+    expect(r.held()).toBe(true);
   });
 
   it("the pointer is mapped through the pose the renderer drew: the object's units, centred, and an inside verdict", () => {

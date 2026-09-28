@@ -206,9 +206,14 @@ export function createHeldInput(world: World, opts: { readonly pose: HeldPoseSlo
               else if (pr.kind === "object") {
                 // two instant taps on the object: the notebook's case, generalised (its parts are D3t's)
                 const memo = world.getResource(HeldTapMemo);
-                const pairs = memo !== undefined && memo.seq > 0 && now - memo.at <= windowMs && Math.hypot(s.x - memo.x, s.y - memo.y) <= slopPx;
+                // the tap's time is its down EVENT's own — `PointerButtons.downMs`, the adapter's timestamp, kept through the release
+                // (K9 S6 — K-H's product call): a main-thread stall between two taps does not unpair them; the frame's `now` is the
+                // fallback for an input with no time, and the frame CLOCK is never it (clamped dt; the loop sleeps between taps)
+                const downMs = ctx.get(p, PointerButtons)?.downMs ?? 0;
+                const at = downMs !== 0 ? downMs : now;
+                const pairs = memo !== undefined && memo.seq > 0 && at - memo.at <= windowMs && Math.hypot(s.x - memo.x, s.y - memo.y) <= slopPx;
                 if (pairs) { putDown = true; world.setResource(HeldTapMemo, { x: 0, y: 0, at: 0, seq: 0 }); }
-                else world.setResource(HeldTapMemo, { x: s.x, y: s.y, at: now, seq: (memo?.seq ?? 0) + 1 });
+                else world.setResource(HeldTapMemo, { x: s.x, y: s.y, at, seq: (memo?.seq ?? 0) + 1 });
               }
             }
             ctx.removeComponent(p, HeldPress);
