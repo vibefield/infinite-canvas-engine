@@ -101,6 +101,7 @@ try {
   watchPage(tab, logs);
   await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
   for (let i = 0; i < 200; i++) { await tab.send("Page.bringToFront"); if (await tab.evaluate("typeof window.__desk === 'object' && window.__desk.state.ready", { timeoutMs: 20000 })) break; await sleep(200); }
+  await tab.evaluate("window.__desk.bar(false)", { timeoutMs: 20000 });   // design-018 §5 (R2): its pixels are the renderer's alone — the tray's bar hidden
   await tab.send("Page.bringToFront");
   const q = (js) => tab.evaluate(js, { timeoutMs: 20000 });
   const scene = (s) => tab.evaluate(`window.__desk.setScene(${JSON.stringify(s)}).then(() => window.__desk.settle(6000))`, { awaitPromise: true, timeoutMs: 60000 });
@@ -131,9 +132,10 @@ try {
     saved: await q("(() => { const s = localStorage.getItem('ice-desk-panel'); return s === null ? null : JSON.parse(s).ruler.on; })()"),
   });
   const menuState = () => q(`(() => { const m = document.querySelector("[data-ice-selection-menu]"); if (!m || m.dataset.visible !== "true") return null; const b = m.firstElementChild.getBoundingClientRect(); return { below: m.dataset.below === "true", y0: b.top, y1: b.bottom }; })()`);
+  // a reload is a fresh page: the tray's bar shows again until it is hidden again (design-018 §5)
   const reboot = async () => {
     await tab.send("Page.reload");
-    for (let i = 0; i < 200; i++) { await tab.send("Page.bringToFront"); if (await tab.evaluate("typeof window.__desk === 'object' && window.__desk.state.ready", { timeoutMs: 20000 })) return true; await sleep(200); }
+    for (let i = 0; i < 200; i++) { await tab.send("Page.bringToFront"); if (await tab.evaluate("typeof window.__desk === 'object' && window.__desk.state.ready", { timeoutMs: 20000 })) { await tab.evaluate("window.__desk.bar(false)", { timeoutMs: 20000 }); return true; } await sleep(200); }
     return false;
   };
 

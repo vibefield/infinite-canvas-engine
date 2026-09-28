@@ -144,6 +144,8 @@ async function bootTab(query, logs) {
   // the witness is the RENDERER's frame: the screen-space selection menu (DOM over the canvas — D4a) is not part of it, and a
   // scene with a selection would put its ink pill and shadow in the capture
   await tab.evaluate("document.head.insertAdjacentHTML('beforeend', '<style>[data-ice-selection-menu]{display:none!important}</style>')", { timeoutMs: 20000 });
+  // …and so is the tray's bar at the view's foot (design-018 §5, R2 — DOM over the canvas, always there): hidden through the desk's door
+  await tab.evaluate("window.__desk.bar(false)", { timeoutMs: 20000 });
   const boot = await tab.evaluate("window.__desk ? { available: window.__desk.handle.available(), status: window.__desk.handle.status().state, vp: window.__desk.viewport(), iso: crossOriginIsolated } : null", { timeoutMs: 20000 });
   console.log(`chrome ${chrome.version.Browser} · desk boot: ${fail ? `FAIL ${fail}` : "ok"} · ${JSON.stringify(boot)}${logs.length ? `\n  ${logs.slice(0, 5).join("\n  ")}` : ""}`);
   if (fail) throw new Error("boot failed");

@@ -38,6 +38,7 @@ try {
   watchPage(tab, logs);
   await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
   for (let i = 0; i < 200; i++) { await tab.send("Page.bringToFront"); if (await tab.evaluate("typeof window.__desk === 'object' && window.__desk.state.ready", { timeoutMs: 20000 })) break; await sleep(200); }
+  await tab.evaluate("window.__desk.bar(false)", { timeoutMs: 20000 });   // design-018 §5 (R2): its pixels are the renderer's alone — the tray's bar hidden
   await tab.send("Page.bringToFront");
   const q = (js) => tab.evaluate(js, { timeoutMs: 15000 });
   const settle = () => tab.evaluate("window.__desk.settle(6000)", { awaitPromise: true, timeoutMs: 20000 });

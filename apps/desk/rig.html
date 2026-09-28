@@ -7,13 +7,16 @@
 <link rel="icon" href="data:," />
 <style>
   /* The desk fills the window: one WebGPU canvas under the camera (the desk layer's), the DOM only in
-     screen space — nothing over it by default, so a rig's capture is the canvas alone. The product's
-     mono stack is the token the rulers' glyph atlas reads (DESIGN.md §3 `--vf-font-mono`). */
+     screen space — over it by default only the tray's bar at the view's foot (design-018 §5), which a rig
+     holding the page's pixels to the renderer's hides (`__desk.bar(false)` — the rule below), so its capture
+     is the canvas alone. The product's mono stack is the token the rulers' glyph atlas reads (DESIGN.md §3
+     `--vf-font-mono`). */
   :root { --vf-font-mono: ui-monospace, "SF Mono", Menlo, Consolas, monospace; --vf-canvas-bg: #fafafa; }
   :root[data-theme="dark"] { --vf-canvas-bg: #171717; }
   html, body, #root { margin: 0; height: 100%; overflow: hidden; background: var(--vf-canvas-bg); }
   #fail { position: fixed; inset: 0; display: grid; place-items: center; padding: 32px; font: 400 13px/1.6 ui-monospace, Menlo, monospace; color: white; background: black; text-align: center; white-space: pre-wrap; z-index: 9; }
   #fail[hidden] { display: none; }
+  :root[data-tray-bar="hidden"] [data-ice-tray-bar] { display: none; }
 </style>
 </head>
 <body>
