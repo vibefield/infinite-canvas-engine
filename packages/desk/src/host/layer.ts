@@ -34,7 +34,7 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, closeTray, type Entity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type MenuActionDef, type NavFace, type NavGeometrySlot, NavTransition, openTray, PrefabId, type PresentationTransitionAdapter, type ReflectorDef, scrollTray, selectedEntities, toggleTray, Tray, trayEntity, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, closeTray, type Entity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type MenuActionDef, type NavFace, type NavGeometrySlot, NavTransition, openTray, PrefabId, type PresentationTransitionAdapter, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
 import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin, type SpatialSource } from "../compose/builder";
@@ -242,6 +242,26 @@ export interface TrayCarriedSeen {
   readonly zoom: number;
 }
 
+/**
+ * Where the tray's BAR is placed from (design-018 §5 — `<TrayBar>`, @ice/react, reads it structurally): the drawer as the last frame
+ * DREW it — its outline's top-left and width, its slide — the view, the hand, and the category model its chips show. A fact the bar
+ * follows is never a pixel it guesses: the pill rides `drawer.y` exactly, frame by frame.
+ */
+export interface TrayBarAnchor {
+  /** The drawer is out (the fact: its slide may still be on its way). */
+  readonly open: boolean;
+  /** The drawer's outline as drawn this frame (CSS px; its bottom runs on under the view) and its slide — null before its first frame, or while a pin hides it. */
+  readonly drawer: { readonly x: number; readonly y: number; readonly w: number; readonly p: number } | null;
+  readonly view: { readonly width: number; readonly height: number };
+  /** An object is IN HAND (not flying home): the selection menu has the view's foot — the bar steps aside. */
+  readonly held: boolean;
+  /** How many entries the drawer's frame hangs, every category (0: nothing to offer here — the bar steps aside). */
+  readonly entries: number;
+  /** The category the drawer shows ("" all) and the categories its frame hangs, in the lay's order (design-018 §6). */
+  readonly category: string;
+  readonly categories: readonly TrayCategory[];
+}
+
 export interface DeskTrayDoor {
   /** Open the drawer: refused (false) while an object is in hand; gestures in flight cancel. */
   open(): boolean;
@@ -255,6 +275,20 @@ export interface DeskTrayDoor {
   state(): TrayFluxState & { readonly frame: TrayScreenFrame | undefined; readonly laid: TrayLaid | null; readonly specimens: readonly TraySpecimenSeen[]; readonly tags: number; readonly slots: number; readonly carried: readonly TrayCarriedSeen[]; readonly presented: readonly number[] };
   /** Pin the drawer for a still — the slide, the lift, the band, or hidden; `null` unpins. */
   pin(pin: TrayPin | null): void;
+  /**
+   * design-018 §6 — the category the drawer shows ("" all): set when given (core's `setTrayCategory` — the lay lays only its
+   * entries, the board starts at its top, and it falls back to all when the frame hangs none of it), and returned.
+   */
+  category(id?: string): string;
+  /** design-018 §6 — the categories the drawer's frame hangs, in the lay's order: each its id, its label and its count (a host's chips). */
+  categories(): readonly TrayCategory[];
+  /** design-018 §5 — what the bar is placed from, as of the last frame drawn. */
+  anchor(): TrayBarAnchor;
+  /**
+   * design-018 §5 — tell `listener` after each frame that moved what `anchor()` says: the drawer as drawn (its slide, frame by frame),
+   * open or shut, the category or the categories, the hand, the entries, the view. Never at rest: no frame, no call.
+   */
+  subscribe(listener: () => void): () => void;
 }
 
 export interface DeskLayerHandle {
@@ -521,8 +555,32 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       published = key;
       for (const l of [...listeners]) l();
     };
+    // the tray bar's source (design-018 §5): the drawer as the last frame drew it, and what its chips show — published after each frame
+    // that moved it, as the menu's anchor is (the slide is drawn frame by frame, so the bar rides it exactly; at rest nothing is drawn)
+    const trayAnchorOf = (): TrayBarAnchor => {
+      const f = compose.tray.frame();
+      const vp = world.getResource(Viewport);
+      const h = builder.hand();
+      return {
+        open: trayOpen(world),
+        drawer: f === undefined ? null : { x: f.x, y: f.y, w: f.w, p: f.p },
+        view: { width: vp?.w ?? 0, height: vp?.h ?? 0 },
+        held: h !== undefined && !h.landing,
+        entries: trayEntryCount(world),
+        category: trayCategory(world),
+        categories: trayCategories(world),
+      };
+    };
+    const trayListeners = new Set<() => void>();
+    let trayPublished = "";
+    const publishTray = (): void => {
+      const key = JSON.stringify(trayAnchorOf());
+      if (key === trayPublished) return;
+      trayPublished = key;
+      for (const l of [...trayListeners]) l();
+    };
     const compose = createDeskReflector({
-      onFrame: publish,
+      onFrame: () => { publish(); publishTray(); },
       world, builder, kinds: objectKinds, ambient,
       ground: () => ground,
       attach: { resize: (w, h) => { if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; } } },
@@ -866,12 +924,20 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           presented: [...compose.carry.presented()],
         }),
         pin(pin) { compose.tray.pin(pin); compose.wake("pin"); },
+        category(id) {
+          if (id !== undefined) setTrayCategory(world, id);
+          return trayCategory(world);
+        },
+        categories: () => trayCategories(world),
+        anchor: () => trayAnchorOf(),
+        subscribe(listener) { trayListeners.add(listener); return () => { trayListeners.delete(listener); }; },
       },
       dispose() {
         disposed = true;
         stopWake?.();
         stopText?.();
         listeners.clear();
+        trayListeners.clear();
         statusHeard.clear();
         for (const d of drivers.values()) d.dispose?.();   // the calendar's disposes its DOM half
         editor.dispose();
