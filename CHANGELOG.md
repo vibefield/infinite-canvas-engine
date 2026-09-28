@@ -1325,6 +1325,41 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
   tool on that letter the current canvas allows — on the desk `v` and `c` threw "not legal in the current CanvasType" and `h` left
   it in pan for good; `desk.select` now answers `v`.
 
+<!-- design-016 K9 — the fix wave, FW-B: the app's lifetime and the docs (2026-09-28) -->
+- **`<Desk onReady>` may return a cleanup** (K9 surface S1, P1): under StrictMode the discarded first mount's side effects
+  ran on — a second room join (the black fail screen under `?room=`), a second paste/drop listener (one paste made two
+  prints), a glyph `feed()` rAF loop at 60/s for ever. `onReady` is now typed `void | (() => void)` (React's effect shape);
+  apps/desk cancels its feed, undoes its listeners and joins its room once per engine. `rig:lifetime` (a Vite DEV server,
+  StrictMode on) joins `gate:landing` — eighteen rigs.
+- **A pinned theme holds** (S5, pre-M21): the theme control was made on every render, leaking `prefers-color-scheme`
+  listeners that flipped a `d`-pinned theme back at the OS's dusk/dawn switch; made once, its listener in an effect.
+- **`DeskLayerHandle.onStatus(listener)`** (S9): a device lost after boot now says "the GPU was lost — reload" instead of a
+  blank page; with no WebGPU the fail screen shows the message, the stack goes to the console (S14).
+- **A `tick` without `due` is said once** (law #2): a kind local that ticks but never says when it is next due keeps the desk
+  awake for ever — a once-per-page notice; the API reference's plugin-parity list gains `KindLocal.due`, `KindHost.wake`,
+  `KindPass.idleAt` and what each costs if missing. check-docs reads the rig count from the gate script.
+
+<!-- design-016 K9 — the fix wave, FW-C: the tray (2026-09-28) -->
+- **The drawer cancels a take only where it is DRAWN** (K9 surface S2, P1): after the hand-off the drawer's full open rect
+  stayed a no-drop zone although it had slid away — 44 % of the view refused new objects; a release now cancels only over
+  the drawer as drawn while it still slides (D-K9-c.1). The wheel stays the tray's until quiet after a close (S7 — a flick's
+  momentum no longer zooms the desk); the scroll clamps when its range moves (S10, D-K9-c.2); the band lets go on a fading
+  tail (S11, D-K9-c.3: 1,250 → 33 ms pulled on a fling); grab/grabbing cursors (S12); the drawer hangs only what the current
+  frame takes (S13 + law #3, D-K9-c.4 — skipped, not dimmed); rig:two-tab opens the drawer in a `?room=` session.
+
+<!-- design-016 K9 — the fix wave, FW-D: residency and the renderer (2026-09-28) -->
+- **Whiteboards past the thumbnail array's layer cap no longer vanish** (K9 render R1, P1): the device asks for the adapter's
+  `maxTextureArrayLayers`; a board past the cap borrows a spared layer or is drawn bare and counted in `dropped`.
+- **A plugin card material that will not compile is left out of the flat card, said once — never the desk down** (R3, P1).
+- **The thumbnail arrays RESIDE in the budget at what is in use** (R2, D-K9-d.1): charged at capacity, kept and never shrunk,
+  they had filled the 256 MB budget in the gate's own scene — no picture detail was ever fetched and every other cache was
+  evicted each tick; now `used × chain`, outside the LRU, the caches' room `cap − resident` floored at a quarter, an emptied
+  array let go (the gate's scene builds details again). A carried print or board un-slots nothing (R4, D-K9-d.2: a `hand`
+  render target); a written note holding no raster shows its greek at any size (R6, D-K9-d.3 — 23 stills re-blessed, one
+  added: golden 112); between-frame GPU work is its own profiler frame (R7); rig:scale's memory rows are checks (R5).
+- **An on-screen whiteboard past the raster pool no longer re-asks a raster every frame** (D-K9-d.4, found by the fix
+  wave's own gate on a quiet host — K6a/K6b's residency: made, never bound, evicted, asked again; 17,149 → 171 evictions).
+
 ## [0.13.0] — 2026-09-07
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and

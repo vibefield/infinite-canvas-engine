@@ -1496,7 +1496,7 @@ with JS ≤ 2 ms/frame; no `three`, no DOM under the camera anywhere (grep + dep
   across FW-B and FW-A. NOT MET and owed: §11.4's idle main-thread ≤ 0.1 ms/s (2.07–2.56 measured — registered wakes); a
   relation-only reparent leaves `Selected`/`Held` standing; a kind-declared input lease behind the seam's two DOM exceptions.
 
-## M21 — The kit and the pegboard (design-016) — **IN BUILD (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a, K5a, K6b, K5b and K7a LANDED 2026-09-27 · K-H, K8a, K7b and K8b LANDED 2026-09-28)**
+## M21 — The kit and the pegboard (design-016) — **LANDED (planned 2026-09-26 · K1, K2, K4a, K3, K4b, K6a, K5a, K6b, K5b and K7a LANDED 2026-09-27 · K-H, K8a, K7b, K8b and K9 — the review and its four fix builders — LANDED 2026-09-28; the 0.14.0 release cut, now carrying M20 and M21, is James's)**
 
 *(Numbering note: next free after M20. James's five asks of 2026-09-26 — "we do need the dynamic rulers, do port them from
 ground demo"; "do we have proper profiler on webgpu part?"; "how is our multi objects performance? are you utilizing best
@@ -1583,8 +1583,28 @@ drawn by the desk, its specimens the kinds' own draws, taking one through core's
   prove it), its own WGSL, a registered wake per second, a tray entry, a menu act, an opening, a chip; mounted in apps/desk;
   the oracle's kind list open (golden 111); `rig:clock` (11) and `dts:check` in the gate. D-K8b.1 records drivers vs
   `defineBehavior`. Graded: ci 0, gate:landing 0 (seventeen rigs).
-- K9 — the review (three lenses, 29 findings, none P0) and its fix wave (FW-A … FW-D): building (design-016 §8; K5, K6,
-  K7 and K8 were each split in two so no builder carries more than its context holds).
+- **K9 — the review and its fix wave** (**LANDED 2026-09-28**): three read-only lenses over `c949a98..7a7602f` (law ·
+  render · surface) — 29 findings, none P0, seven P1 — then four fix builders, each graded and landed in turn: FW-B
+  (`6aa5768` — the app's lifetime under StrictMode, rig:lifetime, the theme, device loss, the fail screen, the plugin-wake
+  docs), FW-A (`2c138fc` — the desk inert to the pick under the drawer, the app's keys, Tab, the double-tap on the events'
+  own times, the tool letters), FW-D (`6a0c66f` — the layer cap, the thumbnail residency, card isolation, the carry, far→near,
+  and a board re-asking a raster every frame, found by its own gate), FW-C (the tray: the drop zone as drawn, the wheel
+  latch, the scroll clamp, the band, cursors, refused kinds, a room row). `gate:landing` is eighteen rigs + `pack:audit` +
+  `dts:check`.
+
+**M21 as landed.** James's five asks, answered: the rulers print on the product's desk (K1); the WebGPU desk has a GPU
+profiler in `@ice/devtools` (K2); many objects draw as instanced runs — one flat-card pipeline composed from the kinds'
+own materials, residency under one budget, a far LOD, zoom without a stall, a desk that sleeps at rest (K4a, K6a, K6b, K7a,
+K7b); the engine is an SDK the six built-ins are only the first users of — the public render kit, `@ice/objects` compiled
+against the published entries alone, plugin parity for every seam, and a third-party desk clock in its own package (K4a,
+K4b, K8a, K8b); the widget tray is his SDF pegboard — a drawer drawn by the desk, the kinds hanging on it, taken off by a
+drag (K3, K5a, K5b). Still MISSED and owed: rig:scale's pan JS ≤ 2 ms and the budget at the full 10,000 (board thumbnails
+at scale); a pan's allocation ≤ 64 KiB (223–237 KB/frame); rig:stress's queue-turn row (:832) not yet load-proof; a 10k
+rig:scale run under the new rows; a picture that never loads is not marked (D-K9-b.3); a taken print is blank (D-K5b.6);
+rig:tray over 60 s on this host; strata's durable ChildOf placement O(n²) (a petition); a Loro wasm `unreachable` on a 5th
+re-stage of 3,000 objects. James's calls: the tray key `a`, the desk inert under the drawer, drag-out only, the drawer's
+size, the lip; the label tape vs the chips (`TRAY_TAG_STYLE`); the card ON by default (D-K7b.2); a tray clock shows the
+shop's 10:10:30 and jumps to live time at the hand-off (D-K8b.4); RULER.md's seven calls as built; and M20's five.
 
 **Exit:** design-016 §6's gates on `rig:stress` and a new `rig:scale` (10,000 objects, mixed order, real pictures) with
 the load beside every number; the committed golden byte-identical through every refactor; every built-in kind compiling
