@@ -1611,7 +1611,7 @@ the load beside every number; the committed golden byte-identical through every 
 against the public entries alone and a third-party kind in its own package on the desk and in the tray; the tray's
 witnesses (design-017 §10); ci + `gate:landing` exit 0 on every landing, graded by the orchestrator on the exact SHA.
 
-## M22 — The tray, refined (design-018) — **LANDED 2026-09-28 (R2, then R1 rebased over it, then R3 — the holes' fade; the 0.14.0 release cut, now carrying M20, M21 and M22, is James's)**
+## M22 — The tray, refined (design-018) — **LANDED 2026-09-28 (R2, then R1 rebased over it, then R3 — the holes' fade — and R4 — the header; the 0.14.0 release cut, now carrying M20, M21 and M22, is James's)**
 
 James's visual refine round on M21's pegboard tray (2026-09-28, verbatim in design-018 §0): the border "too thick and
 unnatural"; no finger notch — "we should have a dom button that toggles this tray, let's keep things simple"; a "subtle
@@ -1646,6 +1646,15 @@ dts:check — all exit 0).
   by `w`; its fillet flattens by the same share), so the board is whole at the edge; D-R1.7's row peeking under the edge at rest is
   gone with it. rig:tray (e) reads the opening 0.13 · 0.41 · 0.72 · 0.95 at 6 · 12 · 18 · 24 px against the ramp's 0.12 · 0.39 ·
   0.71 · 0.94 (R1's shader: 1.00 throughout); the five tray stills re-blessed again, the other 107 byte-identical.
+- **R4 — the header** (**LANDED 2026-09-28**, `72bfd23`, rebased over R3's record; James: "make the fade stronger and more gap,
+  and design the filters nicely at that empty safe top space instead"): a CLEAR band `DRAWER.header` 48 px under the edge where no
+  specimen, accessory, tag or hole shows, then the content fades in over `DRAWER.fade` 32 (the face clip starts at the band's foot
+  with its feather; the tray's `fade` uniform carries (F, H) for the holes and the accessories; the tags' ramp likewise); the lay's
+  first line at 2 pitches (kernel `TRAY_SPACING.top` 0.5 → 2), so nothing laid is faded at rest; the pose seam carries `head`, so
+  core never picks a specimen hidden under it (D-R4.3). The filters leave the pill for the band as LABEL TAPE — the specimens' own
+  tag language (`MARKS.label`), centred, the chosen one cream tape, dimmed by night as the GPU tags are (D-R4.5) — and the pill
+  stays the drawer's handle ("Objects" / "× Objects"). rig:tray 72/0: the fade's quarters from the band's foot, the holes' opening
+  0 through it then the ramp (0.16 · 0.51 · 0.86 against 0.16 · 0.50 · 0.84), the chips inside the band by their rects, a rest row.
 
 **M22 as landed.** The five asks: the border is a board's edge, not a frame; the notch and the lip are gone and a DOM
 pill toggles the drawer; content dissolves into the board at the top edge; the holes show the cutting mat under the board
