@@ -338,8 +338,9 @@ fn tray_board(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, no
 
 // One pixel of the tray UNDER its specimens (`frag` in device px), the view whole: the dim over the desk, the drawer's shadows on it,
 // the board to the outline and its edge — premultiplied, each pixel drawn once. The board scrolls under its edge (the drawer is a
-// window onto it): a hole running under the top edge is covered by the arris there, whose line runs on unbroken. The specimens hang
-// over the board inside the edge (their face clip, tray/specimens.ts `faceClip`), so nothing is laid over the board after them.
+// window onto it): under the top edge its HEADER is plain face (design-018 R4 — no hole opens there; `tray_board`), so the arris's line
+// runs on unbroken. The specimens hang over the board inside the edge and under the header (their face clip, tray/specimens.ts
+// `faceClip`), so nothing is laid over the board after them.
 fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_2d<f32>, noise_samp: sampler, ht: texture_2d<f32>) -> vec4f {
   let dpr = t.view.z;
   let p = frag / dpr;

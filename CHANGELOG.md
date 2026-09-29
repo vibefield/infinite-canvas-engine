@@ -20,7 +20,8 @@ gates, and the pegboard widget tray. Its blocks below are headed `design-016 K<n
 
 **design-018 — the tray, refined (M22), LANDED; the same 0.14.0 cut.** James's visual round on the pegboard tray: the
 board's edge in place of the cream rim, the holes seeing the desk under the board, specimens fading at the top edge, the
-notch and the lip retired for a DOM `<TrayBar>`, and category filters. Its blocks below are headed `design-018 R1/R2`.
+notch and the lip retired for a DOM `<TrayBar>`, and category filters — then (R4) a clear header under the edge, a longer
+fade below it, and the filters as label tape on the header. Its blocks below are headed `design-018 R1/R2/R4`.
 
 ### Added
 
@@ -940,6 +941,31 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
     relief flattened by the same share), so the board is whole at the edge and every hole is as punched a band below it; the row
     that peeked 3 px under the edge at rest (D-R1.7) is gone with it. rig:tray (e) reads the opening 0.13 · 0.41 · 0.72 · 0.95 at
     6 · 12 · 18 · 24 px under the edge against the ramp's 0.12 · 0.39 · 0.71 · 0.94; the five tray stills re-blessed again.
+
+<!-- design-018 R4 — the header (2026-09-28) -->
+- **The drawer has a HEADER, and the filters are label tape on it** (design-018 R4 — James: "make the fade stronger and more gap, and
+  design the filters nicely at that empty safe top space instead"):
+  - **A clear band under the edge**: `DRAWER.header` (48 px) under the face's top edge where nothing hangs — no specimen, shadow,
+    accessory or tag — and no hole opens: the plain face. Below it the content and the holes fade in over `DRAWER.fade`, now 32 px
+    (R1's 28 ran from the edge itself). The face's portal clip starts at the header's foot with its feather F (so the scissor and the
+    cull start there too), the tray's `fade` uniform carries (F, H) for `tray_board`'s holes and `tray_accessory`, and the tags' ramp
+    and scissor start at the foot; `contentShown(rect, y)` is the law on the CPU.
+  - **The lay starts below it**: kernel `TRAY_SPACING.top` 0.5 → 2 pitches, so at rest nothing laid is faded (every footprint at
+    ≥ 99 % of the ramp — the desk's test holds the two numbers together). Every line hangs one row (40 px) lower, the scroll's range
+    grows by the same, and the stagger's parity puts the first line half a pitch further left.
+  - **The pose seam carries it**: core `TrayScreenFrame.head` (the flux publishes the arris + the header) — a specimen scrolled under
+    the header is never hovered or taken there; a press there is the board's.
+  - **The chips are LABEL TAPE in the header** (`<TrayBar>`): All · Paper · Surfaces · Things in the specimens' own tag language —
+    the embosser's near-black tape and its raised capitals (the desk's `MARKS.label`; `DESK_TAPE`, custom properties an app
+    re-points as it does the ink), the page's mono stack, 26 px, a top-lit gloss, the capitals embossed, a contact shadow down the
+    tray lamp's direction, a 1 px lift on hover, the brass focus ring — the CHOSEN one cream tape with ink letters. Centred on the
+    drawer and in the band, following the slide and fading in over its last part; past the band's width they scroll inside it, each
+    end fading where more tape lies beyond; by night the tape steps back as the tags do (`TrayAnchor.night`, the theme's), the cream
+    one to the brightness their capitals reach. The pill keeps the handle alone — "Objects" at the foot, "× Objects" riding the edge.
+    `placeTrayBar` returns both islands (`{ y, head }`); `TrayAnchor.drawer.header` says where the band is.
+  - Witnesses: rig:tray (a) and (e) retargeted to the header (nothing in it, the ramp's quarters under it), the bar rows (the chips
+    found in the header by their DOM rects, none in the pill), and a rest row (nothing laid faded; the chips over bare board, at rest
+    and with the first line run up under them); the five tray stills re-blessed, the other 107 scenes byte-identical.
 
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 

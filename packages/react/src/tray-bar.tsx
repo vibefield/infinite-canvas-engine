@@ -109,8 +109,9 @@ export const DESK_TAPE = "--ice-tape:#17181b;--ice-tape-letters-rgb:236 235 228;
 // ---------------------------------------------------------------- the ink (the menu's, `DESK_INK`) and the tape (`DESK_TAPE`)
 
 // The tape by night (`--ice-tb-night`, 0 … 1 — the anchor's, written with the placement) steps back as `tagMarks` has the tags do: the
-// capitals' plastic to 55 % over the tape, the gloss gone, the contact shadow at half; the CREAM tape — no tag to follow — is moonlit as
-// the desk's masking tape is (`MARKS.tape.night`: saturate .3, brightness .46). The shadows fall down the tray lamp's ground direction
+// capitals' plastic to 55 % over the tape, the gloss gone, the contact shadow at half; the CREAM tape — no tag to follow — steps back to
+// the brightness those capitals reach (brightness .6: ≈ 140, still the brightest tape, its ink ≈ 6:1) and loses its colour as the desk's
+// masking tape does by night (`MARKS.tape.night`'s saturate .3). The shadows fall down the tray lamp's ground direction
 // (≈ 0.47, 0.88 — the tags' 0.6, 0.9 px): a contact shadow on the board, and a soft one that grows as a hovered tape lifts 1 px.
 const STYLE = `
 [data-ice-tray-bar]{${DESK_INK};${DESK_TAPE};--ice-tb-night:0;position:absolute;left:0;right:0;top:0;height:0;z-index:19;pointer-events:none;font:500 12.5px/1 var(--ice-menu-font,system-ui,-apple-system,sans-serif);user-select:none}
@@ -133,7 +134,7 @@ const STYLE = `
 [data-ice-tray-bar] .ice-tb-chip:hover{transform:translateY(-1px);box-shadow:inset 0 .75px 0 rgb(255 255 255 / calc(.1 * (1 - var(--n)))),1px 1.8px .5px rgb(0 0 0 / calc(.22 * (1 - .5 * var(--n)))),1.6px 3.2px 5px rgb(0 0 0 / calc(.2 * (1 - .5 * var(--n))))}
 [data-ice-tray-bar] .ice-tb-chip:active{transform:none}
 [data-ice-tray-bar] .ice-tb-chip:focus-visible{outline:2px solid var(--ice-menu-brass);outline-offset:2px}
-[data-ice-tray-bar] .ice-tb-chip[data-on="true"]{--ice-tape:var(--ice-tape-chosen);color:var(--ice-tape-chosen-ink);text-shadow:0 1px 0 rgb(255 255 255 / .5),0 -.5px 0 rgb(60 40 20 / .18);filter:saturate(calc(1 - .7 * var(--n))) brightness(calc(1 - .54 * var(--n)))}
+[data-ice-tray-bar] .ice-tb-chip[data-on="true"]{--ice-tape:var(--ice-tape-chosen);color:var(--ice-tape-chosen-ink);text-shadow:0 1px 0 rgb(255 255 255 / .5),0 -.5px 0 rgb(60 40 20 / .18);filter:saturate(calc(1 - .7 * var(--n))) brightness(calc(1 - .4 * var(--n)))}
 `;
 
 export interface TrayBarProps {

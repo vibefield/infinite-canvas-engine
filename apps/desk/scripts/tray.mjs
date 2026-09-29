@@ -72,7 +72,7 @@ try {
   const BAR = `(() => { const root = document.querySelector("[data-ice-tray-bar]"); if (!root) return null; const pillEl = root.querySelector(".ice-tb-bar"); const pill = pillEl.getBoundingClientRect(); const t = root.querySelector("[data-act=tray]"); const tr = t.getBoundingClientRect();
     return { open: root.dataset.open, visible: root.dataset.visible, x0: pill.left, y0: pill.top, x1: pill.right, y1: pill.bottom, toggle: { x: tr.left + tr.width / 2, y: tr.top + tr.height / 2, expanded: t.getAttribute("aria-expanded") },
       pill: { buttons: pillEl.querySelectorAll("button").length, text: pillEl.textContent, close: pillEl.querySelector("svg path") !== null },
-      chips: [...root.querySelectorAll(".ice-tb-chip")].map((c) => { const r = c.getBoundingClientRect(); return { id: c.dataset.category, label: c.textContent, pressed: c.getAttribute("aria-pressed"), x: r.left + r.width / 2, y: r.top + r.height / 2, x0: r.left, y0: r.top, x1: r.right, y1: r.bottom, inPill: pillEl.contains(c), opacity: Number(getComputedStyle(c.closest(".ice-tb-head")).opacity) }; }) }; })()`;
+      chips: [...root.querySelectorAll(".ice-tb-chip")].map((c) => { const r = c.getBoundingClientRect(); return { id: c.dataset.category, label: c.textContent, pressed: c.getAttribute("aria-pressed"), x: r.left + r.width / 2, y: r.top + r.height / 2, x0: r.left, y0: r.top, x1: r.right, y1: r.bottom, inPill: pillEl.contains(c), opacity: c.closest(".ice-tb-head") === null ? -1 : Number(getComputedStyle(c.closest(".ice-tb-head")).opacity) }; }) }; })()`;
   const bar = () => q(BAR);
   // design-018 R4: the drawer's HEADER — a clear band `DRAWER.header` under the edge's inside where nothing of the content shows and no
   // hole opens — then the ramp `DRAWER.fade` the content fades in over; `below(rect)` is the first device row past both, where the board
@@ -1119,7 +1119,8 @@ try {
     const fq = async (js) => { await ft.send("Page.bringToFront"); return ft.evaluate(js, { timeoutMs: 20000 }); };
     const fsettle = async () => { await ft.send("Page.bringToFront"); return ft.evaluate("window.__desk.settle(4000)", { awaitPromise: true, timeoutMs: 30000 }); };
     const fshot = async () => { await ft.send("Page.bringToFront"); const { data } = await ft.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true }); return decodePng(Buffer.from(data, "base64")); };
-    await fq("window.__desk.ambient('still'); window.__desk.setTheme('light'); window.__desk.tray.open(); window.__desk.tray.scroll(0)");
+    // the canvas alone: the bar hidden (R4 — its chips lie over the drawer's header, where this row reads the board)
+    await fq("window.__desk.bar(false); window.__desk.ambient('still'); window.__desk.setTheme('light'); window.__desk.tray.open(); window.__desk.tray.scroll(0)");
     // a pinned slide never moves (a still), so the drawer is pinned open: p 1
     await fq("window.__desk.tray.pin({ p: 1, band: 0 })"); await fsettle(); await fsettle();
     const fr = (await fq("window.__desk.tray.state()")).frame;

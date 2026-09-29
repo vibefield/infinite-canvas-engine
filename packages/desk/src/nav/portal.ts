@@ -17,7 +17,8 @@ import type { CameraState, Rect, Viewport } from "./flight";
 /**
  * A rounded rect in screen CSS px: centre, half extents, corner radius — and a top FEATHER (design-018 §4): what the face shows
  * fades in over this many CSS px below its top edge, a smoothstep in every pass's `portal_cover` (absent or 0: a hard edge). The
- * pegboard tray's face carries one, so its specimens dissolve into the board at the drawer's top edge instead of being cut.
+ * pegboard tray's face carries one — its top the foot of the drawer's clear header (design-018 R4) — so its specimens dissolve into the
+ * board under the header instead of being cut.
  */
 export interface PortalClip { readonly cx: number; readonly cy: number; readonly hx: number; readonly hy: number; readonly r: number; readonly feather?: number }
 

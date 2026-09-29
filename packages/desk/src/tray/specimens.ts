@@ -81,8 +81,8 @@ export interface TraySpecimenEnv {
  * The FACE the specimens show through: the outline inside the board's edge (the arris — design-018 §2: nothing hangs over it), its foot
  * past the view's, its top the HEADER's foot (design-018 R4: `DRAWER.header` under the edge, where nothing of them shows — the bar's
  * chips lie there) — and its top FEATHER (design-018 §4): what hangs there fades in over `DRAWER.fade` below that, through every kind's
- * own `portal_cover`. (Its top corners keep the arris's inner radius: at the header's foot they lie in the ramp's first fifth, beside the
- * side border no specimen reaches.)
+ * own `portal_cover`. (Its top corners keep the arris's inner radius: at the header's foot they lie in the ramp's first quarter — where it
+ * shows at most 18 % — beside the side border no specimen reaches.)
  */
 export function faceClip(rect: DrawerRect, vh: number): PortalClip {
   const a = DRAWER.arris;

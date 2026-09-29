@@ -87,9 +87,10 @@ export interface DeskApi {
   /** The pegboard drawer's doors (design-017, K3). */
   readonly tray: TrayApi;
   /**
-   * design-018 §5 (R2): the tray's BAR — the one piece of DOM always over the canvas — shown unless a rig hides it: a rig that holds the
-   * page's pixels to the renderer's (an oracle's, a frame before) reads the canvas alone. `false` hides it (no pixel, no hit), `true`
-   * shows it again; returns whether it shows. A reload shows it again (the page's own state).
+   * design-018 §5 (R2, R4): the tray's BAR — the one piece of DOM always over the canvas: its pill, and its category chips on the drawer's
+   * header — shown unless a rig hides it: a rig that holds the page's pixels to the renderer's (an oracle's, a frame before) reads the
+   * canvas alone. `false` hides both (no pixel, no hit), `true` shows them again; returns whether they show. A reload shows them again
+   * (the page's own state).
    */
   bar(on?: boolean): boolean;
   // ---- the nav (D2b): the doors the portal and nav rigs use

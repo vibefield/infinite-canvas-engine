@@ -223,8 +223,11 @@ try {
   //    own: it draws after the marks): the board under its specimens, its edge included (one instance — the rim laid over them all
   //    retired, design-018 §2), and the specimens' accessories (one each) — K5a; the specimens themselves are their kinds' rows. Its
   //    uploads the `tray` row's — its block and the accessories' records, both moving with the board — its blocks and hash texture
-  //    the ledger's.
+  //    the ledger's. From 100 px down, where both of the six's lines are drawn (design-018 R4: the lay starts under the drawer's header,
+  //    so at 0 the second line hangs below an 800 px view, and a scroll from there brings its accessories in mid-run)
   await q("window.__desk.tray.open(); 0");
+  await settle();
+  await q("window.__desk.tray.scroll(100); 0");
   await settle();
   await front();
   const openRest = await qa(`(async () => {

@@ -272,7 +272,7 @@ describe("<TrayBar>", () => {
     const rule = css.split("\n").find((l) => l.startsWith("[data-ice-tray-bar] .ice-tb-chip{")) ?? "";
     for (const part of ["height:26px", "padding:0 10px", "font:600 11px/1 var(--ice-tape-font)", "letter-spacing:.08em", "text-transform:uppercase", "background:linear-gradient(", "var(--ice-tape)", "text-shadow:0 1px 0 rgb(0 0 0 / .55)", "calc(1 - .45 * var(--n))"]) expect(rule).toContain(part);
     expect(css).toContain(".ice-tb-chip[data-on=\"true\"]{--ice-tape:var(--ice-tape-chosen);color:var(--ice-tape-chosen-ink);");
-    expect(css).toContain("filter:saturate(calc(1 - .7 * var(--n))) brightness(calc(1 - .54 * var(--n)))");
+    expect(css).toContain("filter:saturate(calc(1 - .7 * var(--n))) brightness(calc(1 - .4 * var(--n)))");   // the chosen tape by night: as bright as the capitals
     expect(css).toContain(".ice-tb-chip:hover{transform:translateY(-1px);");
     expect(css).toContain(".ice-tb-chip:focus-visible{outline:2px solid var(--ice-menu-brass)");
   });

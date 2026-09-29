@@ -85,7 +85,8 @@ export class MarksPass {
     this.tags = tags.length;
     if (view === undefined) return 0;
     const atlas = this.mat.glyphs;
-    // the tags fade out at the drawer's top edge as its specimens do (design-018 §4): from the band's top, over its width, from the first tag on
+    // the tags are gone in the drawer's header and fade in under it as its specimens do (design-018 §4, R4): from the band's top (the
+    // header's foot), over its width, from the first tag on
     const fade = tray?.fade !== undefined && tags.length > 0 ? [tray.fade.top, tray.fade.band, marks.length, 0] : [0, 0, 0, 0];
     this.uniforms.set({ view: [view.width, view.height, view.dpr, 0], atlas: [atlas.width, atlas.height, atlas.scale, atlas.cellW], fade });
     this.device.queue.writeBuffer(this.uniformBuf, 0, this.uniforms.view());
