@@ -1111,13 +1111,15 @@ async function trayCheck(sc) {
     }
   }
   // the SPECIMENS (K5a): each one's rect on screen, as the pass laid its accessory, is its kind's drawing — far from the bare board there,
-  // below the face's top and its fade band (design-018 §4: within it a specimen dissolves into the board by design)
+  // below the face's top, its clear header and its fade band (design-018 §4, R4: in the header nothing hangs, within the band a specimen
+  // dissolves into the board by design)
+  const clear = r.y + DRAWER.arris + DRAWER.header + DRAWER.fade;
   const specimens = laid.accessories.map((a) => a.rect);
   const { px: C } = await render({ ...s, tray: { ...s.tray, bare: true } }, { marks: true });
   let drawnBy = 0;
   let shown = 0;
   for (const [x0, y0, x1, y1] of specimens) {
-    const ys = Math.max(y0, r.y + DRAWER.arris + DRAWER.fade);
+    const ys = Math.max(y0, clear);
     if (y1 <= ys || ys >= h / d) continue;   // wholly in the fade band or below the view: nothing of it to see whole
     shown++;
     let sum = 0;
@@ -1125,10 +1127,11 @@ async function trayCheck(sc) {
     for (let y = Math.ceil(ys * d); y < Math.min(y1 * d, h); y += 2) for (let x = Math.ceil(x0 * d); x < x1 * d; x += 2) { const i = (y * w + x) * 4; for (let c = 0; c < 3; c++) sum += Math.abs((A[i + c] ?? 0) - (C[i + c] ?? 0)); n += 3; }
     if (n > 0 && sum / n > 12) drawnBy++;
   }
-  // a hole is darker than 0.6 of the face's own median — by day and under the Moon alike — on the bare board (its specimens cover some)
+  // a hole is darker than 0.6 of the face's own median — by day and under the Moon alike — on the bare board (its specimens cover some),
+  // past the header and its ramp (R4: no hole opens in the header, and in the ramp they are opening)
   const lum = (i) => 0.2126 * (C[i] ?? 0) + 0.7152 * (C[i + 1] ?? 0) + 0.0722 * (C[i + 2] ?? 0);
   const ls = [];
-  for (let y = Math.ceil((r.y + 40) * d); y < h; y += 2) for (let x = Math.ceil((r.x + 40) * d); x < (r.x + r.w - 40) * d; x += 2) ls.push(lum((y * w + x) * 4));
+  for (let y = Math.ceil(clear * d); y < h; y += 2) for (let x = Math.ceil((r.x + 40) * d); x < (r.x + r.w - 40) * d; x += 2) ls.push(lum((y * w + x) * 4));
   const face = ls.length;
   const median = [...ls].sort((a, b) => a - b)[Math.floor(face / 2)] ?? 0;
   const holes = ls.filter((l) => l < 0.6 * median).length / Math.max(face, 1);
