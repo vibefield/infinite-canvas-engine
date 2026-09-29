@@ -243,7 +243,7 @@ describe("the ground draws the specimens over the board, inside its edge", () =>
     // the VEIL is laid LAST — after every specimen's slot and their tags (design-018 rev 5)
     const veilAt = log.indexOf("debug tray/pegboard/veil");
     expect(veilAt).toBeGreaterThan(log.lastIndexOf("debug kind fake+ 0-1"));
-    expect(veilAt).toBeGreaterThan(log.findLastIndex((l) => l.includes("marks")));
+    expect(veilAt).toBeGreaterThan(log.reduce((last, l, i) => (l.includes("marks") ? i : last), -1));
     expect(log.slice(veilAt, veilAt + 5)).toEqual(["debug tray/pegboard/veil", "pipeline tray/pegboard/veil", "group 0 tray/pegboard", "draw 6,1,0,0", "debug end"]);
     // the plain kind's slot is spawned at once; the layered one's waits for its program
     let at = log.indexOf("debug tray/pegboard");
