@@ -1611,7 +1611,7 @@ the load beside every number; the committed golden byte-identical through every 
 against the public entries alone and a third-party kind in its own package on the desk and in the tray; the tray's
 witnesses (design-017 §10); ci + `gate:landing` exit 0 on every landing, graded by the orchestrator on the exact SHA.
 
-## M22 — The tray, refined (design-018) — **LANDED 2026-09-28 (R2, then R1 rebased over it, then R3 — the holes' fade — and R4 — the header; the 0.14.0 release cut, now carrying M20, M21 and M22, is James's)**
+## M22 — The tray, refined (design-018) — **LANDED 2026-09-28 (R2, then R1 rebased over it, then R3 — the holes' fade — R4 — the header — and R5 — the veil; the 0.14.0 release cut, now carrying M20, M21 and M22, is James's)**
 
 James's visual refine round on M21's pegboard tray (2026-09-28, verbatim in design-018 §0): the border "too thick and
 unnatural"; no finger notch — "we should have a dom button that toggles this tray, let's keep things simple"; a "subtle
@@ -1655,6 +1655,13 @@ dts:check — all exit 0).
   tag language (`MARKS.label`), centred, the chosen one cream tape, dimmed by night as the GPU tags are (D-R4.5) — and the pill
   stays the drawer's handle ("Objects" / "× Objects"). rig:tray 72/0: the fade's quarters from the band's foot, the holes' opening
   0 through it then the ramp (0.16 · 0.51 · 0.86 against 0.16 · 0.50 · 0.84), the chips inside the band by their rects, a rest row.
+- **R5 — the veil** (**LANDED 2026-09-28**, `185b8c2`; James: "at the edge fading, somehow the holes are displayed on top of
+  objects"): R1–R4 faded a specimen by turning it transparent, so the holes behind it showed through it in the ramp. Now nothing fades
+  see-through: the specimens, accessories and tags are opaque to the face clip (no feather; `tagFadeOf` retired), and the tray lays a
+  VEIL last — the plain board, `tray_drawer`'s own pixel with every hole closed, whole in the header and fading out over its ramp — so
+  a specimen and the holes behind it fade into the board together. rig:tray (f): inside the note across the ramp, pixels over a hole
+  and over the face one colour a row (worst |Δ| 1.0; R4's feather 33.8); 73/0; rig:gpu counts the drawer's THREE draws (the veil
+  one instance); the five tray stills re-blessed again.
 
 **M22 as landed.** The five asks: the border is a board's edge, not a frame; the notch and the lip are gone and a DOM
 pill toggles the drawer; content dissolves into the board at the top edge; the holes show the cutting mat under the board
