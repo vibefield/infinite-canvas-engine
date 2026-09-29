@@ -80,9 +80,10 @@ export interface TraySpecimenEnv {
 /**
  * The FACE the specimens show through: the outline inside the board's edge (the arris — design-018 §2: nothing hangs over it), its foot
  * past the view's, its top the HEADER's foot (design-018 R4: `DRAWER.header` under the edge, where nothing of them shows — the bar's
- * chips lie there) — and its top FEATHER (design-018 §4): what hangs there fades in over `DRAWER.fade` below that, through every kind's
- * own `portal_cover`. (Its top corners keep the arris's inner radius: at the header's foot they lie in the ramp's first quarter — where it
- * shows at most 18 % — beside the side border no specimen reaches.)
+ * chips lie there) — with NO feather (design-018 rev 5): a specimen is opaque to the clip's top, and the VEIL (tray.wgsl `tray_veil`)
+ * lays the plain board over it there — whole in the header, fading out over `DRAWER.fade` — so it fades into the board and never
+ * turns see-through over a hole (R1–R4's feather let the holes show through it). (Its top corners keep the arris's inner radius, under
+ * the veil's whole.)
  */
 export function faceClip(rect: DrawerRect, vh: number): PortalClip {
   const a = DRAWER.arris;
@@ -90,7 +91,7 @@ export function faceClip(rect: DrawerRect, vh: number): PortalClip {
   const x1 = rect.x + rect.w - a;
   const y0 = rect.y + a + DRAWER.header;
   const y1 = Math.max(vh, rect.y + rect.h) + DRAWER.radius;
-  return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hx: (x1 - x0) / 2, hy: (y1 - y0) / 2, r: DRAWER.radius - a, feather: DRAWER.fade };
+  return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hx: (x1 - x0) / 2, hy: (y1 - y0) / 2, r: DRAWER.radius - a };
 }
 
 /** The tray's grid: the root's with no gobo dapple (D-K3.6 — the drawer lies above the desk; the wind would wake it). */

@@ -57,3 +57,22 @@ fn fs(@builtin(position) pos: vec4f) -> @location(0) vec4f {
 fn fs_accessory(@builtin(position) pos: vec4f, @location(1) @interpolate(flat) item: u32) -> @location(0) vec4f {
   return tray_accessory(u, t, acc[item], pos.xy, noise_tex, noise_samp, hash_tex);
 }
+
+// THE VEIL (design-018 rev 5): one quad over the drawer's top — from its edge down through the header and its ramp — laid LAST, over
+// everything the drawer holds (tray.wgsl `tray_veil`: the plain board, whole in the header, fading out over the ramp).
+@vertex
+fn vs_veil(@builtin(vertex_index) vi: u32) -> @builtin(position) vec4f {
+  var corners = array<vec2f, 6>(vec2f(0.0, 0.0), vec2f(1.0, 0.0), vec2f(0.0, 1.0), vec2f(0.0, 1.0), vec2f(1.0, 0.0), vec2f(1.0, 1.0));
+  let k = corners[vi % 6u];
+  let vw = t.view.x;
+  let vh = t.view.y;
+  let lo = clamp(vec2f(t.rect.x, t.rect.y), vec2f(0.0), vec2f(vw, vh));
+  let hi = clamp(vec2f(t.rect.x + t.rect.z, t.rect.y + t.shape.y + t.fade.y + t.fade.x + 1.0), vec2f(0.0), vec2f(vw, vh));
+  let css = mix(lo, hi, k);
+  return vec4f(css.x / vw * 2.0 - 1.0, 1.0 - css.y / vh * 2.0, 0.0, 1.0);
+}
+
+@fragment
+fn fs_veil(@builtin(position) pos: vec4f) -> @location(0) vec4f {
+  return tray_veil(u, t, pos.xy, noise_tex, noise_samp, hash_tex);
+}

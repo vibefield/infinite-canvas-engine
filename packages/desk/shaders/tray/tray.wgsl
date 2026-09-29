@@ -308,27 +308,22 @@ fn tray_arris(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, o:
 }
 
 // The board to its edge, PREMULTIPLIED: the point under the carry, its hole — the front surface over it by its analytic coverage, and
-// where the surface is not, the desk seen through (black at the hole's alpha). THE HOLES FADE AT THE TOP as the specimens do (James,
-// 2026-09-28 — design-018 §4, R3; R4): in the HEADER (`fade.y` under the edge's inside) the board is the plain face, and below it, over
-// the face's feather (`fade.x`, the specimens' ramp `w`), a hole OPENS — its opening scaled by `w`, what it does not open yet the plain
-// face, its fillet's relief rising out of the face by the same share — so the header is whole board and a band below it every hole is as
-// punched.
-fn tray_board(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, noise: f32) -> vec4f {
+// where the surface is not, the desk seen through (black at the hole's alpha). `holes` scales every hole's OPENING: 1 as punched (the
+// board under the specimens), 0 CLOSED — the plain face, its fillets' relief flattened into it (the VEIL's board, `tray_veil`).
+fn tray_board(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, noise: f32, holes: f32) -> vec4f {
   let pt = tray_point(t, p);
   let h = peg_hole(t, pt);
-  let top = t.rect.y + t.shape.y + t.fade.y;
-  let w = smoothstep(top, top + t.fade.x, p.y);
   let cg = clamp(0.5 + h.d / t.fp, 0.0, 1.0);   // the surface's analytic coverage as punched
-  let open = (1.0 - cg) * w;                      // what of the pixel the hole still opens
+  let open = (1.0 - cg) * holes;                  // what of the pixel the hole opens
   var col = vec4f(0.0);
-  if (w < 1.0) {
-    // in the band: the plain face where the hole has closed, and the fillet (within `hole.z` of it) turning to the face
+  if (holes < 1.0) {
+    // closing: the plain face where the hole no longer opens, and the fillet (within `hole.z` of it) turning to the face
     var plain = h;
     plain.d = 1.0e3;
     let face = peg_surface(ht, u, t, pt, plain, t.fp, noise);
     var s = face;
-    if (cg > 0.0 && h.d < t.hole.z) { s = mix(face, peg_surface(ht, u, t, pt, h, t.fp, noise), w); }
-    col = vec4f(s, 1.0) * cg + vec4f(face, 1.0) * ((1.0 - cg) * (1.0 - w));
+    if (cg > 0.0 && h.d < t.hole.z) { s = mix(face, peg_surface(ht, u, t, pt, h, t.fp, noise), holes); }
+    col = vec4f(s, 1.0) * cg + vec4f(face, 1.0) * ((1.0 - cg) * (1.0 - holes));
   } else if (cg > 0.0) {
     col = vec4f(peg_surface(ht, u, t, pt, h, t.fp, noise), 1.0) * cg;
   }
@@ -336,11 +331,32 @@ fn tray_board(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, no
   return col;
 }
 
+// A pixel INSIDE the drawer's outline (`o` its distance there, `px` a device px in CSS px), premultiplied: the edge within `A` of the
+// outline, the board inside it with its holes at `holes` — blended across the pixel where they meet — and the edge's INNER SHADOW over
+// the board (D-R1.2): the window's lip on the lamp's side, black at up to `shape.z`, fading over `shape.w` px inside the edge, where the
+// outline faces the lamp (the push of the drawer's lamp shadow points away from it).
+fn tray_inside(ht: texture_2d<f32>, u: MatUniforms, t: TrayUniforms, p: vec2f, px: f32, o: f32, noise: f32, holes: f32) -> vec4f {
+  let k = clamp(0.5 + (o + t.shape.y) / px, 0.0, 1.0);
+  var col = vec4f(0.0);
+  if (k > 0.0) { col = vec4f(tray_arris(ht, u, t, p, o, noise), 1.0); }
+  if (k < 1.0) {
+    var b = tray_board(ht, u, t, p, noise, holes);
+    if (t.shape.z > 0.0 && -o - t.shape.y < t.shape.w) {
+      let e = 0.5;
+      let g = normalize(vec2f(tray_outline(t, p + vec2f(e, 0.0)) - tray_outline(t, p - vec2f(e, 0.0)), tray_outline(t, p + vec2f(0.0, e)) - tray_outline(t, p - vec2f(0.0, e))) + vec2f(1.0e-6, 0.0));
+      let facing = max(dot(g, -normalize(t.shadow.zw)), 0.0);
+      let sh = t.shape.z * facing * (1.0 - smoothstep(0.0, t.shape.w, -o - t.shape.y));
+      b = vec4f(b.rgb * (1.0 - sh), 1.0 - (1.0 - b.a) * (1.0 - sh));
+    }
+    col = mix(b, col, k);
+  }
+  return col;
+}
+
 // One pixel of the tray UNDER its specimens (`frag` in device px), the view whole: the dim over the desk, the drawer's shadows on it,
-// the board to the outline and its edge — premultiplied, each pixel drawn once. The board scrolls under its edge (the drawer is a
-// window onto it): under the top edge its HEADER is plain face (design-018 R4 — no hole opens there; `tray_board`), so the arris's line
-// runs on unbroken. The specimens hang over the board inside the edge and under the header (their face clip, tray/specimens.ts
-// `faceClip`), so nothing is laid over the board after them.
+// the board to the outline and its edge, every hole as punched — premultiplied, each pixel drawn once. The board scrolls under its edge
+// (the drawer is a window onto it). The specimens hang over the board inside the edge and under the header (their face clip,
+// tray/specimens.ts `faceClip`); the VEIL (`tray_veil`) is laid over them all at the top.
 fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_2d<f32>, noise_samp: sampler, ht: texture_2d<f32>) -> vec4f {
   let dpr = t.view.z;
   let p = frag / dpr;
@@ -357,7 +373,7 @@ fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_
   // (premultiplied — a hole's alpha is its shadow over the desk, no longer 1)
   let m = t.shape.y + t.shape.w + 2.0;
   if ((p.x > t.rect.x + m) && (p.x < t.rect.x + t.rect.z - m) && (p.y > t.rect.y + t.shape.x + m)) {
-    return tray_board(ht, u, t, p, bn.y);
+    return tray_board(ht, u, t, p, bn.y, 1.0);
   }
   let o = tray_outline(t, p);
   let cover = clamp(0.5 - o / px, 0.0, 1.0);
@@ -370,24 +386,27 @@ fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_
     under = vec4f(0.0, 0.0, 0.0, 1.0 - (1.0 - room) * (1.0 - lamp) * (1.0 - t.dim));
   }
   if (cover <= 0.0) { return under; }
-  // the edge within `A` of the outline, the board inside it — blended across the pixel where they meet (premultiplied)
-  let k = clamp(0.5 + (o + t.shape.y) / px, 0.0, 1.0);
-  var col = vec4f(0.0);
-  if (k > 0.0) { col = vec4f(tray_arris(ht, u, t, p, o, bn.y), 1.0); }
-  if (k < 1.0) {
-    var b = tray_board(ht, u, t, p, bn.y);
-    // the edge's INNER SHADOW (D-R1.2): the window's lip over the board on the lamp's side — black at up to `shape.z`, fading over
-    // `shape.w` px inside the edge, where the outline faces the lamp (the push of the drawer's lamp shadow points away from it)
-    if (t.shape.z > 0.0 && -o - t.shape.y < t.shape.w) {
-      let e = 0.5;
-      let g = normalize(vec2f(tray_outline(t, p + vec2f(e, 0.0)) - tray_outline(t, p - vec2f(e, 0.0)), tray_outline(t, p + vec2f(0.0, e)) - tray_outline(t, p - vec2f(0.0, e))) + vec2f(1.0e-6, 0.0));
-      let facing = max(dot(g, -normalize(t.shadow.zw)), 0.0);
-      let sh = t.shape.z * facing * (1.0 - smoothstep(0.0, t.shape.w, -o - t.shape.y));
-      b = vec4f(b.rgb * (1.0 - sh), 1.0 - (1.0 - b.a) * (1.0 - sh));
-    }
-    col = mix(b, col, k);
-  }
-  return col * cover + under * (1.0 - cover);
+  return tray_inside(ht, u, t, p, px, o, bn.y, 1.0) * cover + under * (1.0 - cover);
+}
+
+// THE VEIL (design-018 rev 5 — James, 2026-09-28: "at the edge fading, somehow the holes are displayed on top of objects"): the PLAIN
+// board — its face with every hole closed, its edge, the edge's inner shadow: `tray_drawer`'s own pixel, less its holes — laid OVER
+// everything the drawer holds (the accessories, the specimens, their tags), whole in the HEADER (`fade.y` under the edge's inside) and
+// fading out over the ramp below it (`fade.x`): `1 − smoothstep(foot, foot + fade.x, y)`. What hangs there and the holes behind it fade
+// INTO THE BOARD together — a specimen never turns see-through, so no hole shows through it (the specimens are opaque to the face
+// clip's top; a hard clip at the header's foot lies under the veil's whole). Only pixels wholly inside the outline: its antialiased rim
+// is `tray_drawer`'s, and the veil there would lay the edge twice.
+fn tray_veil(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_2d<f32>, noise_samp: sampler, ht: texture_2d<f32>) -> vec4f {
+  let p = frag / t.view.z;
+  let px = 1.0 / t.view.z;
+  let foot = t.rect.y + t.shape.y + t.fade.y;
+  let a = 1.0 - smoothstep(foot, foot + t.fade.x, p.y);
+  if (a <= 0.0) { return vec4f(0.0); }
+  let o = tray_outline(t, p);
+  if (o > -0.5 * px) { return vec4f(0.0); }
+  var bn = vec3f(0.5);
+  if (u.night.x > 0.0) { bn = textureSampleLevel(noise_tex, noise_samp, frag * u.noise.z + u.noise.xy, 0.0).rgb; }
+  return tray_inside(ht, u, t, p, px, o, bn.y, 0.0) * a;
 }
 
 // ---- the accessories (K5a): what the specimens hang on, plugged into real holes — SKÅDIS's hook, shelf, clip and rail seen head-on, in
@@ -439,10 +458,9 @@ fn tray_accessory(u: MatUniforms, t: TrayUniforms, a: TrayAccessory, frag: vec2f
   let p = frag / t.view.z;
   let px = 1.0 / t.view.z;
   let P = t.view.w;
-  // inside the board's edge — gone in its header and faded in under it as the specimens are (design-018 §4, R4: the face's feather,
-  // over `fade.x` below the header's `fade.y`)
-  let top = t.rect.y + t.shape.y + t.fade.y;
-  let inside = clamp(0.5 - (tray_outline(t, p) + t.shape.y) / px, 0.0, 1.0) * smoothstep(top, top + t.fade.x, p.y);
+  // inside the board's edge — whole: in the header and its ramp the VEIL lays the plain board over it, as over the specimens (design-018
+  // rev 5, `tray_veil`)
+  let inside = clamp(0.5 - (tray_outline(t, p) + t.shape.y) / px, 0.0, 1.0);
   if (inside <= 0.0) { return vec4f(0.0); }
   let L = t.lamp.xyz;
   let lz = max(L.z, 1.0e-3);

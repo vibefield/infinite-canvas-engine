@@ -586,8 +586,10 @@ function trayRectOf(inputs: GroundFrameInputs): ReturnType<typeof drawerRect> {
 /**
  * THE TRAY, drawn (design-017 §5, §8; K5a) — shared by `Ground.render` and the Node oracle: the drawer UNDER its specimens (the dim, its
  * shadows, the board to its edge, the accessories), each specimen by its own kind through the drawer's face (inside the edge — the rim
- * laid over them all retired, design-018 §2), their name tags (the marks' pills); then what the tray carries, whole. Shut (p 0) the
- * drawer draws nothing (its pass laid no quad) and only a carried copy is drawn. Leaves the scissor on the whole view.
+ * laid over them all retired, design-018 §2), their name tags (the marks' pills), then the VEIL over them all at the top (design-018
+ * rev 5: the plain board, whole in the header and fading out over its ramp — what hangs there fades into the board, never see-through
+ * over a hole); then what the tray carries, whole. Shut (p 0) the drawer draws nothing (its pass laid no quad) and only a carried copy
+ * is drawn. Leaves the scissor on the whole view.
  */
 export function drawTray(pass: GPURenderPassEncoder, size: { readonly w: number; readonly h: number }, dpr: number, tray: TrayPass, slots: readonly DrawSlot[] | undefined, marks: MarksPass | null, carried?: readonly DrawSlot[]): void {
   tray.draw(pass);
@@ -604,6 +606,7 @@ export function drawTray(pass: GPURenderPassEncoder, size: { readonly w: number;
     }
   }
   pass.setScissorRect(0, 0, size.w, size.h);
+  tray.drawVeil(pass);
   // what the tray carries (K5b): over the drawer and the dim, whole — it is off the board
   if (carried !== undefined && carried.length > 0) {
     for (const s of carried) drawSlot(pass, size, dpr, { ...s, bare: true });
@@ -686,7 +689,7 @@ export class Ground {
     // the drawer shut (p 0) lays no quad; what the tray carries is drawn whatever the slide (a ghost grows, or flies home, past it)
     const trayed = inputs.tray !== undefined && this.tray !== null ? this.tray.prepare(inputs.view, inputs.theme, inputs.grid ?? this.grid, inputs.mat, inputs.tray) : 0;
     const prepared = prepareFrame(encoder, this.root, this.pool, inputs, this.grid, undefined, inputs.tray !== undefined ? (this.traySlots ?? undefined) : undefined);
-    const marked = this.marks !== null ? this.marks.prepare(inputs.marks, trayed > 0 && this.tray !== null ? { view: inputs.view, tags: tagsOf(inputs.tray), night: inputs.theme.matLight.night, fade: tagFadeOf(this.tray) } : undefined) : 0;
+    const marked = this.marks !== null ? this.marks.prepare(inputs.marks, trayed > 0 && this.tray !== null ? { view: inputs.view, tags: tagsOf(inputs.tray), night: inputs.theme.matLight.night } : undefined) : 0;
     const bg = inputs.theme.canvasBg;
     const pass = beginPass(encoder, this.surface.view(), [bg[0], bg[1], bg[2], 1], "ground");
     const drawn = drawFrame(pass, this.surface.size(), inputs.view.dpr, prepared.incoming, prepared.outgoing);
@@ -722,11 +725,6 @@ export class Ground {
   trayIdleAt(): number { return this.traySlots?.idleAt() ?? Number.POSITIVE_INFINITY; }
 }
 
-/** The tags' fade under the drawer's header (design-018 §4, R4): the face's feather — from the header's foot, over `DRAWER.fade`. */
-export function tagFadeOf(tray: TrayPass): { readonly top: number; readonly band: number } | undefined {
-  const r = tray.laid?.rect;
-  return r === undefined ? undefined : { top: r.y + DRAWER.arris + DRAWER.header, band: DRAWER.fade };
-}
 
 /** The specimens' name tags this frame (K5a): each label centred under its specimen — below a shelf's plank — in screen px. */
 export function tagsOf(tray: TrayFrameInputs | undefined): { readonly label: string; readonly x: number; readonly y: number }[] {

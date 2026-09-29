@@ -102,6 +102,8 @@ export class TrayPass {
   private readonly pipeline: GPURenderPipeline;
   /** K5a: the accessories' own fragment entry on the same layout (a branch in one entry slowed the board). */
   private readonly accPipeline: GPURenderPipeline;
+  /** The VEIL (design-018 rev 5): the plain board laid over everything the drawer holds at its top — its own entries on the same layout. */
+  private readonly veilPipeline: GPURenderPipeline;
   private readonly layout: GPUBindGroupLayout;
   private readonly sampler: GPUSampler;
   private readonly trayBuf: GPUBuffer;
@@ -123,10 +125,10 @@ export class TrayPass {
   private accSent = new Uint8Array(0);
   private accCount = 0;
 
-  private constructor(device: GPUDevice, mat: MatPass, pipelines: readonly [GPURenderPipeline, GPURenderPipeline], layout: GPUBindGroupLayout) {
+  private constructor(device: GPUDevice, mat: MatPass, pipelines: readonly [GPURenderPipeline, GPURenderPipeline, GPURenderPipeline], layout: GPUBindGroupLayout) {
     this.device = device;
     this.mat = mat;
-    [this.pipeline, this.accPipeline] = pipelines;
+    [this.pipeline, this.accPipeline, this.veilPipeline] = pipelines;
     this.layout = layout;
     this.sampler = device.createSampler({ label: "tray/pegboard/noise", magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" });
     this.trayBuf = uniformBuffer(device, TrayUniforms.size, "tray/pegboard/uniforms");
@@ -151,8 +153,9 @@ export class TrayPass {
     const pipelines = await Promise.all([
       renderPipeline(device, { label: "tray/pegboard", layout: pl, module, format, blend: BLEND_PREMUL }),
       renderPipeline(device, { label: "tray/pegboard/accessories", layout: pl, module, format, blend: BLEND_PREMUL, fragment: "fs_accessory" }),
+      renderPipeline(device, { label: "tray/pegboard/veil", layout: pl, module, format, blend: BLEND_PREMUL, vertex: "vs_veil", fragment: "fs_veil" }),
     ]);
-    return new TrayPass(device, mat, pipelines as [GPURenderPipeline, GPURenderPipeline], layout);
+    return new TrayPass(device, mat, pipelines as [GPURenderPipeline, GPURenderPipeline, GPURenderPipeline], layout);
   }
 
   /**
@@ -267,6 +270,19 @@ export class TrayPass {
     this.bind(pass, this.pipeline);
     pass.draw(6, 1, 0, 0);
     if (this.accCount > 0) { pass.setPipeline(this.accPipeline); pass.draw(6, this.accCount, 0, 1); }
+    pass.popDebugGroup();
+  }
+
+  /**
+   * THE VEIL (design-018 rev 5) — LAST, over everything the drawer holds (the caller left the scissor on the whole view): the plain board
+   * whole in the header and fading out over its ramp, so what hangs there and the holes behind it fade into the board together — a
+   * specimen never turns see-through over a hole. One quad.
+   */
+  drawVeil(pass: GPURenderPassEncoder): void {
+    if (this.quads === 0) return;
+    pass.pushDebugGroup("tray/pegboard/veil");
+    this.bind(pass, this.veilPipeline);
+    pass.draw(6, 1, 0, 0);
     pass.popDebugGroup();
   }
 

@@ -185,7 +185,7 @@ describe("the face the specimens show through (design-018 §2, §4, R4)", () => 
     expect([c.cx - c.hx, c.cy - c.hy, c.cx + c.hx, c.r]).toEqual([open.x + DRAWER.arris, open.y + DRAWER.arris + DRAWER.header, open.x + open.w - DRAWER.arris, DRAWER.radius - DRAWER.arris]);
     expect([open.x + 1.5, open.y + 1.5 + 48, 8.5]).toEqual([c.cx - c.hx, c.cy - c.hy, c.r]);
     expect(c.cy + c.hy).toBeGreaterThan(800);
-    expect(c.feather).toBe(DRAWER.fade);   // its content fades in over the band under the header (design-018 §4, R4)
+    expect(c.feather).toBeUndefined();   // no feather (design-018 rev 5): the VEIL fades what hangs there into the board — never see-through
     expect([DRAWER.header, DRAWER.fade]).toEqual([48, 32]);
   });
 
@@ -235,10 +235,16 @@ describe("the ground draws the specimens over the board, inside its edge", () =>
     const writes: { label: string; bytes: Uint8Array }[] = [];
     (device.queue as { writeBuffer: unknown }).writeBuffer = (buf: { label: string }, _off: number, data: Uint8Array) => { writes.push({ label: buf.label, bytes: new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)) }); };
     ground.render(inputs);
-    // the fade under the header (design-018 §4, R4): the accessories' band and the header in the tray's block, the tags' in the marks' — from the header's foot
+    // the band under the header (design-018 §4, R4) in the tray's block — the veil's; the tags have NO fade of their own (design-018 rev 5:
+    // the veil lays the plain board over them, as over the specimens)
     const f32 = (label: string, byte: number): number[] => { const w = writes.filter((x) => x.label === label).at(-1); if (w === undefined) throw new Error(`no ${label} upload`); return [...new Float32Array(w.bytes.buffer, byte, 4)]; };
     expect(f32("tray/pegboard/uniforms", TrayUniforms.slots.fade.byte)).toEqual([DRAWER.fade, DRAWER.header, 0, 0]);
-    expect(f32("marks/uniforms", MarksUniformsStruct.slots.fade.byte)).toEqual([Math.fround(open.y + DRAWER.arris + DRAWER.header), DRAWER.fade, 0, 0]);
+    expect(f32("marks/uniforms", MarksUniformsStruct.slots.fade.byte)).toEqual([0, 0, 0, 0]);
+    // the VEIL is laid LAST — after every specimen's slot and their tags (design-018 rev 5)
+    const veilAt = log.indexOf("debug tray/pegboard/veil");
+    expect(veilAt).toBeGreaterThan(log.lastIndexOf("debug kind fake+ 0-1"));
+    expect(veilAt).toBeGreaterThan(log.findLastIndex((l) => l.includes("marks")));
+    expect(log.slice(veilAt, veilAt + 5)).toEqual(["debug tray/pegboard/veil", "pipeline tray/pegboard/veil", "group 0 tray/pegboard", "draw 6,1,0,0", "debug end"]);
     // the plain kind's slot is spawned at once; the layered one's waits for its program
     let at = log.indexOf("debug tray/pegboard");
     expect(log.slice(at, at + 7)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "pipeline tray/pegboard/accessories", "draw 6,2,0,1", "debug end"]);
@@ -256,10 +262,11 @@ describe("the ground draws the specimens over the board, inside its edge", () =>
     const tags = log.indexOf("pipeline marks", at);   // the name tags: the marks' pipeline, under the face's scissor
     expect(kinds.every(([, i]) => i > at + 6)).toBe(true);
     expect(tags).toBeGreaterThan(kinds[1]?.[1] ?? 0);
-    // the rim laid over them all retired (design-018 §2): nothing of the drawer is drawn after the specimens
-    const lastDrawer = Math.max(...log.map((l, i) => (l.startsWith("debug tray/") ? i : -1)));
-    expect(lastDrawer).toBeGreaterThanOrEqual(0);
-    expect(lastDrawer).toBeLessThan(kinds[0]?.[1] ?? 0);
+    // the rim laid over them all retired (design-018 §2): of the drawer, only the VEIL is drawn after the specimens (design-018 rev 5 —
+    // the plain board over its top, so what hangs there fades into the board, never see-through over a hole)
+    const drawerAt = log.map((l, i) => (l.startsWith("debug tray/") ? i : -1)).filter((i) => i >= 0);
+    expect(drawerAt.length).toBeGreaterThan(0);
+    expect(drawerAt.filter((i) => i > (kinds[0]?.[1] ?? 0)).map((i) => log[i])).toEqual(["debug tray/pegboard/veil"]);
     expect(log.some((l) => l.includes("tray/pegboard/rim"))).toBe(false);
     expect(ground.traySlots?.size).toBe(2);
     // every tick the tray's own slots are asked to let go of what they make again (D-K6a.3) — the root's passes never by the tray

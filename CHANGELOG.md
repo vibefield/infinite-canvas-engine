@@ -966,6 +966,17 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   - Witnesses: rig:tray (a) and (e) retargeted to the header (nothing in it, the ramp's quarters under it), the bar rows (the chips
     found in the header by their DOM rects, none in the pill), and a rest row (nothing laid faded; the chips over bare board, at rest
     and with the first line run up under them); the five tray stills re-blessed, the other 107 scenes byte-identical.
+<!-- design-018 R5 — the veil (2026-09-28) -->
+- **What hangs in the ramp fades INTO the board, never see-through over a hole** (design-018 rev 5 — James: "at the edge fading,
+  somehow the holes are displayed on top of objects"). R1–R4 faded a specimen by turning it transparent (the face clip's feather), so
+  in the ramp the holes behind it showed through it. The specimens, their accessories and their tags are now opaque to the face clip's
+  top (no feather; `tagFadeOf` retired — the tags have no fade of their own), and the tray lays a VEIL last, over everything the drawer
+  holds: the plain board (`tray.wgsl tray_veil` — `tray_drawer`'s own pixel with every hole closed: its face, its edge, the edge's
+  inner shadow), whole in the header and fading out over its ramp. So a specimen and the holes behind it fade into the board together.
+  One quad (`TrayPass.drawVeil`, the `tray/pegboard/veil` pipeline), only where the pixel is wholly inside the outline. `tray_board`
+  takes the holes' opening as an argument (1 under the specimens, 0 in the veil). rig:tray (f): the note laid across the ramp, pixels
+  over a punched hole against those over the face row by row — worst |Δ| 1.0 of luminance (with R4's feather, 33.8). The five tray
+  stills are re-blessed; the other 107 are byte-identical.
 
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 

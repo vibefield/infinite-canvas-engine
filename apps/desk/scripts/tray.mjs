@@ -1204,11 +1204,44 @@ try {
     const tagFade = await partRamp("desk.photo", (st) => { const sp = st.specimens.find((q) => q.type === "desk.photo"); return sp === undefined ? null : { x: (sp.screen.x0 + sp.screen.x1) / 2, y: sp.screen.y1 + (sp.accessory === "shelf" ? 0.24 * P : 0) + 0.45 * P, hw: 12 }; });
     const accFade = await partRamp("desk.photo", (st) => { const sp = st.specimens.find((q) => q.type === "desk.photo"); const peg = sp?.pegs[0]; return peg === undefined ? null : { x: peg[0], y: peg[1], hw: 9 }; });   // the clip's body either side of its hole
     const partOk = (r) => r !== null && r.rows >= 8 && Math.abs(r.got - r.want) < 0.15 && r.above < 1;
+    // (f) NO HOLE SHOWS THROUGH WHAT HANGS IN THE RAMP (design-018 rev 5 — James, 2026-09-28: "at the edge fading, somehow the holes are
+    //     displayed on top of objects"): the note laid across the ramp (its top 2 px under the header's foot); each device row of the ramp
+    //     read inside its right half (clear of its writing) — the pixels over a punched hole (the lattice's CPU mirror, 1.5 px inside its
+    //     edge) against those over the face, row by row. The veil fades the note and the board behind it together, so what lies behind
+    //     the note never shows: one colour a row. A see-through fade (R1–R4's feather) let the hole's green through it
+    const inHole = (rect, xd, yd, S) => { const c = cellOf(pointAt((xd / 2 - rect.x) / 40, yd / 2 - rect.y, 40, carry(S, 40))); return punched(c, rect.w / 40) && holeSdf(c.qx, c.qy) * 40 < -1.5; };
+    const through = { rows: 0, worst: Number.POSITIVE_INFINITY };
+    const noteSp = (await fq("window.__desk.tray.specimens()")).find((q) => q.type === "desk.note");
+    if (noteSp !== undefined) {
+      let want = noteSp.y + fr.y - (Z + 2);
+      await fq(`window.__desk.tray.pin({ p: 1, band: ${want} })`); await fsettle();
+      const n0 = await drawnOf("desk.note");
+      if (n0 !== undefined) {
+        want += n0.y0 - (Z + 2);
+        await fq(`window.__desk.tray.pin({ p: 1, band: ${want} })`); await fsettle();
+        const n = await drawnOf("desk.note");
+        const A = await fshot();
+        const xa = Math.ceil(((n.x0 + n.x1) / 2) * 2);
+        const xb = Math.floor((n.x1 - 6) * 2);
+        through.worst = 0;
+        for (let y = Math.ceil((Z + 3) * 2); y < Math.floor((Z + F - 1) * 2); y++) {
+          const hole = [];
+          const face = [];
+          for (let x = xa; x < xb; x++) { if (inHole(fr, x, y, want)) hole.push(lum(A, x, y)); else if (onFace(fr, x, y, want)) face.push(lum(A, x, y)); }
+          if (hole.length < 3 || face.length < 3) continue;
+          const m = (v) => v.reduce((a, b) => a + b, 0) / v.length;
+          through.rows++;
+          through.worst = Math.max(through.worst, Math.abs(m(hole) - m(face)));
+        }
+      }
+    }
     await fq("window.__desk.tray.pin(null)");
     await ft.close?.();
     const fadeOk = (r) => !r.missing && r.above < 1 && r.rows >= 40 && r.quarter[0] < r.quarter[1] && r.quarter[1] < r.quarter[2] && r.quarter[2] < r.quarter[3] && r.off < 0.12 && r.steep < 0.07;
     check(fades.length >= 7 && fades.some((r) => r.type === "ice-examples.desk-clock") && fades.every(fadeOk) && partOk(tagFade) && partOk(accFade),
       `the fade: each kind straddling the header's foot is gone in the header and fades in over the ${F} px below it on the smoothstep — ${fades.map((r) => (r.missing ? `${r.type} not drawn` : `${r.type.replace(/^.*\./, "")} ${r.quarter.map((v) => v.toFixed(2)).join("·")} (off ${r.off.toFixed(2)}, steepest ${(r.steep * 100).toFixed(1)} %/row, in the header ${r.above.toFixed(0)})`)).join(" · ")} — its quarters of the same content shown whole; the print's tag ${tagFade?.got.toFixed(2)} and its clip ${accFade?.got.toFixed(2)} across the ramp's first 15 px (the ramp there ${tagFade?.want.toFixed(2)}, ${accFade?.want.toFixed(2)}; ${tagFade?.rows}, ${accFade?.rows} rows; in the header ${tagFade?.above.toFixed(0)}, ${accFade?.above.toFixed(0)})`);
+    check(through.rows >= 10 && through.worst < 3,
+      `no hole shows through what hangs in the ramp: the note laid across it, ${through.rows} device rows read inside it — over a punched hole and over the face one colour a row (worst |Δ| ${through.worst.toFixed(1)} of luminance)`);
   }
   await q("window.__desk.tray.close()"); await settle();
   const restAfter = await idle(240);

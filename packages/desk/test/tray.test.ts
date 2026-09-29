@@ -295,8 +295,10 @@ describe("the tray pass on a fake device", () => {
     expect(log.some((l) => l.includes("tray/pegboard"))).toBe(false);
     log.length = 0;
     ground.render(frame({ p: 1, scroll: 0 }));
-    const end = log.lastIndexOf("end");
-    expect(log.slice(end - 6, end)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "debug end", "scissor 0,0,2400,1600"]);
+    const at = log.indexOf("debug tray/pegboard");
+    // the drawer under its specimens, then (design-018 rev 5) the VEIL over them all at the top — the plain board, one quad, last
+    expect(log.slice(at, at + 11)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "debug end", "scissor 0,0,2400,1600",
+      "debug tray/pegboard/veil", "pipeline tray/pegboard/veil", "group 0 tray/pegboard", "draw 6,1,0,0", "debug end"]);
     expect(log.some((l) => l.includes("tray/pegboard/rim"))).toBe(false);   // the rim's strips retired (design-018 §2)
     // shut (design-018 §5): the drawer and its shadows lie below the view — nothing of it is drawn, and nothing uploaded
     log.length = 0;
