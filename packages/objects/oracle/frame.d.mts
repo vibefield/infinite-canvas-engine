@@ -51,6 +51,11 @@ export function createOracleDesk(opts: {
    * Untyped here (a widget type is `@ice/core`'s): the declaration stays self-contained.
    */
   readonly objects?: readonly unknown[];
+  /**
+   * A GPU error the kinds' creation window caught that no kind raises alone (petition I24, ground.ts `createKindPasses`): not a kind's
+   * — the host's probe counts it, as its own scopes would have (a kind's own error refuses that kind: it is drawn as missing).
+   */
+  readonly onError?: (error: GPUError) => void;
 }): Promise<OracleDesk>;
 
 /**

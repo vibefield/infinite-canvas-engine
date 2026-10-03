@@ -388,6 +388,8 @@ function slotSetOf(device: GPUDevice, mat: CuttingMat, programs: readonly KindPr
 
 /** The kinds that stood (their passes made): what the card composes. */
 const standing = (programs: readonly KindProgram[], made: KindPasses): KindProgram[] => programs.filter((_, i) => made.passes[i] !== undefined);
+/** A GPU error the kinds' window caught that no kind raises alone, with no host to tell: said on the console, never swallowed. */
+const unattributed = (e: GPUError): void => { console.error("desk: a GPU error while the kinds were made, no kind's alone —", e.message); };
 
 /**
  * The root slot's passes: the mat's (made first — every kind's pass is made on it), every registered kind's — made in parallel on the
@@ -395,7 +397,7 @@ const standing = (programs: readonly KindProgram[], made: KindPasses): KindProgr
  * then the card over the kinds that stood, and the desk's missing faces (made only if a kind was refused). Names must be unique and
  * strata known. Shared by the ground and the Node oracle (whose `onError` is its probe's: it watches the creation in scopes of its own).
  */
-export async function createSlotSet(device: GPUDevice, format: GPUTextureFormat, mat: CuttingMat, programs: readonly KindProgram[], onError?: (error: GPUError) => void): Promise<SlotSet> {
+export async function createSlotSet(device: GPUDevice, format: GPUTextureFormat, mat: CuttingMat, programs: readonly KindProgram[], onError: (error: GPUError) => void = unattributed): Promise<SlotSet> {
   checkPrograms(programs);
   const made = await createKindPasses(device, format, mat, programs, onError);
   const cards = await createCardShared(device, format, standing(programs, made));
@@ -851,7 +853,7 @@ export class Ground {
     const surf = opts.surface;
     const mat = await CuttingMat.create(opts.device, surf.format, opts.mat);
     checkPrograms(opts.kinds);
-    const made = await createKindPasses(opts.device, surf.format, mat, opts.kinds, opts.onError ?? ((e) => console.error("desk: a GPU error while the kinds were made, no kind's alone", e.message)));
+    const made = await createKindPasses(opts.device, surf.format, mat, opts.kinds, opts.onError ?? unattributed);
     const [cards, marks, hold, tray] = await Promise.all([
       createCardShared(opts.device, surf.format, standing(opts.kinds, made)),
       opts.marks === undefined ? null : MarksPass.create(opts.device, surf.format, opts.marks, mat),

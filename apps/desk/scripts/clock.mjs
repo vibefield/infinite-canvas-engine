@@ -13,7 +13,12 @@
 //   8. it rides INTO a mini mat (dropped over the face) and, far away, the face draws it as its chip (a disc of its dial);
 //   9. taken off the pegboard tray: its specimen dragged out makes one, selected, showing the desk's time; one undo takes it back;
 //  10. two tabs in a room agree on its props;
-//  11. no page errors, no contained faults.
+//  11–15. WHEN A KIND BREAKS (petition I24) — on `rig.html?plugins&broken` (the clock's fault fixture registered beside it): the boot
+//      with a kind REFUSED at create (its WGSL does not compile) is ready — `status()` ready, the refusal in its `faults`, said once,
+//      never degraded; a desk of the working clock, the refused one and one whose record throws from its third frame draws on, the
+//      faulty kind quarantined at three strikes and said once; the ledger rows (`due().kinds`, the dev panel's kinds readout); both
+//      broken ones drawn as the missing face; a click on either picks its entity; no page exception, no contained fault;
+//  16. no page errors, no contained faults.
 // THE EXIT CODE IS THE VERDICT: the number of failed rows; 1 for a throw; 2 for the watchdog.
 //
 //   pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:clock
@@ -268,7 +273,52 @@ try {
     `TWO TABS in a room agree: B sees A's clock (${bFirst[0]?.props.style}, ${bFirst[0]?.props.zone}), then its seconds hand off (${JSON.stringify(bLater?.props)} = A's ${JSON.stringify(aProps)}); each reads its own wall clock — tod ${both[0]?.tod} / ${both[1]?.tod} (+09:00); faults ${faultsAB.length}`);
   await A.close?.(); await B.close?.();
 
-  // 11. no page errors or contained faults
+  // 11–15. WHEN A KIND BREAKS (petition I24): the showcase with the clock's fault fixture registered — a clock whose WGSL does not
+  //     compile (refused at create) and one whose record throws from its third frame (three strikes, then quarantined) — on its own page
+  const logsF = [];
+  const F = await boot("?plugins&broken", logsF, "F");
+  const qf = async (js, ms = 30000) => { await F.send("Page.bringToFront"); return F.evaluate(js, { awaitPromise: true, timeoutMs: ms }); };
+  const BROKEN = "ice-examples.desk-clock.broken";
+  const FAULTY = "ice-examples.desk-clock.faulty";
+  const missingSaid = (kind) => logsF.filter((l) => l.includes(`"${kind}" is MISSING`)).length;
+  //  11. THE BOOT, a kind refused: DESK_READY, `status()` ready, the refusal named in its `faults` with the compiler's word — said once
+  const boot0 = await qf("({ ready: window.__desk.state.ready, available: window.__desk.handle.available(), status: window.__desk.handle.status() })");
+  const refusal = boot0.status.faults?.find((f) => f.kind === "desk-clock-broken");
+  check(boot0.ready === true && boot0.available === true && boot0.status.state === "ready" && boot0.status.faults?.length === 1 && refusal !== undefined && /^refused at create — WGSL .*desk_clock_broken_on_purpose/.test(refusal.reason) && missingSaid("desk-clock-broken") === 1,
+    `the boot with a kind REFUSED at create (its WGSL does not compile) is READY: state.ready ${boot0.ready}, status ${boot0.status.state}, faults ${JSON.stringify(boot0.status.faults?.map((f) => f.kind))} — "${refusal?.reason}" — said ${missingSaid("desk-clock-broken")} time on the page's console`);
+  //  12. THE SHOWCASE: a working clock, a refused one and the faulty one — the desk draws on; the faulty kind's record throws from its third
+  //      frame (its seconds hand remakes it each second): a strike each, the third QUARANTINES it — said once (one more notice), never degraded
+  await qf("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 }); window.__i24 = []; window.__desk.handle.onStatus((s) => window.__i24.push({ state: s.state, faults: (s.faults ?? []).map((f) => f.kind) })); 0");
+  const ids = await qf(`({ clock: window.__desk.spawn(${JSON.stringify(CLOCK)}, { zone: "+00:00" }, { x: 300, y: 300 }), broken: window.__desk.spawn(${JSON.stringify(BROKEN)}, {}, { x: 600, y: 300 }), faulty: window.__desk.spawn(${JSON.stringify(FAULTY)}, {}, { x: 900, y: 300 }) })`);
+  await qf("window.__desk.engine.ops.setSelection([], 'replace'); window.__desk.settle(6000)");
+  const quarantined = await qf(`(async () => { const t0 = Date.now(); while (Date.now() - t0 < 15000) { const f = window.__desk.handle.status().faults ?? []; if (f.some((x) => x.kind === "desk-clock-faulty")) return Date.now() - t0; await new Promise((r) => setTimeout(r, 50)); } return -1; })()`, 30000);
+  await qf("window.__desk.settle(6000)"); await sleep(300); await qf("window.__desk.settle(6000)");
+  const after = await qf("({ status: window.__desk.handle.status(), notices: window.__i24, kinds: window.__desk.stats().frame?.kinds ?? {} })");
+  const faultyReason = after.status.faults?.find((f) => f.kind === "desk-clock-faulty")?.reason ?? "";
+  check(quarantined >= 0 && after.status.state === "ready" && after.notices.length === 1 && JSON.stringify(after.notices[0]?.faults) === JSON.stringify(["desk-clock-broken", "desk-clock-faulty"]) && /^its `record` threw on entity \d+ \(strike 3 of 3\)/.test(faultyReason) && missingSaid("desk-clock-faulty") === 1 && (after.kinds["desk-clock"] ?? 0) === 1,
+    `the showcase with both broken clocks draws on: the faulty kind QUARANTINED ${quarantined >= 0 ? `${(quarantined / 1000).toFixed(1)} s after it was laid` : "NEVER"} ("${faultyReason}"), the host told ONCE (${after.notices.length} notice${after.notices.length === 1 ? "" : "s"}: ${JSON.stringify(after.notices)}), said ${missingSaid("desk-clock-faulty")} time on the console; status ${after.status.state}; the working clock drawn by its own kind (${after.kinds["desk-clock"]})`);
+  //  13. THE LEDGER: `due().kinds` names both missing (KIND_MISSING, −1: never due), and the dev panel's kinds readout says both
+  const ledger = await qf(`(() => { const d = window.__desk.handle.due(performance.now()); const sec = [...document.querySelectorAll("#desk-panel details")].find((s) => s.querySelector("summary")?.textContent === "the kinds"); return { kinds: d.kinds, panel: sec?.querySelector(".p-note")?.textContent ?? null, local: window.__desk.handle.local("desk-clock-faulty") === undefined }; })()`);
+  check(ledger.kinds["desk-clock-broken"] === -1 && ledger.kinds["desk-clock-faulty"] === -1 && typeof ledger.kinds["desk-clock"] === "number" && ledger.kinds["desk-clock"] >= 0 && ledger.local && typeof ledger.panel === "string" && ledger.panel.includes("desk-clock-broken") && ledger.panel.includes("desk-clock-faulty"),
+    `the ledger: due().kinds ${JSON.stringify({ broken: ledger.kinds["desk-clock-broken"], faulty: ledger.kinds["desk-clock-faulty"], clock: ledger.kinds["desk-clock"] === undefined ? undefined : "a time" })}; the faulty kind's desk state let go (${ledger.local}); the dev panel's kinds readout: "${ledger.panel?.slice(0, 120)}…"`);
+  //  14. DRAWN AS MISSING: both broken objects are the missing face, each under its kind's name; the clock its own record
+  const drawnF = await qf(`(() => { const d = window.__desk; const objs = d.handle.lastInputs()?.objects ?? []; const of = (id) => objs.find((o) => o.key === id); return { kinds: d.stats().frame?.kinds ?? {}, broken: of(${ids.broken})?.record?.missing === true, faulty: of(${ids.faulty})?.record?.missing === true, clock: of(${ids.clock})?.record?.missing === true }; })()`);
+  check(drawnF.kinds["desk-clock-broken"] === 1 && drawnF.kinds["desk-clock-faulty"] === 1 && drawnF.broken && drawnF.faulty && !drawnF.clock,
+    `both broken clocks drawn as the MISSING face (${JSON.stringify(drawnF.kinds)}; the refused one's record the face's: ${drawnF.broken}, the quarantined one's: ${drawnF.faulty}; the working clock's its own: ${!drawnF.clock})`);
+  //  15. THE PICK on a missing object returns its entity: a press on its box selects it — the refused one, then the quarantined one
+  const clickF = async (x, y) => { await F.send("Page.bringToFront"); for (const type of ["mouseMoved", "mousePressed", "mouseReleased"]) { await F.send("Input.dispatchMouseEvent", { type, x, y, button: type === "mouseMoved" ? "none" : "left", clickCount: 1, ...(type === "mousePressed" ? { buttons: 1 } : {}) }); if (type === "mousePressed") await sleep(30); } };
+  await clickF(600 + 60, 300 - 60); await qf("window.__desk.settle(6000)");
+  const pickBroken = await qf("window.__desk.selection()");
+  await clickF(900 - 60, 300 + 60); await qf("window.__desk.settle(6000)");
+  const pickFaulty = await qf("window.__desk.selection()");
+  const faultsF = await faultsOf(F, "F");
+  const errorsF = logsF.filter((l) => !/is MISSING/.test(l));
+  const statusF = await qf("window.__desk.handle.status().state");
+  check(pickBroken.length === 1 && pickBroken[0] === ids.broken && pickFaulty.length === 1 && pickFaulty[0] === ids.faulty && faultsF.length === 0 && errorsF.length === 0 && statusF === "ready",
+    `the PICK on a missing object returns its entity: a press in the refused clock's box selects ${JSON.stringify(pickBroken)} (it is ${ids.broken}), in the quarantined one's ${JSON.stringify(pickFaulty)} (${ids.faulty}); no page exception and no contained fault (${errorsF.length + faultsF.length}${errorsF.length + faultsF.length > 0 ? `: ${[...errorsF, ...faultsF].slice(0, 3).join(" · ")}` : ""}); status ${statusF}`);
+  await F.close?.();
+
+  // 16. no page errors or contained faults
   const errors = [...logs.filter((l) => !/^(\[warning\]|console\.warning) /.test(l)), ...logsA, ...logsB].filter((l) => !/^(\[warning\]|console\.warning) /.test(l));
   const faults = await faultsOf(tab);
   check(errors.length === 0 && faults.length === 0, `no page errors or contained faults (${errors.length + faults.length}${errors.length + faults.length > 0 ? `: ${[...errors, ...faults].slice(0, 4).join(" · ")}` : ""})`);

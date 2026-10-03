@@ -387,7 +387,7 @@ ORACLE_SCENES.push(...CAPTURE_SCENES);
 // (examples/desk-clock, built on the published entries alone), drawn through its kind's own contract; its object types are handed to
 // the desk by each host (render.mjs here, the parity page in Chrome) from the same package. New rows only: every scene above draws
 // as it did.
-import { CLOCK_SCENES } from "../../../examples/desk-clock/oracle/scenes.mjs";
+import { BROKEN_CLOCK_TYPE_ID, CLOCK_AT, CLOCK_SCENES, CLOCK_TYPE_ID } from "../../../examples/desk-clock/oracle/scenes.mjs";
 ORACLE_SCENES.push(...CLOCK_SCENES);
 
 // THE HOST'S FOOT (petition I21 — `deskLayer({ tray: { foot } })`): tray-scrolled's still with a host's foot inset of 88 (VibeField's
@@ -398,3 +398,24 @@ export const FOOT_SCENES = [
   { name: "tray-foot", trayed: true, footed: "tray-scrolled", scene: { ...trayBase, tray: { p: 1, scroll: 240.4, foot: 88 } } },
 ];
 ORACLE_SCENES.push(...FOOT_SCENES);
+
+// THE KIND BOUNDARY (petition I24): the SHOWCASE — the capture door's desk (two mini mats, the first with a live inside; a selected note
+// and a blank one; a bare whiteboard; a print; a closed notebook) and a desk clock beside them — with the fault fixture's BROKEN clock
+// registered (examples/desk-clock `DeskClockBroken`: its WGSL names what nothing declares, so ICE refuses its kind at create and makes
+// the rest): one lies on the desk, one in the first mini mat's live inside (within its content's bounds — the inside's camera is the
+// showcase's). `missing` runs the check: everywhere but in their boxes the frame is the showcase's without them, byte for byte; in each
+// box the missing face is drawn. Every scene above is drawn on the same desk, the refused kind registered, as committed — and this
+// one after them all, so each draws in the order it always did.
+const brokenAt = (x, y) => ({ type: BROKEN_CLOCK_TYPE_ID, x, y, props: {} });
+const showcase = CAPTURE_SCENES[0].scene;
+export const FAULT_SCENES = [
+  {
+    name: "fault-missing-z1", missing: BROKEN_CLOCK_TYPE_ID,
+    scene: {
+      ...showcase,
+      minimats: [{ ...DESK[0], inside: { ...DESK[0].inside, objects: [brokenAt(-250, 200)] } }, DESK[1]],
+      objects: [{ type: CLOCK_TYPE_ID, x: 330, y: 690, props: { zone: "+00:00" }, asset: { at: CLOCK_AT } }, brokenAt(130, 690)],
+    },
+  },
+];
+ORACLE_SCENES.push(...FAULT_SCENES);

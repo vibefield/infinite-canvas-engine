@@ -49,8 +49,9 @@ import { sdRoundBox, unproject } from "../src/photo/photo.ts";
 import { sdBoard, sdSurface } from "../src/board/board.ts";
 import { cssColor, MARKS } from "../../desk/src/theme.ts";
 import { markDistance } from "../../desk/src/marks/mirror.ts";
-// the open kind list (K8b): a plugin's object types, from its own package — its scenes are in scenes.mjs
-import { DESK_CLOCK_OBJECTS } from "../../../examples/desk-clock/src/index.ts";
+// the open kind list (K8b): a plugin's object types, from its own package — its scenes are in scenes.mjs — and its FAULT FIXTURE (petition
+// I24): the clock whose WGSL does not compile, registered on the one desk every scene is drawn on (its kind refused at create, the rest made)
+import { DESK_CLOCK_OBJECTS, DeskClockBroken } from "../../../examples/desk-clock/src/index.ts";
 
 Object.assign(globalThis, globals);   // GPUBufferUsage & friends, which the browser has for free
 const here = dirname(fileURLToPath(import.meta.url));
@@ -101,7 +102,10 @@ const scoped = async (what, fn) => {
 };
 // The desk both hosts draw (frame.mjs), on Dawn's device, composed from the .wgsl files on disk.
 const desk = await scoped("creation", () => createOracleDesk({
-  device, format: FORMAT, text: texts, objects: DESK_CLOCK_OBJECTS,
+  device, format: FORMAT, text: texts, objects: [...DESK_CLOCK_OBJECTS, DeskClockBroken],
+  // (the kinds' creation window — petition I24 — holds what a kind does after its first await: an error there no kind raises alone is
+  // the probe's, as its own scope would have counted it; a kind's own refuses that kind — the broken clock's compile error, held here)
+  onError: (e) => { probe.errors.push(`creation (no kind's alone): ${e.message}`); },
   assets: {
     noise: raw("blue-noise.rgba"), goboC: hostRaw("gobo-c.rgba"), goboB: hostRaw("gobo-b.rgba"),
     glyphMeta, glyphs: glyphMeta && glyphMeta.count >= 12 ? hostRaw("glyphs-mono-2x.r8") : null,
@@ -1213,6 +1217,50 @@ async function captureCheck(sc) {
   return ok;
 }
 
+/**
+ * THE KIND BOUNDARY as pixels (petition I24): a still with the fault fixture's broken clocks laid on it — their kind REFUSED at create
+ * (its WGSL does not compile; the probe's creation scope stays clean: the compile error was the kind's own scope's) — is the same still
+ * WITHOUT them, byte for byte, everywhere but in their boxes (each grown by two device px — the face's edge ramp): the rest of the desk
+ * boots and draws as it would. In each box the MISSING FACE is drawn: nearly every pixel differs from the still without it (the wash),
+ * and the hatching's lines stand out from it. A box is the object's rect on screen — a root object's under the still's camera, an
+ * inside's under its mini mat's inside camera (the inside's content bounds are the same either way: it lies within them).
+ */
+async function missingCheck(sc) {
+  const s = sc.scene;
+  const type = sc.missing;
+  const without = (d) => ({ ...d, objects: (d.objects ?? []).filter((o) => o.type !== type), ...(d.minimats ? { minimats: d.minimats.map((m) => (m.inside ? { ...m, inside: without(m.inside) } : m)) } : {}) });
+  const { px: A, w, h } = await render(s, { marks: true });
+  const { px: B } = await render(without(s), { marks: true });
+  const dpr = VIEW.dpr;
+  const size = DeskClockBroken.defaultSize;
+  const cam = { x: s.camX, y: s.camY, zoom: s.zoom };
+  const boxes = [];
+  const boxOf = (o, c, where) => { const x0 = (o.x - size.w / 2 - c.x) * c.zoom * dpr; const y0 = (o.y - size.h / 2 - c.y) * c.zoom * dpr; boxes.push({ where, x0, y0, x1: x0 + size.w * c.zoom * dpr, y1: y0 + size.h * c.zoom * dpr, n: 0, differ: 0, max: 0 }); };
+  for (const o of s.objects ?? []) if (o.type === type) boxOf(o, cam, "the desk");
+  for (const m of s.minimats ?? []) {
+    const inside = insideOf(m);
+    const view = insideView(matGeometry(m), contentOf(inside), cam, VP, FIT, PORTAL_GATE);
+    for (const o of inside.objects ?? []) if (o.type === type) boxOf(o, view.cam, `the inside of "${m.name}"`);
+  }
+  const PAD = 2;
+  let outside = 0;
+  let outsideMax = 0;
+  for (let y = 0; y < h; y++) for (let x = 0; x < w; x++) {
+    const o = (y * w + x) * 4;
+    const d = Math.max(delta(A, B, o), Math.abs(A[o + 3] - B[o + 3]));
+    const box = boxes.find((b) => x >= b.x0 - PAD && x < b.x1 + PAD && y >= b.y0 - PAD && y < b.y1 + PAD);
+    if (box === undefined) { if (d > 0) { outside++; outsideMax = Math.max(outsideMax, d); } continue; }
+    if (x < box.x0 || x >= box.x1 || y < box.y0 || y >= box.y1) continue;   // the edge's ramp: either
+    box.n++;
+    if (d > 0) box.differ++;
+    box.max = Math.max(box.max, d);
+  }
+  const faced = boxes.every((b) => b.n > 0 && b.differ > b.n * 0.9 && b.max >= 16);
+  const ok = boxes.length > 0 && outside === 0 && faced;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  missing    ${sc.name.padEnd(24)} outside the ${boxes.length} broken objects' boxes ${outside.toLocaleString()} px differ from the still without them (maxΔ ${outsideMax}) · in each box the face: ${boxes.map((b) => `${b.where} ${b.differ.toLocaleString()} of ${b.n.toLocaleString()} px (maxΔ ${b.max})`).join(" · ")}`);
+  return ok;
+}
+
 /** THE GOLDEN (design-015 D7): every scene's pixels, pinned by sha-256 in the committed oracle/shas.json. */
 const GOLDEN = resolve(root, "oracle/shas.json");
 const bless = process.env.ORACLE_BLESS === "1";
@@ -1306,6 +1354,7 @@ for (const sc of scenes) if (sc.printed) { if (!(await printCheck(sc))) failed +
 for (const sc of scenes) if (sc.held) { if (!(await heldCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.trayed) { if (!(await trayCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.capture) { if (!(await captureCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.missing) { if (!(await missingCheck(sc))) failed += 1; }
 // THE GOLDEN's verdict: every scene drawn as committed — or, blessing, the drawn shas written (ORACLE_ONLY merges its scenes in)
 if (bless) {
   const next = only ? { ...golden, ...drawnShas } : drawnShas;

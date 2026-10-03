@@ -10,6 +10,8 @@
 export const CLOCK_AT = Date.UTC(2026, 8, 28, 10, 8, 42);
 /** The clock's durable type (src/object.ts `CLOCK_TYPE` — restated: this module imports nothing). */
 export const CLOCK_TYPE_ID = "ice-examples.desk-clock";
+/** The fault fixture's clock whose WGSL does not compile (src/broken.ts `BROKEN_CLOCK_TYPE` — restated; petition I24): its kind is refused at create. */
+export const BROKEN_CLOCK_TYPE_ID = "ice-examples.desk-clock.broken";
 
 const matStill = { time: 3.7, goboTime: 57.14, noise: [0.37, 0.61] };
 const base = { camX: 13.7, camY: -21.3, theme: "light", zoom: 1, mat: matStill };

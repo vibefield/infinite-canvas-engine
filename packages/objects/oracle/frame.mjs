@@ -44,6 +44,7 @@ import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from ".
 import { finishOf, flightLights, flightPresent, insidePresent } from "../../desk/src/kit/inside.ts";
 import { insideView, miniMatInstance } from "../src/minimat/inside.ts";
 import { captureFrame, createSlotSet, encodeFrame, renderHeldFrame, SlotPool } from "../../desk/src/ground.ts";
+import { missingFace } from "../../desk/src/missing/layout.ts";
 import { DRAWER, drawerRect, drawerSize } from "../../desk/src/tray/drawer.ts";
 import { SAMPLE_SIZE, samplePicture } from "../src/photo/sample.ts";
 import { specimenFrames, TraySlots } from "../../desk/src/tray/specimens.ts";
@@ -202,7 +203,7 @@ export function pinnedAt(c, day) {
  * committed ink raster and the prints' picture, each with its metadata; a missing atlas, raster or picture is `null`
  * and the desk draws without it).
  */
-export async function createOracleDesk({ device, format, text, assets, log = console.log, objects = [] }) {
+export async function createOracleDesk({ device, format, text, assets, log = console.log, objects = [], onError }) {
   const mat = await CuttingMat.create(device, format, matShaders(text(MAT_SHADER_FILES)));
   // THE OPEN KIND LIST (design-016 K8b): object types a host hands the desk beyond the reference six — a PLUGIN's (the desk clock,
   // examples/desk-clock) — each drawn through its own kind's contract alone (`resolve` → `record`, `chip`), never by name here: a
@@ -214,7 +215,15 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   // The root slot from the kind registry: every desk kind's pass on the root's mat — the sticky notes (STICKY.md), the mini mats
   // (MINIMAT.md), the whiteboards (BOARD.md), the prints (PHOTO.md), the desk calendars (CALENDAR.md) and the notebooks
   // (NOTEBOOK.md) — and the passes a scene reaches into: the notes' (the ink pages, the law), the mini mats', the boards', …
-  const rootSlot = await createSlotSet(device, format, mat, [...deskKinds(text), ...pluginKinds]);
+  // (each kind's pass in its own error scope — petition I24: a kind refused there is MISSING and the rest are made; an error the kinds'
+  // window caught that no kind raises alone is the host's probe's, `onError`)
+  const rootSlot = await createSlotSet(device, format, mat, [...deskKinds(text), ...pluginKinds], onError);
+  /**
+   * THE KINDS REFUSED at create (petition I24 — a plugin's WGSL that will not compile: the fault fixture's broken clock): each object of
+   * one is the desk's MISSING FACE — `missingFace`, the one function the builder draws it with — and nothing of the kind is asked again.
+   */
+  const refused = new Set((rootSlot.faults ?? []).map((f) => f.kind));
+  for (const f of rootSlot.faults ?? []) log(`the kind "${f.kind}" is MISSING — ${f.reason}`);
   const passOf = (name) => { const k = rootSlot.kinds.get(name); if (!k) throw new Error(`oracle: the registry has no "${name}" kind`); return k.pass.pass; };
   const papers = passOf(PAPER_KIND);
   const minimats = passOf(MINIMAT_KIND);
@@ -342,9 +351,10 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       },
     };
   }
-  /** A plugin object as its kind records it — its pass's record. */
+  /** A plugin object as its kind records it — its pass's record; a REFUSED kind's, the missing face (petition I24), under its kind's name. */
   function objectOf(t, cam, s, depth) {
     const { kind, ctx } = objectContext(t, cam, s, depth);
+    if (refused.has(kind.name)) return { kind: kind.name, record: missingFace(ctx.rect, ctx.theme, ctx.flux.fade) };
     return { kind: kind.name, record: kind.record(kind.resolve(ctx), ctx) };
   }
   /** A book spec's thing — the same object for the same spec, so the book it is keeps its id and mesh from frame to frame (`notebookDraw`). */
@@ -366,7 +376,8 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     // a plugin object's chip (K8b, K8a's generic chips): its kind's own `chip`, in the first of its finishes the mini mat's face draws
     for (const o of desk.objects ?? []) {
       const { kind, ctx } = objectContext(o, { x: 0, y: 0, zoom: 1 }, {}, 1);
-      const chip = kind.chip?.(kind.resolve(ctx), ctx) ?? null;
+      // a refused kind's object has no chip: the missing face draws none (petition I24)
+      const chip = refused.has(kind.name) ? null : (kind.chip?.(kind.resolve(ctx), ctx) ?? null);
       const finish = chip === null ? undefined : finishOf(chip.finish, FACE_FINISHES);
       if (chip !== null && finish !== undefined) out.push({ ...chip, finish });
     }

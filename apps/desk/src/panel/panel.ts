@@ -105,6 +105,15 @@ function panelCss(): string {
 #desk-panel .p-unit { color: ${c(paper, 0.5)}; }`;
 }
 
+/**
+ * THE KINDS READOUT (petition I24): the kinds this desk draws as MISSING — refused at create or quarantined at three strikes — each
+ * with why, as the layer's status says them (`status().faults`); a plugin's author reads here what their kind did.
+ */
+export function kindsNote(handle: Pick<DeskLayerHandle, "status">): string {
+  const faults = handle.status().faults ?? [];
+  return faults.length === 0 ? "every kind draws itself" : `missing — drawn as the hatched card: ${faults.map((f) => `${f.kind} (${f.reason})`).join(" · ")}`;
+}
+
 export interface DevPanel {
   readonly element: HTMLElement;
   readonly params: DeskParams;
@@ -211,6 +220,7 @@ export function installDevPanel(host: DevPanelHost): DevPanel {
       ] },
       { kind: "note", get: () => (storageKey === undefined ? "in a room: nothing is kept between visits" : "") },
     ] },
+    { title: "the kinds", open: true, rows: [{ kind: "note", get: () => kindsNote(host.handle) }] },
     { title: "the mat", rows: [
       range("line, thin (device px)", 0, 3, 0.05, () => p.mat.thin, (v) => { p.mat.thin = v; }),
       range("line, thick (device px)", 0, 3, 0.05, () => p.mat.thick, (v) => { p.mat.thick = v; }),
@@ -301,6 +311,7 @@ export function installDevPanel(host: DevPanelHost): DevPanel {
   element.hidden = true;
   document.body.appendChild(element);
   const mounted = mountPanel(element, sections, bound.changed);
+  host.handle.onStatus(() => mounted.refresh());   // the kinds readout follows the status (a kind gone missing, I24); the layer's dispose drops it
   return {
     element,
     params: p,

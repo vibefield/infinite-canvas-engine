@@ -22,7 +22,9 @@ import inkUrl from "@ice/objects/oracle/fixtures/assets/ink-note-1.r8?url";
 import photoMetaUrl from "@ice/objects/oracle/fixtures/assets/photo-1.json?url";
 import photoUrl from "@ice/objects/oracle/fixtures/assets/photo-1.rgba?url";
 import { PRINT_FIXTURES, type PrintMeta, printSheetOf } from "@ice/objects/oracle/prints.mjs";
-import { DESK_CLOCK_OBJECTS } from "@ice-examples/desk-clock";   // the oracle's open kind list (design-016 K8b): a plugin's objects, for its stills
+// the oracle's open kind list (design-016 K8b): a plugin's objects, for its stills — and its fault fixture (petition I24), the clock whose
+// WGSL does not compile, registered on the one desk as the Node oracle registers it (its kind refused at create; the rest made)
+import { DESK_CLOCK_OBJECTS, DeskClockBroken } from "@ice-examples/desk-clock";
 import { bytesOf, fetchRetry, jsonOf } from "./rig/fetch-retry";   // the rigs' fetches, retried (K-H)
 
 /** The page's door for the rig (and a person at the console). */
@@ -108,7 +110,9 @@ async function boot(): Promise<void> {
     prints[name] = printSheetOf((await metaRes.json()) as PrintMeta, bytes);
   }
   const desk = await scope("creation", () => createOracleDesk({
-    device, format: surf.format, text: shaderText, objects: DESK_CLOCK_OBJECTS,
+    device, format: surf.format, text: shaderText, objects: [...DESK_CLOCK_OBJECTS, DeskClockBroken],
+    // an error the kinds' creation window held that no kind raises alone (petition I24) is the probe's, as its own scope would have counted it
+    onError: (e) => { errors.push(`creation (no kind's alone): ${e.message}`); fail(`GPU error: ${e.message}`); },
     assets: { noise: blueNoise(), goboC, goboB, glyphMeta, glyphs, inkMeta, ink, photoMeta, photo, prints },
     log: (message) => console.warn(message),
   }));
