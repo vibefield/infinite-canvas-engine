@@ -40,12 +40,14 @@ export const STRATA: readonly StratumName[] = ["pads", "sheets", "things"];
  */
 /**
  * The render a slot is prepared for (D7): the FRAME (the desk as it is), the COPY (the desk behind a carried object, made once
- * per stamp and blurred), or the HAND (K9 R4 — the carried object alone, prepared EVERY frame of the carry while the copy
- * stands). A pass that keeps state per render keeps the copy's apart; a pass whose residency asks are per prepare (the
- * pictures' details, the boards' pool) re-asks what it has bound under the hand, else the tick's step — seeing only the hand's
- * asks — would free every other detail on the desk behind it, a softness pop at every put-down.
+ * per stamp and blurred), the HAND (K9 R4 — the carried object alone, prepared EVERY frame of the carry while the copy
+ * stands), or a CAPTURE (petition I23, `ground.ts` `captureFrame` — the last presented frame's inputs drawn ONCE MORE into a
+ * readable texture at the asked scale, outside any frame; the desk's own frame stands as drawn). A pass that keeps state per
+ * render keeps the copy's apart; a pass whose residency asks are per prepare (the pictures' details, the boards' pool) re-asks
+ * what it has bound under the hand AND under a capture, else the tick's step — seeing only the hand's asks, or a thumbnail's
+ * coarser ones — would free every other detail on the desk behind it, a softness pop at every put-down.
  */
-export type RenderTarget = "frame" | "copy" | "hand";
+export type RenderTarget = "frame" | "copy" | "hand" | "capture";
 
 export interface SlotContext {
   /** The slot's camera and box (CSS px) and the device pixel ratio. */

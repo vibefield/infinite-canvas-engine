@@ -46,7 +46,8 @@ export class BoardKind implements KindPass<BoardInstance> {
     // a record made without the desk's local carries its look's pen materials (K5b — the tray's specimen): they are its pass's
     const own = records.find((r) => r.materials !== undefined)?.materials;
     if (own !== undefined && this.pass.look !== own) this.pass.look = own;
-    return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.theme, extra?.keys, s.target === "hand");
+    // the hand's prepare, and a capture's (I23): the frame's rasters re-asked at their own density, so neither evicts what the desk holds
+    return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.theme, extra?.keys, s.target === "hand" || s.target === "capture");
   }
 
   dropped(): number { return this.pass.dropped; }

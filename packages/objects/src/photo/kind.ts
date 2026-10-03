@@ -47,7 +47,8 @@ export class PhotoKind implements KindPass<PhotoInstance> {
 
   /** The pass's own `prepare`, argument for argument: the slot's camera, grid, clocks, the objects' presence, the light, the lamp — and the records' keys (D6). */
   prepare(_encoder: GPUCommandEncoder, s: SlotContext, records: readonly PhotoInstance[], extra?: KindExtra): number {
-    return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.lit, extra?.keys, s.target === "hand");
+    // the hand's prepare, and a capture's (I23): the details the frame holds re-asked at their lod, so a thumbnail's coarser asks evict none
+    return this.pass.prepare(s.view, s.fadeIn, s.cfg, s.frame, records, s.present, s.light, s.lit, extra?.keys, s.target === "hand" || s.target === "capture");
   }
 
   dropped(): number { return this.pass.dropped; }

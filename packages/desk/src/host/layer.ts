@@ -46,7 +46,7 @@ import { heldSlots, type SelectionAnchor, withKindActs } from "../compose/marks"
 import { createPickSource } from "../compose/pick";
 import { createDeskReflector, type DeskReflector, type DeskReflectorStats, type DeskWakes, looksOf } from "../compose/reflector";
 import { acquire, adopt, type Gpu, type GpuOptions } from "../engine/device";
-import { Ground, type GroundFrameInputs } from "../ground";
+import { type CaptureBytes, type CaptureOptions, checkCapture, Ground, type GroundFrameInputs } from "../ground";
 import type { KindProgram } from "../kind";
 import type { ObjectFlux, ObjectKind } from "../kinds/world";
 import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
@@ -319,6 +319,19 @@ export interface DeskLayerHandle {
   ground(): Ground | null;
   /** The theme changed (and, with it, the palette): the looks are remade, the next frame re-renders. */
   setTheme(theme: GroundTheme, palette?: Palette): void;
+  /**
+   * THE CAPTURE DOOR (petition I23 — the covers' still, the thumbnails, "Send to…"): the desk as the LAST PRESENTED frame showed
+   * it — the same camera, theme, selection marks, hand and tray (what to hide is the host's, by its own doors, before the call) —
+   * as an `ImageBitmap` of `rect` (CSS px of the view; the whole view when absent) at the view's dpr × `scale` (1; a thumbnail
+   * asks 0.25). Inside: that frame's inputs drawn ONCE MORE into a readable texture at the asked size and read back
+   * (`Ground.capture`) — never a copy kept of every frame, never a frame: the swap chain is not touched, the loop is not woken, no
+   * frame is counted (`redraws()`, `perf().frames`), and the memory ledger shows the still and its readback as a `capture` line of
+   * its own while they live and nothing after. Taken while the frame gate holds (`engine.frame.freeze`), it is the parked frame;
+   * live, the most recent. `undefined`, never a throw, while `status()` is `failed` or `degraded`, before the first frame has been
+   * presented, or when the device is lost mid-copy (a malformed option throws at the call). Captures serialize; one asked for the
+   * same picture (equal options, no frame since) while another is in flight resolves to that one's bitmap.
+   */
+  capture(opts?: CaptureOptions): Promise<ImageBitmap | undefined>;
   /** The mat's config over the current one (the rulers, the gobo): the root's grid. */
   configureMat(mat: Partial<MatConfig>): void;
   /** The lattice's fade-in window. */
@@ -439,6 +452,26 @@ function kindsOf(types: readonly WidgetType[], extra: readonly KindProgram[]): {
   }
   for (const k of extra) if (!byName.has(k.name)) byName.set(k.name, k);
   return { kinds: [...byName.values()], objectKinds };
+}
+
+/**
+ * A captured still's bytes as the page SHOWS them (I23): the swap chain's channel order turned to RGBA (`bgra8unorm` on most
+ * canvases — `getPreferredCanvasFormat`), alpha 255 on every pixel (the canvas is configured `opaque`: the screen never reads the
+ * frame's alpha, so the still carries none), and no colour-space conversion or premultiplication on the way in — the bitmap's
+ * bytes ARE the frame's, as the oracle's parity holds the page's pixels to Dawn's.
+ */
+function bitmapOf(c: CaptureBytes): Promise<ImageBitmap> {
+  const n = c.width * c.height * 4;
+  const rgba = new Uint8ClampedArray(n);
+  const b = c.bytes;
+  const bgra = c.format.startsWith("bgra");
+  for (let i = 0; i < n; i += 4) {
+    rgba[i] = b[bgra ? i + 2 : i] as number;
+    rgba[i + 1] = b[i + 1] as number;
+    rgba[i + 2] = b[bgra ? i : i + 2] as number;
+    rgba[i + 3] = 255;
+  }
+  return createImageBitmap(new ImageData(rgba, c.width, c.height), { premultiplyAlpha: "none", colorSpaceConversion: "none" });
 }
 
 /** The kinds told, once a page, that a local `tick` with no `due` keeps the desk awake (K9: nothing else would tell a plugin's author). */
@@ -796,6 +829,34 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
 
     const setGrid = (next: GridConfig): void => { grid = next; if (ground !== null) ground.grid = next; compose.configureGrid(next); };
 
+    // THE CAPTURE DOOR (petition I23): the GPU half is the ground's (`Ground.capture` — the last frame's inputs drawn once more into a
+    // readable still, read back); this half is the page's — the bytes as an `ImageBitmap` — and the door's honesty: nothing while the
+    // desk is not `ready` or no frame has been presented, never a throw for a GPU condition. Captures SERIALIZE (one still at a time
+    // on the device: a second asked meanwhile waits, and reads the frame that is most recent when its turn comes); one asked for the
+    // same picture as the one in flight — equal options, the same frame — shares its answer (two covers rising together, one bitmap).
+    let capturing: { readonly key: string; readonly inputs: GroundFrameInputs | null; readonly promise: Promise<ImageBitmap | undefined> } | null = null;
+    let captures: Promise<unknown> = Promise.resolve();
+    const captureKey = (o: CaptureOptions): string => JSON.stringify([o.scale ?? 1, o.rect === undefined ? null : [o.rect.x, o.rect.y, o.rect.width, o.rect.height]]);
+    const capture = (opts: CaptureOptions = {}): Promise<ImageBitmap | undefined> => {
+      checkCapture(opts);   // a malformed option throws HERE, at the call
+      const key = captureKey(opts);
+      const asked = compose.lastInputs();
+      const same = capturing;
+      if (same !== null && same.key === key && same.inputs === asked) return same.promise;
+      const run: Promise<ImageBitmap | undefined> = captures.then(async () => {
+        // honest undefined: the layer ended or was disposed; no desk (`failed`); a desk that may be losing frames (`degraded`); no
+        // frame presented yet (the boot's `pending`, or a ready desk that has not drawn — a viewport not yet written)
+        const g = ground;
+        const inputs = compose.lastInputs();   // the most recent frame when its turn comes
+        if (disposed || ended || g === null || status.state !== "ready" || inputs === null) return undefined;
+        const bytes = await g.capture(inputs, opts);
+        return bytes === undefined ? undefined : await bitmapOf(bytes);
+      }).finally(() => { if (capturing?.promise === run) capturing = null; });
+      capturing = { key, inputs: asked, promise: run };
+      captures = run.catch(() => undefined);   // a refusal never stalls the next capture
+      return run;
+    };
+
     return {
       reflector,
       canvas,
@@ -805,6 +866,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       device: () => drawDevice ?? undefined,
       ground: () => ground,
       setTheme: (t, p) => compose.setTheme(t, p),
+      capture,
       configureMat: (mat) => setGrid({ ...grid, mat: { ...grid.mat, ...mat, ...(mat.gobo !== undefined ? { gobo: { ...grid.mat.gobo, ...mat.gobo } } : {}), ...(mat.ruler !== undefined ? { ruler: { ...grid.mat.ruler, ...mat.ruler } } : {}) } }),
       configureFadeIn: (fadeIn) => setGrid({ ...grid, fadeIn }),
       setPlate(name, bytes) { ground?.mat.setPlate(name, bytes); compose.wake("pin"); },

@@ -43,7 +43,7 @@
 
 import type { Surface } from "./engine/device";
 import { CardPass, createCardShared } from "./card/card";
-import { beginPass } from "./engine/target";
+import { beginPass, Target } from "./engine/target";
 import { HoldPass } from "./hold/focus";
 import type { HoldShaders } from "./hold/shaders";
 import { type KindPass, type KindProgram, type RenderTarget, type SlotContext, STRATA, type StratumName } from "./kind";
@@ -623,6 +623,52 @@ function faceBox(rect: { readonly x: number; readonly y: number; readonly w: num
   return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hx: (x1 - x0) / 2, hy: (y1 - y0) / 2, r: 0 };
 }
 
+/**
+ * The passes one frame draws with — a `Ground`'s own (it IS one), or the Node oracle's: the root slot and the pool, the root's
+ * grid, and the three chrome passes (null where a host made none). What `encodeFrame` and `captureFrame` take, so the swap chain's
+ * frame, a capture's still and the oracle's render go through ONE encoding of a frame (petition I23: the capture is the frame path
+ * drawn once more into another target — never a second copy of it).
+ */
+export interface FramePasses {
+  readonly root: SlotSet;
+  readonly pool: SlotPool;
+  readonly grid: GridConfig;
+  readonly marks: MarksPass | null;
+  readonly hold: HoldPass | null;
+  readonly tray: TrayPass | null;
+  readonly traySlots: TraySlotSource | null;
+}
+
+/** What `encodeFrame` recorded: the frame's stats (`Ground.render`'s answer), the prepared tree, and the marks it laid (0: none). */
+export interface EncodedFrame {
+  readonly stats: GroundStats;
+  readonly prepared: PreparedFrame;
+  readonly marked: number;
+}
+
+/**
+ * Record one REST frame (no object in hand — the held frame is `renderHeldFrame`'s) into `encoder`, drawn into `into` — the swap
+ * chain (`Ground.render`), a capture's readable still (`captureFrame`), the oracle's target: the drawer's prepare (shut, p 0, it
+ * lays no quad; what the tray carries draws whatever the slide — a ghost grows, or flies home, past it), the slot tree, the marks,
+ * then ONE render pass — the frame stratum by stratum, the marks over every slot and stratum (stratum 5; `drawFrame` left the
+ * scissor on the whole view), the pegboard drawer over them (design-017: the dim, its shadow, the board, the specimens — K5a).
+ * The caller submits. `target` marks what the slots are prepared for (D7, `RenderTarget`); absent, the frame's.
+ */
+export function encodeFrame(encoder: GPUCommandEncoder, passes: FramePasses, inputs: GroundFrameInputs, into: HeldInto, target?: RenderTarget): EncodedFrame {
+  const { root, pool, grid, marks, tray, traySlots } = passes;
+  const trayed = inputs.tray !== undefined && tray !== null ? tray.prepare(inputs.view, inputs.theme, inputs.grid ?? grid, inputs.mat, inputs.tray) : 0;
+  const prepared = prepareFrame(encoder, root, pool, inputs, grid, target, inputs.tray !== undefined ? (traySlots ?? undefined) : undefined);
+  const marked = marks !== null ? marks.prepare(inputs.marks, trayed > 0 && tray !== null ? { view: inputs.view, tags: tagsOf(inputs.tray), night: inputs.theme.matLight.night } : undefined) : 0;
+  const bg = inputs.theme.canvasBg;
+  const size = into.size();
+  const pass = beginPass(encoder, into.view(), [bg[0], bg[1], bg[2], 1], "ground");
+  const drawn = drawFrame(pass, size, inputs.view.dpr, prepared.incoming, prepared.outgoing);
+  if (marked > 0) marks?.draw(pass);
+  if ((trayed > 0 || prepared.carried !== undefined) && tray !== null) drawTray(pass, size, inputs.view.dpr, tray, prepared.tray, marks, prepared.carried);
+  pass.end();
+  return { stats: { ...drawn.incoming, kinds: prepared.kinds, outgoing: drawn.outgoing, portals: prepared.portals, ...(prepared.dropped ? { dropped: prepared.dropped } : {}) }, prepared, marked };
+}
+
 
 
 export class Ground {
@@ -686,20 +732,19 @@ export class Ground {
       for (const k of this.root.kinds.values()) k.pass.endHold?.();
     }
     const encoder = this.device.createCommandEncoder({ label: "ground" });
-    // the drawer shut (p 0) lays no quad; what the tray carries is drawn whatever the slide (a ghost grows, or flies home, past it)
-    const trayed = inputs.tray !== undefined && this.tray !== null ? this.tray.prepare(inputs.view, inputs.theme, inputs.grid ?? this.grid, inputs.mat, inputs.tray) : 0;
-    const prepared = prepareFrame(encoder, this.root, this.pool, inputs, this.grid, undefined, inputs.tray !== undefined ? (this.traySlots ?? undefined) : undefined);
-    const marked = this.marks !== null ? this.marks.prepare(inputs.marks, trayed > 0 && this.tray !== null ? { view: inputs.view, tags: tagsOf(inputs.tray), night: inputs.theme.matLight.night } : undefined) : 0;
-    const bg = inputs.theme.canvasBg;
-    const pass = beginPass(encoder, this.surface.view(), [bg[0], bg[1], bg[2], 1], "ground");
-    const drawn = drawFrame(pass, this.surface.size(), inputs.view.dpr, prepared.incoming, prepared.outgoing);
-    // stratum 5: the marks, over every slot and every stratum (drawFrame left the scissor on the whole view)
-    if (marked > 0) this.marks?.draw(pass);
-    // …and the pegboard drawer over them (design-017): the dim, its shadow on the desk, the board to its edge, the specimens (K5a)
-    if ((trayed > 0 || prepared.carried !== undefined) && this.tray !== null) drawTray(pass, this.surface.size(), inputs.view.dpr, this.tray, prepared.tray, this.marks, prepared.carried);
-    pass.end();
+    const { stats } = encodeFrame(encoder, this, inputs, this.surface);
     this.device.queue.submit([encoder.finish()]);
-    return this.said({ ...drawn.incoming, kinds: prepared.kinds, outgoing: drawn.outgoing, portals: prepared.portals, ...(prepared.dropped ? { dropped: prepared.dropped } : {}) });
+    return this.said(stats);
+  }
+
+  /**
+   * THE CAPTURE DOOR's GPU half (petition I23; `captureFrame`): `inputs` — the last frame's, as `render` took them — drawn once
+   * more into a readable texture at the view's dpr × `scale`, `rect` (CSS px of the view) read back. The swap chain is not touched,
+   * no frame is drawn, nothing is kept: the still and its readback buffer are made for the call and destroyed after it. Undefined
+   * when the device is lost mid-copy, or the rect lies off the view.
+   */
+  capture(inputs: GroundFrameInputs, opts: CaptureOptions = {}): Promise<CaptureBytes | undefined> {
+    return captureFrame(this.device, this, this.surface.format, inputs, this.heldCache, opts);
   }
 
   /** A kind whose cap turns objects away is an ERROR on the host's console (D7): said when the drop begins and again if it grows. */
@@ -735,7 +780,7 @@ export function tagsOf(tray: TrayFrameInputs | undefined): { readonly label: str
 /** The desk copy's cache between held frames (D4b): the `stamp` it was made for (null: none yet), the stats of that frame, and how many copies were ever made (the "once per settled state" witness). */
 export interface HeldCache { stamp: string | null; stats: GroundStats | null; copies: number }
 
-/** Where a held frame goes: the swap chain's view and size (the ground's surface, or the oracle's target dressed as one). */
+/** Where a frame goes: the swap chain's view and size (the ground's surface), the oracle's target dressed as one, or a capture's still. */
 export interface HeldInto { view(): GPUTextureView; size(): { readonly w: number; readonly h: number } }
 
 /**
@@ -747,9 +792,10 @@ export interface HeldInto { view(): GPUTextureView; size(): { readonly w: number
  *     slot), the hand's light (the day's by night, as the carry rises);
  *  3. the FRAME: the desk out of focus (the sharp copy mixed toward the blurred one by the carry, dimmed), then the hand over it
  *     through the reading light. Two fullscreen draws; the marks stay quiet (the builder hands none).
- * Returns the desk copy's stats (the frame's objects behind the hand).
+ * Returns the desk copy's stats (the frame's objects behind the hand). `label` names the encoders (`hold`; a capture's
+ * `capture` — the pass instrument closes a profiler frame at the `hold` encoder's submit, and a capture is not a frame).
  */
-export function renderHeldFrame(device: GPUDevice, hold: HoldPass, root: SlotSet, pool: SlotPool, grid: GridConfig, into: HeldInto, inputs: GroundFrameInputs, held: HeldFrameInputs, cache: HeldCache): GroundStats {
+export function renderHeldFrame(device: GPUDevice, hold: HoldPass, root: SlotSet, pool: SlotPool, grid: GridConfig, into: HeldInto, inputs: GroundFrameInputs, held: HeldFrameInputs, cache: HeldCache, label = "hold"): GroundStats {
   const size = into.size();
   const dpr = inputs.view.dpr;
   const bg = inputs.theme.canvasBg;
@@ -757,26 +803,129 @@ export function renderHeldFrame(device: GPUDevice, hold: HoldPass, root: SlotSet
   if (remade || cache.stamp !== held.stamp) {
     cache.stamp = held.stamp;
     cache.copies += 1;
-    const encoder = device.createCommandEncoder({ label: "hold/copy" });
+    const encoder = device.createCommandEncoder({ label: `${label}/copy` });
     const { held: _held, marks: _marks, ...rest } = inputs;
     const copy: GroundFrameInputs = { ...rest, view: { ...inputs.view, dpr: dpr / 2 } };
     const prepared = prepareFrame(encoder, root, pool, copy, grid, "copy");   // the copy's own state in the passes that keep one (D7)
-    const pass = beginPass(encoder, hold.desk.view, [bg[0], bg[1], bg[2], 1], "hold/copy");
+    const pass = beginPass(encoder, hold.desk.view, [bg[0], bg[1], bg[2], 1], `${label}/copy`);
     const drawn = drawFrame(pass, { w: hold.desk.width, h: hold.desk.height }, dpr / 2, prepared.incoming, prepared.outgoing);
     pass.end();
     hold.blur(encoder, (held.blur * dpr) / 2);
     device.queue.submit([encoder.finish()]);
     cache.stats = { ...drawn.incoming, kinds: prepared.kinds, outgoing: drawn.outgoing, portals: prepared.portals, ...(prepared.dropped ? { dropped: prepared.dropped } : {}) };
   }
-  const encoder = device.createCommandEncoder({ label: "hold" });
+  const encoder = device.createCommandEncoder({ label });
   const handInputs: GroundFrameInputs = { view: held.view, grid: held.grid, objects: [held.object, ...(held.riders ?? [])], theme: { ...inputs.theme, matLight: held.light } };
   const hand = prepareFrame(encoder, root, pool, handInputs, held.grid, "hand");   // (K9 R4: the passes re-ask what the copy has bound)
-  const handPass = beginPass(encoder, hold.hand.view, [0, 0, 0, 0], "hold/hand");
+  const handPass = beginPass(encoder, hold.hand.view, [0, 0, 0, 0], `${label}/hand`);
   drawSlot(handPass, size, dpr, { ...hand.incoming, bare: true });
   handPass.end();
-  const pass = beginPass(encoder, into.view(), [bg[0], bg[1], bg[2], 1], "hold");
+  const pass = beginPass(encoder, into.view(), [bg[0], bg[1], bg[2], 1], label);
   hold.composite(pass, { e: held.e, dim: held.dim, saturate: held.filter.saturate, brightness: held.filter.brightness });
   pass.end();
   device.queue.submit([encoder.finish()]);
   return cache.stats ?? { k0: 0, fade: 0, wind: false, kinds: hand.kinds, outgoing: null, portals: 0 };
+}
+
+// ---------------------------------------------------------------- the capture door (petition I23)
+
+/** A rect of the view, CSS px: `x`, `y` its top-left, `width` × `height` its size. */
+export interface CaptureRect { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+
+export interface CaptureOptions {
+  /** The part of the view to return, CSS px (the whole view when absent); what lies off the view is cut off. */
+  readonly rect?: CaptureRect;
+  /** A multiplier on the view's dpr (1 — the still at device pixels; a thumbnail asks 0.25). */
+  readonly scale?: number;
+}
+
+/**
+ * A captured still's bytes: `width` × `height` device px, rows tightly packed, four bytes a pixel in `format`'s own channel
+ * order and alpha AS DRAWN (`bgra8unorm` on most swap chains; `rgba8unorm` the oracle's) — the texture's texels, exactly:
+ * the host turns them into an `ImageBitmap` (host/layer.ts), the oracle hashes them beside its own render.
+ */
+export interface CaptureBytes {
+  readonly width: number;
+  readonly height: number;
+  readonly format: GPUTextureFormat;
+  readonly bytes: Uint8Array<ArrayBuffer>;
+}
+
+/** A capture's option as the door validates it: a finite number; `> 0` where it must be. */
+const captureNumber = (what: string, v: number, positive: boolean): number => {
+  if (typeof v !== "number" || !Number.isFinite(v) || (positive && v <= 0)) throw new Error(`capture: ${what} must be a ${positive ? "positive " : ""}finite number (got ${String(v)})`);
+  return v;
+};
+
+/** A malformed capture option is a THROW at the call (a programming error, never an honest undefined): the scale positive and finite, the rect's four numbers finite. */
+export function checkCapture(opts: CaptureOptions): void {
+  captureNumber("scale", opts.scale ?? 1, true);
+  const r = opts.rect;
+  if (r === undefined) return;
+  captureNumber("rect.x", r.x, false);
+  captureNumber("rect.y", r.y, false);
+  captureNumber("rect.width", r.width, false);
+  captureNumber("rect.height", r.height, false);
+}
+
+/**
+ * THE CAPTURE (petition I23 — the covers' still, the thumbnails, "Send to…"): `inputs` — the last PRESENTED frame's, as
+ * `Ground.render` took them (the same camera, theme, marks, hand and tray) — drawn ONCE MORE, outside any frame, into a readable
+ * texture at the view's size × its dpr × `scale`, through the same encoding the swap chain's frame went through (`encodeFrame`;
+ * the held frame through `renderHeldFrame` — at the view's own size the standing desk copy is reused, the hand alone redrawn);
+ * then `rect` (CSS px of the view; the whole view when absent), in device px of the still, copied to a buffer and MAPPED. The
+ * slots are prepared for the `capture` target (D7, `RenderTarget`: a kind re-asks the residency the frame holds, as under the
+ * hand — a thumbnail's coarser asks evict nothing). The per-frame path gains nothing: no copy of any frame is kept, the swap chain
+ * is not touched, and the still and the readback buffer — `capture/still`, `capture/readback`, the ledger's own `capture` line
+ * while they live — are destroyed before the promise settles. Undefined, never a throw, when the device is lost before the bytes
+ * are mapped (the map rejects) or the rect lies wholly off the view; a malformed option throws at the call.
+ */
+export async function captureFrame(device: GPUDevice, passes: FramePasses, format: GPUTextureFormat, inputs: GroundFrameInputs, cache: HeldCache, opts: CaptureOptions = {}): Promise<CaptureBytes | undefined> {
+  checkCapture(opts);
+  const dpr = inputs.view.dpr * (opts.scale ?? 1);
+  // the still's size: the attachment a view of this dpr names (kit/layer.ts `attachmentOf` — `surface().fit`'s rule, the reflector's)
+  const size = { w: Math.max(1, Math.round(inputs.view.width * dpr)), h: Math.max(1, Math.round(inputs.view.height * dpr)) };
+  // the rect in the still's device px, clipped to it
+  let box = { x: 0, y: 0, w: size.w, h: size.h };
+  const r = opts.rect;
+  if (r !== undefined) {
+    const x0 = Math.max(0, Math.round(r.x * dpr));
+    const y0 = Math.max(0, Math.round(r.y * dpr));
+    const x1 = Math.min(size.w, Math.round((r.x + r.width) * dpr));
+    const y1 = Math.min(size.h, Math.round((r.y + r.height) * dpr));
+    box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    if (box.w <= 0 || box.h <= 0) return undefined;
+  }
+  const view = { ...inputs.view, dpr };
+  const held = inputs.held;
+  const frame: GroundFrameInputs = { ...inputs, view, ...(held !== undefined ? { held: { ...held, view: { ...held.view, dpr } } } : {}) };
+  const still = new Target(device, { format, label: "capture/still", readable: true }, size.w, size.h);
+  const into: HeldInto = { view: () => still.view, size: () => size };
+  const rowBytes = Math.ceil((box.w * 4) / 256) * 256;
+  const readback = device.createBuffer({ label: "capture/readback", size: rowBytes * box.h, usage: GPUBufferUsage.COPY_DST | GPUBufferUsage.MAP_READ });
+  try {
+    const copy = (encoder: GPUCommandEncoder): void => { encoder.copyTextureToBuffer({ texture: still.texture, origin: [box.x, box.y] }, { buffer: readback, bytesPerRow: rowBytes }, [box.w, box.h]); };
+    if (frame.held !== undefined && frame.held.e > 0 && passes.hold !== null) {
+      // the hand (D4b): the held frame's own path — its encoders submitted inside it, named for the capture — then the copy out
+      renderHeldFrame(device, passes.hold, passes.root, passes.pool, passes.grid, into, frame, frame.held, cache, "capture");
+      const encoder = device.createCommandEncoder({ label: "capture/read" });
+      copy(encoder);
+      device.queue.submit([encoder.finish()]);
+    } else {
+      const encoder = device.createCommandEncoder({ label: "capture" });
+      encodeFrame(encoder, passes, frame, into, "capture");
+      copy(encoder);
+      device.queue.submit([encoder.finish()]);
+    }
+    // the device lost before the bytes land: the map rejects, and the answer is honest — nothing, never a throw
+    try { await readback.mapAsync(GPUMapMode.READ); } catch { return undefined; }
+    const padded = new Uint8Array(readback.getMappedRange());
+    const bytes = new Uint8Array(new ArrayBuffer(box.w * box.h * 4));
+    for (let y = 0; y < box.h; y++) bytes.set(padded.subarray(y * rowBytes, y * rowBytes + box.w * 4), y * box.w * 4);
+    readback.unmap();
+    return { width: box.w, height: box.h, format, bytes };
+  } finally {
+    readback.destroy();
+    still.dispose();
+  }
 }

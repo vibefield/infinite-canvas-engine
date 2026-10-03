@@ -15,6 +15,7 @@ export function installGpuFlags(): Undo {
     GPUShaderStage: { VERTEX: 1, FRAGMENT: 2, COMPUTE: 4 },
     GPUBufferUsage: { MAP_READ: 1, MAP_WRITE: 2, COPY_SRC: 4, COPY_DST: 8, INDEX: 16, VERTEX: 32, UNIFORM: 64, STORAGE: 128, INDIRECT: 256, QUERY_RESOLVE: 512 },
     GPUTextureUsage: { COPY_SRC: 1, COPY_DST: 2, TEXTURE_BINDING: 4, STORAGE_BINDING: 8, RENDER_ATTACHMENT: 16 },
+    GPUMapMode: { READ: 1, WRITE: 2 },
   };
   const g = globalThis as Record<string, unknown>;
   const set = Object.keys(flags).filter((k) => !(k in g));
@@ -69,11 +70,14 @@ export function fakeDevice(log: string[] = []): FakeGpu {
     createRenderPipelineAsync: async (d: GPURenderPipelineDescriptor) => labelled(d),
     // (a texture's mips — photo/mips.ts, the notebook's and the calendar's paper — compile one synchronously)
     createRenderPipeline: (d: GPURenderPipelineDescriptor) => ({ ...labelled(d), getBindGroupLayout: () => ({ label: `${d.label ?? ""} group` }) }),
-    createBuffer: (d: GPUBufferDescriptor) => ({ ...labelled(d), size: d.size, destroy: () => {}, getMappedRange: () => new ArrayBuffer(0) }),
+    // a MAP_READ buffer (a capture's readback — ground.ts `captureFrame`) maps its whole size, every byte its own index (so a reader's
+    // row unpadding and channel order are checkable); any other an empty range, as before; its map resolves at once
+    createBuffer: (d: GPUBufferDescriptor) => ({ ...labelled(d), size: d.size, destroy: () => {}, mapAsync: async () => {}, unmap: () => {}, getMappedRange: () => ((d.usage & 1) !== 0 ? new Uint8Array(d.size).map((_, i) => i & 255).buffer : new ArrayBuffer(0)) }),
     createTexture: (d: GPUTextureDescriptor) => ({ ...labelled(d), createView: () => ({ label: `${d.label ?? ""} view` }), destroy: () => {} }),
     createCommandEncoder: () => ({
       beginRenderPass: (d: GPURenderPassDescriptor) => { log.push(`pass ${d.label ?? ""}`); return recordingPass(log); },
       copyTextureToTexture: () => {},
+      copyTextureToBuffer: () => {},
       finish: () => ({}),
     }),
     queue: { writeBuffer: () => { queue.writes += 1; }, writeTexture: () => {}, submit: () => { queue.submits += 1; } },
