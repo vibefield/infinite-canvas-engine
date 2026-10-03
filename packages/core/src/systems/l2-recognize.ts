@@ -3,7 +3,9 @@
  *
  * `ctl:spawn`  — cancelSweep (consumes the one-tick CancelRequest) →
  *                recognizerSpawn (tool profiles; pinch on 2nd touch suspends
- *                singles; wheel recognizers are `Simultaneous`) →
+ *                singles; wheel recognizers are `Simultaneous`; a primary
+ *                press only — a secondary one is a point, a middle one its
+ *                pan's drag: petition I28, press-button.ts) →
  *                recognizerIntegrity (requiredWatches counts, capture death,
  *                suspension lift). Newborns are identity-only until the
  *                ctl:spawn flush, so integrity naturally skips them until the
@@ -72,6 +74,7 @@ import { CanvasIntentScope, CanvasSession } from "../canvas/session";
 import { FrameInfo } from "../engine/frame-info";
 import { GestureSettings } from "../catalog/settings-resources";
 import { GESTURE_DEFAULTS } from "../settings/defaults";
+import { middlePans, pressButton } from "./press-button";
 
 export type SingleKindName = "tap" | "longPress" | "drag";
 
@@ -191,6 +194,11 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
 
         const screen = ctx.read(pointer, PointerScreen);
         const captureTarget = ctx.getRelation(pointer, TouchesExact);
+        // The button the press began with (petition I28, press-button.ts): only the primary's is a gesture. A secondary press is a
+        // POINT — ingest and `picking` already moved its point, pick and hover — so nothing spawns: nothing selects, drags, enters
+        // or works a part. A middle press is its pan's drag where `dragRoute` pans it, and nothing anywhere else.
+        const button = pressButton(ctx.get(pointer, PointerButtons)?.buttons ?? 0);
+        if (button === "secondary" || (button === "middle" && !middlePans(ctx, captureTarget))) continue;
         // The part under the down (design-014, B3b): copied onto every recognizer this down spawns.
         const downPart = ctx.get(pointer, PointerPart)?.part ?? "";
 
@@ -239,7 +247,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
         // Pending tap's last down re-points that tap at the new pointer (count
         // preserved) instead of spawning fresh. Edge-parked Pendings never rejoin.
         let rejoined = false;
-        if (captureTarget !== undefined && ctx.has(captureTarget, MultiTap)) {
+        if (button === "primary" && captureTarget !== undefined && ctx.has(captureTarget, MultiTap)) {
           const mt = ctx.read(captureTarget, MultiTap);
           ctx.query(pendingTapQ).each((pb) => {
             for (const pr of pb) {
@@ -311,6 +319,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
         };
 
         for (const kind of profile) {
+          if (button === "middle" && kind !== "drag") continue; // the middle press is its pan's drag — never a tap, never a hold
           if (kind === "tap" && rejoined) continue; // the rejoined Pending tap IS this down's tap
           const rec = spawnSingle(kind);
           if (kind === "longPress") lpRec = rec;
