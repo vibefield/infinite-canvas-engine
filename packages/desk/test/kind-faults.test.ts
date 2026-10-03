@@ -22,7 +22,7 @@ const PALETTE: Palette = { canvasBg: { token: "--bg", css: "#fafafa" }, select: 
 const VIEW = { w: 1200, h: 800, dpr: 1 };
 
 /** A desk over `objects` on a fake device that refuses the broken WGSL — mounted, its status heard from the start, its frames drawn. */
-async function mountDesk(objects: WidgetType[], opts: { readonly gpuLedger?: boolean } = {}) {
+async function mountDesk(objects: WidgetType[], opts: { readonly gpuLedger?: boolean; readonly pending?: (step: () => void) => void } = {}) {
   const log: string[] = [];
   const fake = fakeDevice(log, { refuse: (code) => (code.includes(BROKEN_WGSL_TOKEN) ? `unresolved value '${BROKEN_WGSL_TOKEN}'` : undefined) });
   const { device } = fake;
@@ -47,6 +47,7 @@ async function mountDesk(objects: WidgetType[], opts: { readonly gpuLedger?: boo
   const handle: DeskLayerHandle = deskLayer({ gpu, objects, theme: themeFrom("light", PALETTE), palette: PALETTE, ...(opts.gpuLedger === true ? { gpuLedger: true } : {}) })({ host: { container }, world: ce.world, frame: ce.engine.frame, catalog: ce.catalog, framePick: ce.stack.framePick });
   handle.onStatus((s) => heard.push(s));   // heard from the mount on: the boot's own word is the first
   const unregister = ce.engine.registerReflector(handle.reflector);
+  opts.pending?.(() => { ce.engine.step(performance.now()); });   // steps the engine takes while the device and the passes are on their way
   for (let i = 0; i < 100 && handle.status().state === "pending"; i++) await new Promise((r) => setTimeout(r, 5));
   /** One engine step — the reflector flushes. */
   const step = (): void => { ce.engine.step(performance.now()); };
@@ -269,6 +270,48 @@ describe("fault containment per kind (petition I24)", () => {
       expect(isMissingRecord(d.row(lateOne)?.record)).toBe(true);
       expect(isMissingRecord(d.row(clock)?.record)).toBe(false);
       expect(said(errors, "test-late").filter((m) => m.includes("is MISSING"))).toHaveLength(1);
+    } finally { d.dispose(); }
+  });
+
+  it("a kind QUARANTINED WHILE THE GROUND IS MADE — its desk state's `tick` threw three times in the boot's frames — is swapped out of the ground as it arrives: its pass disposed, never handed a record; said once, with the boot's `ready`", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    // the clock under its own name, its pass's dispose watched, its desk state's tick throwing at every call — asked at every step the
+    // desk takes, the steps before the ground arrives among them (a cold boot compiles for many frames: rig:remount's broken generation)
+    const base = brokenClockKind({ name: "test-early" });
+    const disposed: string[] = [];
+    const early: ObjectKind = {
+      ...base,
+      create: async (device, format, mat) => {
+        const pass = await base.create(device, format, mat);
+        const was = pass.dispose.bind(pass);
+        pass.dispose = () => { disposed.push("pass"); was(); };
+        return pass;
+      },
+      local: (host) => {
+        const local = (base.local as NonNullable<ObjectKind["local"]>)(host);
+        local.tick = () => { throw new Error("test-early: its tick throws on purpose"); };
+        return local;
+      },
+    };
+    const Early = defineObject({ type: "test.early-clock", version: 1, props: {}, size: { w: 150, h: 150 }, kind: early });
+    const d = await mountDesk([DeskClock, Early], { pending: (step) => { step(); step(); step(); } });
+    try {
+      // the three strikes came while the boot was pending; the ground, made meanwhile, compiled its pass — and swapped it out on arrival
+      expect(d.handle.status()).toEqual({ state: "ready", faults: [{ kind: "test-early", reason: expect.stringMatching(/^its `tick` threw \(strike 3 of 3\)/) }] });
+      expect(d.heard).toEqual([d.handle.status()]);   // said once — the boot's own `ready` carried it
+      expect(said(errors, "test-early").filter((m) => m.includes("is MISSING"))).toHaveLength(1);
+      expect(disposed).toEqual(["pass"]);
+      expect(d.handle.ground()?.pass("test-early")).toBeUndefined();
+      // its object is the missing face's, drawn by the face in its kind's entry — its own pass is never handed a record
+      const clock = d.at(DeskClock.type, 100, 100);
+      const one = d.at(Early.type, 400, 100);
+      d.frame();
+      expect(d.kinds()).toEqual({ "desk-clock": 1, "test-early": 1 });
+      expect(isMissingRecord(d.row(one)?.record)).toBe(true);
+      expect(isMissingRecord(d.row(clock)?.record)).toBe(false);
+      expect(d.log).toContain("pipeline desk/missing");
+      expect(d.handle.due(performance.now()).kinds["test-early"]).toBe(KIND_MISSING);
     } finally { d.dispose(); }
   });
 

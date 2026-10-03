@@ -988,6 +988,10 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           made.grid = grid;
           // the kinds refused at create: missing from the first frame, said once — with the boot's own `ready` (the status is still pending)
           for (const f of made.faults()) faults.refuse(f.kind, f.reason);
+          // …and a kind QUARANTINED while the ground was made (its desk state's `tick` or `due` threw three times in the boot's frames —
+          // they run from the mount on; rig:remount's broken generation): its `retire` found no ground, so the ground is told now — its
+          // pass swapped out of every slot for the missing face and disposed, never handed a record (a no-op for a kind refused here)
+          for (const f of faults.list()) made.quarantine(f.kind);
           ground = made;
           if (status.state === "pending") setStatus({ state: "ready" });   // an error while it booted keeps its word
           compose.ready();
