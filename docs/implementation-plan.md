@@ -1672,6 +1672,34 @@ glyph and the chips' ids. (D-R1.7, the row of holes peeking under the edge at re
 `OverInteractive`); an accessory's shadow darkens the holes it falls on; rig:tray takes ≈ 137 s; a lamp push configured to
 0 would make `normalize(shadow.zw)` NaN.
 
+## M23 — The 0.15.0 asks (petitions I20–I25) — **IN BUILD (I23 LANDED 2026-10-02)**
+
+VibeField's desk migration (track DK, `vibe-field/draft/thinking-desk-migration.md` §8 A4 — the covers DK-15, the thumbnails
+DK-4, "Send to…" DK-14) files six asks against the desk for 0.15.0; each is built in a worktree off `main` behind the 0.14.0 cut
+and graded on the exact SHA (`pnpm run ci` + `gate:landing`: the Dawn oracle at 113 stills, nineteen rigs, pack:audit, dts:check).
+Their status rows live in `docs/downstream-petitions.md`; what each built is here.
+
+- **I23 — the capture door** (**LANDED 2026-10-02**; DK-D25, James: "frozen desk should be still and consume no render time at
+  all, do it properly" — the covers take a STILL of the parked desk and blur it once, and this door is where the still comes from):
+  `handle.capture({ rect?, scale? }) → Promise<ImageBitmap | undefined>` — the LAST PRESENTED frame (the same camera, theme, marks,
+  hand and tray), `rect` in CSS px of the view, `scale` on the view's dpr. The route inside is the petition's lean, measured: a
+  ONE-OFF redraw of that frame's inputs — every view in the tree at the scaled dpr (`scaledInputs`) — into a readable still through
+  `encodeFrame` (now the one encoding of a frame: the swap chain's, the capture's, the Node oracle's), `copyTextureToBuffer` +
+  `mapAsync`, an ImageBitmap from the bytes; the per-frame path gains no copy (the 112 committed stills are byte-identical, and the
+  capture's own scene `capture-desk-z1` joins the golden: at 1× the capture's sha IS the frame's, at 0.25× the frame drawn at dpr 0.5
+  to the byte, a rect its crop). On the showcase at 1200 × 800 @ 2 with the loop parked: 2400 × 1600 in 30 ms the first time, 28–29
+  warm; 600 × 400 (0.25×) in 4 ms, 2.5 warm; 0 engine steps, 0 redraws, one submit, the ledger's `capture` line made and gone
+  (rig:capture, the nineteenth rig; the oracle still staged from the world at maxΔ 0 on 3,840,000 px). Not chosen:
+  `createImageBitmap(canvas)` on the host's element (nothing promises the displayed bitmap is the frame the world shows, nor what it
+  holds while `degraded`) and keeping a copy of every frame (a per-frame cost on an idle-zero desk). Honest `undefined` — never a
+  throw — while `failed` or `degraded`, before the first frame, or when the device is lost mid-copy; captures serialize, an equal one
+  in flight is shared. Owed, said plainly: a capture of a HELD frame at another scale remakes the hold's desk copy (the hold pass's
+  targets refit to the still's size, and the next frame remakes it again — one copy each way; at the view's size the copy stands); the
+  marks and the tray are the frame's as drawn (a host hides what it will not show by its own doors before the call); the capture's
+  render pass keeps the frame's label (its encoder is `capture`, so the GPU profiler reports it as loose work, never a frame). Found by
+  the oracle's quarter check and fixed before landing: the first build scaled the root view alone, and a live inside's lattice drew
+  against the frame's dpr.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field
