@@ -5,7 +5,7 @@
 // `setScene` and `kinds.print` refuse by name instead of reaching for fixtures a third-party app would not have.
 
 import type { CanvasEngine, Entity, WidgetType } from "@ice/core";
-import type { DeskLayerHandle, ThemeName } from "@ice/desk";
+import type { DeskLayerHandle, DeskLayerOptions, ThemeName } from "@ice/desk";
 
 /** What a scene is staged INTO: the engine, the layer's handle, the theme's setter, the flight's pin. */
 export interface SceneHost {
@@ -30,7 +30,12 @@ export interface DeskRig {
   printFixture(handle: DeskLayerHandle): Promise<PrintFixture>;
   /** Object types the rig registers on the desk engine before it is made (K5a: rig:tray's plugin fixture, under `?trayPlugin`). */
   readonly widgets?: readonly WidgetType[];
+  /** The host's options the rig's page mounts the layer with — a host's chrome as VibeField sets it (I20: `?hold=top,band,travelMs`). */
+  readonly layer?: RigLayer;
 }
+
+/** The layer options a rig's page may mount with (the product page mounts with none of them). */
+export type RigLayer = Pick<DeskLayerOptions, "hold">;
 
 declare global {
   interface Window {
@@ -38,6 +43,9 @@ declare global {
     __deskRig?: DeskRig;
   }
 }
+
+/** The layer options the rigs' harness asked for (`{}` on the product page, and on a rig page that asked none). */
+export const rigLayer = (): RigLayer => (typeof window === "undefined" ? {} : (window.__deskRig?.layer ?? {}));
 
 /** The harness, or a refusal that names the page to open. */
 export function deskRig(): DeskRig {

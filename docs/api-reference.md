@@ -315,6 +315,12 @@ one composite) keeps the contract as one object: the kit's composite lays the la
 bindings `layerCompositeLayout(device, label)`, and `BoxTargets(device, label, layoutComp, samples, view)` — `view` the slot's view
 block, `MatPass.view`).
 
+**The host's chrome on the desk (petition I20)** — beside `grid` (the root's mat config — its rulers, its gobo; `configureMat` live),
+`deskLayer` takes the numbers a host's own chrome sets, read at the mount, each the desk's own when absent: **`hold: { top?, band?,
+travelMs? }`** — the held object's reading fit keeps `top` CSS px under the view's top (56; a phone keeps its 60) and `band` above its
+foot (72), and the held bar travels `travelMs` (M1; 340) — the bar being the host's, the selection's anchor carries it
+(`anchor().held.travelMs`, present only when set; `<SelectionMenu>` follows it). A malformed number throws at the mount.
+
 **Plugin parity (design-016 K-L2, K8a)** — whatever a built-in kind does, a plugin kind declares the same way, and no list in the
 engine names a kind:
 - **Services**, an open registry by typed key (`@ice/desk/kit`: `serviceKey<T>(name)`, `service(key, value)`, `Services`): the host

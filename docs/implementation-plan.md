@@ -1699,6 +1699,15 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   render pass keeps the frame's label (its encoder is `capture`, so the GPU profiler reports it as loose work, never a frame). Found by
   the oracle's quarter check and fixed before landing: the first build scaled the root view alone, and a live inside's lattice drew
   against the frame's dpr.
+- **I20 — the hand's reserves and the held bar's travel, host-settable** (**BUILT 2026-10-02**, branch `i20-22-host-options`; DK-12,
+  MC-D4 — VibeField's tools in hand under its head): `deskLayer({ hold: { top, band, travelMs } })`, read at the mount, each `HOLD`'s
+  when absent. The reserves reach the one reading fit (`readingTarget(…, reserves)`, the builder's `hold`); the travel reaches the bar
+  through the anchor (`HeldAnchor.travelMs`, only when set), the bar being the host's (DK-D23) — `<SelectionMenu>` honours it. Decided
+  in the build: a phone's ONE-PAGE decision stays on the phone's own numbers — the notebook's kind and its leaf ask
+  `readingTarget(…, true).single` themselves, and a host's band would otherwise split their word from the hand's in a short portrait
+  window (400 × 480 at band 100); `topPhone`/`marginPhone` untouched, the band shared as it always was. Measured: rig:open §14 — the fit
+  116.000 / 100.000, the bar's travel 549.6 ms on the page's clock (two transform runs: the bar measures its width again once its tools
+  are in, as it always has).
 
 ## Release cut & downstream
 

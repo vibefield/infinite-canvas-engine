@@ -36,6 +36,22 @@ its own block here as it is built.** Additive, every one: nothing of 0.14.0's su
   warm; the thumbnail of 600 × 400 in 4 ms, 2.5 warm; a rect; the share; the oracle still staged FROM THE WORLD at maxΔ 0 on
   3,840,000 px; a live capture; the lost device). `docs/api-reference.md` lists it beside `setTheme`.
 
+<!-- petition I20 — the hand's reserves and the held bar's travel, host-settable (2026-10-02) -->
+- **THE HAND AS A HOST SETS IT — `deskLayer({ hold: { top?, band?, travelMs? } })`** (petition I20 — VibeField's tools in hand under
+  its head, MC-D4; DK-12): CSS px and ms, read at the mount, each `HOLD`'s when absent (56 · 72 · 340). `top` is the reserve above the
+  held object's reading fit and `band` the reserve below it — `readingTarget(extent, vp, spread, face, reserves?)` takes them
+  (`HoldReserves`, the builder's `hold`); a phone keeps `HOLD.topPhone` and `HOLD.marginPhone`, and its one-page decision (Q-p) is made
+  on its own numbers whatever the host reserves, so the notebook's own `readingTarget(…, true).single` still agrees with the hand.
+  `travelMs` is the held bar's travel (M1): the bar is the host's, so the desk carries it on the selection's anchor
+  (`HeldAnchor.travelMs`, present only when the host set one) and `@ice/react`'s `<SelectionMenu>` travels over it, there and back
+  (`backMs` stays). A malformed number (negative, NaN, infinite) throws at the mount, by its name, before the canvas is made. Absent, the
+  desk and its anchors are 0.14.0's byte for byte. Witnesses: `packages/desk/test/hold-reserves.test.ts` (the fit 116 under the top and
+  100 above the foot at 800 and 640 px tall; `HOLD`'s identity; the phone; the refusal), `packages/objects/test/hold-reserves.test.ts`
+  (the real layer: a notebook picked up under `{ 116, 100, 560 }` and the anchor's travel; without, `HOLD`'s fit and the anchor's four
+  keys), `packages/react/test/held-bar.test.tsx` (560 there, and back over the last travel told), and rig:open §14 (a page mounted as
+  VibeField mounts it, `rig.html?hold=116,100,560`: the notebook's fit 116 / 100 to the micro-pixel, the bar's travel measured on the
+  page's clock within a frame of 560).
+
 ## [0.14.0] — 2026-10-02
 
 **The first publish since 0.11.0, and it carries M20 + M21 + M22** — the desk (design-015), the kit and the

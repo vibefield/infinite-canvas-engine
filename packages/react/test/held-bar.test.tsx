@@ -143,6 +143,23 @@ describe("the held bar (design-015 §8)", () => {
     act(() => { vi.advanceTimersByTime(SELECTION_MENU.travelMs + 1); });
     expect(menu().style.transition).not.toContain("transform");
   });
+
+  it("I20: travels over the HOST's travel when the anchor carries one — 560 ms, still on where its own 340 would end — and back over it once the hand is gone", () => {
+    vi.useFakeTimers();
+    const source = fakeSource(anchorOf());
+    const { menu } = mount(source);
+    source.set(held({ travelMs: 560 }));
+    expect(menu().style.transition).toContain("transform 560ms");
+    act(() => { vi.advanceTimersByTime(SELECTION_MENU.travelMs + 1); });
+    expect(menu().style.transition).toContain("transform 560ms");
+    act(() => { vi.advanceTimersByTime(560 - SELECTION_MENU.travelMs); });
+    expect(menu().style.transition).not.toContain("transform");
+    // the way back: the anchor names no hand at all now (the object gone from it) — the bar travels over the last travel it was told
+    source.set(anchorOf());
+    expect(menu().style.transition).toContain("transform 560ms");
+    act(() => { vi.advanceTimersByTime(561); });
+    expect(menu().style.transition).not.toContain("transform");
+  });
 });
 
 describe("the held bar's live tools (design-015 §8, D3t-a)", () => {

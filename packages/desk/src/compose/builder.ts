@@ -93,7 +93,7 @@ import {
   type World,
 } from "@ice/core";
 import type { HeldFrameInputs, OutgoingInputs, PortalInputs, SlotObject } from "../ground";
-import { carryOf, HELD_USER_REST, heldCamera, heldFocus, heldFrame, heldPose, HOLD, homePose, progressOf, readingTarget } from "../hold/pose";
+import { carryOf, HELD_USER_REST, heldCamera, heldFocus, heldFrame, heldPose, HOLD, type HoldReserves, homePose, progressOf, readingTarget } from "../hold/pose";
 import { FLUX_REST, type InsideContext, type KindLocal, numberProp, type ObjectContext, type ObjectFlux, type ObjectKind, type ObjectRect, rectFrame, rectOf, type RungContext } from "../kinds/world";
 import type { MarksInput } from "../marks/layout";
 import { createMarksCollector, type MarkRow, type SelectionAnchor } from "./marks";
@@ -139,6 +139,8 @@ export interface DeskBuilderOptions {
    * host), every member is tested.
    */
   readonly spatial?: SpatialSource;
+  /** The hand's reserves (petition I20 — `deskLayer({ hold })`): where the reading fit keeps clear of the host's chrome; `HOLD`'s by default. */
+  readonly hold?: HoldReserves;
 }
 
 /**
@@ -521,6 +523,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   const ghostS = (opts.ghostMs ?? GHOST_MS) / 1000;
   const marginPx = opts.marginPx ?? MARGIN_PX;
   const redressMs = opts.redressMs ?? REDRESS_MS;
+  const reserves = opts.hold ?? HOLD;
   const order = createSiblingOrderIndex(world);
   const states = new Map<Entity, ObjectState>();
   const ghosts = new Map<Entity, Ghost>();
@@ -1124,7 +1127,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             const extentWorld: ObjectRect = { cx: hst.rect.cx + ca * ox - sa * oy, cy: hst.rect.cy + sa * ox + ca * oy, w: extentLocal.w, h: extentLocal.h };
             // a spread read one page at a time on a phone: the page in view is the kind's (D3t-b — flux, the view glides)
             const face = binding.spread === true ? (binding.page?.({ entity: hand.entity, local: locals?.get(hst.kind.name) }) ?? 0) : 0;
-            const target = readingTarget(extentLocal, vpSize, binding.spread === true, face);
+            const target = readingTarget(extentLocal, vpSize, binding.spread === true, face, reserves);
             const user = world.get(hand.entity, HeldView) ?? HELD_USER_REST;
             const pose = heldPose(homePose(extentWorld, angle, cam), target, user, hand.e);
             const { cam: heldCam, grow } = heldCamera(pose, hst.rect, extentLocal, cam.zoom, binding.pose === "eye", vpSize);

@@ -21,7 +21,7 @@ export * from "./object";
 // host, its DOM half's (K4b) — beside the render half ground.ts re-exports from kind.ts
 export { type DataChildren, FLUX_REST, type HeldContext, type HeldToolDef, type InsideContext, isObjectKind, type KindDriver, type KindDriverHost, type KindHost, type KindLocal, numberProp, type ObjectContext, type ObjectDomHost, type ObjectFlux, type ObjectHit, type ObjectHost, type ObjectKind, type ObjectRect, type OpenBinding, rectFrame, rectOf, type RungContext, type StratumName, stringProp } from "./kinds/world";
 // the hand's pose (design-015 §8, D4b): the reading size, the pose between the desk and the hand, the pose as a camera
-export { carryOf, focusOf, HELD_USER_REST, type HeldPose, type HeldUser, type HeldViewport, heldCamera, heldFrame, heldPose, HOLD, type HomePose, homePose, isNarrow, type ReadingTarget, readingTarget } from "./hold/pose";
+export { carryOf, focusOf, HELD_USER_REST, type HeldPose, type HeldUser, type HeldViewport, heldCamera, heldFrame, heldPose, HOLD, type HoldOptions, type HoldReserves, type HomePose, homePose, isNarrow, type ReadingTarget, readingTarget } from "./hold/pose";
 export { NO_DOCS, type TypingDocs, type WritableSession, writable } from "./docs";
 export * from "./theme";
 export * from "./shaders";

@@ -32,9 +32,29 @@ export const HOLD = {
   light: { saturate: 0.62, brightness: 0.82 },
   /** The cover's spring in hand (desk.js `COVER`): a palm, not a desk. */
   cover: { hz: 1.4, zeta: 0.78 },
-  /** The held bar's travel (M1 morph) and its return after the landing. */
+  /** The held bar's travel (M1 morph) and its return after the landing — `travelMs` the default of a host's `hold.travelMs` (I20). */
   bar: { travelMs: 340, backMs: 200 },
 } as const;
+
+/**
+ * THE HAND'S RESERVES (petition I20): how far the reading fit keeps from the view's top (`top`) and from its foot (`band` — the held
+ * bar's band), CSS px. `HOLD`'s are the default; a host's chrome moves them (`deskLayer({ hold })`). A phone keeps its own top.
+ */
+export interface HoldReserves {
+  readonly top: number;
+  readonly band: number;
+}
+
+/**
+ * The hand as a HOST sets it (petition I20 — `deskLayer({ hold })`, read at the mount): the reserves above and below the reading fit,
+ * CSS px, and the held bar's travel (M1), ms — each `HOLD`'s when absent (`top` 56, `band` 72, `travelMs` 340). The bar is the host's:
+ * the desk publishes the travel on the selection's anchor (`HeldAnchor.travelMs`) for whichever bar draws it.
+ */
+export interface HoldOptions {
+  readonly top?: number;
+  readonly band?: number;
+  readonly travelMs?: number;
+}
 
 export interface HeldViewport { readonly width: number; readonly height: number }
 
@@ -50,23 +70,26 @@ export interface ReadingTarget {
 export const isNarrow = (vp: HeldViewport): boolean => vp.width < HOLD.narrow;
 
 /**
- * The reading size (desk.js `heldTarget`): the extent fits the view inside the margins and above the bar's band, never past 3×.
- * `spread`: the extent is a two-page spread that may open one page at a time — on a portrait phone (W < 0.85·H) it does when
- * one page reads at least 1.3× larger than the whole spread would; then the RIGHT page is centred (the extent's centre sits a
- * quarter of its width left of the middle) — or, `face` → 1, the LEFT (D3t-b: the notebook reads page by page; between, the view
- * glides).
+ * The reading size (desk.js `heldTarget`): the extent fits the view inside the margins, `reserves.top` under its top and the bar's
+ * band (`reserves.band`) above its foot, never past 3× — the host's reserves (I20), `HOLD`'s by default; a phone keeps its own top
+ * and margins. `spread`: the extent is a two-page spread that may open one page at a time — on a portrait phone (W < 0.85·H) it
+ * does when one page reads at least 1.3× larger than the whole spread would; then the RIGHT page is centred (the extent's centre sits
+ * a quarter of its width left of the middle) — or, `face` → 1, the LEFT (D3t-b: the notebook reads page by page; between, the view
+ * glides). That decision is the PHONE'S, on `HOLD`'s band whatever the host reserves, so a kind that asks it alone
+ * (`readingTarget(extent, vp, true).single`) agrees with the hand; the reserves size the page it shows.
  */
-export function readingTarget(extent: ObjectRect, vp: HeldViewport, spread = false, face = 0): ReadingTarget {
+export function readingTarget(extent: ObjectRect, vp: HeldViewport, spread = false, face = 0, reserves: HoldReserves = HOLD): ReadingTarget {
   const narrow = isNarrow(vp);
   const m = narrow ? HOLD.marginPhone : HOLD.margin;
-  const top = narrow ? HOLD.topPhone : HOLD.top;
+  const top = narrow ? HOLD.topPhone : reserves.top;
   const boxW = Math.max(40, vp.width - 2 * m);
-  const boxH = Math.max(40, vp.height - top - HOLD.band);
+  const boxH = Math.max(40, vp.height - top - reserves.band);
   let s = Math.min(boxW / extent.w, boxH / extent.h, HOLD.max);
   let single = false;
   if (spread && narrow && vp.width < vp.height * 0.85) {
-    const s1 = Math.min(boxW / (extent.w / 2), boxH / extent.h, HOLD.max);
-    if (s1 > s * 1.3) { s = s1; single = true; }
+    const own = Math.max(40, vp.height - top - HOLD.band);
+    const s0 = Math.min(boxW / extent.w, own / extent.h, HOLD.max);
+    if (Math.min(boxW / (extent.w / 2), own / extent.h, HOLD.max) > s0 * 1.3) { s = Math.min(boxW / (extent.w / 2), boxH / extent.h, HOLD.max); single = true; }
   }
   return { cx: vp.width / 2 - (single ? (extent.w / 4) * s * (1 - 2 * face) : 0), cy: top + boxH / 2, s, single };
 }

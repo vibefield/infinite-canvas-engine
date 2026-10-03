@@ -356,6 +356,56 @@ try {
   // ---- 13. THE DESK CALENDAR AT WORK (D3t-c — open-calendar.mjs)
   await calendarRig({ tab, q, settle, mouse, dbl, key, sleep, check, until, hand, META });
 
+  // ---- 14. A HOST'S HOLD (petition I20): a page mounted as VibeField mounts the layer — `rig.html?hold=116,100,560`, the layer's
+  //          `hold: { top: 116, band: 100, travelMs: 560 }` — picks the notebook up: the fit lands 116 under the view's top and 100
+  //          above its foot (the pose seam's frame), the anchor carries the travel, and the held bar TRAVELS 560 ms — its transform's
+  //          transitions timed on the page's clock from the first one's run to the last one's end (or its cancel: the bar takes the
+  //          transition off as its travel ends), within a frame. (§1–§13 above ran on the plain page: the fit 56 / 72, the bar's 340.)
+  {
+    const tab2 = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html?hold=116,100,560`);
+    await tab2.send("Runtime.enable"); await tab2.send("Log.enable"); await tab2.send("Page.enable");
+    watchPage(tab2, logs, { name: "hold" });
+    await tab2.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
+    for (let i = 0; i < 200; i++) { await tab2.send("Page.bringToFront"); if (await tab2.evaluate("typeof window.__desk === 'object' && window.__desk.state.ready", { timeoutMs: 20000 })) break; await sleep(200); }
+    await tab2.evaluate("window.__desk.bar(false)", { timeoutMs: 20000 });
+    const q2 = (js) => tab2.evaluate(js, { timeoutMs: 15000 });
+    await q2("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 }); window.__desk.ambient('still')");
+    await q2("window.__desk.spawn('desk.notebook', { seed: 3, angle: 0.08 }, { x: 300, y: 200 })");
+    await tab2.evaluate("window.__desk.settle(4000)", { awaitPromise: true, timeoutMs: 15000 });
+    // the bar's travel on the page's own clock: from the transform's first transition run to the end (or the cancel) of the last one —
+    // the held bar's width is measured again once its tools are in, so its place is written again and the transition restarts on the
+    // way (a cancel and a run) — and the page's frames meanwhile
+    await q2(`(() => {
+      const t = (window.__travel = { run: null, end: null, runs: 0, running: 0, how: "", frames: [] });
+      const menu = () => document.querySelector("[data-ice-selection-menu]");
+      const on = (type, fn) => document.addEventListener(type, (e) => { if (e.target === menu() && e.propertyName === "transform") fn(type); }, true);
+      on("transitionrun", () => {
+        t.runs += 1; t.running += 1; t.end = null;
+        if (t.run !== null) return;
+        t.run = performance.now();
+        const tick = (ts) => { t.frames.push(ts); if (ts - t.frames[0] < 1500) requestAnimationFrame(tick); };
+        requestAnimationFrame(tick);
+      });
+      for (const how of ["transitionend", "transitioncancel"]) on(how, (type) => { t.running = Math.max(0, t.running - 1); if (t.running === 0) { t.end = performance.now(); t.how = type; } });
+      return 0;
+    })()`);
+    await dblClick(tab2, 300, 200);
+    const inHand = await until(async () => { const h = await q2("window.__desk.hand()"); return h?.settled === true && h.e === 1; }, 2500);
+    const h2 = await q2("window.__desk.hand()");
+    const top = (h2?.frame.cy ?? 0) - (h2?.frame.hy ?? 0);
+    const foot = 800 - ((h2?.frame.cy ?? 0) + (h2?.frame.hy ?? 0));
+    check(inHand && near(top, 116, 1e-6) && near(foot, 100, 1e-6), `a host's hold (116 / 100): the notebook's fit in hand lands ${top.toFixed(3)} under the view's top and ${foot.toFixed(3)} above its foot (the pose seam's frame; HOLD's own is 56 / 72)`);
+    const travelled = await until(() => q2("(() => { const t = window.__travel; return t.end !== null && t.running === 0 && performance.now() - t.end > 150; })()"), 3000);
+    const tr = await q2("window.__travel");
+    const anchorTravel = await q2("window.__desk.handle.selection.anchor().held?.travelMs ?? null");
+    const gaps = tr.frames.slice(1).map((f, i) => f - tr.frames[i]);
+    const frameMs = gaps.length > 0 ? median(gaps) : 1000 / 60;
+    const ms = tr.end - tr.run;
+    check(travelled && anchorTravel === 560 && Math.abs(ms - 560) <= frameMs, `…and the held bar travels ${ms.toFixed(1)} ms to the foot (the anchor's ${anchorTravel}; ${tr.runs} run${tr.runs === 1 ? "" : "s"}, the last ${tr.how === "transitionend" ? "ended" : "taken off"}; a frame ${frameMs.toFixed(1)} ms — within one of 560; the bar's own is 340)`);
+    logs.push(...(await faultsOf(tab2, "hold")));
+    tab2.close();
+  }
+
   logs.push(...(await faultsOf(tab)));   // the faults the engine CONTAINED — a skipped frame is an error too (D7)
   if (logs.length) console.log(`  page log:\n  ${logs.slice(0, 8).join("\n  ")}`);
   check(logs.length === 0, `no page exceptions or errors (${logs.length})`);

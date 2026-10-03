@@ -2,7 +2,7 @@
 // `src/rig-door.ts` declares, so `window.__desk.setScene` and `kinds.print` reach the oracle's scenes and fixtures here —
 // the only modules of the app that import `@ice/objects/oracle/*` besides the parity page. The product page never loads it.
 
-import type { DeskRig } from "../rig-door";
+import type { DeskRig, RigLayer } from "../rig-door";
 import { printFixture } from "./scene-kinds";
 import { type OracleScene, setScene } from "./stage";
 import { TRAY_PLUGIN } from "./tray-plugin";
@@ -13,5 +13,9 @@ import { DESK_PLUGINS } from "../desk";
 // the desk the golden's reference stills were drawn on (D-K8b.2)
 const query = new URLSearchParams(location.search);
 const plugins = [...(query.has("trayPlugin") ? [TRAY_PLUGIN] : []), ...(query.has("plugins") ? DESK_PLUGINS : [])];
-const rig: DeskRig = { setScene: (host, scene) => setScene(host, scene as OracleScene), printFixture, widgets: plugins };
+// a HOST's chrome (I20 — rig:open's row): `?hold=top,band,travelMs` mounts the layer as VibeField does, `deskLayer({ hold })` (all
+// three named: a number missing is NaN, which the mount refuses by its name)
+const hold = query.get("hold")?.split(",").map(Number);
+const layer: RigLayer = hold !== undefined ? { hold: { top: hold[0] ?? Number.NaN, band: hold[1] ?? Number.NaN, travelMs: hold[2] ?? Number.NaN } } : {};
+const rig: DeskRig = { setScene: (host, scene) => setScene(host, scene as OracleScene), printFixture, widgets: plugins, layer };
 window.__deskRig = rig;

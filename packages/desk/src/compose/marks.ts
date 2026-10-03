@@ -87,6 +87,11 @@ export interface HeldAnchor {
   readonly active: string;
   readonly landing: boolean;
   readonly settled: boolean;
+  /**
+   * The held bar's TRAVEL (M1), ms, as the host set it (`deskLayer({ hold: { travelMs } })`, petition I20): the bar travels to the
+   * foot over it and back. Absent — the host set none — the bar keeps its own.
+   */
+  readonly travelMs?: number;
 }
 
 /** A kind's act as the selection menu shows it (K8a): plain data — the op stays on the widget type (`ops.runMenuAction`). */

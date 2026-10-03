@@ -26,6 +26,7 @@ import { deskBlobs } from "./blobs";
 import { createProfilerDock, type ProfilerDock } from "./devtools";
 import { installPictureDrop } from "./paste";
 import { createDeskEngine, deskRoom, joinDeskRoom } from "./desk";
+import { rigLayer } from "./rig-door";
 import { disposeOnLeave } from "./lifetime";
 import { type DevPanel, installDevPanel } from "./panel/panel";
 import { DESK_GRID, defaultParams } from "./panel/params";
@@ -101,7 +102,8 @@ export function App(): ReactElement {
   const layer = useMemo<LayerFactory>(() => {
     // D2c: the app's hand (its faces, the text raster) and the document a note's typing session commits into; K1: the product's
     // grid — the rulers printed on the root (the engine's default leaves them off; a host prints them, RULER.md §5)
-    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS], name: "desk/compose", text: deskText(), docs: engine.docs, blobs: deskBlobs, springs: params.motion, grid: DESK_GRID, gpuLedger: true });
+    // …and on a rig's page, the host options its harness asked for (I20: a host's hold, as VibeField mounts it); none on the product's
+    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS], name: "desk/compose", text: deskText(), docs: engine.docs, blobs: deskBlobs, springs: params.motion, grid: DESK_GRID, gpuLedger: true, ...rigLayer() });
     return (ctx) => { const h = factory(ctx); handleRef.current = h; return h; };
   }, [engine, params]);
 

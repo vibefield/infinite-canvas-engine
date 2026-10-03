@@ -4,7 +4,7 @@
 
 import { createCanvasEngine, Viewport } from "@ice/core";
 import { vi } from "vitest";
-import { deskLayer, type DeskLayerHandle } from "@ice/desk";
+import { deskLayer, type DeskLayerHandle, type DeskLayerOptions } from "@ice/desk";
 import { DESK_ENGINE, DESK_OBJECTS, deskPalette, deskTheme } from "../src";
 import { fakeDevice, installGpuFlags } from "../../desk/test/fake-gpu";
 import { fakePage } from "../../desk/test/fake-page";
@@ -25,7 +25,7 @@ export interface DeskMount {
   dispose(): void;
 }
 
-export async function mountDesk(view: { readonly w: number; readonly h: number; readonly dpr: number } = { w: 1200, h: 800, dpr: 1 }, opts: { readonly gpuLedger?: boolean; readonly frameMs?: number } = {}): Promise<DeskMount> {
+export async function mountDesk(view: { readonly w: number; readonly h: number; readonly dpr: number } = { w: 1200, h: 800, dpr: 1 }, opts: { readonly gpuLedger?: boolean; readonly frameMs?: number; readonly layer?: Pick<DeskLayerOptions, "hold"> } = {}): Promise<DeskMount> {
   const undo: (() => void)[] = [installGpuFlags()];
   const log: string[] = [];
   const { device } = fakeDevice(log);
@@ -61,7 +61,7 @@ export async function mountDesk(view: { readonly w: number; readonly h: number; 
   const ce = createCanvasEngine(DESK_ENGINE);
   ce.docs.create();
   ce.world.setResource(Viewport, { w: view.w, h: view.h, dpr: view.dpr });
-  const handle = deskLayer({ gpu, theme: deskTheme("light"), palette: deskPalette("light"), objects: [...DESK_OBJECTS], docs: ce.docs, ...(opts.gpuLedger === true ? { gpuLedger: true } : {}) })({ host: { container: page.container as unknown as HTMLElement }, world: ce.world, frame: ce.engine.frame, catalog: ce.catalog, trayPose: ce.stack.trayPose });
+  const handle = deskLayer({ gpu, theme: deskTheme("light"), palette: deskPalette("light"), objects: [...DESK_OBJECTS], docs: ce.docs, ...(opts.gpuLedger === true ? { gpuLedger: true } : {}), ...opts.layer })({ host: { container: page.container as unknown as HTMLElement }, world: ce.world, frame: ce.engine.frame, catalog: ce.catalog, trayPose: ce.stack.trayPose });
   undo.push(ce.engine.registerReflector(handle.reflector));
   for (let i = 0; i < 100 && handle.status().state === "pending"; i++) await new Promise((r) => setTimeout(r, 5));
   // the frame clock: the wall's, or (`frameMs`) a FRAME CLOCK of its own that each step advances by that much — a slide then spans the

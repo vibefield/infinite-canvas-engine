@@ -41,6 +41,7 @@ import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin, type
 import { type BudgetStats, createRasterBudget } from "../engine/budget";
 import { createRasterQueue, type RasterQueueStats } from "../engine/rasters";
 import type { RecordStoreStats } from "../engine/records";
+import { HOLD, type HoldOptions, type HoldReserves } from "../hold/pose";
 import { HOLD_SHADER_FILES, holdShaders } from "../hold/shaders";
 import { heldSlots, type SelectionAnchor, withKindActs } from "../compose/marks";
 import { createPickSource } from "../compose/pick";
@@ -95,6 +96,13 @@ export interface DeskLayerOptions {
   readonly ambientIdleMs?: number;
   /** The root's grid at the mount: the mat's config (its gobo, its rulers) and the lattice's fade-in. */
   readonly grid?: GridConfig;
+  /**
+   * THE HAND as the host's chrome needs it (petition I20), read at the mount: the held object's reading fit keeps `top` CSS px under
+   * the view's top (`HOLD.top`, 56 — a phone keeps `HOLD.topPhone`) and `band` above its foot (`HOLD.band`, 72 — the held bar's band),
+   * and the held bar travels `travelMs` (M1; the bar is the host's — the anchor carries it, `HeldAnchor.travelMs`; absent, the bar's
+   * own). Each a finite number ≥ 0; absent, `HOLD`'s.
+   */
+  readonly hold?: HoldOptions;
   /** The objects' springs (springs.ts `SPRINGS`): the builder reads these numbers every frame, so a host that keeps the object may tune them live (the dev panel — D5a). */
   readonly springs?: ObjectSprings;
   /** The device pixel ratio the canvas is capped at (2). */
@@ -482,6 +490,20 @@ function tellAwake(kind: string): void {
   console.warn(`[ice] desk: the kind "${kind}" declares a local \`tick\` and no \`due\` — it is due every frame, so the desk never sleeps. Declare \`KindLocal.due(now)\`: now while it moves, a later time, or Infinity until a fact, an input or \`KindHost.wake\` moves it (design-016 K7a).`);
 }
 
+/** A host's length or time for the desk's chrome (I20): a finite number ≥ 0, or the mount refuses it by its name. */
+function hostNumber(name: string, v: number | undefined): number | undefined {
+  if (v === undefined) return undefined;
+  if (typeof v !== "number" || !Number.isFinite(v) || v < 0) throw new Error(`[ice] deskLayer: \`${name}\` is ${String(v)} — a finite number ≥ 0 (CSS px, or ms for a time)`);
+  return v;
+}
+
+/** The hand as the host set it (I20): the reserves the builder fits by (undefined: `HOLD`'s) and the bar's travel the anchor carries. */
+function holdOf(hold: HoldOptions | undefined): { readonly reserves: HoldReserves | undefined; readonly travelMs: number | undefined } {
+  const top = hostNumber("hold.top", hold?.top);
+  const band = hostNumber("hold.band", hold?.band);
+  return { reserves: top === undefined && band === undefined ? undefined : { top: top ?? HOLD.top, band: band ?? HOLD.band }, travelMs: hostNumber("hold.travelMs", hold?.travelMs) };
+}
+
 export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
   return (ctx) => {
     const { host, world } = ctx;
@@ -491,8 +513,10 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const types = new Set<WidgetType>([...(ctx.catalog?.widgetTypes() ?? []).filter((t) => t.object !== undefined), ...(opts.objects ?? [])]);
     const { kinds, objectKinds } = kindsOf([...types], opts.kinds ?? []);
     // every kind's look from the palette BEFORE the mount touches the page (D7): an incomplete palette throws HERE, leaving no canvas,
-    // no listener, no builder behind (the reflector remakes the looks it keeps; this pass only proves they can be made)
+    // no listener, no builder behind (the reflector remakes the looks it keeps; this pass only proves they can be made) — and so does
+    // a host's malformed number for the hand (I20)
     looksOf(objectKinds, opts.palette, opts.theme);
+    const hold = holdOf(opts.hold);
     const canvas = doc.createElement("canvas");
     canvas.style.position = "absolute";
     canvas.style.left = "0";
@@ -568,14 +592,15 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     }
     const keeps = (owner: string, key: string): boolean => locals.get(owner)?.keeps?.(key) ?? false;
     const readMarquee = ctx.readMarquee;
-    const builder = createDeskBuilder(world, { objects: [...types], locals, ...(opts.springs !== undefined ? { springs: opts.springs } : {}), ...(readMarquee !== undefined ? { marquee: readMarquee } : {}), ...(ctx.spatial !== undefined ? { spatial: ctx.spatial } : {}) });
+    const builder = createDeskBuilder(world, { objects: [...types], locals, ...(opts.springs !== undefined ? { springs: opts.springs } : {}), ...(readMarquee !== undefined ? { marquee: readMarquee } : {}), ...(ctx.spatial !== undefined ? { spatial: ctx.spatial } : {}), ...(hold.reserves !== undefined ? { hold: hold.reserves } : {}) });
     // the object types by name (K8a): what an object provides and what acts its type declares are read off its PrefabId
     const typeNamed = new Map([...types].map((t) => [t.type, t] as const));
     // the selection's KIND ACTS (K8a): what every selected object's type declares (`defineObject({ menu })`), read off its PrefabId
     const menuOf = (e: Entity): readonly MenuActionDef[] => { const id = world.isAlive(e) ? world.get(e, PrefabId)?.id : undefined; return typeof id === "string" ? (typeNamed.get(id)?.menu ?? []) : []; };
     // the selection menu's source: the anchor published whenever a frame moved it — the marks' word, and the hand's (D4b: with an
     // object in hand the menu travels to the foot and becomes the held bar; it hides while the object flies home). D3t-a: the kind's
-    // tools as the bar's slots (their swatches from the kind's look) and the mode in hand — core's `HeldTool`, the one slot marked
+    // tools as the bar's slots (their swatches from the kind's look) and the mode in hand — core's `HeldTool`, the one slot marked;
+    // I20: the bar's travel when the host set one
     const anchorOf = (): SelectionAnchor => {
       const a = builder.anchor();
       // the pegboard tray is out (design-017 §4): the desk under it is inert, so the menu has nothing to act on — it steps away
@@ -585,7 +610,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       const kind = builder.kindOf(h.entity);
       const swatches = kind?.open?.swatches?.(compose.look(kind.name)) ?? {};
       const active = world.isAlive(h.entity) ? (world.get(h.entity, HeldTool)?.id ?? "") : "";
-      return { ...a, held: { tools: heldSlots(kind?.open?.tools ?? [], swatches), active, landing: h.landing, settled: h.settled } };
+      return { ...a, held: { tools: heldSlots(kind?.open?.tools ?? [], swatches), active, landing: h.landing, settled: h.settled, ...(hold.travelMs !== undefined ? { travelMs: hold.travelMs } : {}) } };
     };
     const listeners = new Set<() => void>();
     let published = "";

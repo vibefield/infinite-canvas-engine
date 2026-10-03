@@ -40,9 +40,10 @@ export interface SelectionMenuAnchor {
    * An object is IN HAND (design-015 §8, D4b): the menu travels to the foot of the view and changes role (M1) — one element,
    * not a second toolbar — Send stays first, the kind's tools take the middle, Done ends the bar. `landing`: the object is
    * flying home — the bar steps aside and comes back above the object 200 ms after it lands. `active` (D3t-a): the mode in
-   * hand — core's `HeldTool` — the one slot marked.
+   * hand — core's `HeldTool` — the one slot marked. `travelMs` (petition I20): the travel the host set on the desk
+   * (`deskLayer({ hold: { travelMs } })`) — the bar travels over it, to the foot and back; absent, `SELECTION_MENU.travelMs`.
    */
-  readonly held?: { readonly tools: readonly SelectionMenuTool[]; readonly active?: string; readonly landing: boolean; readonly settled: boolean };
+  readonly held?: { readonly tools: readonly SelectionMenuTool[]; readonly active?: string; readonly landing: boolean; readonly settled: boolean; readonly travelMs?: number };
   /**
    * The selection's KIND ACTS (design-016 K8a — the desk's `MenuSlot`s, mirrored structurally): what every selected object's type
    * declares (`defineObject({ menu })`); the menu shows them first among its acts and runs one through `ops.runMenuAction`.
@@ -115,7 +116,8 @@ export interface SelectionAction {
 
 /**
  * The menu's numbers (*Marks on the Mat* §14): 40 tall, 10 above the marks, 16 from the sides, 8 from the view's top and foot;
- * away 90 ms, back 200 ms after, in 180 ms. The held bar (§8, D4b): centred in the 72 px band at the foot, the travel 340 ms.
+ * away 90 ms, back 200 ms after, in 180 ms. The held bar (§8, D4b): centred in the 72 px band at the foot, the travel 340 ms — or the
+ * host's, when the anchor carries one (`held.travelMs`, petition I20).
  */
 export const SELECTION_MENU = { height: 40, gap: 10, margin: 16, edge: 8, awayMs: 90, backMs: 200, inMs: 180, outMs: 120, foot: 72, travelMs: 340 } as const;
 
@@ -273,11 +275,11 @@ const shownOf = (a: SelectionMenuAnchor): Shown => {
   return { count: a.count, locked: a.locked, visible: (a.count > 0 && a.box !== null) || held, gesturing: a.gesturing || a.editing === true || landing, held, tools, active: held ? (a.held?.active ?? "") : "", menu };
 };
 const sameShown = (a: Shown, b: Shown): boolean => a.count === b.count && a.locked === b.locked && a.visible === b.visible && a.gesturing === b.gesturing && a.held === b.held && a.tools === b.tools && a.active === b.active && a.menu === b.menu;
-/** The one element's transitions: the opacity's, and — while the bar travels between the selection and the foot (M1) — the transform's. */
-const transitionOf = (away: boolean, visible: boolean, traveling: boolean): string => {
+/** The one element's transitions: the opacity's, and — while the bar travels between the selection and the foot (M1), over `travelMs` — the transform's. */
+const transitionOf = (away: boolean, visible: boolean, traveling: boolean, travelMs: number = SELECTION_MENU.travelMs): string => {
   const M = SELECTION_MENU;
   const opacity = away ? `opacity ${M.awayMs}ms ease-out` : visible ? `opacity ${M.inMs}ms ease-out` : `opacity ${M.outMs}ms ease-out, visibility 0s linear ${M.outMs}ms`;
-  return traveling ? `${opacity}, transform ${M.travelMs}ms cubic-bezier(.25,1,.3,1)` : opacity;
+  return traveling ? `${opacity}, transform ${travelMs}ms cubic-bezier(.25,1,.3,1)` : opacity;
 };
 
 export function SelectionMenu({ source, actions, engine: given }: SelectionMenuProps): ReactElement | null {
@@ -294,6 +296,8 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
   const kindActs = useRef<readonly SelectionMenuAct[]>(source.anchor().menu ?? []);
   const heldRef = useRef(shown.held);
   const travelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  /** The travel the anchor last told while something was in hand (I20) — the way back keeps it after the hand is gone. */
+  const travel = useRef<number>(source.anchor().held?.travelMs ?? SELECTION_MENU.travelMs);
 
   // placement: written straight to the one element's transform on every anchor the desk publishes (no render per frame)
   const placeRef = useRef<() => void>(() => {});
@@ -302,18 +306,19 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
     const a = source.anchor();
     const next = shownOf(a);
     if (next.held) tools.current = a.held?.tools ?? [];
+    if (a.held !== undefined) travel.current = a.held.travelMs ?? SELECTION_MENU.travelMs;
     kindActs.current = a.menu ?? [];
     setShown((prev) => (sameShown(prev, next) ? prev : next));
     if (el === null) return;
     // THE TRAVEL (M1, D4b): the bar changes place and role — the transform's transition must be on BEFORE the new place is
     // written, or the bar jumps (desk.js `morphBar`); it stays on for the travel and no longer, so a moving selection still
-    // places instantly
+    // places instantly. Its length is the host's when the anchor carries one (I20)
     if (next.held !== heldRef.current) {
       heldRef.current = next.held;
-      el.style.transition = transitionOf(away, next.visible, true);
+      el.style.transition = transitionOf(away, next.visible, true, travel.current);
       setTraveling(true);
       if (travelTimer.current !== null) clearTimeout(travelTimer.current);
-      travelTimer.current = setTimeout(() => { travelTimer.current = null; setTraveling(false); }, SELECTION_MENU.travelMs);
+      travelTimer.current = setTimeout(() => { travelTimer.current = null; setTraveling(false); }, travel.current);
     }
     const bar = el.firstElementChild as HTMLElement | null;
     const sheet = el.querySelector<HTMLElement>(".ice-sm-sheet");
@@ -425,7 +430,7 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
         opacity,
         visibility: visible ? "visible" : "hidden",
         pointerEvents: opacity === 1 ? "auto" : "none",
-        transition: transitionOf(away, visible, traveling),
+        transition: transitionOf(away, visible, traveling, travel.current),
       }}
     >
       <div className="ice-sm-bar">
