@@ -6,6 +6,8 @@
 // Their reflector is the host's one OBSERVING reflector (the desk's and the OS cursor's are `always`), and the first observer is what
 // arms the world's reactive layer — strata's dev access enforcement with it (reactive.ts): off, the host arms nothing, and the world
 // arms at the host's own first observer (`usePresencePeers` is one) — core's petition-7 pin S5, "arming comes from the mount".
+// THE STACK'S PICK (petition I27): the layer's context carries the interaction stack's exact pick, `stack.pickAt` itself — the one
+// door the desk's `handle.pick` answers a host's screen point through.
 import { createCanvasEngine, CursorVisual, type EngineGpu, Follows, Position, PresenceInfo, PresencePeer, Viewport, type World } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { createDeskHost, type LayerContext, type LayerHandle } from "../src/desk-host";
@@ -35,6 +37,25 @@ describe("createDeskHost · the engine's device (D7)", () => {
     const ctx = mountWith(undefined);
     expect(ctx).toBeDefined();
     expect(ctx !== undefined && "gpu" in ctx).toBe(false);
+  });
+});
+
+describe("createDeskHost · the stack's pick (petition I27)", () => {
+  it("hands the layer the interaction stack's exact pick — the same door a press's `TouchesExact` is written through", () => {
+    const engine = createCanvasEngine();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    let seen: LayerContext | undefined;
+    const layer = (ctx: LayerContext): LayerHandle => {
+      seen = ctx;
+      return { reflector: { name: "fake-desk", always: true, flush() {}, available: () => true }, dispose() {} };
+    };
+    const mount = createDeskHost({ container, engine, layer });
+    expect(seen?.pickAt).toBe(engine.stack.pickAt);
+    expect(seen?.pickAt(40, 40)).toBeUndefined();   // an empty desk: the bare canvas
+    mount.dispose();
+    engine.dispose();
+    container.remove();
   });
 });
 

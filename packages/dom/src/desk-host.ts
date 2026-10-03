@@ -10,7 +10,8 @@
  * exactly as `<InfiniteCanvas ground={groundCompose(…)}>` received the ground — and
  * `@ice/desk`'s `deskLayer(opts)` (its src/host/) returns a function assignable to {@link LayerFactory}.
  * The context carries the interaction stack's seams the renderer fills (the frame pick, the nav
- * geometry, the held pose — design-014 B3b, design-015 §8–§9) and the marquee buffer it draws.
+ * geometry, the held pose — design-014 B3b, design-015 §8–§9), the marquee buffer it draws, and the
+ * stack's exact pick, which the layer's handle answers a host's screen-point pick with (petition I27).
  *
  * Boot order (registration order = reflector flush order): host → layer → reflectors [ layer ·
  * cursor · remoteCursors — unless the layer's handle says `cursors: false` (petition I26: its host
@@ -57,6 +58,11 @@ export interface LayerContext {
   readonly world: World;
   /** The frame pick slot (design-014, B3b): the renderer sets its hit test here at mount, clears it at dispose. */
   readonly framePick: InteractionStack["framePick"];
+  /**
+   * The stack's exact pick out of the tick (petition I27; `InteractionStack.pickAt`): what a press at a screen point (CSS px of the
+   * view) would touch now, through the frame pick above — the layer answers a host's screen-point pick (`handle.pick`) with it.
+   */
+  readonly pickAt: InteractionStack["pickAt"];
   /** The nav geometry slot (design-015 §9, D2b): the renderer's word on its containers' drawn faces. */
   readonly navGeometry: InteractionStack["navGeometry"];
   /** The held pose slot (design-015 §8, D4b): where the object in hand is on screen, as drawn. */
@@ -122,6 +128,7 @@ export function createDeskHost<H extends LayerHandle>(opts: DeskHostOptions<H>):
       host,
       world,
       framePick: stack.framePick,
+      pickAt: stack.pickAt,
       navGeometry: stack.navGeometry,
       heldPose: stack.heldPose,
       trayPose: stack.trayPose,
