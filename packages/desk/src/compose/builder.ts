@@ -557,6 +557,9 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   };
   /** The types met with no kind on this desk, said once each (petition I24 — their objects wear the missing face). */
   const kindless = new Set<string>();
+  /** The kinds whose desk state veils (D3t-c), and their names beside them — refilled at each build, never reallocated. */
+  const veilers: KindLocal[] = [];
+  const veilerNames: string[] = [];
   /** Does `st`'s kind's desk state draw `e` LIFTED (D3t-a)? A missing kind's state is gone (no word); one that throws takes a strike and says no (petition I24). */
   const liftedBy = (st: ObjectState, e: Entity): boolean => {
     const local = locals?.get(st.kind.name);
@@ -1038,8 +1041,9 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           if (slot === "root" && presented?.has(e) === true) { stepSprings(e, st); st.geometry = null; st.record = null; st.inside = null; continue; }
           // veiled by a kind's own state (D3t-c — a stuck note whose month the calendar is not showing): not drawn, never picked, no marks
           if (veiledNow.has(e) && !st.grabbed) { st.geometry = null; st.record = null; st.inside = null; continue; }
-          // what draws it (petition I24): its kind, or — the kind missing, or none — the missing face, under the kind's name
-          const kind = drawerOf(st.kind);
+          // what draws it (petition I24): its kind, or — the kind missing, or none — the missing face, under the kind's name (while
+          // nothing is missing, one field read: a kindless object's kind IS the face)
+          const kind = (faults?.size ?? 0) === 0 ? st.kind : drawerOf(st.kind);
           const face = kind === MISSING_OBJECT;
           const r = st.rect;
           const hx = r.w / 2 + kind.reach;
@@ -1170,15 +1174,17 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       // what the kinds' own states veil (D3t-c — a note stuck to a day of a month its calendar is not showing): asked row by row, so a
       // pad drawn earlier in this very build (the pads stratum paints first) has already said which of its notes go with its month
       // (the kinds that veil at all, gathered once a build: a row asks each by index — no iterator a row, K7a)
-      // (a veiler that throws takes a strike and veils nothing — petition I24: its name rides with it for the strike)
-      const veilers: (readonly [string, KindLocal])[] = [];
-      if (locals !== undefined) for (const [name, local] of locals) if (local.veils !== undefined) veilers.push([name, local]);
+      // (a veiler that throws takes a strike and veils nothing — petition I24: its name rides beside it for the strike, in the builder's
+      // two lists, refilled each build: nothing is allocated a kind)
+      veilers.length = 0;
+      veilerNames.length = 0;
+      if (locals !== undefined) for (const name of locals.keys()) { const local = locals.get(name) as KindLocal; if (local.veils !== undefined) { veilers.push(local); veilerNames.push(name); } }
       const veiledNow = {
         has: (e: Entity): boolean => {
           for (let i = 0; i < veilers.length; i++) {
-            const [name, local] = veilers[i] as readonly [string, KindLocal];
+            const name = veilerNames[i] as string;
             if (faults?.missing(name) === true) continue;   // gone missing during this build: its state is let go
-            try { if (local.veils?.().has(e) === true) return true; } catch (err) { if (faults === undefined) throw err; faults.strike(name, "veils", err, e); }
+            try { if ((veilers[i] as KindLocal).veils?.().has(e) === true) return true; } catch (err) { if (faults === undefined) throw err; faults.strike(name, "veils", err, e); }
           }
           return false;
         },
@@ -1447,7 +1453,9 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       const objects: SlotObject[] = rows.map((r) => ({ kind: r.kind, record: r.record, key: r.entity !== undefined ? (r.entity as number) : -(r.ghostOf as number) }));
       // the pick's word on what was veiled, as this build left it
       const veiledSet = new Set<Entity>();
-      for (const [name, local] of veilers) {
+      for (let i = 0; i < veilers.length; i++) {
+        const name = veilerNames[i] as string;
+        const local = veilers[i] as KindLocal;
         if (locals?.get(name) !== local) continue;   // gone missing during this build (petition I24): its state is let go
         try { for (const e of local.veils?.() ?? []) veiledSet.add(e); } catch (err) { if (faults === undefined) throw err; faults.strike(name, "veils", err); }
       }

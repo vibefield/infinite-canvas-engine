@@ -65,13 +65,15 @@ export function createKindFaults(): KindFaults {
   let list: readonly KindFault[] = [];
   const go = (kind: string, reason: string): void => {
     missing.add(kind);
+    faults.size = missing.size;
     const fault: KindFault = { kind, reason };
     list = [...list, fault];
     console.error(`[ice] desk: the kind "${kind}" is MISSING — ${reason}. Its objects are drawn as missing and nothing of it is called again (petition I24).`);
     for (const l of [...listeners]) l(fault);
   };
-  return {
-    get size() { return missing.size; },
+  // `size` a plain field (no getter): the builder reads it for every object it draws, and while nothing is missing that read is all
+  const faults: { -readonly [K in keyof KindFaults]: KindFaults[K] } = {
+    size: 0,
     missing: (kind) => missing.size > 0 && missing.has(kind),
     refuse(kind, reason) {
       if (missing.has(kind)) return;
@@ -93,4 +95,5 @@ export function createKindFaults(): KindFaults {
     list: () => list,
     subscribe(listener) { listeners.add(listener); return () => { listeners.delete(listener); }; },
   };
+  return faults;
 }

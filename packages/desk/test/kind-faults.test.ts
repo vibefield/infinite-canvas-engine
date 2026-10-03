@@ -240,6 +240,38 @@ describe("fault containment per kind (petition I24)", () => {
     } finally { d.dispose(); }
   });
 
+  it("a kind whose GPU error comes AFTER its first await — its create resolves, its pipeline failed validation — is found by the window and refused alone; the rest stand", async () => {
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    // a kind that compiles its broken module late (after an await) and never asks the compiler's word: its create RESOLVES, its error
+    // lands in no scope of its own — only the kinds' window holds it, and the kind is found by being made again alone
+    const base = brokenClockKind({ name: "test-late" });
+    let made = 0;
+    const late: ObjectKind = {
+      ...base,
+      create: async (device, format, mat) => {
+        made += 1;
+        await Promise.resolve();
+        device.createShaderModule({ code: `fn late() -> f32 { return ${BROKEN_WGSL_TOKEN}; }`, label: "test-late/module" });
+        return base.create(device, format, mat);
+      },
+    };
+    const Late = defineObject({ type: "test.late-clock", version: 1, props: {}, size: { w: 150, h: 150 }, kind: late });
+    const d = await mountDesk([DeskClock, Late]);
+    try {
+      expect(d.handle.status().state).toBe("ready");
+      expect(d.handle.status().faults).toEqual([{ kind: "test-late", reason: expect.stringMatching(/^refused at create — a GPU error while its pass was made: .*unresolved value 'desk_clock_broken_on_purpose'/) }]);
+      expect(d.fake.uncaptured).toEqual([]);
+      expect(made).toBe(2);   // once beside the others, once alone (the window's attribution)
+      const clock = d.at(DeskClock.type, 100, 100);
+      const lateOne = d.at(Late.type, 400, 100);
+      d.frame();
+      expect(d.kinds()).toEqual({ "desk-clock": 1, "test-late": 1 });
+      expect(isMissingRecord(d.row(lateOne)?.record)).toBe(true);
+      expect(isMissingRecord(d.row(clock)?.record)).toBe(false);
+      expect(said(errors, "test-late").filter((m) => m.includes("is MISSING"))).toHaveLength(1);
+    } finally { d.dispose(); }
+  });
+
   it("a desk where nothing is missing makes nothing of the missing face — no pipeline, no buffer — and its frames are the frames they were", async () => {
     const d = await mountDesk([DeskClock], { gpuLedger: true });
     try {
