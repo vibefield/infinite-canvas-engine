@@ -1736,7 +1736,12 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   a ghost's, `lifted`, `veils`; the tray's specimens and carried copies; the layer's `tick` and `due`) is caught at the kind — a
   strike, the frame going on without the object; three, and the kind is QUARANTINED (`Ground.quarantine` swaps it out of every slot
   for the missing faces and disposes its passes; the layer lets its desk state go — `dispose` called — parks its drivers, drops its
-  raster asks and charges). The face (`src/missing/`, `MISSING_OBJECT`): a faint hatched card the size of the object's box, no text,
+  raster asks and charges). Decided at the rebase onto I20–I22: what the selection's anchor asks of a kind — I22's `open.readout`, and
+  `open.swatches`, found then with no catch at all (a throw escaped every frame's publish and the host's `anchor()`) — is contained at
+  the CALL, never a strike (no word, or the slots their glyphs, said once a page): the anchor is recomposed at the HOST's rate (every
+  `selection.anchor()`, besides the frame's publish) and only while the object is in hand, so counted strikes would let a host's reads
+  decide when a kind goes and would retire every such kind with its object in hand; and neither draws the desk. The face
+  (`src/missing/`, `MISSING_OBJECT`): a faint hatched card the size of the object's box, no text,
   pickable — also an object whose type has no kind (VibeField's ghost stubs, r5). The notice is a STATE: `DeskLayerStatus.faults`
   (chosen over an `onKindFault` event — a missing kind is missing for the desk's life, and a host that subscribes late reads it from
   `status()`), `onStatus` told once per kind, one `console.error`; the ledger `due().kinds[kind] === KIND_MISSING` (−1) and the
@@ -1748,7 +1753,8 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   idle-zero held with a missing kind registered (a unit's witness). Not done, said plainly: a kind's
   PASS half per frame (`prepare`, `drawRange`, `aux`) and its mount-time calls (`theme`, `local`, the drivers' factory and `follow`,
   a DOM half) are not caught — the first throws out of the frame as before (the reflector's fault: the frame skipped), the second at
-  the mount; a quarantined material kind turns the flat card off until the desk is mounted again (no re-compose).
+  the mount; what core's ops ask of a kind at an act (`open.tool` at the pickup, a held tool's `run`) is the op's caller's; a
+  quarantined material kind turns the flat card off until the desk is mounted again (no re-compose).
 
 ## Release cut & downstream
 

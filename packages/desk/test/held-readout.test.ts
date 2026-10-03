@@ -17,13 +17,13 @@ import { fakeDevice, installGpuFlags } from "./fake-gpu";
 const PALETTE: Palette = { canvasBg: { token: "--bg", css: "#fafafa" }, select: { token: "--sel", css: "#3080ff" } };
 const TOOLS: readonly HeldToolDef[] = [{ id: "more", label: "One more", kind: "action", run: (api) => { api.setProps({ n: Number(api.props().n ?? 0) + 1 }); } }];
 
-/** An openable object of the test's own: a pass that draws nothing, a desk state that says it is one, a `readout` as given. */
-function reading(name: string, readout: NonNullable<OpenBinding["readout"]> | "absent"): WidgetType {
+/** An openable object of the test's own: a pass that draws nothing, a desk state that says it is one, a `readout` as given (and its `swatches`). */
+function reading(name: string, readout: NonNullable<OpenBinding["readout"]> | "absent", swatches?: OpenBinding["swatches"]): WidgetType {
   const pass = (): KindPass => ({ spawn: () => pass(), prepare: (_e, _s, records) => records.length, drawRange: () => {}, dispose: () => {} });
   const kind: ObjectKind = {
     name, stratum: "things", reach: 0, create: async () => pass(), resolve: (c) => c.rect, record: () => ({}), hit: () => "content",
     local: () => ({ desk: `${name}'s desk state` }) as KindLocal,
-    open: { extent: (c) => c.rect, tools: TOOLS, ...(readout !== "absent" ? { readout } : {}) },
+    open: { extent: (c) => c.rect, tools: TOOLS, ...(readout !== "absent" ? { readout } : {}), ...(swatches !== undefined ? { swatches } : {}) },
   };
   return defineObject({ type: `read.${name}`, version: 1, props: { n: p.number({ default: 0 }) }, kind });
 }
@@ -124,6 +124,56 @@ describe("the word in hand (petition I22)", () => {
       const told = said.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("`open.readout` threw"));
       expect(told).toHaveLength(1);
       expect(told[0]).toContain('the kind "throwing"');
+    } finally { d.dispose(); }
+  });
+});
+
+// THE ANCHOR'S CALLS AT THE KIND BOUNDARY (petition I24): what the selection's anchor asks of a kind — its word (`open.readout`) and its
+// slots' colours (`open.swatches`) — is contained at the CALL, never a strike against the kind: the anchor is recomposed at the host's
+// rate (every `selection.anchor()`, besides the frame's publish) and only while the object is in hand, so strikes counted there would let a
+// host's reads decide when a kind goes and would retire it with its object in hand; and neither draws a pixel of the desk.
+const STUBBORN = reading("stubborn", () => { throw new Error("no word, ever"); });
+const UNSWATCHED = reading("unswatched", "Inks", () => { throw new Error("no inks today"); });
+
+describe("the anchor's calls at the kind boundary (petition I24)", () => {
+  const undo: (() => void)[] = [];
+  beforeAll(() => { undo.push(installGpuFlags()); });
+  afterAll(() => { for (const u of undo.splice(0)) u(); vi.unstubAllGlobals(); });
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it("a readout that throws is never a STRIKE: held through frames and the host's reads, the kind stands — no fault said, the object still in hand", async () => {
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const warned = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const d = await mountDesk([STUBBORN]);
+    try {
+      d.pickUp("read.stubborn");
+      for (let i = 0; i < 6; i++) { d.handle.selection.anchor(); d.step(); }   // twelve throws: four kinds' worth of strikes, were they counted
+      expect(d.handle.status()).toEqual({ state: "ready" });                     // no `faults`: nothing is missing
+      expect(d.handle.due(performance.now()).kinds.stubborn).not.toBe(-1);       // not KIND_MISSING in the ledger
+      const held = d.handle.selection.anchor().held;
+      expect(held?.tools.map((t) => t.id)).toEqual(["more"]);                   // still in hand (a missing kind is never held), its tools kept
+      expect(held).not.toHaveProperty("readout");
+      expect(warned.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("strike"))).toEqual([]);
+      expect(d.faults).toEqual([]);
+    } finally { d.dispose(); }
+  });
+
+  it("a `swatches` that throws is caught as the word is: the tools kept without a swatch, the word kept, nothing thrown out of the anchor or the frame — said once, never a strike", async () => {
+    const said = vi.spyOn(console, "error").mockImplementation(() => {});
+    const d = await mountDesk([UNSWATCHED]);
+    try {
+      d.pickUp("read.unswatched");
+      d.step(5);
+      expect(() => d.handle.selection.anchor()).not.toThrow();
+      const held = d.handle.selection.anchor().held;
+      expect(held?.tools).toEqual([expect.objectContaining({ id: "more" })]);
+      expect(held?.tools[0]).not.toHaveProperty("swatch");
+      expect(held?.readout).toBe("Inks");
+      expect(d.faults).toEqual([]);                                              // every frame's publish went through
+      expect(d.handle.status()).toEqual({ state: "ready" });
+      const told = said.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("`open.swatches` threw"));
+      expect(told).toHaveLength(1);
+      expect(told[0]).toContain('the kind "unswatched"');
     } finally { d.dispose(); }
   });
 });

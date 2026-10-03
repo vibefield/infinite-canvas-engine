@@ -506,12 +506,20 @@ function tellAwake(kind: string): void {
   console.warn(`[ice] desk: the kind "${kind}" declares a local \`tick\` and no \`due\` — it is due every frame, so the desk never sleeps. Declare \`KindLocal.due(now)\`: now while it moves, a later time, or Infinity until a fact, an input or \`KindHost.wake\` moves it (design-016 K7a).`);
 }
 
-/** The kinds told, once a page, that their `open.readout` threw (I22): the held bar kept their tools and showed no word. */
-const toldReadout = new Set<string>();
-function tellReadout(kind: string, err: unknown): void {
-  if (toldReadout.has(kind)) return;
-  toldReadout.add(kind);
-  console.error(`[ice] desk: the kind "${kind}"'s \`open.readout\` threw — the anchor carries its held tools and no word (petition I22); said once a page`, err);
+/**
+ * The kinds told, once a page, that a call the selection's anchor makes of them threw — their `open.readout` (I22: the held bar kept
+ * their tools and showed no word) or their `open.swatches` (I24: the tools kept, their slots without a swatch). Contained at the CALL,
+ * never a strike against the kind (petition I24's ladder counts what draws the desk): the anchor is recomposed at the HOST's rate — every
+ * `selection.anchor()` read besides the frame's publish — and only while the object is in hand, so strikes counted here would let a
+ * host's reads decide when a kind goes, and would retire every such kind with its object in hand; and neither call draws the desk.
+ */
+const toldAnchor = new Set<string>();
+function tellAnchor(kind: string, call: "readout" | "swatches", err: unknown): void {
+  const key = `${call} ${kind}`;
+  if (toldAnchor.has(key)) return;
+  toldAnchor.add(key);
+  const kept = call === "readout" ? "no word (petition I22)" : "no swatches (petition I24)";
+  console.error(`[ice] desk: the kind "${kind}"'s \`open.${call}\` threw — the anchor carries its held tools and ${kept}; said once a page`, err);
 }
 
 /** A host's length or time for the desk's chrome (I20, I21): a finite number ≥ 0, or the mount refuses it by its name. */
@@ -636,16 +644,23 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       return props;
     };
     // the kind's WORD in hand (I22): its `open.readout` — a string, or read off the world, the object's props and the kind's desk state
-    // each time the anchor is recomposed; a throw is the kind's, caught here (the anchor keeps its tools, no word) and said once
+    // each time the anchor is recomposed; a throw is the kind's, caught here (the anchor keeps its tools, no word) and said once —
+    // never a strike (I24: `tellAnchor` says why)
     const readoutOf = (kind: ObjectKind | undefined, e: Entity): string | undefined => {
       const r = kind?.open?.readout;
       if (r === undefined || kind === undefined) return undefined;
       let word: unknown = r;
       if (typeof r === "function") {
         try { word = r({ world, entity: e, props: () => propsOf(e), local: locals.get(kind.name) }); }
-        catch (err) { tellReadout(kind.name, err); return undefined; }
+        catch (err) { tellAnchor(kind.name, "readout", err); return undefined; }
       }
       return typeof word === "string" && word.length > 0 ? word : undefined;
+    };
+    // the bar's slots' colours (D3t-a) from the kind's look — caught as the word is (I24): a throw leaves the slots their glyphs, said once
+    const swatchesOf = (kind: ObjectKind | undefined): Readonly<Record<string, string>> => {
+      if (kind?.open?.swatches === undefined) return {};
+      try { return kind.open.swatches(compose.look(kind.name)); }
+      catch (err) { tellAnchor(kind.name, "swatches", err); return {}; }
     };
     // the selection menu's source: the anchor published whenever a frame moved it — the marks' word, and the hand's (D4b: with an
     // object in hand the menu travels to the foot and becomes the held bar; it hides while the object flies home). D3t-a: the kind's
@@ -658,7 +673,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       const h = builder.hand();
       if (h === undefined) return withKindActs(a, selectedEntities(world), menuOf);
       const kind = builder.kindOf(h.entity);
-      const swatches = kind?.open?.swatches?.(compose.look(kind.name)) ?? {};
+      const swatches = swatchesOf(kind);
       const active = world.isAlive(h.entity) ? (world.get(h.entity, HeldTool)?.id ?? "") : "";
       const readout = readoutOf(kind, h.entity);
       return { ...a, held: { tools: heldSlots(kind?.open?.tools ?? [], swatches), active, landing: h.landing, settled: h.settled, ...(hold.travelMs !== undefined ? { travelMs: hold.travelMs } : {}), ...(readout !== undefined ? { readout } : {}) } };

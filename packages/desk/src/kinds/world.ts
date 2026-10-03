@@ -101,7 +101,8 @@ export interface HeldReadoutContext extends Pick<HeldToolApi, "world" | "entity"
  * two-page extent that opens one page at a time on a portrait phone (Q-p); `page`: which of its two is in view there — 0 the
  * right (the default) … 1 the left, flux the view glides by (D3t-b: the notebook reads page by page). `tools`: the held bar's
  * slots (D3t-a: live — a mode or an action each); `tool`: the mode in hand when it is picked up, from its props (default: the first mode);
- * `swatches`: the colour a slot shows instead of its glyph (the board's four inks — the product's palette, through the look).
+ * `swatches`: the colour a slot shows instead of its glyph (the board's four inks — the product's palette, through the look), read
+ * with the anchor as `readout` is — a throw leaves the slots their glyphs, said once, never a strike (petition I24).
  */
 export interface OpenBinding {
   extent(ctx: Pick<ObjectContext, "rect" | "props">): ObjectRect;
@@ -117,7 +118,8 @@ export interface OpenBinding {
    * the calendar's "September", a clock's time. A string, or read each time the selection's anchor is recomposed (the pickup, a
    * mode taken up, a held tool's act run — every frame drawn while it is held) and surfaced as `HeldAnchor.readout`; `undefined`
    * or "" — no word. A readout that throws is caught at the kind's boundary: the anchor keeps the tools and carries no word, and the
-   * desk says so once.
+   * desk says so once — never a strike against the kind (petition I24: the anchor is read at the host's rate and only in hand, and a
+   * word draws nothing of the desk).
    */
   readonly readout?: string | ((ctx: HeldReadoutContext) => string | undefined);
 }

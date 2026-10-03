@@ -79,7 +79,8 @@ its own block here as it is built.** Additive, every one: nothing of 0.14.0's su
   selection's anchor — the pickup, a mode taken up, an act run, every frame drawn while held — and publishes it as
   `anchor().held.readout`, so a host's bar (VibeField's, DK-D23) prints it as data. `undefined`, "" or a non-string: no word, and the
   anchor is 0.14.0's (no key). A readout that throws is caught at the kind's boundary — the anchor keeps the tools and carries no word,
-  the frame never sees it — and said once a page on the console, naming the kind (I24's whole-kind containment is a later ask). The
+  the frame never sees it — and said once a page on the console, naming the kind (never a strike against it: I24 keeps the word's own
+  catch, below). The
   reference kinds that have a word declare it: the notebook "Page N" — the page it is open at as its ‹ › count it, read from the spread a
   turn is heading for, so the word moves no later than the frame the document's spread does — and the desk calendar its month's name;
   the example's desk clock (`examples/desk-clock`, a plugin kind: `clockWord`) the time its hands show ("10:08:42"; to the minute without
@@ -99,7 +100,11 @@ its own block here as it is built.** Additive, every one: nothing of 0.14.0's su
   I24 one rejected `create` failed the whole desk, and an uncaptured error said `degraded` for the device as a whole). PER FRAME every
   call into a kind's world half — `resolve`, `record` (and what a remake asks with them), `chip`, `hit`, its desk state's `tick` and
   `due`, the hand's, a ghost's, the tray's specimens' — is caught at the kind: a STRIKE, the frame going on without that object (its
-  record reset, made afresh next time); at THREE (design-009 §16's ladder, I17's words) the kind is QUARANTINED. A missing kind stops
+  record reset, made afresh next time); at THREE (design-009 §16's ladder, I17's words) the kind is QUARANTINED. What the selection's
+  anchor asks of a kind — I22's `open.readout` and `open.swatches` — is contained at the CALL instead, never a strike: no word, or the
+  slots their glyphs, said once a page (the anchor is recomposed at the host's rate, on every `selection.anchor()`, and only in hand —
+  counted, a host's reads would decide when a kind goes and every such fault would retire its kind with its object in hand; and it
+  draws nothing of the desk). `swatches` had no catch at all: a throw escaped every frame's publish and the host's `anchor()`. A missing kind stops
   costing, not merely drawing: nothing of it is called again, its passes are swapped out of every slot and disposed (`Ground.quarantine`;
   a kind the flat card composes turns the card off — its pixels, more draws), its desk state's `dispose` called, its drivers parked, its
   raster asks dropped and charges forgotten (`RasterBudget.forget`) — and its objects wear the desk's own MISSING FACE (`MISSING_OBJECT`,

@@ -398,7 +398,9 @@ engine names a kind:
      `landed` —, `chip`, `hit`, `lifted`, `veils`, its desk state's `tick` and `due`) is caught at the kind: a STRIKE, said on the
      console (`console.warn`: the call, the entity, the error) and never to the host; the frame goes on without that object (its
      record reset and made afresh next time; a `hit` that throws is a miss — the pick goes on to the object under it). The THIRD
-     strike quarantines the kind (design-009 §16's ladder).
+     strike quarantines the kind (design-009 §16's ladder). What the selection's anchor asks of it — `open.readout` (I22) and
+     `open.swatches` — is caught at the CALL, never a strike: no word, or the slots without their swatches, said once a page (the
+     anchor is read at the host's rate and only while the object is in hand, and it draws nothing of the desk).
   3. **Missing** — refused or quarantined, the kind is MISSING for the desk's life: nothing of it is called again; its passes are
      swapped out of every slot and their `dispose` called, its desk state's `dispose` called and let go (no tick, no `due`), its
      drivers parked, its raster asks dropped and charges forgotten — the memory ledger counts none of it. Its objects wear the desk's
@@ -409,7 +411,8 @@ engine names a kind:
      `KIND_MISSING`. A kind whose card material the flat card composes turns the card off when it is quarantined (each material kind
      then draws its own runs — the same pixels, more draws) until the desk is mounted again.
   Not caught, said plainly: a throw out of a kind's PASS per frame (`prepare`, `drawRange`, `aux`) is the frame's (the reflector's
-  fault: that frame skipped), and its mount-time calls (`theme`, `local`, the drivers' factory, a DOM half) are the mount's. The
+  fault: that frame skipped), its mount-time calls (`theme`, `local`, the drivers' factory, a DOM half) are the mount's, and what
+  core's ops ask of it at an act (`open.tool` at the pickup, a held tool's `run`) is the op's caller's. The
   worked broken kind is the clock's fault fixture (`examples/desk-clock`: `brokenClockKind`, `DeskClockBroken`, `DeskClockFaulty`).
 
 **The worked third-party kind (design-016 K8b)** — `examples/desk-clock` (`@ice-examples/desk-clock`, private, never published): an
