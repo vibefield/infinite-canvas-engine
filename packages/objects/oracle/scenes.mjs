@@ -431,3 +431,12 @@ export const QUARTER_SCENES = [
   { name: "capture-six-z0.5", capture: true, scene: { ...showcase, ...at(600, 400, 0.5), calendars: [pad({ x: 600, y: 400 })] } },
 ];
 ORACLE_SCENES.push(...QUARTER_SCENES);
+/** The kinds a capture still lays, by its scene's fields — each counted alone (I29): the field emptied is the still without that kind. */
+export const CAPTURE_KINDS = [["minimats", "mini mats"], ["calendars", "calendars"], ["boards", "whiteboards"], ["notes", "notes"], ["prints", "prints"], ["books", "notebooks"]];
+/**
+ * A 0.25 capture against the 1× still DOWNSAMPLED (each pixel the mean of its 4 × 4 block) — the oracle's `captureCheck` and
+ * rig:capture hold it to one tolerance: the whole still's mean |Δ| and its 99th percentile (maxΔ is not bounded: the lattice's
+ * lines, the hairlines, the glyphs and the grain are drawn at the still's own device px); a kind's pixels — where the still differs
+ * from the same still without it by more than `kind` on a channel — of which the share `drawn` of the 1× still's must be the quarter's.
+ */
+export const QUARTER_TOL = { mean: 6, p99: 24, kind: 8, drawn: 0.9 };

@@ -28,7 +28,7 @@ import { existsSync, readFileSync, writeFileSync, mkdirSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { create, globals } from "webgpu";
-import { BOARD_STROKES, ORACLE_SCENES, VIEW } from "./scenes.mjs";
+import { BOARD_STROKES, CAPTURE_KINDS, ORACLE_SCENES, QUARTER_TOL, VIEW } from "./scenes.mjs";
 import { createOracleDesk } from "./frame.mjs";
 import { PRINT_FIXTURES, printSheetOf } from "./prints.mjs";
 import { inflateRawSync } from "node:zlib";
@@ -1190,10 +1190,6 @@ const downsample = (P, w, h, f) => {
   }
   return out;
 };
-/** The kinds a still lays, by its scene's fields — each counted alone in a capture (I29): the field emptied is the still without it. */
-const KIND_FIELDS = [["minimats", "mini mats"], ["calendars", "calendars"], ["boards", "whiteboards"], ["notes", "notes"], ["prints", "prints"], ["books", "notebooks"]];
-/** THE QUARTER's tolerance against the 1× still downsampled (I29): the whole still's mean |Δ| and its 99th percentile; a kind's pixels' threshold and the share of them drawn. */
-const QUARTER_TOL = { mean: 6, p99: 24, kind: 8, drawn: 0.9 };
 
 /**
  * THE CAPTURE DOOR (petition I23 — ground.ts `captureFrame`, what `handle.capture` runs; frame.mjs `captureOf`), as pixels: the same
@@ -1237,7 +1233,7 @@ async function captureCheck(sc) {
     p99 = ds[Math.floor(n * 0.99)];
     worst = ds[n - 1];
     // …and each kind's pixels: where the still differs from the same still without that kind, in both — the 1× downsampled, the quarter
-    for (const [field, label] of KIND_FIELDS) {
+    for (const [field, label] of CAPTURE_KINDS) {
       if (!((s[field]?.length ?? 0) > 0)) continue;
       const without = { ...s, [field]: [] };
       const { px: B } = await render(without, { marks: true });

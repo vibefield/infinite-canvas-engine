@@ -12,6 +12,11 @@
 //   the oracle        the still `capture-desk-z1` staged FROM THE WORLD, frozen, captured: the bitmap's pixels are the Node (Dawn)
 //                     render's — oracle/results/oracle-capture-desk-z1.rgba — at maxΔ 0 on every channel (the petition's acceptance 1),
 //                     0 steps and 0 redraws across it
+//   the six at a quarter   (petition I29) `capture-six-z0.5` — one of each reference kind on a desk calendar — staged FROM THE WORLD
+//                     and captured at 1× and 0.25×, then each kind staged away in turn and captured again: the quarter within the
+//                     oracle's tolerance of the 1× still downsampled 4 × 4, and EACH KIND COUNTED in it — a kind's pixels being where
+//                     the still differs from the same still without it, ≥ 90 % of those of the 1× still downsampled are its pixels in
+//                     the quarter too (scenes.mjs QUARTER_TOL: the oracle's `captureCheck` holds the Node render to the same)
 //   live              the gate open, a capture answers and the next frame still presents
 //   the lost device   `device.destroy()` → status `failed` → capture() → undefined, no throw, the status unmoved (last: the desk ends)
 //
@@ -20,7 +25,7 @@
 import { spawn } from "node:child_process";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
-import { ORACLE_SCENES } from "@ice/objects/oracle/scenes.mjs";
+import { CAPTURE_KINDS, ORACLE_SCENES, QUARTER_TOL } from "@ice/objects/oracle/scenes.mjs";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 import { watchdog } from "./timing.mjs";
 
@@ -34,6 +39,9 @@ if (!existsSync(resolve(app, "dist/rig.html"))) die("the desk's build is missing
 if (!existsSync(resolve(repo, `packages/objects/oracle/results/oracle-${SCENE}.rgba`))) die(`the oracle render oracle-${SCENE}.rgba is missing`, "pnpm --filter ./packages/objects oracle");
 const scene = ORACLE_SCENES.find((sc) => sc.name === SCENE);
 if (scene === undefined) die(`no oracle scene ${SCENE}`, "packages/objects/oracle/scenes.mjs CAPTURE_SCENES");
+const SIX = "capture-six-z0.5";
+const six = ORACLE_SCENES.find((sc) => sc.name === SIX);
+if (six === undefined) die(`no oracle scene ${SIX}`, "packages/objects/oracle/scenes.mjs QUARTER_SCENES");
 
 const server = spawn(process.execPath, [resolve(here, "server.mjs"), repo, "0"], { stdio: ["ignore", "pipe", "inherit"] });
 const PORT = await new Promise((r) => server.stdout.once("data", (b) => r(Number(String(b).match(/PORT (\d+)/)[1]))));
@@ -48,6 +56,9 @@ const ms = (v) => (typeof v === "number" ? v.toFixed(1) : String(v));
 
 /** The bitmap's pixels through a 2D canvas (an ImageBitmap is not readable itself): RGBA, straight alpha — lossless at alpha 255. */
 const PIXELS = "((bmp) => { const c = new OffscreenCanvas(bmp.width, bmp.height); const g = c.getContext('2d'); g.drawImage(bmp, 0, 0); return g.getImageData(0, 0, bmp.width, bmp.height).data; })";
+/** A still shrunk by `f` in the page — each pixel the mean of its f × f block of bytes (the oracle's `downsample`) — and the larger of two pixels' channel differences. */
+const DOWN = "((P, w, h, f) => { const W = Math.floor(w / f); const H = Math.floor(h / f); const o = new Uint8Array(W * H * 4); for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let c = 0; c < 4; c++) { let s = 0; for (let j = 0; j < f; j++) for (let i = 0; i < f; i++) s += P[((y * f + j) * w + x * f + i) * 4 + c]; o[(y * W + x) * 4 + c] = Math.round(s / (f * f)); } return o; })";
+const DELTA = "((A, B, o) => Math.max(Math.abs(A[o] - B[o]), Math.abs(A[o + 1] - B[o + 1]), Math.abs(A[o + 2] - B[o + 2])))";
 /** The loop parked by the gate under a named freeze: the thaw kept on the window; true once parked (the settle walk takes a few frames). */
 const PARK = (name) => `(async () => { const F = window.__desk.engine.engine.frame; window.__thaw = F.freeze(${JSON.stringify(name)}); for (let i = 0; i < 400 && !F.isParked(); i++) await new Promise((r) => requestAnimationFrame(r)); return { parked: F.isParked(), holds: F.holds() }; })()`;
 
@@ -154,6 +165,38 @@ try {
   })()`);
   check(cmp.error === undefined && cmp.maxD === 0 && cmp.n === 2400 * 1600, `${SCENE} staged from the world, frozen, captured: ${cmp.error ?? `${cmp.w}×${cmp.h} — maxΔ ${cmp.maxD} on ${cmp.differ?.toLocaleString()} of ${cmp.n?.toLocaleString()} px against the Node render`}`);
   check(cmp.parked === true && cmp.steps === 0 && cmp.redraws === 0, `…with the loop parked (${cmp.parked}): ${cmp.steps} engine steps and ${cmp.redraws} redraws across the capture`);
+
+  // ── THE SIX AT A QUARTER (petition I29): one of each reference kind, staged from the world; then each staged away in turn — a kind's
+  //    pixels counted in the 0.25 still against the 1× still downsampled, to the oracle's tolerance (scenes.mjs QUARTER_TOL)
+  const stage = async (s) => { await qa(`window.__desk.setScene(${JSON.stringify(s)})`); await settle(); await sleep(150); await settle(); };
+  /** The staged still, the loop parked: at 1× downsampled 4 × 4 in the page, and at 0.25×. */
+  const STILLS = `(async () => { const d = window.__desk; const p = await ${PARK("quarter")}; const a = await d.handle.capture(); const q = await d.handle.capture({ scale: 0.25 }); window.__thaw(); if (!a || !q) { a?.close(); q?.close(); return null; } const out = { parked: p.parked, down: ${DOWN}(${PIXELS}(a), a.width, a.height, 4), q: ${PIXELS}(q), qw: q.width, qh: q.height }; a.close(); q.close(); return out; })()`;
+  await stage(six.scene);
+  const whole = await qa(`(async () => {
+    const s = await ${STILLS};
+    if (s === null) return { error: "no bitmap" };
+    window.__six = s;
+    const delta = ${DELTA}; const n = s.qw * s.qh; const D = new Uint8Array(n); let sum = 0;
+    for (let i = 0; i < n; i++) { D[i] = delta(s.q, s.down, i * 4); sum += D[i]; }
+    D.sort();
+    return { parked: s.parked, qw: s.qw, qh: s.qh, mean: sum / n, p99: D[Math.floor(n * 0.99)], worst: D[n - 1] };
+  })()`);
+  check(whole.error === undefined && whole.parked === true && whole.qw === 600 && whole.qh === 400 && whole.mean <= QUARTER_TOL.mean && whole.p99 <= QUARTER_TOL.p99, `${SIX} staged from the world, the loop parked, captured at 0.25× (${whole.qw}×${whole.qh}) against its 1× still downsampled 4×4: ${whole.error ?? `mean |Δ| ${whole.mean.toFixed(2)} (≤ ${QUARTER_TOL.mean}), 99 % within ${whole.p99} (≤ ${QUARTER_TOL.p99}), maxΔ ${whole.worst}`}`);
+  const counted = [];
+  for (const [field, label] of CAPTURE_KINDS) {
+    if (!((six.scene[field]?.length ?? 0) > 0)) continue;
+    await stage({ ...six.scene, [field]: [] });
+    const k = await qa(`(async () => {
+      const s = await ${STILLS}; const S = window.__six;
+      if (s === null) return { error: "no bitmap" };
+      const delta = ${DELTA}; let n1 = 0; let both = 0;
+      for (let i = 0; i < S.qw * S.qh; i++) { const o = i * 4; if (delta(S.down, s.down, o) <= ${QUARTER_TOL.kind}) continue; n1++; if (delta(S.q, s.q, o) > ${QUARTER_TOL.kind}) both++; }
+      return { n1, both };
+    })()`);
+    counted.push({ label, error: k.error, n1: k.n1 ?? 0, drawn: k.n1 > 0 ? k.both / k.n1 : 0 });
+    kick();
+  }
+  check(counted.length === CAPTURE_KINDS.length && counted.every((k) => k.error === undefined && k.n1 > 0 && k.drawn >= QUARTER_TOL.drawn), `…its ${counted.length} kinds counted in the quarter, each staged away in turn (≥ ${QUARTER_TOL.drawn * 100} % of a kind's pixels in the 1× still downsampled are its pixels there too): ${counted.map((k) => `${k.label} ${k.error ?? `${(k.drawn * 100).toFixed(1)} % of ${k.n1.toLocaleString()} px`}`).join(", ")}`);
 
   // ── live: the gate open, a capture answers and the next frame still presents
   const live = await qa("(async () => { const d = window.__desk; const F = d.engine.engine.frame; const frozen = F.isFrozen(); const r0 = d.handle.redraws(); const b = await d.handle.capture({ scale: 0.5 }); const cam = d.camera(); d.setCamera({ x: cam.x + 1, y: cam.y, zoom: cam.zoom }); await d.settle(4000); const out = { frozen, bmp: b ? { width: b.width, height: b.height } : null, redrew: d.handle.redraws() > r0 }; b?.close(); return out; })()");
