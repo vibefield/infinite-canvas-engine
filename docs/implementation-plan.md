@@ -1676,7 +1676,8 @@ glyph and the chips' ids. (D-R1.7, the row of holes peeking under the edge at re
 
 VibeField's desk migration (track DK, `vibe-field/draft/thinking-desk-migration.md` §8 A4 — the covers DK-15, the thumbnails
 DK-4, "Send to…" DK-14) files nine asks against the desk for 0.15.0 (I26 from the §8 canon review, I27 from DESIGN.md §8's
-right-click, I28 found by I27's builder, 3 Oct); each is built in a
+right-click, I28 found by I27's builder, 3 Oct) — and a tenth, I29, a defect of I23's door the DK-4 builder found against
+`0.15.0-desk.1` (3 Oct); each is built in a
 worktree off `main` behind the 0.14.0 cut and graded on the exact SHA (`pnpm run ci` + `gate:landing`: the Dawn oracle at 113
 stills, nineteen rigs, pack:audit, dts:check).
 Their status rows live in `docs/downstream-petitions.md`; what each built is here.
@@ -1841,6 +1842,24 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   its first button (a primary press keeps acting with a secondary button added; a secondary press stays a point with the primary added);
   the drawer's own press was already the primary's (`tray.ts`, bit 1 — unchanged, so a secondary press with the drawer out does nothing
   there).
+- **I29 — a capture draws every kind at every scale** (built 2026-10-03 on branch `i29-capture-every-kind`; a DEFECT of I23's door,
+  found by the DK-4 builder in the packaged app against `0.15.0-desk.1` — the explorer's thumbnails, DK-D27; no API change):
+  `capture({ scale: 0.25 })` of a dpr-2 view — a ratio of 0.5 — drew the calendar and the notebook and none of the note, the mini mat,
+  the whiteboard and the print. The petition's lean (a device-pixel cull or a residency rule reading the capture's dpr as a screen's)
+  was not it: `mat_dpr` floored the ratio at 1 (`max(u.cam.w, 1.0)`, mat.wgsl:8; the same inline at board-pass.wgsl:79 and the card's
+  splice of it, missing-pass.wgsl:33 and :47, portal.wgsl:22), and a flat kind shades a fragment at `clip.xy · px + cam`, `px` =
+  1 / (zoom × ratio) — below 1 at ratio × its distance from the view's corner, off its sheet; the layered kinds lay through the
+  composite, which read the ratio raw. Fixed at the conversion — the ATTACHMENT's ratio, guarded against an unset block alone — and
+  neither of the petition's two: the presented frame's dpr would misplace every fragment of a smaller still, and there is no cull to
+  give a floor. The floor held every target below a ratio of 1 alike: the oracle's frame drawn at dpr 0.5 was the broken quarter to
+  the byte (a page zoomed out below a ratio of 1), and the held desk copy, drawn at dpr / 2, lost the four behind a carried object on a
+  dpr-1 screen (seen on Dawn — `hold-book-e1-z1` at dpr 1, its blurred note gone; no golden covers it, every still being at dpr 2).
+  The 115 committed stills are byte-identical. Made unmissable: `ci` evaluates every ratio binding of the desk's WGSL and of the six
+  kinds' composed modules at ratios 1/8 … 3 (a desk unit cannot hold a reference kind and no unit rasterizes — the six kinds' pixel
+  count is the oracle's and the rig's; the petition amended in its file); the oracle's quarter is held to the 1× still DOWNSAMPLED
+  (mean |Δ| ≤ 6, 99 % within 24) with EVERY KIND COUNTED (≥ 90 % of a kind's pixels), on `capture-desk-z1` and the new
+  `capture-six-z0.5` (the six on a desk calendar: 98.7–100 %; with the floor back 0 % for the mini mats, the whiteboard and the print,
+  5.4 % for the notes); rig:capture counts the six in Chrome, each kind staged away in turn — the Node render's numbers to the pixel.
 
 ## Release cut & downstream
 

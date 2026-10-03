@@ -7,12 +7,13 @@ All notable changes to ICE are documented here. The format follows
 ## [Unreleased]
 
 > **Published as `0.15.0-desk.1` on the `next` dist-tag (2026-10-03)** — a prerelease carrying everything below (the nine 0.15.0 asks,
-> I20–I28, VibeField's desk migration) for its landing branch to pin exactly while the branch is open (its DK-D12). The section stays
-> `[Unreleased]` until 0.15.0 is cut; later prereleases are `0.15.0-desk.N`. Nothing of 0.14.0's surface moves.
+> I20–I28, VibeField's desk migration) for its landing branch to pin exactly while the branch is open (its DK-D12) — all but I29's
+> fix (`### Fixed`), which came after it: the next prerelease carries it. The section stays `[Unreleased]` until 0.15.0 is cut; later
+> prereleases are `0.15.0-desk.N`. Nothing of 0.14.0's surface moves.
 
 **The 0.15.0 asks (M23) — VibeField's desk migration (track DK) files nine against the desk, petitions I20–I28; each lands as
 its own block here as it is built.** Additive, every one but I28 — a behaviour change by the product's law, with no API change:
-nothing of 0.14.0's surface moves.
+nothing of 0.14.0's surface moves. A tenth, I29, is a defect of I23's door, fixed (`### Fixed`).
 
 ### Added
 
@@ -36,7 +37,8 @@ nothing of 0.14.0's surface moves.
   picture while another is in flight shares its bitmap. Witnesses: units (the GPU half on the fake device — the scaled still, the
   rect's copy, the tree walk, the lost device, the held path; the door — the counts, the bytes channel for channel, degraded and
   lost), the oracle's new scene `capture-desk-z1` (`captureCheck`: at 1× the capture's sha-256 IS the golden's; at 0.25× it is the
-  frame drawn at dpr 0.5, maxΔ 0; a rect is the frame's crop, maxΔ 0 — the other 112 stills byte-identical), and `rig:capture`, the
+  frame drawn at dpr 0.5, maxΔ 0 — since I29 held to the 1× still downsampled, every kind counted (`### Fixed`); a rect is the
+  frame's crop, maxΔ 0 — the other 112 stills byte-identical), and `rig:capture`, the
   nineteenth rig (on the showcase with the loop parked by `freeze("cover")`: the still of 2400 × 1600 in 30 ms the first time, 28–29
   warm; the thumbnail of 600 × 400 in 4 ms, 2.5 warm; a rect; the share; the oracle still staged FROM THE WORLD at maxΔ 0 on
   3,840,000 px; a live capture; the lost device). `docs/api-reference.md` lists it beside `setTheme`.
@@ -237,6 +239,31 @@ nothing of 0.14.0's surface moves.
   mat ends its lease and keeps the selection; the mat pinned, a right drag on a note and on the bare mat, a middle click and a middle
   drag on the note: the still byte-identical, no commit). The oracle's 115 stills byte-identical. `docs/api-reference.md` says it
   under `@ice/dom`.
+
+### Fixed
+
+<!-- petition I29 — a capture draws every kind at every scale (2026-10-03; a defect of I23's door, after `0.15.0-desk.1`) -->
+- **A CAPTURE BELOW A DEVICE RATIO OF 1 DREW TWO KINDS OF SIX — now every kind, at every scale** (petition I29 — VibeField's
+  explorer thumbnails ask the door at `scale: 0.25`, DK-D27; found by the DK-4 builder in the packaged app, a dpr-2 view): at a
+  ratio of 0.5 (0.25 × dpr 2) the still carried the calendar and the notebook but not the note, the mini mat, the whiteboard or the
+  print; at 0.5 and 1 all six. No cull and no residency rule — a coordinate conversion: `mat_dpr` (mat.wgsl) floored the ratio at 1,
+  `max(u.cam.w, 1.0)`, as the board's pass (and the fragment the flat card splices from it), the missing face and the portal clip
+  did inline, and a flat kind shades each fragment at `clip.xy / (zoom × ratio) + cam` — below 1 at ratio × its true distance from
+  the view's corner, off its sheet, so the four drew nothing and the mat was drawn magnified from the corner; the calendar and the
+  notebook lay their layers through the composite, which read the ratio raw. The ratio is now the ATTACHMENT's own, guarded against
+  an unset block alone (1e-6, as the marks' was) — not the presented frame's: a fragment of a 0.5 still IS two CSS px wide. The same
+  floor held every target below a ratio of 1: the held desk copy (drawn at dpr / 2 — on a dpr-1 screen the blurred desk behind a
+  carried object lost its notes, prints, boards and mini mats) and a page zoomed out below a ratio of 1; both draw the four now. Every
+  still at a ratio ≥ 1 is byte-identical (the oracle's 115 committed stills). No API change. Witnesses:
+  `packages/desk/test/device-ratio.test.ts` and `packages/objects/test/device-ratio.test.ts` (every ratio the desk's WGSL and the six
+  kinds' composed modules bind — the flat card's, the board's spliced fragment among them — evaluated at ratios 1/8 … 3: the ratio,
+  never 1); the oracle's `captureCheck`, which now holds the quarter to the 1× still DOWNSAMPLED 4 × 4 — mean |Δ| ≤ 6, 99 % of the
+  pixels within 24 (maxΔ not bounded: hairlines, glyphs and grain are drawn at the still's own device px) — and COUNTS EVERY KIND (a
+  kind's pixels are where the still differs from the same still without it by more than 8; ≥ 90 % of those of the 1× still
+  downsampled are drawn in the quarter too), on `capture-desk-z1` and the new `capture-six-z0.5` (one of each kind on a desk calendar:
+  all six 98.7–100 %; with the floor back the mini mats, the whiteboard and the print 0 % and the notes 5.4 % — the DK-4 still — while
+  the old reference, a frame drawn at dpr 0.5, read maxΔ 0); and rig:capture's new row, which stages `capture-six-z0.5` from the world
+  and counts the six in Chrome's quarter, each kind staged away in turn — the Node render's numbers to the pixel.
 
 ## [0.14.0] — 2026-10-02
 
