@@ -8,7 +8,12 @@
 // remote-cursors reflector (design-015 §1/§3 keep `@ice/dom`'s screen-space half; `<Desk>` mounts it through `createDeskHost` (D5b)
 // or not): the peer's world point (its own pointer, read in its own tab) mapped through THIS tab's camera, screen px to 0.5 —
 // and again after this tab pans and zooms — with the peer's name on its chip, the chip painted over the desk in the peer's
-// colour (the screenshot's pixel). Objects cross by their durable KEY (`__desk.room`). Exit 0 = passed.
+// colour (the screenshot's pixel). Objects cross by their durable KEY (`__desk.room`).
+// PETITION I26 — a host that draws the room's people ITSELF (VibeField, each by face): a THIRD tab, C, joins the same room on a
+// page mounted with `deskLayer({ cursors: false })` (`&cursors=false` — the rigs' harness, as `?hold=`/`?trayFoot=` are). A draws
+// C's cursor; C's world holds both other people and the hands core derived for them, at their tabs' pointers; and C's page draws
+// NOTHING of anyone's — no chip, no `remoteCursors` reflector, and where Alice's chip would be on C's screen (the offset B draws it
+// at) C's pixel is the desk's. A and B's rows before it run as they always did. Exit 0 = passed.
 //
 //   pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:collab
 import { spawn } from "node:child_process";
@@ -56,10 +61,11 @@ try {
   // two of the presence palette's inks (the product fixture's `PRESENCE_INKS`: violet, red)
   const ALICE = { name: "Alice", color: "#8e4ec6" };
   const BOB = { name: "Bob", color: "#e5484d" };
-  const urlOf = (who) => `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html?room=${room}&relay=${encodeURIComponent(`ws://127.0.0.1:${RELAY_PORT}`)}&name=${who.name}&color=${encodeURIComponent(who.color)}`;
+  const CAROL = { name: "Carol", color: "#e2a336" };   // the palette's amber — I26's third tab
+  const urlOf = (who, extra = "") => `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html?room=${room}&relay=${encodeURIComponent(`ws://127.0.0.1:${RELAY_PORT}`)}&name=${who.name}&color=${encodeURIComponent(who.color)}${extra}`;
   const logs = [];
-  const open = async (name, who) => {
-    const tab = await openTab(chrome.port, urlOf(who));
+  const open = async (name, who, extra = "") => {
+    const tab = await openTab(chrome.port, urlOf(who, extra));
     await tab.send("Runtime.enable"); await tab.send("Log.enable"); await tab.send("Page.enable");
     watchPage(tab, logs, { name });
     await tab.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
@@ -154,9 +160,43 @@ try {
   const goneB = await until(async () => (await B.q(`window.__desk.room.resolve(${K(nKey)})`)) === null && (await B.q(`window.__desk.entity(${bn})`)) === null, 8000);
   check(goneA && goneB, `a DELETE in A leaves B (A: ${goneA ? "gone" : "still there"}, B: ${goneB ? "gone" : "still there"})`);
 
-  logs.push(...(await faultsOf(A.tab, A.name)), ...(await faultsOf(B.tab, B.name)));   // the faults each engine CONTAINED (D7)
+  // ---- PETITION I26: C joins on a page whose host draws the room's people itself — `deskLayer({ cursors: false })`
+  const C = await open("C", CAROL, "&cursors=false");
+  const joinedC = await until(() => roleOf(C), 20000);
+  await until(() => socketsIn() >= 3, 10000);
+  const socketsC = socketsIn();
+  await C.q("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 }); window.__desk.ambient('still')");
+  check(joinedC && socketsC === 3, `C joined the room on a page mounted with cursors: false (rig.html?…&cursors=false — ${socketsC} sockets in the room), with its document and its presence`);
+  // fresh hands for C to hear: each tab's pointer moves once C is in the room
+  for (const [T, x, y] of [[A, 700, 380], [B, 300, 560], [C, 520, 460]]) { await front(T); await mouse(T, "mouseMoved", x, y); await front(T); }
+  // the first draws the second's — and B, a tab with its cursors on, draws Alice where C's page would (B's camera is C's): the control
+  await shows(A, C, CAROL, "while her own page draws none (cursors: false)");
+  await shows(B, A, ALICE, "— the control for C: the same room, its cursors on");
+  // C's WORLD: both other people, and the hands core derived for them at their tabs' pointers — the presence session untouched
+  const wA = await A.q("window.__desk.pointer()");
+  const wB = await B.q("window.__desk.pointer()");
+  const near = (h, w) => h !== null && w !== null && Math.abs(h.x - w.x) <= 0.5 && Math.abs(h.y - w.y) <= 0.5;
+  await front(C);
+  const rosterOf = async () => { const ps = await C.q("window.__desk.room.peers()"); const a = ps.find((p) => p.name === ALICE.name); const b = ps.find((p) => p.name === BOB.name); return ps.length === 2 && near(a?.hand ?? null, wA) && near(b?.hand ?? null, wB) ? ps : null; };
+  const roster = await until(rosterOf, 8000);
+  const rosterSeen = roster ?? (await C.q("window.__desk.room.peers()"));
+  check(roster !== null, `C's WORLD holds the room's two other people — ${rosterSeen.map((p) => `${p.name} ${p.color}, hand ${p.hand === null ? "none" : `(${p.hand.x}, ${p.hand.y})`}`).join("; ")} — their hands at A's pointer (${wA.x}, ${wA.y}) and B's (${wB.x}, ${wB.y}): what usePresencePeers lists, and core's derived hands`);
+  // C's PAGE: nothing of anyone's cursor — no chip by either name, no remote-cursors reflector; and where Alice's chip WOULD be on C's
+  // screen (her hand through C's camera, the chip's offset as B draws it) C's pixel is the desk's, not her ink
+  await front(B);
+  const onB = await cursorOf(B, ALICE.name);
+  await front(C);
+  const chipsC = [await cursorOf(C, ALICE.name), await cursorOf(C, BOB.name)];
+  const reflectorsC = await C.q("window.__desk.engine.engine.reflectorNames()");
+  // Alice's hand through C's camera, plus her chip's offset from the hand as B draws it
+  const camC = await C.q("window.__desk.camera()");
+  const at = onB === null ? null : { x: (wA.x - camC.x) * camC.zoom + (onB.chip.x - onB.x), y: (wA.y - camC.y) * camC.zoom + (onB.chip.y - onB.y) };
+  const inkC = at === null ? null : await pixel(C, at.x, at.y);
+  check(chipsC.every((c) => c === null) && !reflectorsC.includes("remoteCursors") && inkC !== null && inkC.join() !== byteOf(ALICE.color).join(), `C's PAGE draws NOTHING of anyone's cursor: no chip for Alice or Bob (${chipsC.map((c) => (c === null ? "none" : `one at (${c.x}, ${c.y})`)).join(", ")}), no remoteCursors reflector (C's reflectors: ${reflectorsC.join(", ")}); where Alice's chip would be, C's screen at (${at?.x.toFixed(1)}, ${at?.y.toFixed(1)}) is the desk's — it reads ${inkC}, her ink ${byteOf(ALICE.color)}`);
+
+  logs.push(...(await faultsOf(A.tab, A.name)), ...(await faultsOf(B.tab, B.name)), ...(await faultsOf(C.tab, C.name)));   // the faults each engine CONTAINED (D7)
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
-  check(logs.length === 0, "no page errors in either tab");
+  check(logs.length === 0, "no page errors in any of the three tabs");
   console.log(`\n${pass} passed, ${failN} failed · ${((Date.now() - t0) / 1000).toFixed(1)} s`);
 } catch (e) { console.log("THREW:", String(e.stack ?? e)); failN++; }
 finally { await cleanup(); }

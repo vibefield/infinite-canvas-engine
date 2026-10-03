@@ -32,14 +32,15 @@ export interface DeskRig {
   readonly widgets?: readonly WidgetType[];
   /**
    * The host's options the rig's page mounts the layer with — a host's chrome as VibeField sets it (I20: `?hold=top,band,travelMs`; I21:
-   * `?trayFoot=px`) and object types of the LAYER's own beside the engine's (I25: `?kindFaults`). Read at every mount: a rig may set it
-   * before `__desk.remount()`, and the next generation mounts with what it says then (petition I25 — a host changes its kinds by a remount).
+   * `?trayFoot=px`; I26: `?cursors=false`, the room's people drawn by the host itself) and object types of the LAYER's own beside the
+   * engine's (I25: `?kindFaults`). Read at every mount: a rig may set it before `__desk.remount()`, and the next generation mounts with
+   * what it says then (petition I25 — a host changes its kinds by a remount).
    */
   layer?: RigLayer;
 }
 
 /** The layer options a rig's page may mount with (the product page mounts with none of them). */
-export type RigLayer = Pick<DeskLayerOptions, "hold" | "tray" | "objects">;
+export type RigLayer = Pick<DeskLayerOptions, "hold" | "tray" | "objects" | "cursors">;
 
 declare global {
   interface Window {

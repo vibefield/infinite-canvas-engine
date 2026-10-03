@@ -17,14 +17,17 @@ import { DESK_PLUGINS } from "../desk";
 const query = new URLSearchParams(location.search);
 const plugins = [...(query.has("trayPlugin") ? [TRAY_PLUGIN] : []), ...(query.has("plugins") ? DESK_PLUGINS : []), ...(query.has("broken") ? BROKEN_CLOCK_OBJECTS : [])];
 // a HOST's chrome, as VibeField mounts the layer: `?hold=top,band,travelMs` (I20 — rig:open's row; all three named: a number missing
-// is NaN, which the mount refuses by its name) and `?trayFoot=px` (I21 — rig:world draws the oracle's footed still on it); and kinds of
-// the LAYER's own, broken (`?kindFaults` — I25's broken generation: one refused at create, one quarantined; rig:remount drops them
-// from `__deskRig.layer` before its next remount, and that generation mounts clean)
+// is NaN, which the mount refuses by its name), `?trayFoot=px` (I21 — rig:world draws the oracle's footed still on it) and
+// `?cursors=false` (I26 — a host that draws the room's people itself: rig:collab's third tab); and kinds of the LAYER's own, broken
+// (`?kindFaults` — I25's broken generation: one refused at create, one quarantined; rig:remount drops them from `__deskRig.layer`
+// before its next remount, and that generation mounts clean)
 const hold = query.get("hold")?.split(",").map(Number);
 const foot = query.get("trayFoot");
+const cursors = query.get("cursors");
 const layer: RigLayer = {
   ...(hold !== undefined ? { hold: { top: hold[0] ?? Number.NaN, band: hold[1] ?? Number.NaN, travelMs: hold[2] ?? Number.NaN } } : {}),
   ...(foot !== null ? { tray: { foot: Number(foot) } } : {}),
+  ...(cursors !== null ? { cursors: cursors !== "false" } : {}),
   ...(query.has("kindFaults") ? { objects: KIND_FAULTS } : {}),
 };
 const rig: DeskRig = { setScene: (host, scene) => setScene(host, scene as OracleScene), printFixture, widgets: plugins, layer };

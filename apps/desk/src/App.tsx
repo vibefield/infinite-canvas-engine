@@ -107,8 +107,8 @@ export function App(): ReactElement {
   const layer = useMemo<LayerFactory>(() => {
     // D2c: the app's hand (its faces, the text raster) and the document a note's typing session commits into; K1: the product's
     // grid — the rulers printed on the root (the engine's default leaves them off; a host prints them, RULER.md §5)
-    // …and on a rig's page, the host options its harness asked for (a host's hold, I20, and its drawer's foot, I21 — as VibeField
-    // mounts them — and object types of the layer's own, I25); none on the product's
+    // …and on a rig's page, the host options its harness asked for (a host's hold, I20, its drawer's foot, I21, and its remote cursors
+    // off, I26 — as VibeField mounts them — and object types of the layer's own, I25); none on the product's
     const { objects: rigObjects = [], ...rig } = rigLayer();
     const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS, ...rigObjects], name: "desk/compose", text: deskText(), docs: engine.docs, blobs: deskBlobs, springs: params.motion, grid: DESK_GRID, gpuLedger: true, ...rig });
     return (ctx) => { const h = factory(ctx); handleRef.current = h; generationRef.current = generation; return h; };
