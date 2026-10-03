@@ -5,11 +5,14 @@
 // is a click on that control: it moves nothing, selects nothing, and reaches
 // the app as a `PartTap`. Without a source, nothing changes: the band is the
 // canvas. Full stack, real picking, a source that mirrors a card program.
+// And the same pick OUT of the tick (petition I27 — `stack.pickAt`, beneath the desk's `handle.pick`): at every point it answers
+// what a press there touches, through the camera as it stands, and it writes nothing.
 import { createWorld } from "@vibecook/strata-ecs";
 import { describe, expect, it } from "vitest";
 import {
   Active,
   Camera,
+  closeTray,
   createEngine,
   createRecordingCommitSink,
   DownPart,
@@ -19,6 +22,7 @@ import {
   installInteractionStack,
   Movable,
   NO_MODS,
+  openTray,
   PartTap,
   PointerPart,
   Position,
@@ -82,7 +86,7 @@ function makeRig(withSource: boolean) {
     world.query(pointerQ).each((b) => { for (const r of b) e = world.getRelation(b.entity(r), TouchesExact); });
     return e;
   };
-  return { world, stack, step, mouse, card, pointerPart, exactOf };
+  return { world, engine, stack, step, mouse, card, pointerPart, exactOf };
 }
 
 describe("the frame pick source (design-014, B3b)", () => {
@@ -190,5 +194,81 @@ describe("the frame pick source (design-014, B3b)", () => {
     rig.mouse("move", 120, 170, 1);
     rig.step(3);
     expect(rig.world.has(rig.card, Grab)).toBe(false);
+  });
+});
+
+describe("the stack's exact pick out of the tick (petition I27)", () => {
+  type Rig = ReturnType<typeof makeRig>;
+  /** A press and its release at (x, y): what the press touched (`TouchesExact` — the canvas surface over nothing) and the part under it. */
+  const press = (rig: Rig, x: number, y: number): { entity: Entity | undefined; part: string | undefined } => {
+    rig.mouse("down", x, y, 1);
+    rig.step();
+    const touched = { entity: rig.exactOf(), part: rig.pointerPart() };
+    rig.mouse("up", x, y, 0);
+    rig.step(2);
+    return touched;
+  };
+  /** At each screen point `pickAt`, asked first, and a real press there agree: the same entity and part — nothing exactly where the press touched the canvas. */
+  const agree = (rig: Rig, points: readonly (readonly [number, number])[]): void => {
+    for (const [x, y] of points) {
+      const asked = rig.stack.pickAt(x, y);
+      expect(asked ?? { entity: rig.stack.canvasSurface, part: "" }, `(${x}, ${y})`).toEqual(press(rig, x, y));
+    }
+  };
+
+  it("answers what a press there touches: the content, the chrome band within the source's reach, a PART, nothing over the bare canvas", () => {
+    const rig = makeRig(true);
+    expect(rig.stack.pickAt(200, 160)).toEqual({ entity: rig.card, part: "" });
+    expect(rig.stack.pickAt(96, 160)).toEqual({ entity: rig.card, part: "" });       // the band: the boxes miss, the frame tier reaches
+    expect(rig.stack.pickAt(300, 100)).toEqual({ entity: rig.card, part: "close" });
+    expect(rig.stack.pickAt(40, 40)).toBeUndefined();
+    agree(rig, [[200, 160], [96, 160], [300, 100], [40, 40]]);
+  });
+
+  it("through the camera as it stands: panned and zoomed, a screen point picks the world point under it", () => {
+    const rig = makeRig(true);
+    rig.world.setResource(Camera, { x: 50, y: 20, zoom: 2, gesturing: false });
+    // world = camera + screen / zoom: (200, 160) the content, (96, 160) the band, (300, 100) the close disc, (70, 40) the canvas
+    expect(rig.stack.pickAt(300, 280)).toEqual({ entity: rig.card, part: "" });
+    expect(rig.stack.pickAt(92, 280)).toEqual({ entity: rig.card, part: "" });
+    expect(rig.stack.pickAt(500, 160)).toEqual({ entity: rig.card, part: "close" });
+    expect(rig.stack.pickAt(40, 40)).toBeUndefined();
+    agree(rig, [[300, 280], [92, 280], [500, 160], [40, 40]]);
+  });
+
+  it("where two overlap, the one on top wins — the order a press takes", () => {
+    const rig = makeRig(true);
+    const over = rig.world.spawn({ components: [[Position, { x: 250, y: 180 }], [Size, { w: 200, h: 120 }]], tags: [Selectable, Movable, WidgetEquipped, Active] });
+    rig.step();
+    // no board root here: the legacy order, the later entity on top (sibling order is the desk's — packages/desk/test/pick.test.ts)
+    expect(rig.stack.pickAt(270, 200)).toEqual({ entity: over, part: "" });
+    expect(rig.stack.pickAt(200, 160)).toEqual({ entity: rig.card, part: "" });
+    agree(rig, [[270, 200], [200, 160], [420, 280]]);
+  });
+
+  it("while the pegboard drawer is out, nothing anywhere — a press there touches the bare canvas (the desk inert, design-017 §4)", () => {
+    const rig = makeRig(true);
+    expect(openTray(rig.world)).toBe(true);
+    rig.step();
+    expect(rig.stack.pickAt(200, 160)).toBeUndefined();
+    agree(rig, [[200, 160]]);
+    closeTray(rig.world);
+    rig.step();
+    expect(rig.stack.pickAt(200, 160)).toEqual({ entity: rig.card, part: "" });
+  });
+
+  it("reads, never writes: the pointer's touch, its part and the selection stand, and nothing wakes the frame", () => {
+    const rig = makeRig(true);
+    rig.mouse("move", 40, 40, 0);
+    rig.step();
+    const touched = rig.exactOf();
+    const wakes = { ...rig.engine.frame.sleepStats().wakes };
+    expect(rig.stack.pickAt(200, 160)).toEqual({ entity: rig.card, part: "" });
+    expect(rig.stack.pickAt(300, 100)).toEqual({ entity: rig.card, part: "close" });
+    expect(touched).toBe(rig.stack.canvasSurface);
+    expect(rig.exactOf()).toBe(touched);
+    expect(rig.pointerPart()).toBe("");
+    expect(rig.world.hasTag(rig.card, Selected)).toBe(false);
+    expect(rig.engine.frame.sleepStats().wakes).toEqual(wakes);
   });
 });

@@ -42,8 +42,13 @@
  * pickTopAt, so pick can never diverge from paint), then the CanvasSurface
  * entity as the guaranteed fallback (design-001 §4). Relations are written
  * change-only (design-002 §4 hygiene). Wires/ports are M8 — skipped.
+ *
+ * `pickAt` is the exact pick OUT of the tick (petition I27 — the desk's
+ * `handle.pick`, a host's right-click): the `TouchesExact` body above run on
+ * the world as the last tick left it, read-only — one body, so a host's pick
+ * and a press can never disagree.
  */
-import type { Batch, Entity, System, SystemCtx, TickSystem, World } from "@vibecook/strata-ecs";
+import type { Batch, Entity, System, TickSystem, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem, defineTickSystem, Not } from "@vibecook/strata-ecs";
 import { SpatialIndex, screenToWorld, type CameraState } from "@ice/kernel";
 import {
@@ -64,7 +69,7 @@ import {
 import { Active } from "../catalog/camera-derived";
 import { WidgetEquipped } from "../widget/define-widget";
 import { PointerVersion, SpatialVersion, bumpVersion, makeVersionGuard } from "../helpers/version-stamps";
-import { distPointToBox, pickTopAt, type WirePickSource } from "../ops/point-pick";
+import { distPointToBox, type PickReader, pickTopAt, type WirePickSource } from "../ops/point-pick";
 import { compareStackOrder, createSiblingOrderIndex } from "../ops/sibling-order";
 import { PointerSettings } from "../catalog/settings-resources";
 import { POINTER_DEFAULTS } from "../settings/defaults";
@@ -118,11 +123,23 @@ export interface FramePickSource {
 /** The stack's slot for the frame pick source — a mutable box, so the ground can arrive after install. */
 export interface FramePickSlot { current: FramePickSource | null }
 
+/** What a press at a point would touch (`TouchesExact`): the entity, and the PART under it (`""` the thing itself — design-014). */
+export interface PointPick {
+  readonly entity: Entity;
+  readonly part: string;
+}
+
 export interface PickingSystems {
   spatialSync: TickSystem;
   picking: System;
   /** The shared spatial index — snap/drop/marquee consume the SAME instance. */
   index: SpatialIndex<Entity>;
+  /**
+   * The exact pick OUT of the tick (petition I27): what a press at a SCREEN point (CSS px of the view) would touch now — the
+   * `TouchesExact` body `picking` runs, on the world as the last tick left it and the camera as it stands; `undefined` over the bare
+   * canvas, and everywhere while the pegboard drawer is out (the desk inert, design-017 §4). Read-only: no relation, no tag, no stamp.
+   */
+  pickAt(sx: number, sy: number): PointPick | undefined;
   /** Nav-op seam (design-004 §7): forget every last-known AABB so the next
    *  spatialSync pass repopulates the cleared index from the new Active set. */
   clearCaches(): void;
@@ -236,8 +253,8 @@ export function createPickingSystems(
   /** THE narrow-phase, shared with the router's event-time pick (ops/point-pick).
    *  `wires` (M8) narrow-phases wire entries against their cached cubic; undefined
    *  before the wire slice installs ⇒ wire index entries are skipped by pickTopAt. */
-  const pickTop = (ctx: SystemCtx, wx: number, wy: number, rWorld: number): Entity | undefined =>
-    pickTopAt(ctx, index, wx, wy, rWorld, wires, order.ordinals());
+  const pickTop = (reader: PickReader, wx: number, wy: number, rWorld: number): Entity | undefined =>
+    pickTopAt(reader, index, wx, wy, rWorld, wires, order.ordinals());
   /**
    * The frame tier (design-014, B3b): with a source registered, a widget hit by
    * its content box is asked what is under the point — a rounded corner's
@@ -245,7 +262,7 @@ export function createPickingSystems(
    * widget whose CHROME the source says is under the point (within `pad`) is
    * the hit. Returns the entity and the part (`""` for content and frame).
    */
-  const pickFrame = (ctx: SystemCtx, wx: number, wy: number, rWorld: number, boxHit: Entity | undefined): { e: Entity | undefined; part: string } => {
+  const pickFrame = (ctx: PickReader, wx: number, wy: number, rWorld: number, boxHit: Entity | undefined): { e: Entity | undefined; part: string } => {
     const src = frames.current;
     if (src === null) return { e: boxHit, part: "" };
     const isWidget = (e: Entity): boolean => ctx.hasTag(e, WidgetEquipped) && ctx.hasTag(e, Active);
@@ -288,6 +305,9 @@ export function createPickingSystems(
     }
     return { e: best, part: bestPart };
   };
+  /** The EXACT pick (`TouchesExact` and its part — "grab is precise"): the r = 0 point pick through the frame tier. */
+  const pickExact = (reader: PickReader, wx: number, wy: number): { e: Entity | undefined; part: string } =>
+    pickFrame(reader, wx, wy, 0, pickTop(reader, wx, wy, 0));
 
   const versions = makeVersionGuard(world, [PointerVersion, SpatialVersion]);
   // The drawer out = the desk inert to the pointer (design-017 §4). `trayInput` stamps every local pointer `HandledByWidget` for
@@ -331,7 +351,7 @@ export function createPickingSystems(
         const rWorld = (ctx.get(p, PointerRadius)?.r ?? 0) / zoom;
 
         // TouchesExact — precise point pick, no dead-band ("grab is precise").
-        const exactFrame = pickFrame(ctx, w.x, w.y, 0, pickTop(ctx, w.x, w.y, 0));
+        const exactFrame = pickExact(ctx, w.x, w.y);
         const exact = exactFrame.e ?? canvas;
         if (exact !== undefined && ctx.getRelation(p, TouchesExact) !== exact) {
           ctx.setRelation(p, TouchesExact, exact);
@@ -386,6 +406,13 @@ export function createPickingSystems(
     spatialSync,
     picking,
     index,
+    pickAt(sx, sy) {
+      // the drawer out: every press touches the bare canvas, as `picking` answers it
+      if (trayIsOpen()) return undefined;
+      const w = screenToWorld(sx, sy, world.getResource(Camera) ?? IDENTITY_CAM);
+      const hit = pickExact(world, w.x, w.y);
+      return hit.e === undefined ? undefined : { entity: hit.e, part: hit.part };
+    },
     clearCaches: () => {
       seeded = false;
     },

@@ -25,7 +25,7 @@ import { createCameraSystems } from "../systems/camera-sim";
 import { createCleanupSystems } from "../systems/cleanup";
 import { createL0Systems } from "../systems/l0-input";
 import { createNavFlight } from "../systems/nav-flight";
-import { createPickingSystems, type FramePickSlot } from "../systems/l1-pick";
+import { createPickingSystems, type FramePickSlot, type PointPick } from "../systems/l1-pick";
 import { createWireSync } from "../systems/l1-wires";
 import { createArbitrationSystems } from "../systems/l2-arbitrate";
 import { createL2Systems, type SpawnProfiles } from "../systems/l2-recognize";
@@ -136,6 +136,12 @@ export interface InteractionStack extends InteractionCore {
   readonly wirePreview: WirePreviewBuffer;
   /** The frame pick source's slot (design-014, B3b): the ground layer sets `current` at mount, clears it at dispose. */
   readonly framePick: FramePickSlot;
+  /**
+   * The exact pick OUT of the tick (petition I27; l1-pick `pickAt`): what a press at a SCREEN point (CSS px of the view) would touch
+   * now — `picking`'s own `TouchesExact` body on the world as the last tick left it, through the frame source above; `undefined` over
+   * the bare canvas and while the pegboard drawer is out. Read-only. The desk's `handle.pick` reaches it through its mount context.
+   */
+  pickAt(sx: number, sy: number): PointPick | undefined;
   /**
    * The nav geometry seam (design-015 §9; D2b) beside `framePick`: the renderer's word on a
    * container's DRAWN face, the inside's arrival and the exact cut camera — core's nav, the
@@ -271,6 +277,7 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
     marqueeBuffer: marquee.buffer,
     wirePreview: connect.previewBuffer,
     framePick,
+    pickAt: (sx, sy) => pick.pickAt(sx, sy),
     navGeometry,
     heldPose,
     trayPose,
