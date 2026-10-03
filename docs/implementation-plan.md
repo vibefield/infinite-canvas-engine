@@ -1672,7 +1672,7 @@ glyph and the chips' ids. (D-R1.7, the row of holes peeking under the edge at re
 `OverInteractive`); an accessory's shadow darkens the holes it falls on; rig:tray takes ≈ 137 s; a lamp push configured to
 0 would make `normalize(shadow.zw)` NaN.
 
-## M23 — The 0.15.0 asks (petitions I20–I28) — **IN BUILD (I23 LANDED 2026-10-02)**
+## M23 — The 0.15.0 asks (petitions I20–I28) — **LANDED 2026-10-03: all nine on main `6709989`** (one linear chain of branches, each graded by the orchestrator's own `ci` + `gate:landing`; 0.14.0 published 17:07Z; cut as `0.15.0-desk.1` on `next` the same day)
 
 VibeField's desk migration (track DK, `vibe-field/draft/thinking-desk-migration.md` §8 A4 — the covers DK-15, the thumbnails
 DK-4, "Send to…" DK-14) files nine asks against the desk for 0.15.0 (I26 from the §8 canon review, I27 from DESIGN.md §8's
@@ -1681,7 +1681,7 @@ worktree off `main` behind the 0.14.0 cut and graded on the exact SHA (`pnpm run
 stills, nineteen rigs, pack:audit, dts:check).
 Their status rows live in `docs/downstream-petitions.md`; what each built is here.
 
-- **I23 — the capture door** (**LANDED 2026-10-02**; DK-D25, James: "frozen desk should be still and consume no render time at
+- **I23 — the capture door** (**LANDED 2026-10-03 on main `6709989`**; built 2026-10-02 on branch `i23-capture-door`; DK-D25, James: "frozen desk should be still and consume no render time at
   all, do it properly" — the covers take a STILL of the parked desk and blur it once, and this door is where the still comes from):
   `handle.capture({ rect?, scale? }) → Promise<ImageBitmap | undefined>` — the LAST PRESENTED frame (the same camera, theme, marks,
   hand and tray), `rect` in CSS px of the view, `scale` on the view's dpr. The route inside is the petition's lean, measured: a
@@ -1701,7 +1701,7 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   render pass keeps the frame's label (its encoder is `capture`, so the GPU profiler reports it as loose work, never a frame). Found by
   the oracle's quarter check and fixed before landing: the first build scaled the root view alone, and a live inside's lattice drew
   against the frame's dpr.
-- **I20 — the hand's reserves and the held bar's travel, host-settable** (**BUILT 2026-10-02**, branch `i20-22-host-options`; DK-12,
+- **I20 — the hand's reserves and the held bar's travel, host-settable** (**LANDED 2026-10-03 on main `6709989`**; built 2026-10-02 on branch `i20-22-host-options`; DK-12,
   MC-D4 — VibeField's tools in hand under its head): `deskLayer({ hold: { top, band, travelMs } })`, read at the mount, each `HOLD`'s
   when absent. The reserves reach the one reading fit (`readingTarget(…, reserves)`, the builder's `hold`); the travel reaches the bar
   through the anchor (`HeldAnchor.travelMs`, only when set), the bar being the host's (DK-D23) — `<SelectionMenu>` honours it. Decided
@@ -1710,7 +1710,7 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   window (400 × 480 at band 100); `topPhone`/`marginPhone` untouched, the band shared as it always was. Measured: rig:open §14 — the fit
   116.000 / 100.000, the bar's travel 549.6 ms on the page's clock (two transform runs: the bar measures its width again once its tools
   are in, as it always has).
-- **I21 — the pegboard lay's foot inset, host-settable** (**BUILT 2026-10-02**, branch `i20-22-host-options`; DK-13, FC-D3/MC-D7 — the
+- **I21 — the pegboard lay's foot inset, host-settable** (**LANDED 2026-10-03 on main `6709989`**; built 2026-10-02 on branch `i20-22-host-options`; DK-13, FC-D3/MC-D7 — the
   pegboard rises behind VibeField's line): `deskLayer({ tray: { foot } })`, read at the mount. Built as the HEADER's mirror, not as a
   lay change (the migration plan's lean had the kernel's lay take it; where things hang does not move — only what shows and how far
   the board scrolls): the face's clip and the tags' scissor end at the foot's line; the veil's second quad, in its one draw (the drawer's
@@ -1720,7 +1720,7 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   line is never hovered or taken — R4's rule mirrored (the strip between the foot's line and a host's line would otherwise take a
   hidden specimen). The oracle's new still `tray-foot` holds the foot to its bare board and the rest to its footless twin byte for
   byte; the 113 committed stills are byte-identical; rig:parity and rig:world (from the world, on `rig.html?trayFoot=88`) maxΔ 0.
-- **I22 — a kind's word in hand** (**BUILT 2026-10-02**, branch `i20-22-host-options`; DK-12, MC-D9 ruled readouts): `open.readout` —
+- **I22 — a kind's word in hand** (**LANDED 2026-10-03 on main `6709989`**; built 2026-10-02 on branch `i20-22-host-options`; DK-12, MC-D9 ruled readouts): `open.readout` —
   a string, or a function of its held tools' read side and its desk state — surfaced as `HeldAnchor.readout`, recomposed with the
   anchor (every frame drawn while held), so a word that follows a motion (a clock's second) moves with its frames and asks no wake of
   its own. Decided in the build: the readout reads the kind's `local` beside what the acts read (the petition named the acts' world,
@@ -1728,7 +1728,7 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   document alone published "Page 1" over a turning sheet for a frame (the unit's red); "Page N" counts the reader's turns (‹ ›, "Next
   page"), not the folio of a spread's left page. The notebook and the calendar declare theirs, the example's clock its time; a throw is
   contained at the kind's boundary and said once — I24 owns the rest.
-- **I24 — fault containment per kind** (**BUILT 2026-10-02**, branch `i24-kind-faults`; DK-D22 — a plugin's kind runs in the renderer
+- **I24 — fault containment per kind** (**LANDED 2026-10-03 on main `6709989`**; built 2026-10-02 on branch `i24-kind-faults`; DK-D22 — a plugin's kind runs in the renderer
   realm on the host's device, contained per kind by ICE; DK-9 admits a third-party kind only behind it): one kind's fault is that
   kind's — drawn as MISSING, said once, never the desk down. At create every kind's pass is made in parallel and settled ALONE, each
   in its own error scope (`createKindPasses` — a scope around what a kind does before its first await, where a WGSL error is raised;
@@ -1757,7 +1757,7 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   a DOM half) are not caught — the first throws out of the frame as before (the reflector's fault: the frame skipped), the second at
   the mount; what core's ops ask of a kind at an act (`open.tool` at the pickup, a held tool's `run`) is the op's caller's; a
   quarantined material kind turns the flat card off until the desk is mounted again (no re-compose).
-- **I25 — the kind set: the rule, measured; the door deferred** (**BUILT 2026-10-02**, branch `i25-kind-rule`; DK-9 — VibeField's
+- **I25 — the kind set: the rule, measured; the door deferred** (**LANDED 2026-10-03 on main `6709989`**; built 2026-10-02 on branch `i25-kind-rule`; DK-9 — VibeField's
   plugin runtime enables, updates and removes kinds with a document open): the petition offered two answers, ICE's choice; the pick is
   answer 2, THE RULE — a desk's kinds are the set it was mounted with (compiled by `Ground.create`, fixed for the layer's life), a host
   that changes them remounts the layer on a new generation (VibeField remounts per document already, its B4 law), and the mount's cost
@@ -1785,7 +1785,7 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   the glyph feed's systems, an open devtools dock — rig:remount counts them). Not done, said plainly: no door to replace a kind on a live desk; a remount re-acquires the device even
   when only one kind changed (an engine with `compositorDevice` keeps it — not measured here); `perf().boot` stamps the first frame's
   GPU work done, not its display; a remount mid-gesture other than typing (a pen stroke, a carry in flight) is not witnessed.
-- **I26 — a host that draws its own peers** (**BUILT 2026-10-03**, branch `i26-cursors-off`; DK-16 — VibeField draws each peer by face,
+- **I26 — a host that draws its own peers** (**LANDED 2026-10-03 on main `6709989`**; built 2026-10-03 on branch `i26-cursors-off`; DK-16 — VibeField draws each peer by face,
   from `usePresencePeers`, and the desk's host drew them too): `deskLayer({ cursors: false })`, read at the mount — the host the layer
   is mounted in mounts no remote cursors (no plane, no reflector). The remote cursors are the dom's (design-015 §9) and the desk
   reaches the dom as an opaque factory, so the word travels back on the HANDLE: `DeskLayerHandle.cursors`, read through dom's
@@ -1798,7 +1798,7 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   and their hands at their tabs' pointers; her page draws nobody's — no chip, no reflector, the desk's pixel where Alice's chip would
   be. Not done, said plainly: read at the mount alone — a host that changes its mind remounts (I25's rule); nothing on the handle hides
   the cursors live.
-- **I27 — the desk's pick at a screen point** (**BUILT 2026-10-03**, branch `i27-pick`; DK-11 — VibeField's right-click selects the
+- **I27 — the desk's pick at a screen point** (**LANDED 2026-10-03 on main `6709989`**; built 2026-10-03 on branch `i27-pick`; DK-11 — VibeField's right-click selects the
   object under the pointer, then grows the bar into its menu, MC-D6): `handle.pick({ x, y }) → PickResult | null`,
   `{ entity, type, canvas, part }`. The route is core's own hit path, shared, never a second: `picking` wrote `TouchesExact` from a
   closure-private exact pick, now ONE function (`pickExact`, l1-pick.ts) that the system and an out-of-tick door call —
@@ -1816,7 +1816,7 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   then is not in it until the next step (a click is judged a tick later, after the index has it); no pick of a live inside's objects
   without entering, by the decision above; the drawer's specimens, the hand's tools and the host's own DOM are not the desk's pick's
   (null, or the host's own hit test).
-- **I28 — a secondary button never acts** (**BUILT 2026-10-03**, branch `i28-secondary-button`; DK-11 — the bar's right-click opens
+- **I28 — a secondary button never acts** (**LANDED 2026-10-03 on main `6709989`**; built 2026-10-03 on branch `i28-secondary-button`; DK-11 — the bar's right-click opens
   VibeField's menu, and that is all it does; a behaviour change by the product's law, no API change): a secondary (right) or middle
   press is a POINT for the interaction stack, never a GESTURE. The button needed no new field: the adapter always carried PointerEvent
   `buttons` on every fact, and a pointerdown's mask is the button that pressed (a second button joins a held press as a pointermove), so
