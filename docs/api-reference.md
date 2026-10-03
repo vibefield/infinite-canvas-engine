@@ -14,7 +14,7 @@ unsupported and wall-checked.
 
 **What a landing must pass** (design-013 C4, D-C4.11; design-015 D1): `pnpm run ci` (typecheck ·
 lint · tests · the import walls · `gen:check`) and **`pnpm run gate:landing`** — the desk's Dawn
-oracle, the `apps/desk` build, its eighteen rigs (`rig:parity` first: Chrome against the oracle's
+oracle, the `apps/desk` build, its nineteen rigs (`rig:parity` first: Chrome against the oracle's
 bytes, maxΔ 0 asserted per scene), `pack:audit` and the desk clock's `dts:check`.
 The landing gate is separate from `ci` because the oracle needs Dawn, which the
 CI runner has not been probed for. A RELEASE adds the audit again from the other
@@ -292,7 +292,12 @@ The desk (design-015): every object under the camera drawn by ONE WebGPU rendere
 the DOM in screen space. Entries mirror the umbrella's: **`@ice/desk`** (the root barrel — the
 renderer `Ground`/`prepareFrame`/`drawFrame`, `deskLayer(opts)` and its `DeskLayerHandle` (`handle.editor()`
 is the desk's ONE focused editor — the desk makes it at every mount, whatever kinds are registered, K8a; `status()` says whether
-it draws and `onStatus(listener)` hears each move — a device lost after the boot included, K9; `handle.tray` is the pegboard drawer's door — `open`/`close`/`toggle`/`isOpen`/`scroll`/`state`/`pin`, and since design-018 §5–§6 `category(id?)`, `categories()`, `anchor()` (`TrayAnchor`: the drawer as the last frame drew it — its `header`, the clear band under its edge, included — the view, the theme's `night`, the hand, the entries, the chips) and `subscribe(listener)`, told after each frame that moved what `anchor()` says and never at rest), the text raster `inkRaster`/`penFaces`, `decodePicture`,
+it draws and `onStatus(listener)` hears each move — a device lost after the boot included, K9; `setTheme(theme, palette?)` re-dresses the desk, and beside it
+`capture({ rect?, scale? }) → Promise<ImageBitmap | undefined>` is THE CAPTURE DOOR (petition I23): the desk as the LAST PRESENTED frame showed it — the same
+camera, theme, marks, hand and tray — as a bitmap of `rect` (CSS px of the view; the whole view when absent) at the view's dpr × `scale` (1; a thumbnail asks
+0.25), drawn ONCE MORE from that frame's inputs into a readable still and read back (never a copy kept of every frame, never a frame: no redraw, no wake, the
+memory ledger's own `capture` line while the still lives); taken under `engine.frame.freeze` it is the parked frame, live the most recent; `undefined`, never
+a throw, while `status()` is `failed` or `degraded`, before the first frame or when the device is lost mid-copy; `handle.tray` is the pegboard drawer's door — `open`/`close`/`toggle`/`isOpen`/`scroll`/`state`/`pin`, and since design-018 §5–§6 `category(id?)`, `categories()`, `anchor()` (`TrayAnchor`: the drawer as the last frame drew it — its `header`, the clear band under its edge, included — the view, the theme's `night`, the hand, the entries, the chips) and `subscribe(listener)`, told after each frame that moved what `anchor()` says and never at rest), the text raster `inkRaster`/`penFaces`, `decodePicture`,
 the kind CONTRACT — `defineObject`/`objectKindOf`/`driversOf`/`hostOf`, `ObjectKind`, `KindProgram`, `KindHost`,
 `ObjectHost` (a kind's DOM half, declared: `lend` · `text` · `mount` — design-016 K4b, K8a) —, the builder/pick/ambient/reflector
 of `compose`, `instrumentSubmits`, the GPU profiler (design-016 K2: `createGpuProfiler` — the layer's `handle.profiler()`, unarmed until
