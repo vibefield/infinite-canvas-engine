@@ -6,6 +6,36 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+**The 0.15.0 asks (M23) — VibeField's desk migration (track DK) files six against the desk, petitions I20–I25; each lands as
+its own block here as it is built.** Additive, every one: nothing of 0.14.0's surface moves.
+
+### Added
+
+<!-- petition I23 — the capture door (2026-10-02; the first of the 0.15.0 asks) -->
+- **THE CAPTURE DOOR — `handle.capture({ rect?, scale? }) → Promise<ImageBitmap | undefined>`** (petition I23, the first of the
+  0.15.0 asks — VibeField's covers, thumbnails and "Send to…"; DK-D25, James: "frozen desk should be still and consume no render
+  time at all, do it properly"): the desk as the LAST PRESENTED frame showed it — the same camera, theme, selection marks, hand and
+  tray — as a bitmap of `rect` (CSS px of the view; the whole view when absent) at the view's dpr × `scale` (1; a thumbnail asks
+  0.25). Inside (`Ground.capture`, ground.ts `captureFrame`): that frame's inputs drawn ONCE MORE — every view in the tree at the
+  scaled dpr (`scaledInputs`: the root's, each live inside's, the departed desk's, the hand's, the marks', the tray's) — into a
+  readable `capture/still` texture through `encodeFrame`, now the ONE encoding of a frame that the swap chain, the capture and the
+  Node oracle share (the held frame through `renderHeldFrame`, its encoders named `capture` so the profiler closes no frame on them;
+  at the view's size the standing desk copy is reused); the rect's device pixels copied to a `capture/readback` buffer, mapped, and
+  handed back tight (the swap chain's BGRA turned to RGBA, alpha 255, no premultiplication or colour-space conversion on the way into
+  the ImageBitmap). The slots are prepared for a new `RenderTarget`, `"capture"`: the board's and the print's passes keep the frame's
+  residency under it as under the hand, so a thumbnail's coarser asks evict nothing. Nothing is kept of any frame — both resources are
+  destroyed before the promise settles — the swap chain is never touched, no frame is counted (`redraws`, `perf().frames`, no engine
+  step), one submit of its own, the memory ledger's own `capture` line while the still lives and none after. Honest `undefined`,
+  never a throw, while `status()` is `failed` or `degraded`, before the first frame has been presented, or when the device is lost
+  mid-copy (the map rejects); a malformed option throws at the call (`checkCapture`). Captures serialize; one asked for the same
+  picture while another is in flight shares its bitmap. Witnesses: units (the GPU half on the fake device — the scaled still, the
+  rect's copy, the tree walk, the lost device, the held path; the door — the counts, the bytes channel for channel, degraded and
+  lost), the oracle's new scene `capture-desk-z1` (`captureCheck`: at 1× the capture's sha-256 IS the golden's; at 0.25× it is the
+  frame drawn at dpr 0.5, maxΔ 0; a rect is the frame's crop, maxΔ 0 — the other 112 stills byte-identical), and `rig:capture`, the
+  nineteenth rig (on the showcase with the loop parked by `freeze("cover")`: the still of 2400 × 1600 in 30 ms the first time, 28–29
+  warm; the thumbnail of 600 × 400 in 4 ms, 2.5 warm; a rect; the share; the oracle still staged FROM THE WORLD at maxΔ 0 on
+  3,840,000 px; a live capture; the lost device). `docs/api-reference.md` lists it beside `setTheme`.
+
 ## [0.14.0] — 2026-10-02
 
 **The first publish since 0.11.0, and it carries M20 + M21 + M22** — the desk (design-015), the kit and the
@@ -1047,30 +1077,6 @@ PERFORMANCE — PERSISTENT RECORDS, THE O(1) PAN PROVEN BY ITS COUNTERS, THE 1,0
   takes the holes' opening as an argument (1 under the specimens, 0 in the veil). rig:tray (f): the note laid across the ramp, pixels
   over a punched hole against those over the face row by row — worst |Δ| 1.0 of luminance (with R4's feather, 33.8). The five tray
   stills are re-blessed; the other 107 are byte-identical.
-<!-- petition I23 — the capture door (2026-10-02; the first of the 0.15.0 asks) -->
-- **THE CAPTURE DOOR — `handle.capture({ rect?, scale? }) → Promise<ImageBitmap | undefined>`** (petition I23, the first of the
-  0.15.0 asks — VibeField's covers, thumbnails and "Send to…"; DK-D25, James: "frozen desk should be still and consume no render
-  time at all, do it properly"): the desk as the LAST PRESENTED frame showed it — the same camera, theme, selection marks, hand and
-  tray — as a bitmap of `rect` (CSS px of the view; the whole view when absent) at the view's dpr × `scale` (1; a thumbnail asks
-  0.25). Inside (`Ground.capture`, ground.ts `captureFrame`): that frame's inputs drawn ONCE MORE — every view in the tree at the
-  scaled dpr (`scaledInputs`: the root's, each live inside's, the departed desk's, the hand's, the marks', the tray's) — into a
-  readable `capture/still` texture through `encodeFrame`, now the ONE encoding of a frame that the swap chain, the capture and the
-  Node oracle share (the held frame through `renderHeldFrame`, its encoders named `capture` so the profiler closes no frame on them;
-  at the view's size the standing desk copy is reused); the rect's device pixels copied to a `capture/readback` buffer, mapped, and
-  handed back tight (the swap chain's BGRA turned to RGBA, alpha 255, no premultiplication or colour-space conversion on the way into
-  the ImageBitmap). The slots are prepared for a new `RenderTarget`, `"capture"`: the board's and the print's passes keep the frame's
-  residency under it as under the hand, so a thumbnail's coarser asks evict nothing. Nothing is kept of any frame — both resources are
-  destroyed before the promise settles — the swap chain is never touched, no frame is counted (`redraws`, `perf().frames`, no engine
-  step), one submit of its own, the memory ledger's own `capture` line while the still lives and none after. Honest `undefined`,
-  never a throw, while `status()` is `failed` or `degraded`, before the first frame has been presented, or when the device is lost
-  mid-copy (the map rejects); a malformed option throws at the call (`checkCapture`). Captures serialize; one asked for the same
-  picture while another is in flight shares its bitmap. Witnesses: units (the GPU half on the fake device — the scaled still, the
-  rect's copy, the tree walk, the lost device, the held path; the door — the counts, the bytes channel for channel, degraded and
-  lost), the oracle's new scene `capture-desk-z1` (`captureCheck`: at 1× the capture's sha-256 IS the golden's; at 0.25× it is the
-  frame drawn at dpr 0.5, maxΔ 0; a rect is the frame's crop, maxΔ 0 — the other 112 stills byte-identical), and `rig:capture`, the
-  nineteenth rig (on the showcase with the loop parked by `freeze("cover")`: the still of 2400 × 1600 in 30 ms the first time, 28–29
-  warm; the thumbnail of 600 × 400 in 4 ms, 2.5 warm; a rect; the share; the oracle still staged FROM THE WORLD at maxΔ 0 on
-  3,840,000 px; a live capture; the lost device). `docs/api-reference.md` lists it beside `setTheme`.
 
 ### Removed — THE DELETION (design-015 §1 · §11.5; D-D1 · D-D2 · D-D3 · D-D14 · D-D15; the 0.14.0 break list)
 
