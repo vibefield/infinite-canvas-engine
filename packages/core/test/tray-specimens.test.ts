@@ -67,7 +67,7 @@ const BIN: WidgetType = widgets.get("spec:bin") ?? defineWidget({
 
 const VP = { w: 800, h: 600, dpr: 1 };
 
-function rig(widths: { w: number; face?: number } = { w: 720 }, extra: readonly WidgetType[] = []) {
+function rig(widths: { w: number; face?: number; foot?: number } = { w: 720 }, extra: readonly WidgetType[] = []) {
   const ce = createCanvasEngine({ widgets: [PAD, PLUGIN, PLAIN, BIN, ...extra] });
   ce.docs.create();
   ce.world.setResource(Viewport, VP);
@@ -76,7 +76,7 @@ function rig(widths: { w: number; face?: number } = { w: 720 }, extra: readonly 
   let now = 1000;
   const step = (n = 1): void => { for (let i = 0; i < n; i++) { now += 16; ce.step(now); } };
   const shown = (): number => { const e = trayEntity(ce.world); return e === undefined ? 0 : ce.world.read(e, Tray).scroll; };
-  const frame = (): TrayScreenFrame => ({ x: 40, y: trayOpen(ce.world) ? 348 : 588, w: widths.w, h: 252, p: trayOpen(ce.world) ? 1 : 0, max: 0, pitch: 40, scroll: shown(), ...(widths.face !== undefined ? { face: widths.face } : {}) });
+  const frame = (): TrayScreenFrame => ({ x: 40, y: trayOpen(ce.world) ? 348 : 588, w: widths.w, h: 252, p: trayOpen(ce.world) ? 1 : 0, max: 0, pitch: 40, scroll: shown(), ...(widths.face !== undefined ? { face: widths.face } : {}), ...(widths.foot !== undefined ? { foot: widths.foot } : {}) });
   const tray = () => { const e = trayEntity(ce.world); if (e === undefined) throw new Error("no tray"); return e; };
   const specimens = () => specimensOf(ce.world, tray());
   const byType = () => Object.fromEntries(specimens().map((e) => [ce.world.read(e, PrefabId).id, e]));
@@ -209,6 +209,22 @@ describe("the tray's specimens", () => {
     bare.pose(true); bare.step(2);
     scrollTray(bare.world, 5000); bare.step(3);
     expect(bare.world.read(bare.tray(), Tray).scroll).toBe(5000);
+  });
+
+  it("petition I21: a host's FOOT inset grows the range by itself — the content's foot plus a pitch less the face above the foot — and a foot that moves (a mount) clamps as the face does", () => {
+    const view = { w: 720, face: 147, foot: 60 };   // one line (foot 250) at 720
+    const r = rig(view);
+    r.pose(true);
+    r.step(2);
+    const t = () => r.world.read(r.tray(), Tray);
+    const bottom = () => r.world.read(r.tray(), TrayContent).bottom;
+    expect(bottom()).toBe(250);
+    scrollTray(r.world, 1e4); r.step(3);           // the door: no range moved, nothing clamps it
+    view.face += 50; r.step(2);                     // the face moves: clamped to the range ABOVE the foot
+    expect(t().scroll).toBe(250 + 40 - (197 - 60));
+    scrollTray(r.world, 1e4); r.step(3);
+    view.foot = 0; r.step(2);                       // the foot gone: the range shrinks by it — clamped
+    expect(t().scroll).toBe(250 + 40 - 197);
   });
 
   it("hang what the CURRENT frame takes (K9 S13): inside a container that refuses a kind its specimen is not on the board — the placement authority's word — and back at the root it hangs again", () => {

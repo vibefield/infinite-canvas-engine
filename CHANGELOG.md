@@ -52,6 +52,25 @@ its own block here as it is built.** Additive, every one: nothing of 0.14.0's su
   VibeField mounts it, `rig.html?hold=116,100,560`: the notebook's fit 116 / 100 to the micro-pixel, the bar's travel measured on the
   page's clock within a frame of 560).
 
+<!-- petition I21 — the pegboard lay's foot inset, host-settable (2026-10-02) -->
+- **THE DRAWER'S FOOT — `deskLayer({ tray: { foot? } })`** (petition I21 — the pegboard rises behind VibeField's line, FC-D3/MC-D7;
+  DK-13): CSS px, default 0, read at the mount. The pegboard's laid content ends `foot` above the board's bottom edge — the HEADER's
+  mirror (design-018 R4, rev 5): the face's portal clip ends at the foot's line (`faceClip(rect, vh, foot)`; a specimen wholly past it is
+  culled), so does the tags' scissor, and the VEIL lays the plain board over the foot, whole, fading out over `DRAWER.fade` above the
+  line — a second quad in the veil's ONE draw (`vs_veil`'s vertices 6–11, `tray_veil`'s ramp; the pass's block carries the foot in
+  `fade.z`) — so no specimen, shadow, accessory, tag or hole shows there and nothing is cut square under the line; the board itself runs
+  to its edge. The scroll's range grows by it (`scrollRange(vw, vh, bottom, foot)`; core's clamp takes the face less the foot), so the
+  last line comes to rest whole a pitch above the line. Core's pose seam names it (`TrayScreenFrame.foot`, beside `head`): a specimen
+  scrolled into the foot is bare board there, never hovered or taken. `contentShown(rect, y, foot)` is the CPU law; `TrayOptions` the
+  type. A malformed foot throws at the mount. Absent, 0.14.0 byte for byte — the oracle's 113 stills unchanged — and with the foot on the
+  drawer still draws three times (the board, its accessories, the veil) over the same instances. Witnesses:
+  `packages/desk/test/tray-foot.test.ts` (the kernel's lay under the drawer's law at every scroll, the range's end, the flux, the pass's
+  block and its one veil draw, the tags' scissor, the refusal), core's `tray-take.test.ts` and `tray-specimens.test.ts` (the pick, the
+  clamp), `packages/objects/test/tray-foot.test.ts` (the real layer: the frame, the range, the six's last line drawn whole above the line)
+  and the oracle's NEW still `tray-foot` (tray-scrolled's still under a foot of 88: the foot is its bare board byte for byte with not a
+  pixel of a hole, and above the foot's ramp it is tray-scrolled byte for byte), drawn in Chrome by rig:parity and FROM THE WORLD by
+  rig:world on a page mounted with the foot (`rig.html?trayFoot=88`), maxΔ 0 both.
+
 ## [0.14.0] — 2026-10-02
 
 **The first publish since 0.11.0, and it carries M20 + M21 + M22** — the desk (design-015), the kit and the

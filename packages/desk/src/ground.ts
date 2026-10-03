@@ -550,7 +550,7 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
   const tray: DrawSlot[] = [];
   const specimens = inputs.tray?.specimens;
   if (specimens !== undefined && specimens.length > 0 && traySlots !== undefined && inputs.tray !== undefined) {
-    const present = facePresent({ rect: trayRectOf(inputs), scroll: inputs.tray.scroll }, inputs.view.height);
+    const present = facePresent({ rect: trayRectOf(inputs), scroll: inputs.tray.scroll, ...(inputs.tray.foot !== undefined ? { foot: inputs.tray.foot } : {}) }, inputs.view.height);
     for (const f of specimens) {
       const slot = traySlots.get(f.type, f.kind);
       if (slot === undefined) continue;
@@ -598,7 +598,7 @@ export function drawTray(pass: GPURenderPassEncoder, size: { readonly w: number;
     // each specimen through the drawer's face, once (design-018 §2: the finger notch — and its three scissors — retired)
     for (const s of slots ?? []) drawSlot(pass, size, dpr, { ...s, bare: true });
     if (marks !== null && marks.tagCount > 0) {
-      const [x, y, w, h] = scissorOf({ opacity: 1, portal: faceBox(rect, size.h / dpr) }, dpr, size);
+      const [x, y, w, h] = scissorOf({ opacity: 1, portal: faceBox(rect, size.h / dpr, tray.laid?.foot ?? 0) }, dpr, size);
       if (w > 0 && h > 0) {
         pass.setScissorRect(x, y, w, h);
         marks.drawTags(pass);
@@ -614,12 +614,12 @@ export function drawTray(pass: GPURenderPassEncoder, size: { readonly w: number;
   }
 }
 
-/** The drawer's face inside its edge and under its header (design-018 R4) as a clip box (CSS px), square — the tags' scissor. */
-function faceBox(rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number }, vh: number): { cx: number; cy: number; hx: number; hy: number; r: number } {
+/** The drawer's face inside its edge, under its header (design-018 R4) and above a host's foot (I21) as a clip box (CSS px), square — the tags' scissor. */
+function faceBox(rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number }, vh: number, foot: number): { cx: number; cy: number; hx: number; hy: number; r: number } {
   const x0 = rect.x + DRAWER.arris;
   const x1 = rect.x + rect.w - DRAWER.arris;
   const y0 = rect.y + DRAWER.arris + DRAWER.header;
-  const y1 = Math.max(vh, rect.y + rect.h);
+  const y1 = foot > 0 ? rect.y + rect.h - foot : Math.max(vh, rect.y + rect.h);
   return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hx: (x1 - x0) / 2, hy: (y1 - y0) / 2, r: 0 };
 }
 

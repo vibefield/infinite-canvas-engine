@@ -30,12 +30,12 @@ export interface DeskRig {
   printFixture(handle: DeskLayerHandle): Promise<PrintFixture>;
   /** Object types the rig registers on the desk engine before it is made (K5a: rig:tray's plugin fixture, under `?trayPlugin`). */
   readonly widgets?: readonly WidgetType[];
-  /** The host's options the rig's page mounts the layer with — a host's chrome as VibeField sets it (I20: `?hold=top,band,travelMs`). */
+  /** The host's options the rig's page mounts the layer with — a host's chrome as VibeField sets it (I20: `?hold=top,band,travelMs`; I21: `?trayFoot=px`). */
   readonly layer?: RigLayer;
 }
 
 /** The layer options a rig's page may mount with (the product page mounts with none of them). */
-export type RigLayer = Pick<DeskLayerOptions, "hold">;
+export type RigLayer = Pick<DeskLayerOptions, "hold" | "tray">;
 
 declare global {
   interface Window {

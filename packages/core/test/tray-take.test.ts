@@ -469,4 +469,42 @@ describe("taking one (design-017 §9)", () => {
     r.mouse("move", x + 1, inHead, 0);
     expect(r.tray().hover).toBe("take:card");
   });
+
+  it("petition I21: a specimen scrolled into a host's FOOT inset is bare board there — the mouse over it hovers nothing, a press there takes nothing (its drag scrolls the board); above the foot's line the same specimen is hovered and taken", () => {
+    const r = rig();
+    const foot = 88;
+    const line = 348 + 252 - foot;   // the renderer's board bottom (the drawer 252 tall, its top at 348) less the host's inset
+    const s0 = r.specimen("take:card");
+    // scrolled so the card's object crosses the foot's line: its top 30 px above it
+    const S = s0.y - (line - 30);
+    expect(S).toBeGreaterThan(0);
+    r.ce.world.edit(trayEntity(r.world) as Entity).set(Tray, { ...r.tray(), scroll: S });
+    const pinned = (f?: number): TrayScreenFrame => ({ x: 40, y: 348, w: 720, h: 252, p: 1, max: 400, pitch: 40, scroll: S, ...(f !== undefined ? { foot: f } : {}) });
+    r.pin(pinned(foot));
+    r.step();
+    const s = r.specimen("take:card");
+    expect(s.y).toBeCloseTo(line - 30, 9);
+    const x = s.x + s.w / 2;
+    const inFoot = line + 10;
+    const above = line - 10;
+    r.mouse("move", x, inFoot, 0);
+    expect(r.tray().hover).toBe("");
+    expect(r.ce.stack.readCursor()).toBe("default");
+    r.mouse("down", x, inFoot, 1);
+    expect(r.press()).toMatchObject({ kind: "board", type: "" });
+    r.mouse("move", x, inFoot - 12, 1);
+    expect([r.tray().take, r.tray().scroll]).toEqual(["", S + 12]);   // the board's drag, not a take
+    r.mouse("up", x, inFoot - 12, 0);
+    r.ce.world.edit(trayEntity(r.world) as Entity).set(Tray, { ...r.tray(), scroll: S });
+    r.step();
+    r.mouse("move", x, above, 0);
+    expect(r.tray().hover).toBe("take:card");
+    r.mouse("down", x, above, 1);
+    expect(r.press()).toMatchObject({ kind: "specimen", type: "take:card" });
+    r.mouse("up", x, above, 0);
+    // control: a frame that names no foot — a host with no inset — hovers the card at the same point
+    r.pin(pinned());
+    r.mouse("move", x + 1, inFoot, 0);
+    expect(r.tray().hover).toBe("take:card");
+  });
 });

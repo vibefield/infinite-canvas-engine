@@ -57,6 +57,17 @@ export const DRAWER = {
 } as const;
 
 /**
+ * The drawer as a HOST sets it (petition I21 — `deskLayer({ tray })`, read at the mount): its FOOT inset, CSS px (default 0) — the lay's
+ * visible content ends this far above the board's bottom edge, where a host's chrome floats over the board's own face (VibeField's line,
+ * 88). There nothing of the content shows and no hole opens — the mirror of the HEADER: the face's portal clip ends at it, the VEIL lays
+ * the plain board over it whole and fades out over `DRAWER.fade` above it — and the scroll's range grows by it, so the last line is
+ * still reached. The board itself runs to its edge.
+ */
+export interface TrayOptions {
+  readonly foot?: number;
+}
+
+/**
  * How far the drawer's shadows reach past its outline (CSS px): three of the wider blur's σ and the lamp's push — tray.wgsl's `reach`,
  * one law. Closed, the drawer rests this far below the view, so nothing of it — its shadows included — is on screen (design-018 §5).
  */
@@ -90,11 +101,15 @@ export function drawerRect(vw: number, vh: number, p: number): DrawerRect {
 /**
  * What of the board's CONTENT shows at screen `y` under a drawer drawn at `rect` (design-018 §4, R4) — the shaders' law on the CPU (the
  * face's feather in `portal_cover`, `tray_board`'s holes, `tray_accessory`, the tags' draw): 0 above the face and in its header, the
- * smoothstep over `fade` under it, 1 past it.
+ * smoothstep over `fade` under it, 1 past it — and with a host's `foot` (I21) the same mirrored at the board's bottom edge: 1 down to
+ * `fade` above the foot's line, the smoothstep down to 0 at it, 0 in the foot (`tray_veil`'s two quads, one law).
  */
-export function contentShown(rect: DrawerRect, y: number): number {
+export function contentShown(rect: DrawerRect, y: number, foot = 0): number {
   const t = Math.min(Math.max((y - rect.y - DRAWER.arris - DRAWER.header) / DRAWER.fade, 0), 1);
-  return t * t * (3 - 2 * t);
+  const top = t * t * (3 - 2 * t);
+  if (!(foot > 0)) return top;
+  const b = Math.min(Math.max((rect.y + rect.h - foot - y) / DRAWER.fade, 0), 1);
+  return Math.min(top, b * b * (3 - 2 * b));   // the veil lays the larger of its two ramps' alphas — a short drawer's may meet
 }
 
 /** The slide's ease: widgetlab rev 1's `cubic-bezier(0.32,0.72,0,1)`, the exact curve CSS runs (the kernel's). */
@@ -112,10 +127,10 @@ export function band(stretch: number): number {
 
 /**
  * How far the board scrolls before the band (design-017 §8; K5a — K3's 26-row stub retired): the laid content's foot (`TrayContent.bottom`,
- * board px) plus a pitch, less the face the drawer shows (its whole height: the face runs to the outline — design-018 §2) — kernel
- * `trayScrollMax`; 0 with nothing laid.
+ * board px) plus a pitch, less the face the drawer shows (its whole height: the face runs to the outline — design-018 §2 — less a host's
+ * `foot` inset, I21: the last line comes to rest a pitch above the foot's line) — kernel `trayScrollMax`; 0 with nothing laid.
  */
-export function scrollRange(vw: number, vh: number, bottom: number): number {
+export function scrollRange(vw: number, vh: number, bottom: number, foot = 0): number {
   const { h } = drawerSize(vw, vh);
-  return trayScrollMax(bottom, h, DRAWER.pitch);
+  return trayScrollMax(bottom, h - foot, DRAWER.pitch);
 }

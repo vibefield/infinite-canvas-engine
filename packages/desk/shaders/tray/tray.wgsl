@@ -395,12 +395,18 @@ fn tray_drawer(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_
 // fading out over the ramp below it (`fade.x`): `1 − smoothstep(foot, foot + fade.x, y)`. What hangs there and the holes behind it fade
 // INTO THE BOARD together — a specimen never turns see-through, so no hole shows through it (the specimens are opaque to the face
 // clip's top; a hard clip at the header's foot lies under the veil's whole). Only pixels wholly inside the outline: its antialiased rim
-// is `tray_drawer`'s, and the veil there would lay the edge twice.
+// is `tray_drawer`'s, and the veil there would lay the edge twice. A host's FOOT inset (petition I21, `fade.z` — 0 none) is the same
+// mirrored at the board's bottom edge: whole in the foot, fading out over the ramp above its line (`smoothstep(line − fade.x, line, y)`;
+// the face's clip ends at the line, under the veil's whole) — the larger of the two ramps where a short drawer's meet.
 fn tray_veil(u: MatUniforms, t: TrayUniforms, frag: vec2f, noise_tex: texture_2d<f32>, noise_samp: sampler, ht: texture_2d<f32>) -> vec4f {
   let p = frag / t.view.z;
   let px = 1.0 / t.view.z;
   let foot = t.rect.y + t.shape.y + t.fade.y;
-  let a = 1.0 - smoothstep(foot, foot + t.fade.x, p.y);
+  var a = 1.0 - smoothstep(foot, foot + t.fade.x, p.y);
+  if (t.fade.z > 0.0) {
+    let line = t.rect.y + t.rect.w - t.fade.z;
+    a = max(a, smoothstep(line - t.fade.x, line, p.y));
+  }
   if (a <= 0.0) { return vec4f(0.0); }
   let o = tray_outline(t, p);
   if (o > -0.5 * px) { return vec4f(0.0); }

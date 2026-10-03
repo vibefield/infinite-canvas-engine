@@ -36,6 +36,8 @@ export interface TrayFrameInputs {
   readonly specimens?: readonly TraySpecimenFrame[];
   /** K5b: what is CARRIED this frame (tray/carry.ts) — the lifted copy, a ghost growing out of it or shrinking home — over the drawer, whole. */
   readonly carried?: readonly TrayCarriedFrame[];
+  /** I21: a host's FOOT inset, CSS px (drawer.ts `TrayOptions`) — the face's clip ends this far above the board's bottom edge, the veil lays the plain board over it; absent, 0. */
+  readonly foot?: number;
 }
 
 type TrayField = (typeof TrayUniforms.fields)[number][0];
@@ -47,13 +49,14 @@ const BLEND_PREMUL: GPUBlendState = {
   alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
 };
 
-/** What the last prepare laid (a rig's and a check's witness): the rect, the carry, the dim, the accessories' records (screen px). */
+/** What the last prepare laid (a rig's and a check's witness): the rect, the carry, the dim, the accessories' records (screen px) — and a host's foot inset (I21), when it has one. */
 export interface TrayLaid {
   readonly rect: DrawerRect;
   readonly rowBase: number;
   readonly frac: number;
   readonly dim: number;
   readonly accessories: readonly ReturnType<typeof accessoryOf>[];
+  readonly foot?: number;
 }
 
 /** The research's pcg (shader.js `pcg`), in 32-bit integer arithmetic. */
@@ -116,6 +119,8 @@ export class TrayPass {
   private sent = false;
   /** The quads the last prepare laid: 0 while the drawer is shut (p 0) — then it draws nothing. */
   private quads = 0;
+  /** A host's foot inset this frame (I21): the veil lays a second quad, over the foot, in its one draw. */
+  private foot = 0;
   private group: GPUBindGroup | null = null;
   private boundAssets = -1;
   private last: TrayLaid | null = null;
@@ -168,8 +173,10 @@ export class TrayPass {
     const p = Math.min(Math.max(inputs.p, 0), 1);
     const rect = drawerRect(view.width, view.height, p);
     const { rowBase, frac } = carry(inputs.scroll, P);
+    const foot = inputs.foot !== undefined && inputs.foot > 0 ? inputs.foot : 0;
+    this.foot = foot;
     if (p <= 0) {
-      this.last = { rect, rowBase, frac, dim: 0, accessories: [] };
+      this.last = { rect, rowBase, frac, dim: 0, accessories: [], ...(foot > 0 ? { foot } : {}) };
       this.quads = 0;
       return 0;
     }
@@ -197,7 +204,7 @@ export class TrayPass {
       keepFine: [keep(fp, 210), keep(fp, 42), keep(fp, 105), 0],
       keepEdge: [keep(fp, 9), keep(fp, 18), keep(fp, 36), 0],
       accessory: [...T.accessory, T.accessoryShadow],
-      fade: [DRAWER.fade, DRAWER.header, 0, 0],
+      fade: [DRAWER.fade, DRAWER.header, foot, 0],
     };
     this.tray.set(values);
     const gobo = grid.mat.gobo;
@@ -214,7 +221,7 @@ export class TrayPass {
     this.sent = true;
     const accessories = (inputs.specimens ?? []).map(accessoryOf);
     this.layAccessories(accessories);
-    this.last = { rect, rowBase, frac, dim, accessories };
+    this.last = { rect, rowBase, frac, dim, accessories, ...(foot > 0 ? { foot } : {}) };
     this.quads = 1;
     return 1;
   }
@@ -276,13 +283,13 @@ export class TrayPass {
   /**
    * THE VEIL (design-018 rev 5) — LAST, over everything the drawer holds (the caller left the scissor on the whole view): the plain board
    * whole in the header and fading out over its ramp, so what hangs there and the holes behind it fade into the board together — a
-   * specimen never turns see-through over a hole. One quad.
+   * specimen never turns see-through over a hole. One quad — and with a host's foot (I21) a second, over the foot, in the same draw.
    */
   drawVeil(pass: GPURenderPassEncoder): void {
     if (this.quads === 0) return;
     pass.pushDebugGroup("tray/pegboard/veil");
     this.bind(pass, this.veilPipeline);
-    pass.draw(6, 1, 0, 0);
+    pass.draw(this.foot > 0 ? 12 : 6, 1, 0, 0);
     pass.popDebugGroup();
   }
 

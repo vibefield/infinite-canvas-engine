@@ -60,7 +60,9 @@ export interface TrayFlux {
 
 const EPS = 1e-4;
 
-export function createTrayFlux(): TrayFlux {
+/** `foot` (petition I21 — the host's, read at the mount): the drawer's foot inset — the range grows by it, the pose seam and the pass are told it. */
+export function createTrayFlux(opts: { readonly foot?: number } = {}): TrayFlux {
+  const foot = opts.foot ?? 0;
   let facts: TrayFacts | null = null;
   // the slide's tween: from `from` toward `to`, started at `t0` (−1: not yet stepped since the fact moved)
   let p = 0;
@@ -122,9 +124,10 @@ export function createTrayFlux(): TrayFlux {
       const pb = P?.band ?? shown;
       const rect = drawerRect(vw, vh, pp);
       // `face` (K9): the board's height — its face runs to the outline (design-018 §2) — `scrollRange`'s own, so core's clamp and this range are one law;
-      // `head` (design-018 R4): the edge and the clear header under it, where nothing of the content shows — core never picks a specimen there
-      drawn = { x: rect.x, y: rect.y, w: rect.w, h: rect.h, p: pp, max: scrollRange(vw, vh, f.bottom ?? 0), pitch: DRAWER.pitch, scroll: f.scroll + pb, face: rect.h, head: DRAWER.arris + DRAWER.header };
-      return { p: pp, scroll: f.scroll + pb };
+      // `head` (design-018 R4): the edge and the clear header under it, where nothing of the content shows — core never picks a specimen there;
+      // `foot` (I21): a host's inset at the bottom edge, the same there — both laws take the face less it
+      drawn = { x: rect.x, y: rect.y, w: rect.w, h: rect.h, p: pp, max: scrollRange(vw, vh, f.bottom ?? 0, foot), pitch: DRAWER.pitch, scroll: f.scroll + pb, face: rect.h, head: DRAWER.arris + DRAWER.header, ...(foot > 0 ? { foot } : {}) };
+      return { p: pp, scroll: f.scroll + pb, ...(foot > 0 ? { foot } : {}) };
     },
 
     live: () => moving && pinned === null,

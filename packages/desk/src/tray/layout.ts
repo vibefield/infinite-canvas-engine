@@ -25,7 +25,7 @@ export const TrayUniforms = defineStruct("TrayUniforms", [
   ["keepFine", "vec4f"], // …its 210 (bump) · 42 · 105 (flecks)…
   ["keepEdge", "vec4f"], // …and the punched fibre's 9 · 18 · 36
   ["accessory", "vec4f"], // K5a: the accessories' powder coat, linear, and their shadows' strength on the board
-  ["fade", "vec4f"],      // the content's fade under the header (design-018 §4, R4): its band F, the clear header H above it, CSS px; —, —
+  ["fade", "vec4f"],      // the content's fade under the header (design-018 §4, R4): its band F, the clear header H above it, CSS px; a host's foot inset (I21; 0 none); —
 ]);
 
 /**

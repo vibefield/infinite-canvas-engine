@@ -13,9 +13,13 @@ import { DESK_PLUGINS } from "../desk";
 // the desk the golden's reference stills were drawn on (D-K8b.2)
 const query = new URLSearchParams(location.search);
 const plugins = [...(query.has("trayPlugin") ? [TRAY_PLUGIN] : []), ...(query.has("plugins") ? DESK_PLUGINS : [])];
-// a HOST's chrome (I20 — rig:open's row): `?hold=top,band,travelMs` mounts the layer as VibeField does, `deskLayer({ hold })` (all
-// three named: a number missing is NaN, which the mount refuses by its name)
+// a HOST's chrome, as VibeField mounts the layer: `?hold=top,band,travelMs` (I20 — rig:open's row; all three named: a number missing
+// is NaN, which the mount refuses by its name) and `?trayFoot=px` (I21 — rig:world draws the oracle's footed still on it)
 const hold = query.get("hold")?.split(",").map(Number);
-const layer: RigLayer = hold !== undefined ? { hold: { top: hold[0] ?? Number.NaN, band: hold[1] ?? Number.NaN, travelMs: hold[2] ?? Number.NaN } } : {};
+const foot = query.get("trayFoot");
+const layer: RigLayer = {
+  ...(hold !== undefined ? { hold: { top: hold[0] ?? Number.NaN, band: hold[1] ?? Number.NaN, travelMs: hold[2] ?? Number.NaN } } : {}),
+  ...(foot !== null ? { tray: { foot: Number(foot) } } : {}),
+};
 const rig: DeskRig = { setScene: (host, scene) => setScene(host, scene as OracleScene), printFixture, widgets: plugins, layer };
 window.__deskRig = rig;

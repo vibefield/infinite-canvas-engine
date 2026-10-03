@@ -733,7 +733,8 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   }
 
   /**
-   * A still's tray (design-017 §8, K5a): its slide and shown scroll, and — unless it is `bare` — the six kinds laid by the lattice
+   * A still's tray (design-017 §8, K5a): its slide and shown scroll — and a host's `foot` inset (I21), the drawer's mount option a still
+   * states — and, unless it is `bare`, the six kinds laid by the lattice
    * law across the drawer, recorded by their own kinds exactly as the product's reflector records them (tray/specimens.ts): each its
    * widget's props at their defaults under its entry's, the calendar's month the still's (its clock is the day it is drawn). K5b — THE
    * FACES, as the product's stage pins them: the note's the committed raster (the one a desk note carries — Node has no text raster),
@@ -742,7 +743,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
    */
   function trayInputsOf(s, view, theme, grid) {
     const t = s.tray;
-    const base = { p: t.p ?? 1, scroll: t.scroll ?? 0 };
+    const base = { p: t.p ?? 1, scroll: t.scroll ?? 0, ...(t.foot > 0 ? { foot: t.foot } : {}) };
     if (t.bare === true) return base;
     const items = hung.map((w) => ({ type: w.type, hang: w.tray.hang, category: w.tray.category ?? "", order: w.tray.order ?? 0 }));
     const laid = layTray(items, drawerSize(view.width, view.height).w, DRAWER.pitch);
@@ -755,7 +756,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       const asset = q.type === "desk.note" ? committedInk() : null;
       return { key: i + 1, type: q.type, kind: objectKindOf(w), natural: w.defaultSize, rect: { x: q.x, y: q.y, w: q.w, h: q.h }, props, accessory: w.tray.hang.accessory, pegs: w.tray.hang.pegs, label: w.tray.label, ...(asset ? { asset } : {}) };
     });
-    const frames = specimenFrames(specimens, { rect: drawerRect(view.width, view.height, base.p), scroll: base.scroll }, { view, theme, grid, looks: looksOf(kinds, deskPalette(theme.name), theme), lift: () => 0 });
+    const frames = specimenFrames(specimens, { rect: drawerRect(view.width, view.height, base.p), scroll: base.scroll, ...(base.foot !== undefined ? { foot: base.foot } : {}) }, { view, theme, grid, looks: looksOf(kinds, deskPalette(theme.name), theme), lift: () => 0 });
     return { ...base, specimens: frames.map((f) => (f.type === "desk.photo" ? { ...f, record: { ...f.record, picture: samplePictureOf() } } : f)) };
   }
   /** The committed ink raster, placed once (a desk note's and the note specimen's alike). */

@@ -62,10 +62,11 @@ export interface TraySpecimenFrame {
   readonly label: string;
 }
 
-/** The drawer this frame, as its flux drew it: the rect and the SHOWN scroll (the band in it). */
+/** The drawer this frame, as its flux drew it: the rect and the SHOWN scroll (the band in it) — and a host's foot inset (I21), when it has one. */
 export interface TrayDrawn {
   readonly rect: DrawerRect;
   readonly scroll: number;
+  readonly foot?: number;
 }
 
 /** What building the frames needs of the desk: the view, the theme, the root's grid, the kinds' looks, each specimen's hover lift (0 … 1). */
@@ -83,14 +84,14 @@ export interface TraySpecimenEnv {
  * chips lie there) — with NO feather (design-018 rev 5): a specimen is opaque to the clip's top, and the VEIL (tray.wgsl `tray_veil`)
  * lays the plain board over it there — whole in the header, fading out over `DRAWER.fade` — so it fades into the board and never
  * turns see-through over a hole (R1–R4's feather let the holes show through it). (Its top corners keep the arris's inner radius, under
- * the veil's whole.)
+ * the veil's whole.) A host's `foot` inset (I21) ends it that far above the board's bottom edge, the veil's foot quad over it there.
  */
-export function faceClip(rect: DrawerRect, vh: number): PortalClip {
+export function faceClip(rect: DrawerRect, vh: number, foot = 0): PortalClip {
   const a = DRAWER.arris;
   const x0 = rect.x + a;
   const x1 = rect.x + rect.w - a;
   const y0 = rect.y + a + DRAWER.header;
-  const y1 = Math.max(vh, rect.y + rect.h) + DRAWER.radius;
+  const y1 = foot > 0 ? rect.y + rect.h - foot : Math.max(vh, rect.y + rect.h) + DRAWER.radius;
   return { cx: (x0 + x1) / 2, cy: (y0 + y1) / 2, hx: (x1 - x0) / 2, hy: (y1 - y0) / 2, r: DRAWER.radius - a };
 }
 
@@ -121,7 +122,7 @@ export function specimenFrames(specimens: readonly TraySpecimen[], drawn: TrayDr
   const P = DRAWER.pitch;
   const grid = trayGrid(env.grid);
   const { width, height, dpr } = env.view;
-  const face = faceClip(drawn.rect, height);
+  const face = faceClip(drawn.rect, height, drawn.foot);
   for (const s of specimens) {
     const x0 = drawn.rect.x + s.rect.x;
     const y0 = drawn.rect.y + s.rect.y - drawn.scroll;
@@ -271,7 +272,7 @@ export function carriedFrame(pose: CarryPose, src: TrayCarriedSource, env: Omit<
 
 /** The presentation every specimen's slot is drawn through: whole, clipped to the face. */
 export function facePresent(drawn: TrayDrawn, vh: number): Presentation {
-  return { opacity: 1, portal: faceClip(drawn.rect, vh) };
+  return { opacity: 1, portal: faceClip(drawn.rect, vh, drawn.foot) };
 }
 
 /**

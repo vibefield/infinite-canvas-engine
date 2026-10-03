@@ -1088,7 +1088,9 @@ let failed = 0;
 /**
  * THE TRAY (design-017, K3) as pixels: beyond the drawer and its shadows' reach the frame is the tray-less frame dimmed — every byte
  * × (1 − dim), the premultiplied black laid over it, to the rounding — and the drawer's face is the pegboard's: its holes darken a
- * stadium's share of it (0.157 of a cell).
+ * stadium's share of it (0.157 of a cell). With a host's FOOT inset (petition I21) the face is counted above the foot's ramp, and the
+ * foot itself is held: there the still IS its bare board, byte for byte (no specimen, shadow, accessory or tag shows), no pixel of it
+ * is a hole's, and above the ramp the still is its footless twin (`footed`) byte for byte.
  */
 async function trayCheck(sc) {
   const s = sc.scene;
@@ -1112,31 +1114,63 @@ async function trayCheck(sc) {
   }
   // the SPECIMENS (K5a): each one's rect on screen, as the pass laid its accessory, is its kind's drawing — far from the bare board there,
   // below the face's top, its clear header and its fade band (design-018 §4, R4: in the header nothing hangs, within the band a specimen
-  // dissolves into the board by design)
+  // dissolves into the board by design) — and above a host's foot and its ramp (I21: the same at the foot)
   const clear = r.y + DRAWER.arris + DRAWER.header + DRAWER.fade;
+  const foot = laid.foot ?? 0;
+  const line = r.y + r.h - foot;
+  const end = foot > 0 ? line - DRAWER.fade : h / d;
   const specimens = laid.accessories.map((a) => a.rect);
   const { px: C } = await render({ ...s, tray: { ...s.tray, bare: true } }, { marks: true });
   let drawnBy = 0;
   let shown = 0;
   for (const [x0, y0, x1, y1] of specimens) {
     const ys = Math.max(y0, clear);
-    if (y1 <= ys || ys >= h / d) continue;   // wholly in the fade band or below the view: nothing of it to see whole
+    const ye = Math.min(y1, end);
+    if (ye <= ys || ys >= h / d) continue;   // wholly in a fade band or below the view: nothing of it to see whole
     shown++;
     let sum = 0;
     let n = 0;
-    for (let y = Math.ceil(ys * d); y < Math.min(y1 * d, h); y += 2) for (let x = Math.ceil(x0 * d); x < x1 * d; x += 2) { const i = (y * w + x) * 4; for (let c = 0; c < 3; c++) sum += Math.abs((A[i + c] ?? 0) - (C[i + c] ?? 0)); n += 3; }
+    for (let y = Math.ceil(ys * d); y < Math.min(ye * d, h); y += 2) for (let x = Math.ceil(x0 * d); x < x1 * d; x += 2) { const i = (y * w + x) * 4; for (let c = 0; c < 3; c++) sum += Math.abs((A[i + c] ?? 0) - (C[i + c] ?? 0)); n += 3; }
     if (n > 0 && sum / n > 12) drawnBy++;
   }
   // a hole is darker than 0.6 of the face's own median — by day and under the Moon alike — on the bare board (its specimens cover some),
-  // past the header and its ramp (R4: no hole opens in the header, and in the ramp they are opening)
+  // past the header and its ramp (R4: no hole opens in the header, and in the ramp they are opening), and above a host's foot's ramp
+  // over WHOLE pitches (I21: the face left between the two ramps is short — 3.76 pitches at 88 — and the rows repeat every pitch, so a
+  // whole number of them holds the share whatever the scroll's phase)
   const lum = (i) => 0.2126 * (C[i] ?? 0) + 0.7152 * (C[i + 1] ?? 0) + 0.0722 * (C[i + 2] ?? 0);
   const ls = [];
-  for (let y = Math.ceil(clear * d); y < h; y += 2) for (let x = Math.ceil((r.x + 40) * d); x < (r.x + r.w - 40) * d; x += 2) ls.push(lum((y * w + x) * 4));
+  const faceEnd = foot > 0 ? clear + Math.floor((end - clear) / DRAWER.pitch) * DRAWER.pitch : end;
+  for (let y = Math.ceil(clear * d); y < Math.min(faceEnd * d, h); y += 2) for (let x = Math.ceil((r.x + 40) * d); x < (r.x + r.w - 40) * d; x += 2) ls.push(lum((y * w + x) * 4));
   const face = ls.length;
   const median = [...ls].sort((a, b) => a - b)[Math.floor(face / 2)] ?? 0;
   const holes = ls.filter((l) => l < 0.6 * median).length / Math.max(face, 1);
-  const ok = outside > 0 && worst <= 1 && (face < 4000 || (holes > 0.12 && holes < 0.19)) && shown > 0 && drawnBy === shown;
-  console.log(`  ${ok ? "PASS" : "FAIL"}  tray       ${sc.name.padEnd(24)} beyond the drawer ${outside.toLocaleString()} px = the desk × ${(1 - laid.dim).toFixed(2)} (max |Δ| ${worst.toFixed(2)}) · the face ${face.toLocaleString()} px, holes ${(holes * 100).toFixed(1)} % · ${drawnBy} of ${shown} specimens in view drawn by their kinds (${specimens.length} framed)`);
+  let ok = outside > 0 && worst <= 1 && (face < 4000 || (holes > 0.12 && holes < 0.19)) && shown > 0 && drawnBy === shown;
+  let footed = "";
+  if (foot > 0) {
+    // THE FOOT (I21): nothing laid shows there — the still is its bare board, byte for byte, across the drawer — and no hole opens: not
+    // a pixel of the bare board's foot is a hole's
+    let bareΔ = 0;
+    let dark = 0;
+    let n = 0;
+    for (let y = Math.ceil(line * d); y < h; y++) {
+      for (let x = Math.ceil(r.x * d); x < (r.x + r.w) * d; x++) {
+        const i = (y * w + x) * 4;
+        for (let c = 0; c < 3; c++) bareΔ = Math.max(bareΔ, Math.abs((A[i + c] ?? 0) - (C[i + c] ?? 0)));
+        if (x >= (r.x + 40) * d && x < (r.x + r.w - 40) * d) { n++; if (lum(i) < 0.6 * median) dark++; }
+      }
+    }
+    // …and above the foot's ramp the still is its footless twin, byte for byte: the foot moves nothing else
+    const twin = ORACLE_SCENES.find((q) => q.name === sc.footed);
+    let aboveΔ = Number.POSITIVE_INFINITY;
+    if (twin !== undefined) {
+      const { px: T } = await render(twin.scene, { marks: true });
+      aboveΔ = 0;
+      for (let i = 0; i < Math.floor(end * d) * w * 4; i++) if ((i & 3) !== 3) aboveΔ = Math.max(aboveΔ, Math.abs((A[i] ?? 0) - (T[i] ?? 0)));
+    }
+    ok = ok && n > 0 && bareΔ === 0 && dark === 0 && aboveΔ === 0;
+    footed = ` · THE FOOT (${foot} px, its line at ${line}): its ${n.toLocaleString()} px the bare board's (max |Δ| ${bareΔ}), ${dark} a hole's · above its ramp ${sc.footed ?? "(no twin named)"} byte for byte (max |Δ| ${aboveΔ})`;
+  }
+  console.log(`  ${ok ? "PASS" : "FAIL"}  tray       ${sc.name.padEnd(24)} beyond the drawer ${outside.toLocaleString()} px = the desk × ${(1 - laid.dim).toFixed(2)} (max |Δ| ${worst.toFixed(2)}) · the face ${face.toLocaleString()} px, holes ${(holes * 100).toFixed(1)} % · ${drawnBy} of ${shown} specimens in view drawn by their kinds (${specimens.length} framed)${footed}`);
   return ok;
 }
 

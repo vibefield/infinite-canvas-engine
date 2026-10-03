@@ -25,7 +25,7 @@ export interface DeskMount {
   dispose(): void;
 }
 
-export async function mountDesk(view: { readonly w: number; readonly h: number; readonly dpr: number } = { w: 1200, h: 800, dpr: 1 }, opts: { readonly gpuLedger?: boolean; readonly frameMs?: number; readonly layer?: Pick<DeskLayerOptions, "hold"> } = {}): Promise<DeskMount> {
+export async function mountDesk(view: { readonly w: number; readonly h: number; readonly dpr: number } = { w: 1200, h: 800, dpr: 1 }, opts: { readonly gpuLedger?: boolean; readonly frameMs?: number; readonly layer?: Pick<DeskLayerOptions, "hold" | "tray"> } = {}): Promise<DeskMount> {
   const undo: (() => void)[] = [installGpuFlags()];
   const log: string[] = [];
   const { device } = fakeDevice(log);

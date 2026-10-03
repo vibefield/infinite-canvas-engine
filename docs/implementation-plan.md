@@ -1708,6 +1708,16 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   window (400 × 480 at band 100); `topPhone`/`marginPhone` untouched, the band shared as it always was. Measured: rig:open §14 — the fit
   116.000 / 100.000, the bar's travel 549.6 ms on the page's clock (two transform runs: the bar measures its width again once its tools
   are in, as it always has).
+- **I21 — the pegboard lay's foot inset, host-settable** (**BUILT 2026-10-02**, branch `i20-22-host-options`; DK-13, FC-D3/MC-D7 — the
+  pegboard rises behind VibeField's line): `deskLayer({ tray: { foot } })`, read at the mount. Built as the HEADER's mirror, not as a
+  lay change (the migration plan's lean had the kernel's lay take it; where things hang does not move — only what shows and how far
+  the board scrolls): the face's clip and the tags' scissor end at the foot's line; the veil's second quad, in its one draw (the drawer's
+  three draws and their instances hold with the foot on — the unit's witness; rig:gpu runs without), lays the plain board over the foot
+  and feathers it over `DRAWER.fade`; the
+  range grows by the foot (`scrollRange`, core's clamp); and core's pose seam names it (`TrayScreenFrame.foot`), so a specimen under the
+  line is never hovered or taken — R4's rule mirrored (the strip between the foot's line and a host's line would otherwise take a
+  hidden specimen). The oracle's new still `tray-foot` holds the foot to its bare board and the rest to its footless twin byte for
+  byte; the 113 committed stills are byte-identical; rig:parity and rig:world (from the world, on `rig.html?trayFoot=88`) maxΔ 0.
 
 ## Release cut & downstream
 

@@ -25,7 +25,7 @@ import { Calendar, CALENDAR_TYPE, MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note, type P
 import { HAND, type ThemeName } from "@ice/desk";
 import { MINIMAT, PAPER, type BoardInk, type PaperAsset, type PaperKind } from "@ice/objects";
 import { oracleFixtures } from "./oracle-fixtures";
-import type { SceneHost, Staged } from "../rig-door";
+import { deskRig, type SceneHost, type Staged } from "../rig-door";
 import { type SpawnSpec, spawnAll } from "../scene";
 import { boardSpec, bookSpec, type KindScene, layBookInk, layEvents, layPins, layStrokes, type OracleBoard, type OracleBook, type OracleObject, type OraclePrint, type OracleThing, padSpec, pinBooks, pinPadPrints, pinPads, pinPrints, pinSpecimenPrint, printFixture, type PrintFixture, printSpec, generatedPicture, strokeSpecOf, thingsOf } from "./scene-kinds";
 
@@ -51,8 +51,12 @@ export interface OracleScene extends KindScene {
   readonly hold?: OracleHold;
   /** The scene's own view (a phone's portrait still, D4b): the rig sets the page's metrics to it before spawning. */
   readonly view?: { readonly cssW: number; readonly cssH: number; readonly dpr: number };
-  /** The pegboard drawer (design-017, K3): its slide, the board's scroll — pinned. Absent: no tray drawn (every other scene's still). */
-  readonly tray?: { readonly p?: number; readonly scroll?: number };
+  /**
+   * The pegboard drawer (design-017, K3): its slide, the board's scroll — pinned. Absent: no tray drawn (every other scene's still).
+   * `foot` (petition I21): the host's foot inset the still is drawn under — a MOUNT option of the layer, so the page must have been
+   * mounted with it (`rig.html?trayFoot=…`); a still on a page with another foot is refused by name.
+   */
+  readonly tray?: { readonly p?: number; readonly scroll?: number; readonly foot?: number };
 }
 export interface OracleNav { readonly kind: "enter" | "exit"; readonly container: number; readonly p: number }
 export interface OracleHold {
@@ -266,7 +270,10 @@ export async function setScene(host: SceneHost, s: OracleScene): Promise<Staged>
   handle.holdRedress(false);
   engine.ops.putDown();   // the hand lets go of the last scene's object (D4b)
   handle.pinHold(null);
-  // the pegboard drawer (design-017): closed, and PINNED — hidden unless the scene draws it, so every other still stays the oracle's
+  // the pegboard drawer (design-017): closed, and PINNED — hidden unless the scene draws it, so every other still stays the oracle's;
+  // its foot is the page's mount option (I21): a still drawn under another than the page's would be a different still
+  const pageFoot = deskRig().layer?.tray?.foot ?? 0;
+  if (s.tray !== undefined && (s.tray.foot ?? 0) !== pageFoot) throw new Error(`desk: the still's drawer has a foot of ${s.tray.foot ?? 0} px and this page's layer ${pageFoot} — open rig.html?trayFoot=${s.tray.foot ?? 0}`);
   handle.tray.close();
   handle.tray.scroll(s.tray?.scroll ?? 0);
   handle.tray.pin(s.tray === undefined ? { hidden: true } : { p: s.tray.p ?? 1, band: 0 });

@@ -51,7 +51,7 @@ import { LAYER_IDLE_MS } from "../kit/layer";
 import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
 import type { GroundTheme, Palette } from "../theme";
 import { objectKindOf } from "../object";
-import { drawerRect } from "../tray/drawer";
+import { drawerRect, type TrayOptions } from "../tray/drawer";
 import { createTrayFlux, type TrayFlux } from "../tray/flux";
 import { type CarryGhost, type CarrySpecimen, createTrayCarry, type TrayCarry } from "../tray/carry";
 import { carriedFrame, carrySlot, specimenFrames, type TrayCarriedFrame, type TraySpecimen, type TraySpecimenFrame } from "../tray/specimens";
@@ -80,6 +80,8 @@ export interface DeskReflectorOptions {
   readonly onFrame?: () => void;
   /** The kinds' own state on this desk (`KindLocal`, by kind name): what the tray's carried objects are drawn with, as the builder's are (K5b). */
   readonly locals?: ReadonlyMap<string, KindLocal>;
+  /** The drawer as the host set it (petition I21 — `deskLayer({ tray })`): its foot inset. */
+  readonly tray?: TrayOptions;
   /**
    * Called when a frame is asked for from OUTSIDE the flush — a wake (a pin, an ink landing, the ambient's policy), the ground
    * arriving, a theme, a grid, a harness's pin (K7a): the host wakes a sleeping loop with it.
@@ -192,7 +194,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   let pinGen = 0;
   const wakes: Record<keyof DeskWakes, number> = { world: 0, removed: 0, reset: 0, order: 0, hover: 0, marks: 0, camera: 0, viewport: 0, nav: 0, theme: 0, grid: 0, pin: 0, ambient: 0, live: 0, ink: 0, tray: 0 };
   /** The pegboard drawer's motion (design-017 §3): the facts are core's `Tray`, polled each tick; the slide and the band are here. */
-  const tray = createTrayFlux();
+  const tray = createTrayFlux(opts.tray?.foot !== undefined ? { foot: opts.tray.foot } : {});
   // the tray's specimens (K5a): read from the world each frame the drawer shows (a handful of facts — a lay, a reset or a prop moves them)
   let drawnSpecimens: readonly TraySpecimenFrame[] = [];
   /** The take's motion (K5b): the copy, the ghost's grow, its flight home — and what it drew last. */
@@ -298,7 +300,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
         if (specimens.length > 0) {
           ground.warmTray(specimens.map((q) => [q.type, q.kind.name] as const), trayLanded);
           for (const q of specimens) if (q.local !== undefined) faced.set(q.key, q.local as KindLocal);
-          drawnSpecimens = specimenFrames(specimens, { rect: drawerRect(vp.w, vp.h, trayed.p), scroll: trayed.scroll }, { view: { width: vp.w, height: vp.h, dpr }, theme, grid, looks, lift: (t) => tray.lift(t) });
+          drawnSpecimens = specimenFrames(specimens, { rect: drawerRect(vp.w, vp.h, trayed.p), scroll: trayed.scroll, ...(trayed.foot !== undefined ? { foot: trayed.foot } : {}) }, { view: { width: vp.w, height: vp.h, dpr }, theme, grid, looks, lift: (t) => tray.lift(t) });
           trayed = { ...trayed, specimens: drawnSpecimens };
         }
       }

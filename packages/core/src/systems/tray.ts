@@ -58,6 +58,8 @@ import { heldEntity } from "./held";
  * `trayScrollMax`), so the lay can clamp the scroll in the tick a new foot or face moves the range; absent, nothing clamps it.
  * design-018 R4: the `head`, how far under its top nothing of the board's content shows (the renderer's clear HEADER, where a host lays
  * the category chips) — a specimen scrolled under it is never hovered or taken there: a press there is the board's; absent, 0.
+ * Petition I21: the `foot`, how far above its bottom edge nothing of the content shows (a host's foot inset — its line floats over the
+ * board there): the same at the foot, and the range is the content's foot plus a pitch less the face ABOVE it; absent, 0.
  */
 export interface TrayScreenFrame {
   readonly x: number;
@@ -70,6 +72,7 @@ export interface TrayScreenFrame {
   readonly scroll: number;
   readonly face?: number;
   readonly head?: number;
+  readonly foot?: number;
 }
 
 /** The pose seam: the renderer's word on where the drawer is — `undefined` before its first frame. */
@@ -162,8 +165,9 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       let handed = t.handed;
       const over = (x: number, y: number, pad: number): boolean =>
         frame !== undefined && x >= frame.x && x <= frame.x + frame.w && y >= frame.y - pad;
-      // design-018 R4: what hangs on the board shows only under its header — there a specimen scrolled beneath is bare board
-      const shows = (y: number): boolean => frame !== undefined && y >= frame.y + (frame.head ?? 0);
+      // design-018 R4: what hangs on the board shows only under its header — there a specimen scrolled beneath is bare board; and (I21)
+      // only above a host's foot inset
+      const shows = (y: number): boolean => frame !== undefined && y >= frame.y + (frame.head ?? 0) && (frame.foot === undefined || y < frame.y + frame.h - frame.foot);
       // the drawer's OPEN rect (K5b): its outline at the full slide — the pose's box with its top the view's foot less its height
       const vh = world.getResource(Viewport)?.h ?? 0;
       const inOpen = (x: number, y: number): boolean => frame !== undefined && x >= frame.x && x <= frame.x + frame.w && y >= vh - frame.h;
@@ -359,7 +363,7 @@ export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot;
   let laidCategory = "";
   const clampToRange = (ctx: SystemCtx, tray: Entity, frame: TrayScreenFrame, bottom: number): void => {
     if (frame.face === undefined) return;
-    const range = trayScrollMax(bottom, frame.face, frame.pitch);
+    const range = trayScrollMax(bottom, frame.face - (frame.foot ?? 0), frame.pitch);
     const key = `${tray}|${range}`;
     if (key === rangeKey) return;
     const t = ctx.read(tray, Tray);

@@ -73,7 +73,7 @@ import { createGpuProfiler, type GpuProfiler } from "../gpu-profiler";
 import { instrumentSubmits, type SubmitInstrument } from "../submit-instrument";
 import type { GroundTheme, Palette } from "../theme";
 import { surface } from "./surface";
-import { DRAWER } from "../tray/drawer";
+import { DRAWER, type TrayOptions } from "../tray/drawer";
 import type { TrayFluxState, TrayPin } from "../tray/flux";
 import type { TrayLaid } from "../tray/pass";
 import { trayShaders } from "../tray/shaders";
@@ -103,6 +103,13 @@ export interface DeskLayerOptions {
    * own). Each a finite number ≥ 0; absent, `HOLD`'s.
    */
   readonly hold?: HoldOptions;
+  /**
+   * THE DRAWER as the host's chrome needs it (petition I21), read at the mount: its `foot` inset, CSS px (0) — the pegboard's laid
+   * content ends this far above the board's bottom edge (the face's clip ends there, the veil lays the plain board over it and feathers
+   * out over `DRAWER.fade` above it — the header's mirror), where a host's line floats over the board; the scroll's range grows by it,
+   * so the last line is still reached; the board runs to its edge. A finite number ≥ 0; absent, 0.
+   */
+  readonly tray?: TrayOptions;
   /** The objects' springs (springs.ts `SPRINGS`): the builder reads these numbers every frame, so a host that keeps the object may tune them live (the dev panel — D5a). */
   readonly springs?: ObjectSprings;
   /** The device pixel ratio the canvas is capped at (2). */
@@ -490,7 +497,7 @@ function tellAwake(kind: string): void {
   console.warn(`[ice] desk: the kind "${kind}" declares a local \`tick\` and no \`due\` — it is due every frame, so the desk never sleeps. Declare \`KindLocal.due(now)\`: now while it moves, a later time, or Infinity until a fact, an input or \`KindHost.wake\` moves it (design-016 K7a).`);
 }
 
-/** A host's length or time for the desk's chrome (I20): a finite number ≥ 0, or the mount refuses it by its name. */
+/** A host's length or time for the desk's chrome (I20, I21): a finite number ≥ 0, or the mount refuses it by its name. */
 function hostNumber(name: string, v: number | undefined): number | undefined {
   if (v === undefined) return undefined;
   if (typeof v !== "number" || !Number.isFinite(v) || v < 0) throw new Error(`[ice] deskLayer: \`${name}\` is ${String(v)} — a finite number ≥ 0 (CSS px, or ms for a time)`);
@@ -514,9 +521,10 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const { kinds, objectKinds } = kindsOf([...types], opts.kinds ?? []);
     // every kind's look from the palette BEFORE the mount touches the page (D7): an incomplete palette throws HERE, leaving no canvas,
     // no listener, no builder behind (the reflector remakes the looks it keeps; this pass only proves they can be made) — and so does
-    // a host's malformed number for the hand (I20)
+    // a host's malformed number for the hand or the drawer (I20, I21)
     looksOf(objectKinds, opts.palette, opts.theme);
     const hold = holdOf(opts.hold);
+    const foot = hostNumber("tray.foot", opts.tray?.foot);
     const canvas = doc.createElement("canvas");
     canvas.style.position = "absolute";
     canvas.style.left = "0";
@@ -653,6 +661,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       attach: { resize: (w, h) => { if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; } } },
       theme: opts.theme, palette: opts.palette, grid, locals,
       ...(opts.maxDpr !== undefined ? { maxDpr: opts.maxDpr } : {}),
+      ...(foot !== undefined ? { tray: { foot } } : {}),
       ...(opts.name !== undefined ? { name: opts.name } : {}),
       // a frame asked for outside the flush — a pin, an ink landing, the ground arriving, a theme: a sleeping loop wakes (K7a)
       onWake: (reason) => frame?.wake(`desk:${reason}`),

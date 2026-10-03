@@ -45,6 +45,11 @@ const WORLD_SCENES = /^(mat|ruler|paper|minimat|nav|board|photo|book|pad|marks-b
  */
 const needsPlugins = (sc) => JSON.stringify(sc.scene).includes('"objects":');
 /**
+ * Petition I21 — a still whose drawer has a HOST's foot inset (`tray.foot`) is drawn on a page whose layer was MOUNTED with it
+ * (`rig.html?trayFoot=…`, as VibeField mounts it): the foot is a mount option, never a pin. One page per mount the stills ask.
+ */
+const queryOf = (sc) => { const q = [needsPlugins(sc) ? "plugins" : "", sc.scene.tray?.foot > 0 ? `trayFoot=${sc.scene.tray.foot}` : ""].filter((x) => x !== "").join("&"); return q === "" ? "" : `?${q}`; };
+/**
  * design-015 D3w: the three inked-board scenes keep, from the world too, the bound rig:parity names for them (D-D3r-a.5): the
  * stamp pass compiled by Chrome's Dawn and by node-webgpu's quantises a handful of the raster's coverages one LSB apart — the
  * same stamps, replayed here from the board's CHILD ENTITIES, land on the same texels. Worse than the bound is red.
@@ -155,11 +160,12 @@ async function bootTab(query, logs) {
 try {
   const logs = [];
   const tab = await bootTab("", logs);
-  let pluginTab = null;
+  const tabs = new Map([["", tab]]);
   const tabFor = async (sc) => {
-    if (!needsPlugins(sc)) return tab;
-    if (pluginTab === null) pluginTab = await bootTab("?plugins", logs);
-    return pluginTab;
+    const q = queryOf(sc);
+    let t = tabs.get(q);
+    if (t === undefined) { t = await bootTab(q, logs); tabs.set(q, t); }
+    return t;
   };
 
   let flaps = 0;
@@ -202,7 +208,8 @@ try {
   }
   console.log(`\n${scenes.length} scene${scenes.length === 1 ? "" : "s"} drawn from the world${sheets > 0 ? ` · ${sheets} live sheet${sheets === 1 ? "" : "s"} held to the committed print` : ""} · ${failures} FAILED · ${kept} kept within a named, measured bound · ${flaps} flap${flaps === 1 ? "" : "s"} (clean on the second witness)`);
   // D7: an error or a fault the engine CONTAINED is a failure, never only a line of log (the warnings stay a print)
-  const errors = [...logs.filter((l) => !/^(\[warning\]|console\.warning) /.test(l)), ...(await faultsOf(tab)), ...(pluginTab === null ? [] : await faultsOf(pluginTab))];
+  const errors = [...logs.filter((l) => !/^(\[warning\]|console\.warning) /.test(l))];
+  for (const t of tabs.values()) errors.push(...(await faultsOf(t)));
   if (errors.length) failures += 1;
   console.log(`${errors.length ? "FAIL" : "PASS"}  no page errors or contained faults${errors.length ? ` (${errors.length}): ${errors.slice(0, 4).join(" · ")}` : ""}`);
   if (logs.length) console.log(`\npage logs:\n  ${logs.slice(0, 8).join("\n  ")}`);

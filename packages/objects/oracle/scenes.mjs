@@ -389,3 +389,12 @@ ORACLE_SCENES.push(...CAPTURE_SCENES);
 // as it did.
 import { CLOCK_SCENES } from "../../../examples/desk-clock/oracle/scenes.mjs";
 ORACLE_SCENES.push(...CLOCK_SCENES);
+
+// THE HOST'S FOOT (petition I21 — `deskLayer({ tray: { foot } })`): tray-scrolled's still with a host's foot inset of 88 (VibeField's
+// line floats over the board's foot, y 712 of 800): the second line hangs across the foot's line — feathered over the ramp above it,
+// gone in the foot, no hole there — and above the ramp it is tray-scrolled byte for byte (`footed` names the still the check holds it
+// to). Last, so every scene above draws in the order it always did. rig:world draws it on a page mounted with the foot (`?trayFoot=88`).
+export const FOOT_SCENES = [
+  { name: "tray-foot", trayed: true, footed: "tray-scrolled", scene: { ...trayBase, tray: { p: 1, scroll: 240.4, foot: 88 } } },
+];
+ORACLE_SCENES.push(...FOOT_SCENES);

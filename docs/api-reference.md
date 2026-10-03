@@ -315,11 +315,14 @@ one composite) keeps the contract as one object: the kit's composite lays the la
 bindings `layerCompositeLayout(device, label)`, and `BoxTargets(device, label, layoutComp, samples, view)` — `view` the slot's view
 block, `MatPass.view`).
 
-**The host's chrome on the desk (petition I20)** — beside `grid` (the root's mat config — its rulers, its gobo; `configureMat` live),
-`deskLayer` takes the numbers a host's own chrome sets, read at the mount, each the desk's own when absent: **`hold: { top?, band?,
-travelMs? }`** — the held object's reading fit keeps `top` CSS px under the view's top (56; a phone keeps its 60) and `band` above its
-foot (72), and the held bar travels `travelMs` (M1; 340) — the bar being the host's, the selection's anchor carries it
-(`anchor().held.travelMs`, present only when set; `<SelectionMenu>` follows it). A malformed number throws at the mount.
+**The host's chrome on the desk (petitions I20, I21)** — beside `grid` (the root's mat config — its rulers, its gobo; `configureMat`
+live), `deskLayer` takes the numbers a host's own chrome sets, read at the mount, each the desk's own when absent: **`hold: { top?,
+band?, travelMs? }`** — the held object's reading fit keeps `top` CSS px under the view's top (56; a phone keeps its 60) and `band`
+above its foot (72), and the held bar travels `travelMs` (M1; 340) — the bar being the host's, the selection's anchor carries it
+(`anchor().held.travelMs`, present only when set; `<SelectionMenu>` follows it); **`tray: { foot? }`** — the pegboard's laid content
+ends `foot` CSS px above the board's bottom edge (0), the header's mirror: the face's clip and the tags end there, the veil lays the
+plain board over the foot and feathers it, the scroll's range grows by it so the last line is still reached, and core never hovers or
+takes a specimen there (the pose seam's `TrayScreenFrame.foot`); the board runs to its edge. A malformed number throws at the mount.
 
 **Plugin parity (design-016 K-L2, K8a)** — whatever a built-in kind does, a plugin kind declares the same way, and no list in the
 engine names a kind:
