@@ -111,7 +111,8 @@ export function fakeDevice(log: string[] = [], opts: FakeDeviceOptions = {}): Fa
       copyTextureToBuffer: () => {},
       finish: () => ({}),
     }),
-    queue: { writeBuffer: () => { queue.writes += 1; }, writeTexture: () => {}, submit: () => { queue.submits += 1; } },
+    // (the work a submit carries is done at once — the layer's first frame "presented", petition I25)
+    queue: { writeBuffer: () => { queue.writes += 1; }, writeTexture: () => {}, submit: () => { queue.submits += 1; }, onSubmittedWorkDone: async () => {} },
     // a pass that watches its first frames (the notebook's `render`, the calendar's `renderLayer`) finds nothing wrong here — unless
     // something raised an error into its scope (a refused shader, petition I24)
     pushErrorScope: (filter: GPUErrorFilter) => { scopes.push({ filter, error: null }); },

@@ -237,6 +237,21 @@ export interface DeskLayerPerf {
   readonly kindTicks: Readonly<Record<string, number>>;
   /** The drivers asked (`idle`, then `follow`): none on a step a registered time alone started (K7a). */
   readonly driverAsks: number;
+  /** The mount's own cost as its boot went (petition I25). */
+  readonly boot: DeskLayerBoot;
+}
+
+/**
+ * THE MOUNT'S COST (petition I25 — a desk's kinds are compiled at its mount, so a host that changes them remounts, and may veil it):
+ * the boot's milestones, ms since the mount (the factory's call, on `performance.now()`'s clock), each absent until it happens — for
+ * good on a boot that failed. `device`: the device in hand (the adapter and the device asked for, or the engine's adopted); `compiled`:
+ * the passes compiled (`Ground.create` resolved — the status `ready`); `presented`: the first frame's GPU work done
+ * (`queue.onSubmittedWorkDone()` after its submit — the compositor's from then).
+ */
+export interface DeskLayerBoot {
+  readonly device?: number;
+  readonly compiled?: number;
+  readonly presented?: number;
 }
 
 /**
@@ -407,7 +422,7 @@ export interface DeskLayerHandle {
   ambient(): Ambient;
   /** The submit instrument on the layer's device — installed the first time it is asked for (K2, D-K2.1: never asked, the queue carries no wrapper), counting from then; undefined before the device. */
   submits(): SubmitInstrument | undefined;
-  /** The layer's own main-thread time since the mount (D6, design-015 §11.4's idle gate): a rig diffs two readings. */
+  /** The layer's own main-thread time since the mount (D6, design-015 §11.4's idle gate): a rig diffs two readings. And the boot's milestones (`boot`, petition I25). */
   perf(): DeskLayerPerf;
   /** The raster budget's ledger (D6): what the kinds' caches hold, by owner, against the cap; the evictions so far. */
   memory(): BudgetStats;
@@ -538,6 +553,9 @@ function holdOf(hold: HoldOptions | undefined): { readonly reserves: HoldReserve
 
 export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
   return (ctx) => {
+    // THE MOUNT'S COST (petition I25): the boot's milestones, ms from here
+    const mountedAt = performance.now();
+    const boot: { -readonly [K in keyof DeskLayerBoot]: DeskLayerBoot[K] } = {};
     const { host, world } = ctx;
     const doc = host.container.ownerDocument;
     const view = doc.defaultView;
@@ -712,8 +730,18 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       trayPublished = key;
       for (const l of [...trayListeners]) l();
     };
+    // the boot's `presented` (I25): the FIRST frame drawn, its GPU work done — asked once, of the queue it was submitted on (a unit's
+    // stub queue may have no `onSubmittedWorkDone`; every WebGPU queue does)
+    let presenting = false;
+    const firstFrame = (): void => {
+      if (presenting) return;
+      presenting = true;
+      const queue = drawDevice?.queue;
+      if (typeof queue?.onSubmittedWorkDone !== "function") return;
+      queue.onSubmittedWorkDone().then(() => { boot.presented ??= performance.now() - mountedAt; }, () => {});
+    };
     const compose = createDeskReflector({
-      onFrame: () => { publish(); publishTray(); },
+      onFrame: () => { publish(); publishTray(); firstFrame(); },
       world, builder, kinds: objectKinds, ambient, faults,
       ground: () => ground,
       attach: { resize: (w, h) => { if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; } } },
@@ -944,8 +972,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       : gpu === undefined
         ? Promise.reject(new Error("WebGPU is unavailable here (no navigator.gpu)"))
         : acquire({ gpu, label: "desk", ...events });
-    const boot: Promise<void> = device.then(async (g) => {
+    const booted: Promise<void> = device.then(async (g) => {
           if (disposed) { if (shared === undefined) g.device.destroy(); throw new Error("disposed before the device arrived"); }
+          boot.device = performance.now() - mountedAt;
           drawDevice = g.device;
           if (shared === undefined) ownDevice = g.device;
           if (opts.gpuLedger === true) ledger = instrumentMemory(g.device);   // before the ground makes anything
@@ -954,6 +983,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           // kinds' window caught that no kind raises alone is the device's, as it would have been
           const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)), tray: trayShaders(shaderText), ...(events.onError !== undefined ? { onError: events.onError } : {}) });
           if (disposed || ended) { made.dispose(); return; }
+          boot.compiled = performance.now() - mountedAt;
           made.mat.setNoise(blueNoise());   // the desk's own noise; the plates are the app's (`setPlate`)
           made.grid = grid;
           // the kinds refused at create: missing from the first frame, said once — with the boot's own `ready` (the status is still pending)
@@ -962,7 +992,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           if (status.state === "pending") setStatus({ state: "ready" });   // an error while it booted keeps its word
           compose.ready();
         });
-    boot.catch((e: unknown) => { if (!disposed) fail("no desk — the adapter, the device or the pipelines were refused", e); });
+    booted.catch((e: unknown) => { if (!disposed) fail("no desk — the adapter, the device or the pipelines were refused", e); });
 
     const setGrid = (next: GridConfig): void => { grid = next; if (ground !== null) ground.grid = next; compose.configureGrid(next); };
 
@@ -1073,7 +1103,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         }
         return profiler;
       },
-      perf: () => ({ ...perf, kindTicks: { ...kindTicks } }),
+      perf: () => ({ ...perf, kindTicks: { ...kindTicks }, boot: { ...boot } }),
       memory: () => budget.stats(),
       rasters: () => rasters.stats(),
       gpuMemory: () => ledger,

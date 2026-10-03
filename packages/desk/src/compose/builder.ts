@@ -116,7 +116,9 @@ export interface DeskBuilderOptions {
   /**
    * The OBJECT widget types this desk may hold: their prop groups join the change journal and
    * their kinds' `reach` the pick pad. An object of a type not listed still draws (its kind is found
-   * off the widget type) but its props are refreshed only on a Position/Size/tag change.
+   * off the widget type) but its props are refreshed only on a Position/Size/tag change — unless the
+   * boundary is on (`faults`, the layer's): then its kind must be one the listed types name, the set
+   * the desk was MOUNTED with and its ground compiled (petition I25), or it wears the missing face.
    */
   readonly objects: readonly WidgetType[];
   /** The objects' springs (springs.ts `SPRINGS`). */
@@ -557,6 +559,13 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   };
   /** The types met with no kind on this desk, said once each (petition I24 — their objects wear the missing face). */
   const kindless = new Set<string>();
+  /**
+   * THE KIND SET (petition I25): the kinds this desk was MOUNTED with — its `objects`' kinds, by name, what the ground compiled at the
+   * mount — and the types met whose kind is none of them (registered after the mount), said once each.
+   */
+  const mounted = new Set<string>();
+  for (const w of opts.objects) { const k = objectKindOf(w); if (k !== undefined) mounted.add(k.name); }
+  const unmounted = new Set<string>();
   /** The kinds whose desk state veils (D3t-c), and their names beside them — refilled at each build, never reallocated. */
   const veilers: KindLocal[] = [];
   const veilerNames: string[] = [];
@@ -728,7 +737,9 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   /**
    * Meet an entity: its widget type through the engine's catalog, its kind off the binding. No `PrefabId`: not an object, nothing. A type
    * with NO KIND on this desk — no catalog holds it (a document from a desk with more kinds), or it binds none (VibeField's ghost stubs) —
-   * is the missing face's under the boundary (petition I24; said once a type), and nothing without one, as before.
+   * is the missing face's under the boundary (petition I24; said once a type), and nothing without one, as before. So is a type whose
+   * kind the desk was not MOUNTED with (petition I25 — registered after the mount): the ground never compiled it, and a record handed it
+   * would throw the frame; said once a type, naming the remount that draws it.
    */
   const enter = (e: Entity): ObjectState | undefined => {
     if (!world.isAlive(e)) return undefined;
@@ -736,6 +747,10 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     if (typeof id !== "string") return undefined;
     const widget = widgetTypeFor(world, id);
     let kind = objectKindOf(widget);
+    if (kind !== undefined && faults !== undefined && !mounted.has(kind.name)) {
+      if (!unmounted.has(id)) { unmounted.add(id); console.warn(`[ice] desk: the type "${id}" has a kind ("${kind.name}") this desk was not mounted with — a desk's kinds are compiled at its mount, and a type registered after it adds none: its objects are drawn as missing; remount to draw it (petition I25)`); }
+      kind = MISSING_OBJECT;
+    }
     if (kind === undefined) {
       if (faults === undefined) return undefined;
       kind = MISSING_OBJECT;

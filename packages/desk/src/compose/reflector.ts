@@ -170,6 +170,13 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   let grid = opts.grid ?? DEFAULT_GRID;
   /** The kinds a look is made for: every one but a MISSING kind (petition I24 — nothing of it is called again). */
   const lookKinds = (): readonly ObjectKind[] => (faults === undefined || faults.size === 0 ? opts.kinds : opts.kinds.filter((k) => !faults.missing(k.name)));
+  /**
+   * THE KIND SET (petition I25): what the tray draws by — under the boundary, a kind this desk was MOUNTED with (`kinds`, what the ground
+   * compiled), never one a type registered after the mount names: its specimen and its carried copy are not drawn, as a kindless type's
+   * are not (the builder says it once, at its first object). Absent the boundary, any kind (as before).
+   */
+  const mountedKinds = new Set(opts.kinds.map((k) => k.name));
+  const kindOn = (kind: ObjectKind | undefined): ObjectKind | undefined => (kind === undefined || faults === undefined || mountedKinds.has(kind.name) ? kind : undefined);
   let looks = looksOf(lookKinds(), palette, theme);
   let dirty = true;
   let disposed = false;
@@ -304,7 +311,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       // the first time the tray shows one (a frame is asked for when it is), the frames recorded by their own kinds
       drawnSpecimens = [];
       if (trayed !== undefined && trayed.p > 0 && tray.pinned()?.bare !== true) {
-        const specimens = readSpecimens(w, te, opts.locals);
+        const specimens = readSpecimens(w, te, opts.locals, kindOn);
         if (specimens.length > 0) {
           ground.warmTray(specimens.map((q) => [q.type, q.kind.name] as const), trayLanded);
           for (const q of specimens) if (q.local !== undefined) faced.set(q.key, q.local as KindLocal);
@@ -344,7 +351,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
         const made: TrayCarriedFrame[] = [];
         for (const pose of poses) {
           const widget = widgetTypeFor(w, pose.type);
-          const kind = objectKindOf(widget);
+          const kind = kindOn(objectKindOf(widget));
           if (widget === undefined || kind === undefined) continue;
           const local = opts.locals?.get(kind.name);
           if (pose.ghost !== undefined) {
@@ -367,7 +374,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
           if (frame !== undefined) made.push(frame);
         }
         // a composite kind's pass is made async: made ahead, from the lift, so the hand-off never waits a frame for it
-        ground.warmTray(carry.types().flatMap((t) => { const k = objectKindOf(widgetTypeFor(w, t)); return k === undefined ? [] : [[carrySlot(t), k.name] as const]; }), trayLanded);
+        ground.warmTray(carry.types().flatMap((t) => { const k = kindOn(objectKindOf(widgetTypeFor(w, t))); return k === undefined ? [] : [[carrySlot(t), k.name] as const]; }), trayLanded);
         drawnCarried = made;
         if (made.length > 0) trayed = { ...trayed, carried: made };
       }
@@ -452,15 +459,19 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   };
 }
 
-/** The tray's specimens as the renderer reads them (K5a): the tray entity's `Specimen` children — each's object type, its kind, where it hangs, its props, its entry's hang and label — and its kind's desk state when its entry asks for it (K5b). */
-function readSpecimens(w: World, tray: Entity | undefined, locals: ReadonlyMap<string, KindLocal> | undefined): TraySpecimen[] {
+/**
+ * The tray's specimens as the renderer reads them (K5a): the tray entity's `Specimen` children — each's object type, its kind, where it
+ * hangs, its props, its entry's hang and label — and its kind's desk state when its entry asks for it (K5b). A specimen whose kind `on`
+ * refuses (petition I25: one the desk was not mounted with) is not read, as a kindless one is not.
+ */
+function readSpecimens(w: World, tray: Entity | undefined, locals: ReadonlyMap<string, KindLocal> | undefined, on: (kind: ObjectKind | undefined) => ObjectKind | undefined): TraySpecimen[] {
   if (tray === undefined) return [];
   const out: TraySpecimen[] = [];
   for (const e of specimensOf(w, tray)) {
     const type = w.get(e, PrefabId)?.id;
     if (typeof type !== "string") continue;
     const widget = widgetTypeFor(w, type);
-    const kind = objectKindOf(widget);
+    const kind = on(objectKindOf(widget));
     const entry = widget?.tray;
     const at = w.get(e, Position);
     const size = w.get(e, Size);
