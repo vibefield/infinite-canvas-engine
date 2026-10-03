@@ -1178,42 +1178,98 @@ async function trayCheck(sc) {
   return ok;
 }
 
+/** `P` (`w` × `h`, RGBA) shrunk by `f` — each pixel the mean of its f × f block of bytes, as a thumbnail of the still would be. */
+const downsample = (P, w, h, f) => {
+  const W = Math.floor(w / f);
+  const H = Math.floor(h / f);
+  const out = new Uint8Array(W * H * 4);
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) for (let c = 0; c < 4; c++) {
+    let sum = 0;
+    for (let j = 0; j < f; j++) for (let i = 0; i < f; i++) sum += P[((y * f + j) * w + x * f + i) * 4 + c];
+    out[(y * W + x) * 4 + c] = Math.round(sum / (f * f));
+  }
+  return out;
+};
+/** The kinds a still lays, by its scene's fields — each counted alone in a capture (I29): the field emptied is the still without it. */
+const KIND_FIELDS = [["minimats", "mini mats"], ["calendars", "calendars"], ["boards", "whiteboards"], ["notes", "notes"], ["prints", "prints"], ["books", "notebooks"]];
+/** THE QUARTER's tolerance against the 1× still downsampled (I29): the whole still's mean |Δ| and its 99th percentile; a kind's pixels' threshold and the share of them drawn. */
+const QUARTER_TOL = { mean: 6, p99: 24, kind: 8, drawn: 0.9 };
+
 /**
  * THE CAPTURE DOOR (petition I23 — ground.ts `captureFrame`, what `handle.capture` runs; frame.mjs `captureOf`), as pixels: the same
  * still (1) captured at 1× IS the frame the golden pins — the same size, the same sha-256 as the render beside it (and the committed
- * one); (2) captured at 0.25× is the still drawn at a quarter of the dpr directly, to the byte — every kind draws from the view's dpr
- * alone, so a thumbnail is the desk, never an approximation of it; (3) a rect is that rect of the frame, byte for byte. Each capture
- * runs inside the probe's scopes: a validation error anywhere on the capture's path fails the run.
+ * one); (2) captured at 0.25× is the still, SMALLER (petition I29) — held to the 1× still DOWNSAMPLED (each pixel the mean of a 4 × 4
+ * block), a reference no fault of a ratio below 1 can share (a frame drawn at a quarter of the dpr shared the floor that dropped four
+ * kinds): the whole still within a mean |Δ| of 6, 99 % of its pixels within 24 — maxΔ reported, never bounded: the lattice's lines,
+ * the hairlines, the glyphs and the grain are drawn at the still's own device px — and EVERY KIND COUNTED: a kind's pixels are where
+ * the still differs from the same still without that kind by more than 8 on a channel, and at least 90 % of those of the 1× still
+ * downsampled are the kind's in the quarter too. It is the frame path at that ratio besides (the frame drawn at dpr 0.5 directly, to
+ * the byte — I23's: the door is the frame drawn once more); (3) a rect is that rect of the frame, byte for byte. Each capture runs
+ * inside the probe's scopes: a validation error anywhere on the capture's path fails the run.
  */
 async function captureCheck(sc) {
   const s = sc.scene;
   const d = VIEW.dpr;
+  const QUARTER = 0.25;
+  const F = 1 / QUARTER;
   const { px: A, w, h } = await render(s, { marks: true });
   const shaOf = (b) => createHash("sha256").update(b).digest("hex");
   const full = await scoped(`capture ${sc.name} 1×`, () => desk.captureOf(s));
-  const quarter = await scoped(`capture ${sc.name} 0.25×`, () => desk.captureOf(s, { scale: 0.25 }));
+  const quarter = await scoped(`capture ${sc.name} 0.25×`, () => desk.captureOf(s, { scale: QUARTER }));
   const rect = { x: 150, y: 100, width: 400, height: 300 };
   const part = await scoped(`capture ${sc.name} rect`, () => desk.captureOf(s, { rect }));
-  const { px: Q, w: qw, h: qh } = await render({ ...s, view: { cssW: VIEW.cssW, cssH: VIEW.cssH, dpr: d / 4 } }, { marks: true });
+  const { px: Q, w: qw, h: qh } = await render({ ...s, view: { cssW: VIEW.cssW, cssH: VIEW.cssH, dpr: d * QUARTER } }, { marks: true });
   const fullOk = full !== undefined && full.width === w && full.height === h && shaOf(full.bytes) === shaOf(A);
   const pinned = golden[sc.name] === undefined ? "no entry in shas.json" : golden[sc.name] === shaOf(A) ? "the committed golden" : "NOT the committed golden";
-  let qMax = 0;
-  let qDiff = 0;
-  const quarterOk = quarter !== undefined && quarter.width === qw && quarter.height === qh;
-  if (quarterOk) for (let o = 0; o < Q.length; o += 4) { const dd = Math.max(delta(quarter.bytes, Q, o), Math.abs(quarter.bytes[o + 3] - Q[o + 3])); if (dd > 0) qDiff++; if (dd > qMax) qMax = dd; }
-  if (quarterOk && qDiff > 0 && process.env.ORACLE_DEBUG) {
-    let x0 = 1e9; let x1 = -1; let y0 = 1e9; let y1 = -1;
-    for (let y = 0; y < qh; y++) for (let x = 0; x < qw; x++) { const o = (y * qw + x) * 4; if (delta(quarter.bytes, Q, o) > 0 || quarter.bytes[o + 3] !== Q[o + 3]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } }
-    console.log(`      debug: the quarter's differing px lie in (${x0},${y0})–(${x1},${y1}) of ${qw}×${qh}; buffers in oracle/results/debug-${sc.name}-quarter-{capture,direct}.rgba`);
-    writeFileSync(resolve(results, `debug-${sc.name}-quarter-capture.rgba`), quarter.bytes); writeFileSync(resolve(results, `debug-${sc.name}-quarter-direct.rgba`), Q);
+  const quarterOk = quarter !== undefined && quarter.width === w / F && quarter.height === h / F && quarter.width === qw && quarter.height === qh;
+  // (2) the quarter against the 1× still downsampled: the whole still…
+  const down = downsample(A, w, h, F);
+  const n = qw * qh;
+  let mean = 0;
+  let p99 = Number.POSITIVE_INFINITY;
+  let worst = 0;
+  const kinds = [];
+  if (quarterOk) {
+    const ds = new Uint8Array(n);
+    for (let i = 0; i < n; i++) { ds[i] = delta(quarter.bytes, down, i * 4); mean += ds[i]; }
+    mean /= n;
+    ds.sort();
+    p99 = ds[Math.floor(n * 0.99)];
+    worst = ds[n - 1];
+    // …and each kind's pixels: where the still differs from the same still without that kind, in both — the 1× downsampled, the quarter
+    for (const [field, label] of KIND_FIELDS) {
+      if (!((s[field]?.length ?? 0) > 0)) continue;
+      const without = { ...s, [field]: [] };
+      const { px: B } = await render(without, { marks: true });
+      const downB = downsample(B, w, h, F);
+      const qB = await scoped(`capture ${sc.name} 0.25× without the ${label}`, () => desk.captureOf(without, { scale: QUARTER }));
+      let n1 = 0;
+      let both = 0;
+      for (let i = 0; i < n; i++) {
+        const o = i * 4;
+        if (delta(down, downB, o) <= QUARTER_TOL.kind) continue;
+        n1++;
+        if (qB !== undefined && delta(quarter.bytes, qB.bytes, o) > QUARTER_TOL.kind) both++;
+      }
+      kinds.push({ label, n1, drawn: n1 > 0 ? both / n1 : 0 });
+    }
+    if (process.env.ORACLE_DEBUG && (mean > QUARTER_TOL.mean || p99 > QUARTER_TOL.p99 || kinds.some((k) => k.drawn < QUARTER_TOL.drawn))) {
+      console.log(`      debug: buffers in oracle/results/debug-${sc.name}-quarter-{capture,down}.rgba (${qw}×${qh})`);
+      writeFileSync(resolve(results, `debug-${sc.name}-quarter-capture.rgba`), quarter.bytes); writeFileSync(resolve(results, `debug-${sc.name}-quarter-down.rgba`), down);
+    }
   }
+  const smaller = quarterOk && mean <= QUARTER_TOL.mean && p99 <= QUARTER_TOL.p99 && kinds.length > 0 && kinds.every((k) => k.n1 > 0 && k.drawn >= QUARTER_TOL.drawn);
+  // …and the frame path at that ratio, to the byte
+  let qMax = 0;
+  if (quarterOk) for (let o = 0; o < Q.length; o += 4) qMax = Math.max(qMax, delta(quarter.bytes, Q, o), Math.abs(quarter.bytes[o + 3] - Q[o + 3]));
   const rw = rect.width * d;
   const rh = rect.height * d;
   const rectOk = part !== undefined && part.width === rw && part.height === rh;
   let rMax = 0;
   if (rectOk) for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) { const src = ((y + rect.y * d) * w + x + rect.x * d) * 4; const dst = (y * rw + x) * 4; for (let c = 0; c < 4; c++) rMax = Math.max(rMax, Math.abs(part.bytes[dst + c] - A[src + c])); }
-  const ok = fullOk && quarterOk && qMax === 0 && rectOk && rMax === 0;
-  console.log(`  ${ok ? "PASS" : "FAIL"}  capture    ${sc.name.padEnd(24)} at 1× ${full ? `${full.width}×${full.height}` : "nothing"}, its sha ${fullOk ? "=" : "≠"} the frame's (${pinned}) · at 0.25× ${quarter ? `${quarter.width}×${quarter.height}` : "nothing"} vs the frame drawn at dpr ${d / 4}: maxΔ ${qMax} on ${qDiff.toLocaleString()} px · the rect ${rect.width}×${rect.height} css at (${rect.x}, ${rect.y}): ${rectOk ? `maxΔ ${rMax} against the frame's crop` : "wrong size"}`);
+  const ok = fullOk && smaller && qMax === 0 && rectOk && rMax === 0;
+  const counted = kinds.map((k) => `${k.label} ${(k.drawn * 100).toFixed(1)} % of ${k.n1.toLocaleString()} px`).join(", ");
+  console.log(`  ${ok ? "PASS" : "FAIL"}  capture    ${sc.name.padEnd(24)} at 1× ${full ? `${full.width}×${full.height}` : "nothing"}, its sha ${fullOk ? "=" : "≠"} the frame's (${pinned}) · at 0.25× ${quarter ? `${quarter.width}×${quarter.height}` : "nothing"} against the 1× still downsampled ${F}×${F}: mean |Δ| ${mean.toFixed(2)} (≤ ${QUARTER_TOL.mean}), 99 % within ${p99} (≤ ${QUARTER_TOL.p99}), maxΔ ${worst} · its kinds drawn there (≥ ${QUARTER_TOL.drawn * 100} %): ${counted || "none counted"} · the frame drawn at dpr ${d * QUARTER}: maxΔ ${qMax} · the rect ${rect.width}×${rect.height} css at (${rect.x}, ${rect.y}): ${rectOk ? `maxΔ ${rMax} against the frame's crop` : "wrong size"}`);
   return ok;
 }
 

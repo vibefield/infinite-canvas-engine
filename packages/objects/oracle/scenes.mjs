@@ -376,8 +376,9 @@ ORACLE_SCENES.push(...TRAY_SCENES);
 // THE CAPTURE DOOR (petition I23 — `handle.capture`, ground.ts `captureFrame`): one still carrying what the door must carry — two mini
 // mats (the first with a live inside, a mini mat of its own in it), a SELECTED note (the marks) and a blank one, a bare whiteboard, a
 // print, a closed notebook — on the reference desk at 1:1. `capture` runs the check: the still captured at 1× is the golden frame byte
-// for byte; at 0.25× it is the frame drawn at a quarter of the dpr; a rect is the frame's crop. rig:capture stages the same still FROM
-// THE WORLD and holds the door's bitmap to this render.
+// for byte; at 0.25× it is the 1× still downsampled within a stated tolerance, every kind's pixels counted (petition I29 — a frame
+// drawn at a quarter of the dpr shared the ratio's floor); a rect is the frame's crop. rig:capture stages the same still FROM THE
+// WORLD and holds the door's bitmap to this render. (QUARTER_SCENES, last, adds the calendar: the six kinds at a quarter.)
 export const CAPTURE_SCENES = [
   { name: "capture-desk-z1", capture: true, scene: { ...mmBase, zoom: 1, minimats: [DESK[0], DESK[1]], notes: [note(700, 610, 23, { selected: true }), note(640, 80, 27, { greek: undefined })], boards: [{ x: 1000, y: 650 }], prints: [{ x: 980, y: 430, angle: 0.06 }], books: [nb({ x: 850, y: 480, angle: 0.05 })] } },
 ];
@@ -419,3 +420,14 @@ export const FAULT_SCENES = [
   },
 ];
 ORACLE_SCENES.push(...FAULT_SCENES);
+
+// THE CAPTURE DOOR AT A QUARTER (petition I29): one of EACH reference kind — the showcase's two mini mats (the first with a live
+// inside), its selected note and its blank one, its bare whiteboard, its print and its closed notebook — lying on a desk calendar, at
+// zoom 0.5. `capture` runs the door's check on it too: at 0.25× of the dpr-2 view (a device ratio of 0.5) each of the six draws the
+// pixels it draws in the 1× still downsampled (with the ratio floored at 1, the note, the mini mats, the whiteboard and the print drew
+// nothing there). rig:capture stages it FROM THE WORLD and counts the six in Chrome. Last, so every scene above draws in the order it
+// always did.
+export const QUARTER_SCENES = [
+  { name: "capture-six-z0.5", capture: true, scene: { ...showcase, ...at(600, 400, 0.5), calendars: [pad({ x: 600, y: 400 })] } },
+];
+ORACLE_SCENES.push(...QUARTER_SCENES);
