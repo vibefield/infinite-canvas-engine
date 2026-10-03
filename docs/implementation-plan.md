@@ -1672,11 +1672,11 @@ glyph and the chips' ids. (D-R1.7, the row of holes peeking under the edge at re
 `OverInteractive`); an accessory's shadow darkens the holes it falls on; rig:tray takes ≈ 137 s; a lamp push configured to
 0 would make `normalize(shadow.zw)` NaN.
 
-## M23 — The 0.15.0 asks (petitions I20–I27) — **IN BUILD (I23 LANDED 2026-10-02)**
+## M23 — The 0.15.0 asks (petitions I20–I28) — **IN BUILD (I23 LANDED 2026-10-02)**
 
 VibeField's desk migration (track DK, `vibe-field/draft/thinking-desk-migration.md` §8 A4 — the covers DK-15, the thumbnails
-DK-4, "Send to…" DK-14) files eight asks against the desk for 0.15.0 (I26 from the §8 canon review, I27 from DESIGN.md §8's
-right-click, 3 Oct); each is built in a
+DK-4, "Send to…" DK-14) files nine asks against the desk for 0.15.0 (I26 from the §8 canon review, I27 from DESIGN.md §8's
+right-click, I28 found by I27's builder, 3 Oct); each is built in a
 worktree off `main` behind the 0.14.0 cut and graded on the exact SHA (`pnpm run ci` + `gate:landing`: the Dawn oracle at 113
 stills, nineteen rigs, pack:audit, dts:check).
 Their status rows live in `docs/downstream-petitions.md`; what each built is here.
@@ -1816,6 +1816,31 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   then is not in it until the next step (a click is judged a tick later, after the index has it); no pick of a live inside's objects
   without entering, by the decision above; the drawer's specimens, the hand's tools and the host's own DOM are not the desk's pick's
   (null, or the host's own hit test).
+- **I28 — a secondary button never acts** (**BUILT 2026-10-03**, branch `i28-secondary-button`; DK-11 — the bar's right-click opens
+  VibeField's menu, and that is all it does; a behaviour change by the product's law, no API change): a secondary (right) or middle
+  press is a POINT for the interaction stack, never a GESTURE. The button needed no new field: the adapter always carried PointerEvent
+  `buttons` on every fact, and a pointerdown's mask is the button that pressed (a second button joins a held press as a pointermove), so
+  `recognizerSpawn` reads the press's button off the pointer on its `WentDown` tick (`pressButton`, internal press-button.ts): PRIMARY —
+  bit 1, 32 (a pen's eraser end) or none (a synthetic down that names no button) — spawns as before; SECONDARY spawns nothing (no tap,
+  long press, drag, rejoin: nothing selects, works a part, drags, commits, enters or opens); MIDDLE spawns only its drag, and only where
+  `dragRoute` pans it (`middlePans`: the bare canvas, or a capture that is no handle, port or object). The hand (`heldInput`, design-015
+  §8) takes the primary press too: a secondary press, or a middle one with nothing to pan, keeps no `HeldPress`. Decided in the build —
+  the petition amended in its file: the middle button ALREADY panned, on the bare canvas only (`dragRoute`'s canvas branch — design-003
+  §4.4's device convention; a middle drag on an object MOVED it, as a Space drag does), and it pans exactly there still — a middle drag
+  on an object is now a point, not a pan (making it pan from anywhere, as Figma does, is a small change at spawn — capture the canvas
+  for a middle press — and James's call); the note's editor never opened on a secondary tap (it opens on the DOM `click`, primary only,
+  and closes on the blur any press elsewhere brings — still so); and the hand, which the petition did not name, is a recognizer too.
+  What a secondary press still does: its point, exact pick, part and hover (ingest, `picking`), and the touch-to-stop of the camera's
+  inertia. rig:interact's I28 row: on I27's showcase a real right-click (`button` 2, `buttons` 2, as the page's own pointerdown saw it)
+  at the ten points selects nothing and puts the editor on nothing while the host's pick names what is there; a primary click on a note
+  then does both; with the editor on, a right-click on the bare mat ends its lease (the blur) and keeps the selection; the mat's clocks
+  pinned, a right drag on a note and on the bare mat, a middle click and a middle drag on the note leave the still byte-identical, the
+  camera and the note where they were, no commit. Not done, said plainly: a macOS ctrl-click reaches Chrome as a primary press (`button`
+  0 with `ctrlKey` — its known behaviour, not run here) that also fires `contextmenu`, so the stack acts on it as a click while the
+  host's menu opens (a host can suppress its own menu there, or a later ask can make the adapter's down say so); a chord is judged by
+  its first button (a primary press keeps acting with a secondary button added; a secondary press stays a point with the primary added);
+  the drawer's own press was already the primary's (`tray.ts`, bit 1 — unchanged, so a secondary press with the drawer out does nothing
+  there).
 
 ## Release cut & downstream
 

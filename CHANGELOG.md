@@ -6,8 +6,9 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
-**The 0.15.0 asks (M23) — VibeField's desk migration (track DK) files eight against the desk, petitions I20–I27; each lands as
-its own block here as it is built.** Additive, every one: nothing of 0.14.0's surface moves.
+**The 0.15.0 asks (M23) — VibeField's desk migration (track DK) files nine against the desk, petitions I20–I28; each lands as
+its own block here as it is built.** Additive, every one but I28 — a behaviour change by the product's law, with no API change:
+nothing of 0.14.0's surface moves.
 
 ### Added
 
@@ -199,6 +200,39 @@ its own block here as it is built.** Additive, every one: nothing of 0.14.0's su
   listener against a primary click's selection, at ten points of a showcase — the note on top where two overlap, twice — all agreeing;
   ten picks in one task draw, wake and select nothing). The oracle's 115 stills byte-identical. `docs/api-reference.md` lists it beside
   `capture`.
+
+### Changed
+
+<!-- petition I28 — a secondary button never acts (2026-10-03; the last of the 0.15.0 asks) -->
+- **A SECONDARY BUTTON NEVER ACTS** (petition I28 — the bar's right-click opens VibeField's menu, and only that; DK-11): a secondary
+  (right) or middle press is a POINT for the interaction stack, never a GESTURE. Before, core's recognizers read no button — a right
+  press-release over an object selected it, a right drag moved it and committed, a right press on a part worked it, a right
+  double-click entered a container or picked up an openable, and in the hand a right click on the soft desk put the object down.
+  No new field: the adapter has always carried PointerEvent `buttons` on every fact, and a pointerdown's mask IS the button that
+  pressed (a second button joins a held press as a pointermove), so the stack reads the press's button off the pointer on its
+  `WentDown` tick (`pressButton`, core's internal press-button.ts). PRIMARY — bit 1 (a mouse's left, a touch, a pen's tip), 32 (a pen's
+  eraser end, which the board's eraser reads) or none (a synthetic down that names no button, as every press was) — spawns as before.
+  SECONDARY spawns nothing: no tap, long press, drag or multi-tap rejoin, so nothing selects, works a part, drags, commits, enters or
+  opens. MIDDLE spawns only its drag, and only where `dragRoute` pans it (the bare canvas — design-003 §4.4's device convention, which
+  already existed there); over an object, a handle or a port it is now a point, where before it moved, resized or connected. The hand
+  (design-015 §8, `heldInput`) takes the primary press too: a secondary press — or a middle one with nothing to pan — keeps no
+  `HeldPress`, so it puts nothing down, works no part (a notebook's turn) and is no tool's press; brought close, the middle drag still
+  pans. What a secondary press still does: ingest moves the pointer's point, and `picking` its exact pick, its part and its hover —
+  what `handle.pick` and a host's `contextmenu` read; the touch-to-stop of the camera's inertia (any press); and the host's own
+  surfaces close on their own DOM events (the desk's editor commits on the blur a press elsewhere brings — it only ever OPENED on a
+  primary `click`). The adapter never listens for `contextmenu`: it is the host's, untouched. Witnesses:
+  `packages/core/test/secondary-button.test.ts` (the real stack with a recording sink and a part: a right press over an object held
+  past the long press spawns nothing while its point, pick and part read the object; no PartTap; a right drag moves, grabs, commits
+  and pans nothing as the pointer and its pick follow; on the bare canvas it clears no selection; a middle press spawns nothing over
+  an object and only its drag on the canvas, which still pans, its click keeping the selection; touch, a pen's tip and eraser, and a
+  no-button down select; a right or middle double-click enters and opens nothing; the hand — no press kept, nothing put down, the
+  middle pan brought close), `packages/dom/test/pointer-adapter.test.ts` (a right press-move-release's facts carry 2/2/0 with their
+  points and nothing is prevented; a `contextmenu` reaches the container's listener and the page's, unprevented, enqueuing nothing),
+  and rig:interact's I28 row (on I27's showcase, a real right-click at the ten points selects nothing and puts the editor on nothing
+  while the host's pick names what is there — a primary click on a note then does both; with the editor on, a right-click on the bare
+  mat ends its lease and keeps the selection; the mat pinned, a right drag on a note and on the bare mat, a middle click and a middle
+  drag on the note: the still byte-identical, no commit). The oracle's 115 stills byte-identical. `docs/api-reference.md` says it
+  under `@ice/dom`.
 
 ## [0.14.0] — 2026-10-02
 

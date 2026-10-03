@@ -270,6 +270,11 @@ dispose }` · `startRafLoop(engine)` (rAF + the freeze park) · input ownership 
 content and lifted planes, the plane-transform reflector, the DOM widget hosts and writeback, the L1
 source canvas, the Widget Surface contract, measurement, the graybox and chrome reflectors, the GL
 route — left at D5b. `<Desk>` wires all of this; direct use is for shells without React.
+**A secondary button never acts** (petition I28): the adapter enqueues every press with its PointerEvent `buttons`, and only a
+PRIMARY press — the left button, a touch, a pen's tip or its eraser end — is a gesture to the interaction stack, so a secondary
+(right) or middle press is a POINT whose position, exact pick (`handle.pick`) and hover move with it while nothing selects, drags,
+enters, opens or works a part (in the hand too), the middle button keeping only its pan (of the bare mat, and of an object in hand
+brought close), and `contextmenu`, which the adapter never listens to, is the host's.
 
 ## @ice/r3f — RETIRED (design-015 D5b, 2026-09-26)
 
