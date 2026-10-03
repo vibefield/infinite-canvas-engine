@@ -6,7 +6,7 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
-**The 0.15.0 asks (M23) — VibeField's desk migration (track DK) files seven against the desk, petitions I20–I26; each lands as
+**The 0.15.0 asks (M23) — VibeField's desk migration (track DK) files eight against the desk, petitions I20–I27; each lands as
 its own block here as it is built.** Additive, every one: nothing of 0.14.0's surface moves.
 
 ### Added
@@ -171,6 +171,34 @@ its own block here as it is built.** Additive, every one: nothing of 0.14.0's su
   third tab (`rig.html?…&cursors=false`: A draws Carol's cursor; her world holds both other people and their hands; her page draws
   nobody's — no chip, no reflector, the desk's pixel where Alice's chip would be). `docs/api-reference.md` lists it beside `grid`,
   `hold` and `tray`.
+
+<!-- petition I27 — the desk's pick at a screen point (2026-10-03) -->
+- **THE DESK'S PICK — `handle.pick({ x, y }) → PickResult | null`** (petition I27 — VibeField's right-click selects the object under
+  the pointer, then grows the bar into its menu; DK-11, Chrome on the Mat MC-D6): the object at a point (CSS px of the view — a
+  pointer event's client point less the container's rect) as the desk's own pick resolves it, so what a primary click there selects:
+  `PickResult { entity, type, canvas, part }` — the entity, its `type` (`PrefabId`), the `canvas` it lies in (the board root, or the
+  container entered), its kind's `part` under the point (`""` the object itself; a named part is the kind's, which a click works and
+  does not select). No second hit path: core's `picking` system wrote `TouchesExact` from a closure-private exact pick, now ONE function
+  (`pickExact`, l1-pick.ts) that the system and a new out-of-tick door share — `InteractionStack.pickAt(sx, sy) → PointPick |
+  undefined`, the same index, sibling order, wires and frame source on the world the last tick left, the camera as it stands, the
+  drawer's inertness; `createDeskHost` hands it to the layer as `LayerContext.pickAt` (the desk's structural `DeskLayerContext.pickAt?`),
+  and the handle answers through it. Synchronous and read-only — no redraw, no wake, no write; it never selects (the host does,
+  `ops.setSelection`). `null` over the bare mat and its rulers (printed on it), on chrome with no type (a resize handle), while an
+  object is in hand or the pegboard drawer is out (the desk inert to the pointer — D4b, design-017 §4), before the first frame and
+  while `status()` is `pending` or `failed`; `degraded` picks. A malformed point throws. Two of the petition's words amended in the
+  build (its file says so): a point on a LIVE mini mat's face picks the mini mat, not the object drawn in its inside — the inside's
+  objects are no members of the frame (not Active, not in the spatial index; `Selected ⇒ Active`; `ops.setSelection` takes none), so a
+  click there selects the mini mat and an inside pick would need a second hit path; entered, they pick with the mini mat as their
+  canvas. And in hand the whole desk is null, not the hand's object alone (the desk is inert in hand). Witnesses:
+  `packages/core/test/frame-pick.test.ts` (the door against a real press at each point — content, band, part, canvas; through a
+  zoomed camera; two overlapping; the drawer out; read-only), `packages/dom/test/desk-host.test.ts` (the context carries
+  `stack.pickAt`), `packages/desk/test/pick.test.ts` (the petition's acceptance 1 as amended, each pick checked against a click's
+  selection: a note, the bare mat, a part, two overlapping and reordered, a live inside's note → its mat, entered → the note with the
+  mat as its canvas, held → null though the stack's pick finds the hand's object, before the first frame, a resize handle, the drawer,
+  `degraded` and lost, read-only), and rig:interact's pick row (acceptance 2: a real right-click's point through a `contextmenu`
+  listener against a primary click's selection, at ten points of a showcase — the note on top where two overlap, twice — all agreeing;
+  ten picks in one task draw, wake and select nothing). The oracle's 115 stills byte-identical. `docs/api-reference.md` lists it beside
+  `capture`.
 
 ## [0.14.0] — 2026-10-02
 

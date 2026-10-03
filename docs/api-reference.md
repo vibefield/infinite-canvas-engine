@@ -257,8 +257,9 @@ CHANGELOG's `### Removed` lists them).
 
 SCREEN SPACE ONLY (design-015 §3, D-D15): `createCanvasHost(container)` (the styled container —
 no planes; `CanvasHost { container, dispose }`) · **`createDeskHost({ container, engine, layer })`**
-— the vanilla mount: host → the layer factory (`LayerContext { host, world, framePick, navGeometry,
-heldPose, transitions, catalog, readMarquee }`) → reflectors [ the layer's · cursor · remote cursors — none when the
+— the vanilla mount: host → the layer factory (`LayerContext { host, world, framePick, pickAt, navGeometry,
+heldPose, transitions, catalog, readMarquee }` — `pickAt` the interaction stack's exact pick out of the tick, what a press at a
+screen point would touch, which the desk's `handle.pick` answers through, petition I27) → reflectors [ the layer's · cursor · remote cursors — none when the
 layer's handle says `cursors: false`, petition I26 ]
 → `attachPointerAdapter(host, queue)` → `attachWidgetFocus(host, lookup?)` → the viewport sync
 (one layout read, then a ResizeObserver) → `startRafLoop`; `DeskHost { engine, host, layer, focus,
@@ -301,7 +302,19 @@ quarantined at three strikes; the state stays `ready`, each kind said once (Plug
 camera, theme, marks, hand and tray — as a bitmap of `rect` (CSS px of the view; the whole view when absent) at the view's dpr × `scale` (1; a thumbnail asks
 0.25), drawn ONCE MORE from that frame's inputs into a readable still and read back (never a copy kept of every frame, never a frame: no redraw, no wake, the
 memory ledger's own `capture` line while the still lives); taken under `engine.frame.freeze` it is the parked frame, live the most recent; `undefined`, never
-a throw, while `status()` is `failed` or `degraded`, before the first frame or when the device is lost mid-copy; `handle.tray` is the pegboard drawer's door — `open`/`close`/`toggle`/`isOpen`/`scroll`/`state`/`pin`, and since design-018 §5–§6 `category(id?)`, `categories()`, `anchor()` (`TrayAnchor`: the drawer as the last frame drew it — its `header`, the clear band under its edge, included — the view, the theme's `night`, the hand, the entries, the chips) and `subscribe(listener)`, told after each frame that moved what `anchor()` says and never at rest), the text raster `inkRaster`/`penFaces`, `decodePicture`,
+a throw, while `status()` is `failed` or `degraded`, before the first frame or when the device is lost mid-copy; and `pick({ x, y }) → PickResult | null` is THE
+DESK'S PICK (petition I27 — a host's right-click selects the object under the pointer first): the object at a point (CSS px of the view — a pointer event's
+client point less the container's rect) as the desk's own pick resolves it — the interaction stack's exact pick, the body a press's `TouchesExact` is written by
+(`createDeskHost` hands it to the layer as `LayerContext.pickAt`), so the answer is what a primary click there selects. `PickResult { entity, type, canvas,
+part }`: the topmost object by stratum and sibling order through its kind's mirror on the last frame's geometry, its `type` (`PrefabId` — `engine.catalog.widget(type)`),
+the `canvas` it lies in (the board root, or the container entered), its kind's `part` there (`""` the object itself; a named part — the calendar's roll — is the
+kind's, which a click works and does not select). On a live mini mat's face it is the mini mat: the inside's objects are no members of the frame (a click there
+selects the mini mat; `ops.setSelection` takes none of them) — entered, they pick with the mini mat as their canvas. Synchronous and read-only: no redraw, no
+wake, no write — it never selects (the host does, `ops.setSelection([entity])`). `null` over the bare mat and its rulers (printed on it), on chrome with no type
+(a resize handle), while an object is in hand or the pegboard drawer is out (the desk inert to the pointer), before the first frame, and while `status()` is
+`pending` or `failed` (`degraded` picks: the desk still draws, a click still selects); a point that is not two finite numbers throws.
+`packages/desk/test/pick.test.ts` and rig:interact's pick row (ten points of a showcase, a right-click's point against a primary click's selection) hold it;
+`handle.tray` is the pegboard drawer's door — `open`/`close`/`toggle`/`isOpen`/`scroll`/`state`/`pin`, and since design-018 §5–§6 `category(id?)`, `categories()`, `anchor()` (`TrayAnchor`: the drawer as the last frame drew it — its `header`, the clear band under its edge, included — the view, the theme's `night`, the hand, the entries, the chips) and `subscribe(listener)`, told after each frame that moved what `anchor()` says and never at rest), the text raster `inkRaster`/`penFaces`, `decodePicture`,
 the kind CONTRACT — `defineObject`/`objectKindOf`/`driversOf`/`hostOf`, `ObjectKind`, `KindProgram`, `KindHost`,
 `ObjectHost` (a kind's DOM half, declared: `lend` · `text` · `mount` — design-016 K4b, K8a) —, the builder/pick/ambient/reflector
 of `compose`, `instrumentSubmits`, the GPU profiler (design-016 K2: `createGpuProfiler` — the layer's `handle.profiler()`, unarmed until

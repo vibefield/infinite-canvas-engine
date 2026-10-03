@@ -1672,10 +1672,11 @@ glyph and the chips' ids. (D-R1.7, the row of holes peeking under the edge at re
 `OverInteractive`); an accessory's shadow darkens the holes it falls on; rig:tray takes ≈ 137 s; a lamp push configured to
 0 would make `normalize(shadow.zw)` NaN.
 
-## M23 — The 0.15.0 asks (petitions I20–I26) — **IN BUILD (I23 LANDED 2026-10-02)**
+## M23 — The 0.15.0 asks (petitions I20–I27) — **IN BUILD (I23 LANDED 2026-10-02)**
 
 VibeField's desk migration (track DK, `vibe-field/draft/thinking-desk-migration.md` §8 A4 — the covers DK-15, the thumbnails
-DK-4, "Send to…" DK-14) files seven asks against the desk for 0.15.0 (I26 from the §8 canon review, 3 Oct); each is built in a
+DK-4, "Send to…" DK-14) files eight asks against the desk for 0.15.0 (I26 from the §8 canon review, I27 from DESIGN.md §8's
+right-click, 3 Oct); each is built in a
 worktree off `main` behind the 0.14.0 cut and graded on the exact SHA (`pnpm run ci` + `gate:landing`: the Dawn oracle at 113
 stills, nineteen rigs, pack:audit, dts:check).
 Their status rows live in `docs/downstream-petitions.md`; what each built is here.
@@ -1797,6 +1798,24 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   and their hands at their tabs' pointers; her page draws nobody's — no chip, no reflector, the desk's pixel where Alice's chip would
   be. Not done, said plainly: read at the mount alone — a host that changes its mind remounts (I25's rule); nothing on the handle hides
   the cursors live.
+- **I27 — the desk's pick at a screen point** (**BUILT 2026-10-03**, branch `i27-pick`; DK-11 — VibeField's right-click selects the
+  object under the pointer, then grows the bar into its menu, MC-D6): `handle.pick({ x, y }) → PickResult | null`,
+  `{ entity, type, canvas, part }`. The route is core's own hit path, shared, never a second: `picking` wrote `TouchesExact` from a
+  closure-private exact pick, now ONE function (`pickExact`, l1-pick.ts) that the system and an out-of-tick door call —
+  `InteractionStack.pickAt(sx, sy)`, read-only, on the world the last tick left and the camera as it stands, the drawer's inertness
+  included; `createDeskHost` hands it to the layer (`LayerContext.pickAt`) beside `framePick`, and the handle answers through it for an
+  object of the frame (a type: chrome — a resize handle — has none), `null` with no desk drawn or the desk inert in hand. Decided in the
+  build — the petition amended in its file: a LIVE mini mat's face picks the mini mat, not the object drawn in its inside, because that
+  is what a primary click there selects and the inside's objects are no members of the frame (not Active, not in the index;
+  `Selected ⇒ Active`; `ops.setSelection` takes none) — the petition's two semantics could not both hold, and an inside pick needed a
+  second hit path; entered, the mini mat's objects pick with it as their canvas. In hand the whole desk is null (D4b: a click there
+  selects nothing), and `degraded` picks (the desk draws; a click selects). rig:interact's pick row: a real right-click's point through
+  a `contextmenu` listener against a primary click's selection at ten points of a showcase — the note on top where two overlap, twice
+  (their entity ids descend, so the rows tell sibling order from the legacy entity order) — all agreeing; ten picks in one task draw,
+  wake and select nothing. Not done, said plainly: the pick reads the last tick's spatial index — an object spawned by an op since
+  then is not in it until the next step (a click is judged a tick later, after the index has it); no pick of a live inside's objects
+  without entering, by the decision above; the drawer's specimens, the hand's tools and the host's own DOM are not the desk's pick's
+  (null, or the host's own hit test).
 
 ## Release cut & downstream
 
