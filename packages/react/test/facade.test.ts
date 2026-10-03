@@ -9,13 +9,17 @@
  * `<EngineProvider>` and mirrors the hook's return into `result.current`.
  */
 import {
+  CursorVisual,
   Locked,
   Position,
   PrefabId,
+  PresenceCursor,
   PresenceInfo,
   PresencePeer,
   Size,
+  attachPresence,
   createCanvasEngine,
+  createWorld,
   defineQuery,
   defineWidget,
   p,
@@ -60,9 +64,10 @@ const PANBOX = defineWidget({ type: "rt:panbox", provides: ["widget"], defaultSi
 /**
  * A structural fake of the desk's layer factory (`deskLayer(…)` in production): react must treat
  * it as a black box. It prepends one canvas to the container, exactly as the desk does, and
- * counts its births and deaths so a StrictMode double-mount can be told from a leak.
+ * counts its births and deaths so a StrictMode double-mount can be told from a leak. `cursors`
+ * is its handle's word on the room's other people, as `deskLayer({ cursors })` says it (I26).
  */
-function fakeLayer(): { factory: LayerFactory; created: () => number; disposed: () => number } {
+function fakeLayer(cursors?: boolean): { factory: LayerFactory; created: () => number; disposed: () => number } {
   let created = 0;
   let disposed = 0;
   const factory: LayerFactory = (ctx) => {
@@ -75,6 +80,7 @@ function fakeLayer(): { factory: LayerFactory; created: () => number; disposed: 
         disposed++;
         canvas.remove();
       },
+      ...(cursors !== undefined ? { cursors } : {}),
     };
   };
   return { factory, created: () => created, disposed: () => disposed };
@@ -395,6 +401,86 @@ describe("usePresencePeers", () => {
     const before = result.current;
     forceRender();
     expect(result.current).toBe(before); // membership-keyed cache → stable identity
+  });
+});
+
+/**
+ * A host that draws its own peers (petition I26 — VibeField draws each by face, from `usePresencePeers`): the desk mounted with
+ * `deskLayer({ cursors: false })` — structurally, a layer whose handle says `cursors: false` — draws none of them, and the roster
+ * is the session's whole. TWO PEERS in the host's REAL presence session (`docs.attachPresence`), each a session on a world of its
+ * own with its hand on the desk, over hand-pumped byte channels — core's presence recipe: Loro's throttle runs on the wasm clock,
+ * so the room converges by real short waits, deadline-polled.
+ */
+describe("<Desk> — a host that draws its own peers (petition I26)", () => {
+  const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+  const handQ = defineQuery([CursorVisual, Position]);
+  /** The hands the host's world derived for its remote peers (core's remote-cursors system: a `CursorVisual "remote"` each). */
+  const handsIn = (engine: CanvasEngine): number => {
+    let n = 0;
+    engine.world.query(handQ).each((b) => {
+      for (const r of b) if (engine.world.get(b.entity(r), CursorVisual)?.kind === "remote") n++;
+    });
+    return n;
+  };
+
+  /** `<Desk>` on a host in a room with Ada and Bo, its layer's handle saying `cursors` (or nothing): the roster, the names the container draws, the reflectors. */
+  async function roomOfTwo(cursors: boolean | undefined) {
+    vi.spyOn(globalThis, "requestAnimationFrame").mockImplementation(() => 1 as unknown as number);
+    vi.spyOn(globalThis, "cancelAnimationFrame").mockImplementation(() => {});
+    const { engine, step } = makeEngine();
+    engine.docs.attachPresence({ name: "Host", color: "#30a46c" });
+    const wire = engine.docs.presence()?.wire;
+    if (wire === undefined) throw new Error("no presence session");
+    const outbound = ([["Ada", "#e5484d", 120, 80], ["Bo", "#8e4ec6", 320, 240]] as const).map(([name, color, x, y]) => {
+      const peer = attachPresence(createWorld(), { name, color });
+      cleanups.push(() => peer.detach());
+      const bytes: Uint8Array[] = [];
+      peer.onOutbound((b) => bytes.push(b));
+      peer.eph.addComponent(peer.localPeer, PresenceCursor, { x, y, device: "mouse" });
+      return bytes;
+    });
+    // the host's chrome reads the roster, as VibeField's faces do
+    let roster: ReturnType<typeof usePresencePeers> = [];
+    function Roster(): null {
+      roster = usePresencePeers();
+      return null;
+    }
+    const mountEl = document.createElement("div");
+    document.body.appendChild(mountEl);
+    const root = createRoot(mountEl);
+    cleanups.push(() => act(() => root.unmount()));
+    act(() => {
+      root.render(createElement(Desk, { engine, layer: fakeLayer(cursors).factory }, createElement(Roster)));
+    });
+    // the room converges: both peers' facets reach the host, whose frames derive each one's hand
+    const t0 = Date.now();
+    while (handsIn(engine) < 2 && Date.now() - t0 < 2000) {
+      for (const bytes of outbound) for (const b of bytes.splice(0)) wire.apply(b);
+      step();
+      await sleep(5);
+    }
+    step(); // a frame over both hands: the reflectors flush
+    // a cursor's name is its chip's text: the leaf divs with any
+    const divs = Array.from(mountEl.querySelector("[data-ice-canvas]")?.querySelectorAll("div") ?? []);
+    const drawn = divs.filter((d) => d.children.length === 0 && d.textContent !== "").map((d) => d.textContent ?? "");
+    return { hands: handsIn(engine), roster: roster.map((p) => p.info?.name ?? "").sort(), drawn: drawn.sort(), reflectors: engine.engine.reflectorNames(), armed: engine.world.isReactiveEnabled };
+  }
+
+  it("`cursors: false` with two peers in the session: no cursor element is mounted; `usePresencePeers` still lists both", async () => {
+    const r = await roomOfTwo(false);
+    expect(r.hands).toBe(2); // the session is whole: the host's world derived both peers' hands
+    expect(r.roster).toEqual(["Ada", "Bo"]);
+    expect(r.drawn).toEqual([]);
+    expect(r.reflectors).not.toContain("remoteCursors");
+    expect(r.armed).toBe(true); // the roster's own observer armed the world — the host's reflectors armed none
+  });
+
+  it("…and absent, the same room's two cursors are drawn over the desk, each under its name — the roster the same", async () => {
+    const r = await roomOfTwo(undefined);
+    expect(r.hands).toBe(2);
+    expect(r.roster).toEqual(["Ada", "Bo"]);
+    expect(r.drawn).toEqual(["Ada", "Bo"]);
+    expect(r.reflectors).toContain("remoteCursors");
   });
 });
 

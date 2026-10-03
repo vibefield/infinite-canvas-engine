@@ -13,7 +13,8 @@
  * geometry, the held pose — design-014 B3b, design-015 §8–§9) and the marquee buffer it draws.
  *
  * Boot order (registration order = reflector flush order): host → layer → reflectors [ layer ·
- * cursor · remoteCursors ] → pointer adapter → focus → viewport (one layout read, then a
+ * cursor · remoteCursors — unless the layer's handle says `cursors: false` (petition I26: its host
+ * draws the room's people itself) ] → pointer adapter → focus → viewport (one layout read, then a
  * ResizeObserver, and the device's ratio read before every step) → rAF loop. `dispose` undoes it in reverse. The engine is NOT owned here — it
  * outlives the mount (the app disposes it). A layer factory that throws leaves nothing claimed on
  * the engine: it runs before any registration, and only the local host is undone.
@@ -42,6 +43,12 @@ import { attachWidgetFocus, type WidgetFocusHandle } from "./widget-focus";
 export interface LayerHandle {
   readonly reflector: ReflectorDef & { available(): boolean };
   dispose(): void;
+  /**
+   * The room's other people (petition I26): `false` — the layer's host draws its peers itself (VibeField draws each by face, from
+   * `usePresencePeers`), so this host mounts no remote cursors: no plane, no reflector. Absent or `true`, it mounts them, as ever.
+   * Read once, when the factory returns; the presence session, the roster and the OS cursor are the same either way.
+   */
+  readonly cursors?: boolean;
 }
 
 /** The mount context a layer factory receives: the host, the world and the seams the renderer fills. */
@@ -131,12 +138,13 @@ export function createDeskHost<H extends LayerHandle>(opts: DeskHostOptions<H>):
   }
 
   // Registration order = flush order: the desk draws, then the OS cursor, then
-  // the room's other people on top (their plane is the container's last child).
-  const remoteCursors = createRemoteCursorsReflector(host, world);
+  // the room's other people on top (their plane is the container's last child) —
+  // none when the layer's host draws them itself (`cursors: false`, petition I26).
+  const remoteCursors = layer.cursors === false ? undefined : createRemoteCursorsReflector(host, world);
   const unregister = [
     core.registerReflector(layer.reflector),
     core.registerReflector(createCursorReflector(host, stack.readCursor)),
-    core.registerReflector(remoteCursors.reflector),
+    ...(remoteCursors !== undefined ? [core.registerReflector(remoteCursors.reflector)] : []),
   ];
 
   // The OS's reduced-motion preference, into the transition coordinator (a nav flight snaps).
@@ -196,7 +204,7 @@ export function createDeskHost<H extends LayerHandle>(opts: DeskHostOptions<H>):
       motionQuery?.removeEventListener("change", syncReducedMotion);
       engine.transitions.setReducedMotion(false);
       for (const unreg of unregister) unreg();
-      remoteCursors.destroy();
+      remoteCursors?.destroy();
       layer.dispose();
       host.dispose();
     },

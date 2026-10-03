@@ -111,6 +111,13 @@ export interface DeskLayerOptions {
    * so the last line is still reached; the board runs to its edge. A finite number ≥ 0; absent, 0.
    */
   readonly tray?: TrayOptions;
+  /**
+   * THE ROOM'S OTHER PEOPLE (petition I26), read at the mount: `false` — the host draws its peers itself (VibeField draws each by
+   * face, from `usePresencePeers`), so the host the layer is mounted in (`@ice/dom`'s `createDeskHost`, `<Desk>`) mounts no remote
+   * cursors — no plane, no reflector; the layer says so on its handle (`DeskLayerHandle.cursors`). The presence session,
+   * `usePresencePeers` and the local OS and open-hand cursors are untouched. Absent or `true`, the host draws them, as ever.
+   */
+  readonly cursors?: boolean;
   /** The objects' springs (springs.ts `SPRINGS`): the builder reads these numbers every frame, so a host that keeps the object may tune them live (the dev panel — D5a). */
   readonly springs?: ObjectSprings;
   /** The device pixel ratio the canvas is capped at (2). */
@@ -340,6 +347,11 @@ export interface DeskLayerHandle {
   /** The drawing reflector — the facade registers it right after the plane transform, where the ground layer has always gone. */
   readonly reflector: ReflectorDef & { available(): boolean };
   dispose(): void;
+  /**
+   * Whether the host mounts the room's other people's cursors (petition I26): `deskLayer({ cursors })` as read at the mount, `true`
+   * when absent — `@ice/dom`'s `createDeskHost` reads it off the handle (its structural `LayerHandle.cursors`) before it registers them.
+   */
+  readonly cursors: boolean;
   /** The canvas in the ground slot. */
   readonly canvas: HTMLCanvasElement;
   /** The device is acquired and `Ground.create` resolved. */
@@ -568,6 +580,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     looksOf(objectKinds, opts.palette, opts.theme);
     const hold = holdOf(opts.hold);
     const foot = hostNumber("tray.foot", opts.tray?.foot);
+    const cursors = opts.cursors !== false;   // the host's word on the room's other people (I26), told it on the handle
     const canvas = doc.createElement("canvas");
     canvas.style.position = "absolute";
     canvas.style.left = "0";
@@ -1030,6 +1043,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
 
     return {
       reflector,
+      cursors,
       canvas,
       available: () => ground !== null && (status.state === "ready" || status.state === "degraded"),
       status: () => status,
