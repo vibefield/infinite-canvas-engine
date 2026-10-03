@@ -66,6 +66,41 @@ describe("attachPointerAdapter", () => {
     detach();
   });
 
+  it("carries a right press's button on its facts — the down's mask is the button that pressed (2), the move's still held, the release's none — and cancels nothing (petition I28)", () => {
+    const { container, queue, detach } = setup();
+    const down = fire(container, "pointerdown", { pointerType: "mouse", pointerId: 1, clientX: 150, clientY: 120, button: 2, buttons: 2 });
+    const move = fire(container, "pointermove", { pointerType: "mouse", pointerId: 1, clientX: 190, clientY: 140, button: -1, buttons: 2 });
+    const up = fire(container, "pointerup", { pointerType: "mouse", pointerId: 1, clientX: 190, clientY: 140, button: 2, buttons: 0 });
+    const facts = queue.drain().map((e) => [e.kind, e.buttons, e.screenX, e.screenY]);
+    detach();
+    // every fact lands, with its point: the press is a point for the stack — which press is a gesture is core's call (press-button.ts)
+    expect(facts).toEqual([
+      ["down", 2, 100, 100],
+      ["move", 2, 140, 120],
+      ["up", 0, 140, 120],
+    ]);
+    expect([down.defaultPrevented, move.defaultPrevented, up.defaultPrevented]).toEqual([false, false, false]);
+  });
+
+  it("leaves `contextmenu` to the host: it reaches the container's listener and the page's, unprevented, and enqueues nothing (petition I28)", () => {
+    const { container, queue, detach } = setup();
+    const child = document.createElement("div");
+    container.appendChild(child);
+    const heard: string[] = [];
+    const onContainer = (e: Event): void => { heard.push(`container:${e.defaultPrevented}`); };
+    const onPage = (e: Event): void => { heard.push(`page:${e.defaultPrevented}`); };
+    container.addEventListener("contextmenu", onContainer);
+    document.addEventListener("contextmenu", onPage);
+    const ev = fire(child, "contextmenu", { clientX: 150, clientY: 120, button: 2, buttons: 0 });
+    const queued = queue.size();
+    container.removeEventListener("contextmenu", onContainer);
+    document.removeEventListener("contextmenu", onPage);
+    detach();
+    expect(heard).toEqual(["container:false", "page:false"]);
+    expect(ev.defaultPrevented).toBe(false);
+    expect(queued).toBe(0);
+  });
+
   it("routes a ctrl-wheel to wheel.pinch and preventDefaults", () => {
     const { container, queue, detach } = setup();
     const ev = fire(container, "wheel", { clientX: 100, clientY: 100, deltaX: 0, deltaY: -120, deltaMode: 0, ctrlKey: true });

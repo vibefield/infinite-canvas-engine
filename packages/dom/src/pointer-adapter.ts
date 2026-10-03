@@ -10,6 +10,12 @@
  *  - stable pointer ids: `"mouse"` for the one mouse, `"touch:<pointerId>"` per
  *    contact, `"pen"` — ingest keys pointer entities off these (design-003 §2);
  *  - container-relative CSS px (the kernel screen space) via getBoundingClientRect;
+ *  - the button: every pointer fact carries PointerEvent `buttons`, and a down's
+ *    mask IS the button that pressed (a second button joins a held press as a
+ *    pointermove, never a down). Which press is a gesture is the stack's call,
+ *    not this file's — only the primary's (petition I28, core press-button.ts):
+ *    a secondary press is enqueued like any other, a point. `contextmenu` is
+ *    never listened to here — it is the host's, untouched;
  *  - `setPointerCapture` on down so a drag keeps delivering outside the element;
  *  - Space is the pan modifier (design-003 §4.4): tracked here and threaded onto
  *    every event's `mods.space`; keydown/keyup emit a `key` fact only when the
