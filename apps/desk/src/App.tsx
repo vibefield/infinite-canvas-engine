@@ -97,16 +97,22 @@ export function App(): ReactElement {
   const matSerial = useRef(1);
   const [menuSource, setMenuSource] = useState<SelectionMenuSource | null>(null);
   const [trayBar, setTrayBar] = useState<TrayBarSource | null>(null);
+  // THE GENERATION (petition I25 — a desk's kinds are the set it was mounted with): `__desk.remount()` bumps it and the layer is made
+  // anew, its options read again (a rig's `__deskRig.layer` among them): `<Desk>` disposes the mount and mounts the new layer on the same
+  // engine and document — what a host does when its kinds change
+  const [generation, setGeneration] = useState(0);
+  const generationRef = useRef(0);
 
-  // The layer factory — memoised: a new identity would re-boot the canvas mount. The wrapper keeps the handle for the app.
+  // The layer factory — memoised: a new identity would re-boot the canvas mount. The wrapper keeps the handle (and its generation) for the app.
   const layer = useMemo<LayerFactory>(() => {
     // D2c: the app's hand (its faces, the text raster) and the document a note's typing session commits into; K1: the product's
     // grid — the rulers printed on the root (the engine's default leaves them off; a host prints them, RULER.md §5)
     // …and on a rig's page, the host options its harness asked for (a host's hold, I20, and its drawer's foot, I21 — as VibeField
-    // mounts them); none on the product's
-    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS], name: "desk/compose", text: deskText(), docs: engine.docs, blobs: deskBlobs, springs: params.motion, grid: DESK_GRID, gpuLedger: true, ...rigLayer() });
-    return (ctx) => { const h = factory(ctx); handleRef.current = h; return h; };
-  }, [engine, params]);
+    // mounts them — and object types of the layer's own, I25); none on the product's
+    const { objects: rigObjects = [], ...rig } = rigLayer();
+    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS, ...rigObjects], name: "desk/compose", text: deskText(), docs: engine.docs, blobs: deskBlobs, springs: params.motion, grid: DESK_GRID, gpuLedger: true, ...rig });
+    return (ctx) => { const h = factory(ctx); handleRef.current = h; generationRef.current = generation; return h; };
+  }, [engine, params, generation]);
 
   // The keymap is bound once per engine: its entries close over the engine (state, stable) and two refs, and read the world live.
   const keys = useMemo<KeymapEntry[]>(() => {
@@ -217,9 +223,11 @@ export function App(): ReactElement {
         panelRef.current = installDevPanel({ engine, handle, params, theme: themeRef.current, storageKey: deskRoom() === undefined ? "ice-desk-panel" : undefined });
         themeRef.current.apply();
         dockRef.current = createProfilerDock(engine, handle);
-        const api = installDeskApi(engine, handle, themeRef.current, panelRef.current, glyphs, dockRef.current);
+        const api = installDeskApi(engine, handle, themeRef.current, panelRef.current, glyphs, dockRef.current, { generation: generationRef.current, remount: () => setGeneration((g) => g + 1) });
         apiRef.current = api;
         const undoDrop = installPictureDrop(engine, handle, fail);   // D3w: a pasted or dropped picture is a print
+        // what this mount adds to the ENGINE goes with it (I25: the engine outlives a remount — a system left behind is a generation's leak)
+        let stopGlyphs: (() => void) | undefined;
         // the product's plates and a runtime glyph atlas the moment the ground is here
         const feed = async (): Promise<void> => {
           joined.current ??= joinDeskRoom(engine);
@@ -234,11 +242,11 @@ export function App(): ReactElement {
           // …and again whenever the viewport's ratio moves — the host re-syncs it before any step it moved in (@ice/dom
           // `createDeskHost`: another display, the browser's zoom, an emulated ratio — none resizes) — or the panel's text size:
           // a tick gated on either, so nothing runs while they stand. (A mount StrictMode discards never gets here: it is cancelled.)
-          engine.engine.addSystems("simulate", defineTickSystem(() => { glyphs.refresh(); }, { name: "desk.glyphs", runIf: () => glyphs.stale() }));
+          stopGlyphs = engine.engine.addSystems("simulate", defineTickSystem(() => { glyphs.refresh(); }, { name: "desk.glyphs", runIf: () => glyphs.stale() }));
           api.state.ready = true;
         };
         feed().catch((e: unknown) => { if (!cancelled) fail(e); });
-        return () => { cancelled = true; undoDrop(); offStatus(); };
+        return () => { cancelled = true; undoDrop(); offStatus(); stopGlyphs?.(); api.dispose(); };
       }}
     >
       {trayBar !== null ? <TrayBar source={trayBar} /> : null}

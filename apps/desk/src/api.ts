@@ -74,6 +74,16 @@ export interface DeskApi {
   settle(timeoutMs?: number): Promise<{ readonly settled: boolean; readonly redraws: number }>;
   /** Frames since the mount and the drawing state, for a rig's counters. */
   readonly state: { ready: boolean };
+  /** THE GENERATION this door was made for (petition I25): 0 at the page's first mount, one more at each remount. */
+  readonly generation: number;
+  /**
+   * THE KIND SET (petition I25): the desk REMOUNTED on a new generation — the layer disposed and made again, on the same engine and
+   * document, from the options the page mounts with now (a rig's `__deskRig.layer` among them): what a host does when its kinds change.
+   * The new generation installs its own `window.__desk` once it is mounted; this one is the old's from then.
+   */
+  remount(): void;
+  /** The mount this door was made for ended: what it added to the engine goes (the flight pin's system). Called by the app's cleanup. */
+  dispose(): void;
   /** The sticky notes' text stack: the editor, the writing, the ink (D2c). */
   readonly note: NoteApi;
   /** The D3w kinds: strokes as a board's children, a print's body and flick, the books drawn, a pad's events. */
@@ -213,7 +223,7 @@ declare global {
 const widgetsQ = defineQuery([Position, Size, PrefabId, Not(Specimen)]);
 const mouseQ = defineQuery([Pointer, LocalPointer, PointerWorld]);
 
-export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, theme: { name(): ThemeName; set(name: ThemeName, pin: boolean): void }, panel: DevPanel | null = null, glyphs: GlyphFeed | null = null, dock: ProfilerDock | null = null): DeskApi {
+export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, theme: { name(): ThemeName; set(name: ThemeName, pin: boolean): void }, panel: DevPanel | null = null, glyphs: GlyphFeed | null = null, dock: ProfilerDock | null = null, mount: { readonly generation: number; remount(): void } = { generation: 0, remount: () => {} }): DeskApi {
   const { world } = engine;
   const state = { ready: false };
   // THE FLIGHT PIN (D2b): a system after core's `navFlight` in `simulate` that puts the flight back at `pinned` and the camera at
@@ -233,7 +243,7 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
     },
     { name: "desk.pinFlight", runIf: () => pinned !== null },
   );
-  engine.engine.addSystems("simulate", pinFlight);
+  const unpin = engine.engine.addSystems("simulate", pinFlight);
   const describe = (e: Entity): DeskEntity | null => {
     if (!world.isAlive(e)) return null;
     const p = world.get(e, Position);
@@ -303,6 +313,9 @@ export function installDeskApi(engine: CanvasEngine, handle: DeskLayerHandle, th
     engine,
     handle,
     state,
+    generation: mount.generation,
+    remount: () => mount.remount(),
+    dispose: () => { unpin(); },
     perf,
     note: noteApi(engine, handle),
     kinds: kindsApi(engine, handle),
