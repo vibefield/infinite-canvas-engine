@@ -1772,7 +1772,7 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   4.3–4.7 / 35–37 / 104–113), the ninth under another landing gate's load (16–20) included; the page's first mount, cold, 30–38 /
   173–210 / 188–236 ms at load 5–14 and 102 / 274 / 301 ms under that load — a COLD mount past 250 ms (a document's first open, not
   a remount). The remount within the brief's 250 ms, so the DOOR —
-  `handle.kinds.replace` (answer 1) — stays deferred; what reopens it: a first frame past ~250 ms on a machine VibeField ships to, or
+  `handle.kinds.replace` (answer 1) — stays deferred; what reopens it: a REMOUNT's first frame past ~250 ms on a machine VibeField ships to, or
   the plugin dev loop's ten-minute bar (DK-10) missed for the remount's sake. Nothing outlives a generation: the memory ledger reads
   zero after every unmount (102 of 102 resources each), a broken generation (a kind refused at create, one quarantined) included, then
   one mounted clean; the document survives five remounts byte for byte. Found by the rig and fixed: a kind quarantined WHILE the
