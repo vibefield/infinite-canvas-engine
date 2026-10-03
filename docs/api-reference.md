@@ -327,8 +327,32 @@ ends `foot` CSS px above the board's bottom edge (0), the header's mirror: the f
 plain board over the foot and feathers it, the scroll's range grows by it so the last line is still reached, and core never hovers or
 takes a specimen there (the pose seam's `TrayScreenFrame.foot`); the board runs to its edge. A malformed number throws at the mount.
 
+**The kind set — fixed for a layer's life (petition I25)** — a desk draws its objects by the kinds it was MOUNTED with: the
+catalog's object types and `deskLayer({ objects })`, read once at the mount and compiled there (`Ground.create`). Registering a type
+after the mount adds no kind. Under `createDeskHost`/`<Desk>` the catalog is the engine's, which `createCanvasEngine` builds once; a
+catalog a host hands a layer itself (the context's structural `catalog`) is read at the mount alone. An object of a type whose kind
+the desk was not mounted with wears the missing face (petition I24's, pickable by its box), the desk says so once a type on the
+console ("… remount to draw it"), and the tray hangs no specimen of it. A host that changes its kinds — a plugin enabled, updated or
+removed — REMOUNTS the layer on a new generation (a new factory: `<Desk>` disposes the mount and mounts the new one; `createDeskHost`
+is disposed and made again). What a remount costs, measured by `rig:remount` — the showcase (the six kinds and the clock, one of each)
+remounted five times a run, five runs, on an Apple M1 Max (macOS 26, Chrome 154 headless, 1200 × 800 @ 2): the device in hand 4–6 ms,
+the passes compiled 34–47 ms, the first frame presented 92–120 ms after the mount (each run's medians 4.3–4.7 / 35–37 / 104–110 ms);
+the page's first mount, cold, 31–36 / 173–192 / 188–221 ms. A remount compiles the same programs again, warm (a fifth of the cold
+compile here); a plugin whose program changed pays that program's cold compile on top (not measured). A host veils it or not on these;
+each mount reads its own off `perf().boot` (`DeskLayerBoot`: `device`, `compiled` — the status `ready` —, `presented` — the first
+frame's GPU work done —, ms since the mount, each absent until it happens). A document survives a remount untouched — the layer holds
+no document state: it draws what it reads from the world, the document is the engine's, and a typing session open at the unmount
+commits as it ends (the editor's lease ends with the desk). Proven by `packages/desk/test/kind-set.test.ts` (no commit across an
+unmount and the next mount, the snapshot byte for byte; the next generation draws the same objects), by
+`packages/objects/test/note-session.test.ts` (the session open at the editor's dispose commits once) and by `rig:remount` (the
+showcase's document across five remounts, its snapshot's sha-256 unchanged, no outbound commit). Nothing outlives its generation:
+the memory ledger reads zero after each unmount, a generation with a kind refused at create and one quarantined included. The door —
+a kind replaced on a live desk (`handle.kinds.replace`) — is deferred: the first frame is within 250 ms here.
+
 **Plugin parity (design-016 K-L2, K8a)** — whatever a built-in kind does, a plugin kind declares the same way, and no list in the
 engine names a kind:
+- **When your kind is compiled** (petition I25): at the layer's mount — a desk's kinds are the set it was mounted with, and a host
+  that registers, updates or removes one remounts the desk (the kind set, above).
 - **Services**, an open registry by typed key (`@ice/desk/kit`: `serviceKey<T>(name)`, `service(key, value)`, `Services`): the host
   lends `TEXT_RASTER`, `PICTURE_DECODER`, `BLOB_STORE` (`deskLayer({ text, blobs })`) and more by key (`deskLayer({ services })`);
   an object's DOM half lends what only a browser makes (`defineObject({ host: { lend: (h) => [service(KEY, value)] } })` — the

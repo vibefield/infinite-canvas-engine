@@ -124,6 +124,33 @@ its own block here as it is built.** Additive, every one: nothing of 0.14.0's su
   rig:parity on it (maxΔ 0), and rig:clock's rows 11–15 (`rig.html?plugins&broken`: the boot ready, the quarantine said once, the
   ledger rows, both faces, a press in each box selects its entity). `docs/api-reference.md` says what a kind's author can expect.
 
+<!-- petition I25 — the kind set: the rule, measured; the door deferred (2026-10-02) -->
+- **THE KIND SET — the rule, measured; the door deferred: a desk's kinds are fixed for its layer's life, a host remounts to change
+  them, and the remount is MEASURED** (petition I25, answer 2 — the rule, for 0.15.0; VibeField's plugin runtime, DK-9: enable,
+  update, remove). A desk's kinds are the set it was MOUNTED with
+  (the catalog's object types and `deskLayer({ objects })`, compiled by `Ground.create`). A type registered AFTER the mount adds no
+  kind and is refused honestly: its objects wear petition I24's missing face (the builder draws by a kind only when the desk was
+  mounted with it) and the desk says so ONCE a type — a `console.warn` naming the type, its kind and "remount to draw it (petition
+  I25)"; the tray hangs no specimen of it. Before, the builder resolved the late kind off the world's catalog and handed the ground a
+  record under a name it never compiled: `ground: no kind "…" is registered` threw out of every frame that showed one. THE MOUNT'S
+  COST as each boot went: `perf().boot` (`DeskLayerBoot` — `device`, `compiled`, `presented`: ms since the mount; three stamps and one
+  promise a mount, nothing a frame). Measured by `rig:remount` (the twentieth rig; `__desk.remount()` remounts the product's `<Desk>`
+  on a new generation, same engine and document): the showcase — six kinds and the clock — remounted five times a run, five runs, on an
+  Apple M1 Max (Chrome 154 headless, 1200 × 800 @ 2): the device in hand 4–6 ms, the passes compiled 34–47 ms, the first frame
+  presented 92–120 ms (medians 4.3–4.7 / 35–37 / 104–110); the page's first mount, cold, 31–36 / 173–192 / 188–221 ms. Within 250 ms:
+  the door (`handle.kinds.replace`, the petition's answer 1) stays deferred. Nothing outlives its generation: the memory ledger reads
+  ZERO after every unmount — a generation with a kind refused at create and one quarantined at three strikes included, then one
+  mounted clean — and the document is untouched (its snapshot byte for byte, no commit). Found and fixed on the way: a kind QUARANTINED
+  while the ground was being made (its desk state's `tick` threw three times in the boot's frames) kept its pass in the ground that
+  arrived, and its objects' missing-face records were handed to it — the frame lost; the boot now quarantines it in the new ground. And
+  the editor's dispose ends a lease still held: a typing session open at an unmount commits and lifts its claim (before, it stayed
+  open for good — its idle commit cleared, its claim held). The app: `__desk.remount()` / `__desk.generation`; what a mount adds to
+  the engine goes with it (the flight pin's and the glyph feed's tick systems outlived their mount). Witnesses:
+  `packages/desk/test/kind-set.test.ts` (the late type, the tray, `perf().boot`, the document across a remount, the ledger at zero
+  across generations), `packages/desk/test/kind-faults.test.ts` (the kind quarantined while the ground is made),
+  `packages/objects/test/note-session.test.ts` (the session open at the editor's dispose), rig:remount. `docs/api-reference.md`
+  states the rule, the numbers and where the document's survival is proven; Plugin parity: your kind is compiled at the layer's mount.
+
 ## [0.14.0] — 2026-10-02
 
 **The first publish since 0.11.0, and it carries M20 + M21 + M22** — the desk (design-015), the kit and the

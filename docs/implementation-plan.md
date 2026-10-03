@@ -1755,6 +1755,30 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   a DOM half) are not caught — the first throws out of the frame as before (the reflector's fault: the frame skipped), the second at
   the mount; what core's ops ask of a kind at an act (`open.tool` at the pickup, a held tool's `run`) is the op's caller's; a
   quarantined material kind turns the flat card off until the desk is mounted again (no re-compose).
+- **I25 — the kind set: the rule, measured; the door deferred** (**BUILT 2026-10-02**, branch `i25-kind-rule`; DK-9 — VibeField's
+  plugin runtime enables, updates and removes kinds with a document open): the petition offered two answers, ICE's choice; the pick is
+  answer 2, THE RULE — a desk's kinds are the set it was mounted with (compiled by `Ground.create`, fixed for the layer's life), a host
+  that changes them remounts the layer on a new generation (VibeField remounts per document already, its B4 law), and the mount's cost
+  is measured and stated so the host decides whether to veil it. A late registration is refused honestly: the builder draws by a kind
+  only when the desk was mounted with it — a type registered after the mount wears I24's missing face, said once a type ("remount to
+  draw it"), and the tray hangs none of it (before: the ground threw `no kind "…" is registered` out of every frame that showed one).
+  With `createDeskHost`/`<Desk>` the catalog is the engine's, built once, so a new type is a new engine and a new mount anyway; the
+  refusal covers a catalog a host hands the layer itself. The mount's cost is each layer's own instrument (`perf().boot`: device,
+  compiled, presented — ms since the mount), read by rig:remount, the twentieth rig (`__desk.remount()` — the product's `<Desk>` on a
+  new generation, same engine and document): on an Apple M1 Max, Chrome 154 headless, five runs of five remounts of the showcase (six
+  kinds and the clock): the device 4–6 ms, the passes 34–47 ms, the first frame presented 92–120 ms after the mount (each run's medians
+  4.3–4.7 / 35–37 / 104–110); the page's first mount, cold, 31–36 / 173–192 / 188–221 ms. Within the brief's 250 ms, so the DOOR —
+  `handle.kinds.replace` (answer 1) — stays deferred; what reopens it: a first frame past ~250 ms on a machine VibeField ships to, or
+  the plugin dev loop's ten-minute bar (DK-10) missed for the remount's sake. Nothing outlives a generation: the memory ledger reads
+  zero after every unmount (102 of 102 resources each), a broken generation (a kind refused at create, one quarantined) included, then
+  one mounted clean; the document survives five remounts byte for byte. Found by the rig and fixed: a kind quarantined WHILE the
+  ground was made (its desk state's tick throwing in the boot's frames) kept its pass in the arriving ground and was handed its
+  objects' missing-face records — the frame lost (I24's gap; the boot now quarantines it in the new ground); and a typing session
+  open at an unmount stayed open for good (the editor's dispose dropped its lease untold and cleared its idle) — the dispose now ends
+  the lease, so the session commits. The app's own remount hygiene: what a mount adds to the engine goes with it (the flight pin's and
+  the glyph feed's systems). Not done, said plainly: no door to replace a kind on a live desk; a remount re-acquires the device even
+  when only one kind changed (an engine with `compositorDevice` keeps it — not measured here); `perf().boot` stamps the first frame's
+  GPU work done, not its display; a remount mid-gesture other than typing (a pen stroke, a carry in flight) is not witnessed.
 
 ## Release cut & downstream
 
