@@ -1748,6 +1748,31 @@ through, since the packages ask for `"*"`), and `pnpm-workspace.yaml:169`
 present 2026-09-08. Verified too: vibe-field already installs `three` 0.185.1 and
 `@react-three/fiber` 9.6.1, so the raised peer floor costs it nothing.
 
+**0.14.0 = M20 + M21 + M22** (CUT 2026-10-02, publish pending) — the desk (design-015: one
+WebGPU renderer draws every object under the camera from the world, the DOM in screen space
+only, the hybrid deleted whole at D5b), the kit and the pegboard (design-016/017: the public
+render kit, the six kinds in `@ice/objects` compiled against the published entries alone,
+plugin parity, the third-party desk clock, the pegboard tray) and the tray refined
+(design-018). This is the FIRST PUBLISH SINCE 0.11.0 — neither 0.12.0 nor 0.13.0 was
+published (npm's `latest` is 0.11.0), so one publish carries three cuts; the CHANGELOG's
+`[0.14.0]` head says so, and `[0.13.0]` is re-headed a git release point as `[0.12.0]` was.
+The umbrella loses `./r3f`, `./r3f/webgpu` and the four `./ground*` entries and gains
+`./desk`, `./desk/engine`, `./desk/objects` and `./desk/kit` — nine entries; the `three` and
+`@react-three/fiber` peers and `stats-gl` are struck, and `pack:audit` (nine questions now,
+over every entry) fails on any edge to them. The pack goes 317 → 387 files: d.ts 274 → 350
+(`@ice/ground`'s 63 and `@ice/r3f`'s 20 out, `@ice/desk`'s 99 and `@ice/objects`' 81 in),
+entry bundles 11 → 9, shared chunks 9 → 8. On publish, vibe-field's pin advance is not a
+version edit: it is the desk migration, track DK (`vibe-field/draft/thinking-desk-migration.md`).
+VibeField REPLACES its integration rather than adapting it — the host mount (`CanvasStage` +
+`InfiniteCanvasGround` → `<Desk layer={deskLayer(…)}>` on `DESK_ENGINE`), its widgets re-cut
+as object kinds, its plugin door re-cut around `defineObject` — in one cutover on a landing
+branch (`desk/landing`), its pre-desk documents dropped rather than converted (DK-D13). The
+exact pin still moves in its three places together: `scripts/preflight.mjs:80-84`,
+`pnpm-workspace.yaml:92` and `:195` (re-read 2026-10-02 — two of the 0.13.0 row's line numbers
+above are stale). Per DK-D12, 0.14.0 is published as it stands and the asks (petitions
+I20–I25) follow as 0.15.0, with exact-pinned `0.15.0-desk.N` prereleases on `next` while the
+branch consumes them.
+
 **0.6.0 = M13** (SHIPPED as-built 2026-08-15) — vibe-field then re-cuts `contributes.behaviors` + `ctx.canvas.behaviors`
 (spec §8.8/§12.7 → v0.4) and the mind-map pack builds on behaviors. Each ICE release: pin
 assertions (one strata, one loro, **including `apps/*` declarations**), full `pnpm run ci`,

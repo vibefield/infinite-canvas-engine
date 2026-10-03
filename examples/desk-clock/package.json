@@ -14,7 +14,7 @@
     "dts:check": "node scripts/dts-check.mjs"
   },
   "peerDependencies": {
-    "@vibecook/ice": "^0.13.0"
+    "@vibecook/ice": "^0.14.0"
   },
   "devDependencies": {
     "@vibecook/ice": "workspace:*",

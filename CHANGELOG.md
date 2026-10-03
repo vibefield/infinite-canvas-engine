@@ -6,7 +6,77 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
-**design-015 — the desk (M20), IN BUILD; ships as 0.14.0 (D-D17 — the version bump and the publish
+## [0.14.0] — 2026-10-02
+
+**The first publish since 0.11.0, and it carries M20 + M21 + M22** — the desk (design-015), the kit and the
+pegboard (design-016/017), the tray refined (design-018). Neither `0.12.0` (cut 2026-08-31, `903f892`) nor
+`0.13.0` (cut 2026-09-07, `40c9ae8`) was published to npm — the registry's `latest` is still 0.11.0 — so the
+registry goes 0.11.0 → 0.14.0 in one step, and an upgrading consumer meets all three cuts' breaks. Their dated
+sections stay below as history; the block below routes through them in the order an upgrade meets them, and this
+section's `### Removed` is 0.14.0's own break list, export by export.
+
+### Breaking, at a glance
+
+From 0.11.0 an upgrade meets three cuts' breaks, in this order; each is spelled out with its migration in its own
+section.
+
+**First 0.12.0's — `WidgetSurface` is now `WidgetSurfaceKind`** (`[0.12.0]` › Breaking, narrowly): the
+`"dom" | "gl"` union that types `defineWidget({ surface })`, renamed. The migration is ONE identifier, and a consumer
+that passes `surface: "dom"` without ever naming the type is unaffected. 0.12.0's `### Added` and `### Fixed` do NOT
+ship (`[0.13.0]`'s head says why).
+
+**Then 0.13.0's — design-013 rebuilt the presentation layer in three phases** (`[0.13.0]` › Breaking, at a glance).
+**Phase A**, where a card presents is a FACT, not a policy: `defineWidget({ presentation })` and the whole
+`SurfacePresentation` family are RETIRED, and `@vibecook/ice/dom` loses the presentation registry and its policy.
+**Phase B**, the ground IS the compositor: the old composited leg is deleted, and `compositedNextProfile` is now
+`compositedProfile`. **Phase C**, the stratified ground is that same engine and `three` leaves `@ice/ground`:
+`ground()`, `groundHost` and `GroundProgramDefinition` are deleted and **`groundField()`** replaces them, a canvas
+type's ground `program` id is refused BY NAME, and `GridConfig` loses `spacings`, `fadeOut` and `levelWeight`.
+
+**Then this one's — design-015 made the desk the ONE presentation:** every object under the camera is drawn by one
+WebGPU renderer from the world, and the DOM lives only in screen space. What it replaced is deleted, not deprecated
+— there is no compatibility alias — and it takes with it things 0.12.0 and 0.13.0 renamed, added or reshaped:
+`WidgetSurfaceKind` (and `defineWidget`'s `surface` itself), `compositedProfile` with every profile, `./ground` with
+the subpaths 0.13.0 gave it, core's `GridConfig` (the desk's grid is `/desk`'s own) and the ground's field
+declaration (`presentation.ground`'s `glyph`, `grid`, `wires` and `guides` are refused by name; `ground: {}` stays a
+bare marker). In the order an upgrade meets them:
+
+- **`@vibecook/ice/r3f` and `@vibecook/ice/ground` are gone** (design-015 D5b — the desk is the one
+  presentation), and with them the unpublished cuts' `./r3f/webgpu`, `./ground/compose`, `./ground/packs` and
+  `./ground/engine`: the GL islands, `createGLBridge`, `<GLViews>`, the magnet field and the ground's engine. What
+  the ground proved carries as law in `/desk`; an object under the camera is a desk KIND with its own pass.
+- **`defineWidget` loses the DOM/R3F widget faces.** `surface`, `component`, `chrome`, `animated`, `preview`,
+  `instancePreview` and `sizeMode` — and a container's `framePreview` — are REFUSED at definition: the JS caller
+  TypeScript cannot stop gets a throw, not a silent drop. A widget's FACE is its `object` kind binding
+  (`defineObject` in `/desk`); a widget without one is faceless. `WidgetSurfaceKind` and `SizeMode` are gone.
+- **`three` is no longer a peer**, nor `@react-three/fiber`, and the `stats-gl` dependency is struck; `react` and
+  `react-dom` stay optional peers. `pack:audit` walks every entry and fails on any `three`, `@react-three` or
+  `stats-gl` edge.
+- **Four new entries, nine in all:** `.` · `/kernel` · `/dom` · **`/desk`** (the renderer, `deskLayer`,
+  `defineObject`, the kind registry, the theme) · **`/desk/engine`** (the raw-WebGPU engine) · **`/desk/objects`**
+  · **`/desk/kit`** (the render kit the six kinds share, public for a plugin kind) · `/react` · `/devtools`.
+  `/dom` is SCREEN SPACE only and gains `createDeskHost`.
+- **`<InfiniteCanvas>` is `<Desk engine layer={deskLayer(…)}>`** in `/react` (`keymapOverrides?`, and `onReady?`,
+  which may return a cleanup); its `ground`, `grid`, `glRoute`, `measureQueue`, `profile` and `chrome` props are
+  gone with the planes they configured. The desk draws the selection's marks itself; `<SelectionMenu>` is the menu
+  placed over them.
+- **The six reference kinds and `DESK_ENGINE`** (`/desk/objects` — `/desk` names no kind): the note, the mini mat,
+  the photo print, the whiteboard, the notebook and the calendar (`desk.note` · `desk.minimat` · `desk.photo` ·
+  `desk.board` · `desk.notebook` · `desk.calendar`; `DESK_OBJECTS`), their default look (`deskPalette`,
+  `deskTheme`) and the preset: `createCanvasEngine(DESK_ENGINE)` is the desk — `desk.select` in hand (a bare-mat
+  drag pans, shift draws the marquee), the scale-free zoom, the plain wheel zooming about the pointer, the
+  zoom-through on. They compile against the public entries alone, as a plugin kind does; `examples/desk-clock` is
+  the third-party witness.
+- **The pegboard tray** (design-016 K3 · K5, design-017, design-018): the widget tray is a drawer the desk draws.
+  A kind hangs on it by declaring a `tray` entry on `defineWidget`/`defineObject`; a drag takes a copy off (one
+  create transaction, one undo step); core's `openTray`/`closeTray`/`toggleTray`/`scrollTray` and
+  `setTrayCategory`/`trayCategories` drive it, `/react`'s `<TrayBar>` is its handle and its category chips, and
+  while it is open the desk under it is inert.
+
+Every item above is spelled out with its migration: 0.14.0's in the sections that follow (its break list, export
+by export, is `### Removed`), 0.13.0's and 0.12.0's in their own dated sections below.
+
+**design-015 — the desk (M20), LANDED; ships as 0.14.0 (D-D17 — the version bump and the publish
 are the release cut, not this ledger).** Every object under the camera is drawn by one WebGPU
 renderer from the world; the DOM lives only in screen space. The ladder built the desk BESIDE the
 old presentation and deleted the hybrid in one commit at D5b — `packages/r3f`, `packages/ground`,
@@ -1460,7 +1530,15 @@ design-kit's chrome + GL, the five product cards) is its OWN program (D-D17) —
 - **A press the open drawer took, shut under it (Esc, `a`), is let go**: it fell into the lip's branch, and a board press dragged
   10 px up after Esc opened the drawer again.
 
-## [0.13.0] — 2026-09-07
+## [0.13.0] — 2026-09-07 · a git release point, NOT published to npm
+
+**Install 0.14.0 for everything below.** The cut was real (`40c9ae8`, CI green, pack
+dry-run 317 files) and the entry stays rather than being folded upward, but no publish
+went out before design-015 replaced the presentation it describes, and the registry goes
+0.11.0 → 0.14.0 in one step — so the head below ("the first publish since 0.11.0") and
+`[0.12.0]`'s "Install 0.13.0" name a publish that never happened: 0.14.0 is it. The
+blocks dated after the 7th (C4 · S1–S4 · S4r · the copy's cost) were written here after
+the cut; `40c9ae8` does not contain them.
 
 **The first publish since 0.11.0.** `0.12.0` was CUT on 2026-08-31 (`903f892`) and
 never published to npm — the registry's `latest` is still 0.11.0. Its dated section
