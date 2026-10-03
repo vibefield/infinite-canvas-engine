@@ -30,7 +30,7 @@ fn vs(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32) -> VSO
   let F = faces[slot];
   if (F.ink.w <= 0.0) { return out; }
   let zoom = max(u.cam.z, 1e-12);
-  let dpr = max(u.cam.w, 1.0);
+  let dpr = max(u.cam.w, 1e-6);   // the attachment's own ratio, below 1 too (mat.wgsl `mat_dpr`, petition I29)
   let pad = 2.0 / (zoom * dpr);   // two device px of the edge's ramp
   let lo = (F.rect.xy - F.rect.zw - vec2f(pad) - u.cam.xy) * zoom;   // CSS px
   let hi = (F.rect.xy + F.rect.zw + vec2f(pad) - u.cam.xy) * zoom;
@@ -44,7 +44,7 @@ fn vs(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32) -> VSO
 fn fs(in: VSOut) -> @location(0) vec4f {
   let F = faces[in.idx];
   let zoom = max(u.cam.z, 1e-12);
-  let dpr = max(u.cam.w, 1.0);
+  let dpr = max(u.cam.w, 1e-6);
   let px = 1.0 / (zoom * dpr);                      // one device px, world units
   let p = in.clip.xy * px + u.cam.xy;               // device px → world
   let r = min(F.shape.x, min(F.rect.z, F.rect.w));

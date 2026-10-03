@@ -5,7 +5,10 @@
 // from src/mat/layout.ts prepended by the engine.
 
 fn mat_zoom(u: MatUniforms) -> f32 { return max(u.cam.z, 1e-12); }
-fn mat_dpr(u: MatUniforms) -> f32 { return max(u.cam.w, 1.0); }
+// The ATTACHMENT's own device ratio — below 1 for a capture's thumbnail (dpr × scale), the held desk copy (dpr / 2) and a page
+// zoomed out — guarded only against an unset block. Every fragment's CSS px is its device px over it: a floor at 1 put each one
+// at the wrong point of the desk there, and the flat kinds shaded nothing (petition I29).
+fn mat_dpr(u: MatUniforms) -> f32 { return max(u.cam.w, 1e-6); }
 
 // ---- the reference's noise (hash12 · valueNoise), on framebuffer pixels
 fn hash12(p: vec2f) -> f32 {

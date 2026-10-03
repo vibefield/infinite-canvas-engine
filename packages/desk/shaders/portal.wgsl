@@ -19,7 +19,7 @@ fn portal_sd(p: vec2f, half: vec2f, r: f32) -> f32 {
 // Coverage at a CSS-px point through ONE face grown by `grow` device px: 1 inside, 0 outside, a one-device-px ramp across the edge —
 // times, where the face has a feather, a smoothstep from 0 at its top edge to 1 the feather below it.
 fn portal_cover_one(p_css: vec2f, portal: vec4f, clip: vec4f, dpr: f32, grow: f32) -> f32 {
-  let px = 1.0 / max(dpr, 1.0);
+  let px = 1.0 / max(dpr, 1e-6);   // CSS px a device px — the attachment's own ratio, below 1 too (petition I29)
   let d = portal_sd(p_css - portal.xy, portal.zw, clip.x) - grow * px;
   let c = clamp(0.5 - d / px, 0.0, 1.0);
   if (clip.z <= 0.0) { return c; }

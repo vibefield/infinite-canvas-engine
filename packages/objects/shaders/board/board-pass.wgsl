@@ -76,7 +76,7 @@ fn vs(@builtin(vertex_index) vid: u32, @builtin(instance_index) iid: u32) -> Boa
 fn fs(in: BoardOut) -> @location(0) vec4f {
   let B = boards[in.idx];
   let zoom = max(u.cam.z, 1.0e-12);
-  let dpr = max(u.cam.w, 1.0);
+  let dpr = max(u.cam.w, 1.0e-6);
   let px = 1.0 / (zoom * dpr);           // world per device px
   let css = 1.0 / zoom;                  // world per CSS px
   let p = in.clip.xy * px + u.cam.xy;    // device px → world

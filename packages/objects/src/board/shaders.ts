@@ -77,7 +77,7 @@ export function boardCard(text: ShaderText): CardMaterial {
 export const BOARD_FRAGMENT = [
   "      let B = boards[slot];",
   "      let zoom = max(u.cam.z, 1.0e-12);",
-  "      let dpr = max(u.cam.w, 1.0);",
+  "      let dpr = max(u.cam.w, 1.0e-6);",
   "      let px = 1.0 / (zoom * dpr);           // world per device px",
   "      let css = 1.0 / zoom;                  // world per CSS px",
   "      let p = in.clip.xy * px + u.cam.xy;    // device px → world",
