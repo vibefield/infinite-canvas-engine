@@ -17,7 +17,9 @@
 // the cursor after (core's fold cut). The core follow-ups: a note dropped into the mini mat leaves the
 // selection (nothing to nudge or delete in there); ⌥ at a drag's start leaves a copy even when the note
 // goes in, one ⌘Z undoing both; a long-press hold on the drag's exit tick is the drag's (arbitration
-// decides once per tick). Exit 0 = every check passed.
+// decides once per tick). And the desk's pick (petition I27): on a showcase of its own, a right-click's point — read as a host
+// reads it, through `handle.pick` — names what a primary click there selects, at ten points, the note on top where two overlap.
+// Exit 0 = every check passed.
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
@@ -512,6 +514,101 @@ try {
   //     flown back out to the root desk (the exit clears the selection) and 8e and 8f (core) leave it as they found it; each kind
   //     lays its object in a stretch of the desk of its own, far from the notes and the mini mat
   await kindsRig({ q, qa: (js) => tab.evaluate(js, { awaitPromise: true, timeoutMs: 30000 }), entity, entities, mouse, click, key, sleep, settle, check, near, META, SHIFT });
+
+  // --- 16. THE DESK'S PICK (petition I27 — VibeField's right-click selects the object under the pointer, then grows the bar into its
+  //     menu): a showcase in a stretch of the desk no row above used — four notes in a row, each overlapping the next; a mini mat with
+  //     a note in its LIVE inside; a whiteboard; a notebook. A real RIGHT-click at each of ten points is read as a host reads it — a
+  //     `contextmenu` listener, the event's client point less the desk's container rect, through `handle.pick` — and then a PRIMARY
+  //     click at the same point (clear of the tap window) says what it selects. They agree everywhere: the note ON TOP where two overlap
+  //     (the later sibling), each note clear of the next, the live inside's note as drawn — its mini mat (the inside is no member of
+  //     this frame; a click there selects the mini mat) — and the face beside it, the whiteboard, the notebook; null on the bare mat
+  //     and on the ruler band (the rulers are printed on the mat), where the click selects nothing. The listener's pick changes no
+  //     selection, and ten picks in one task draw nothing and wake nothing.
+  {
+    const CAM = { x: -8000, y: 8000 };   // screen = world − CAM at zoom 1
+    const W = (x, y) => ({ x: x + CAM.x, y: y + CAM.y });
+    await key("Escape", "Escape", 27);
+    await q(`window.__desk.setCamera({ x: ${CAM.x}, y: ${CAM.y}, zoom: 1 }); window.__desk.bar(false)`);   // the tray's pill is DOM over the desk
+    await settle();
+    const pre = await q("({ depth: window.__desk.depth(), hand: window.__desk.hand(), tray: window.__desk.handle.tray.isOpen(), ruler: window.__desk.panel?.params.ruler ?? null })");
+    const show = await q(`(() => {
+      const d = window.__desk, ops = d.engine.ops;
+      const notes = ${JSON.stringify([150, 300, 450, 600].map((x) => W(x, 150)))}.map((at, i) => d.spawn("desk.note", { seed: 31 + i }, at));
+      const m = ${JSON.stringify(W(260, 520))};
+      const mat = ops.spawnWidget("desk.minimat", { x: m.x - 200, y: m.y - 150, w: 400, h: 300, props: { name: "Showcase" } });
+      const board = d.spawn("desk.board", {}, ${JSON.stringify(W(760, 520))});
+      const book = d.spawn("desk.notebook", { seed: 3, angle: 0 }, ${JSON.stringify(W(1080, 200))});
+      return { notes, mat, board, book };
+    })()`);
+    await settle();
+    const innerId = await q(`window.__desk.engine.ops.spawnWidget("desk.note", { x: 0, y: 0, w: 200, h: 200, parent: ${show.mat}, props: { seed: 35 } })`);
+    await settle();
+    const face = await q(`window.__desk.navFace(${show.mat})`);
+    const drawn = await q(`window.__desk.handle.builder.shows(${innerId})`);
+    // the inside note's centre (100, 100) in its own units, through the face's embedding M (inside → desk), as the face draws it at rest
+    const inside = { x: face.affine.s * 100 + face.affine.ox - CAM.x, y: face.affine.s * 100 + face.affine.oy - CAM.y };
+    const R = pre.ruler ?? { margin: 0, band: 0, on: false };
+    check(pre.depth === 0 && pre.hand === null && pre.tray === false && R.on === true && face.presence === 1 && drawn === true,
+      `the showcase laid at (${CAM.x}, ${CAM.y}): on the root desk (depth ${pre.depth}), nothing in hand, the drawer shut, the rulers printed (margin ${R.margin}, band ${R.band}); the mini mat's inside LIVE (presence ${face.presence}) with its note drawn in it (${drawn}) at (${inside.x.toFixed(1)}, ${inside.y.toFixed(1)})`);
+    const POINTS = [
+      { name: "two notes overlap — the one on top", x: 225, y: 150, want: show.notes[1] },
+      { name: "the first note, clear of the second", x: 100, y: 150, want: show.notes[0] },
+      { name: "the next two overlap — the one on top", x: 375, y: 150, want: show.notes[2] },
+      { name: "the last note, clear of the third", x: 650, y: 150, want: show.notes[3] },
+      { name: "the note drawn in the mini mat's live inside — its mini mat", x: inside.x, y: inside.y, want: show.mat },
+      { name: "the mini mat's face beside it", x: 110, y: 630, want: show.mat },
+      { name: "the whiteboard", x: 760, y: 520, want: show.board },
+      { name: "the notebook", x: 1080, y: 200, want: show.book },
+      { name: "the bare mat", x: 850, y: 200, want: null },
+      { name: "the left ruler's band", x: R.margin + R.band / 2, y: 300, want: null },
+    ];
+    const BARE = [850, 200];
+    // the host's listener: the right-click's point in CSS px of the view, the pick, and the selection either side of the pick
+    await q(`window.__pickHeard = []; addEventListener("contextmenu", (e) => {
+      e.preventDefault();
+      const d = window.__desk, r = d.handle.canvas.parentElement.getBoundingClientRect();
+      const point = { x: e.clientX - r.left, y: e.clientY - r.top };
+      const before = d.selection().join(), pick = d.handle.pick(point), after = d.selection().join();
+      window.__pickHeard.push({ point, pick, before, after });
+    }, { capture: true }); 0`);
+    const root = await q("window.__desk.engine.canvas.current().frame");
+    const typeOf = await q(`Object.fromEntries(${JSON.stringify([...show.notes, show.mat, show.board, show.book])}.map((id) => [id, window.__desk.entity(id)?.type]))`);
+    for (const p of POINTS) {
+      await q("window.__pickHeard.length = 0");
+      await mouse("mouseMoved", p.x, p.y, { button: "none" });
+      await mouse("mousePressed", p.x, p.y, { button: "right" });
+      await sleep(30);
+      await mouse("mouseReleased", p.x, p.y, { button: "right" });
+      await settle();
+      const heard = await q("window.__pickHeard");
+      await sleep(350);   // clear of the tap window (280 ms): the primary click is a click of its own, never a double
+      await click(p.x, p.y);
+      await settle();
+      const sel = await q("window.__desk.selection()");
+      await key("Escape", "Escape", 27);   // a click on a note puts the pen on it (D2c): down
+      await sleep(350);
+      await click(BARE[0], BARE[1]);       // and deselect, so no menu stands over the next point
+      await settle();
+      await sleep(350);
+      const h = heard[0];
+      const pick = h?.pick;
+      const agrees = pick === null ? sel.length === 0 : pick !== undefined && sel.length === 1 && sel[0] === pick.entity;
+      const right = p.want === null ? pick === null : pick?.entity === p.want && pick.type === typeOf[p.want] && pick.canvas === root && pick.part === "";
+      const said = pick === undefined ? "no contextmenu heard" : pick === null ? "null" : `${pick.type} #${pick.entity}${pick.part ? ` (${pick.part})` : ""}`;
+      check(heard.length === 1 && near(h.point.x, p.x, 0.5) && near(h.point.y, p.y, 0.5) && h.before === h.after && agrees && right,
+        `${p.name} (${p.x.toFixed(0)}, ${p.y.toFixed(0)}): the right-click's pick says ${said}; a primary click there selects [${sel.join(", ")}]`);
+    }
+    // ten picks in ONE task (nothing else runs between them): no redraw, no frame, no wake of the frame gate, no selection moved
+    const quiet = await q(`(() => {
+      const d = window.__desk, F = d.engine.engine.frame;
+      const read = () => JSON.stringify({ redraws: d.handle.redraws(), frames: d.handle.perf().frames, wakes: F.sleepStats().wakes, selection: d.selection() });
+      const a = read();
+      const got = ${JSON.stringify(POINTS.map((p) => [p.x, p.y]))}.map(([x, y]) => d.handle.pick({ x, y })?.entity ?? null);
+      return { same: read() === a, got };
+    })()`);
+    check(quiet.same && quiet.got.every((e, i) => e === POINTS[i].want), `ten picks in one task draw nothing, wake nothing and select nothing — and answer as above (${quiet.got.join(", ")})`);
+    await q("window.__desk.bar(true)");
+  }
 
   // --- 9. quiet at the end: no spring, nothing dirty
   const s = await settle();
