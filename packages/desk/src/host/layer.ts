@@ -47,6 +47,7 @@ import { heldSlots, type SelectionAnchor, withKindActs } from "../compose/marks"
 import { createPickSource } from "../compose/pick";
 import { createDeskReflector, type DeskReflector, type DeskReflectorStats, type DeskWakes, looksOf } from "../compose/reflector";
 import { acquire, adopt, type Gpu, type GpuOptions } from "../engine/device";
+import { createKindFaults, KIND_MISSING, type KindFault } from "../faults";
 import { type CaptureBytes, type CaptureOptions, checkCapture, Ground, type GroundFrameInputs } from "../ground";
 import type { KindProgram } from "../kind";
 import type { ObjectFlux, ObjectKind } from "../kinds/world";
@@ -175,8 +176,14 @@ export interface MatPin extends AmbientPin {
  * nobody captured (out of memory, a validation or an internal error): the desk still draws what it can, but a frame — or every frame,
  * an attachment left invalid — may be lost, and the state never reads `ready` again on its own (D7); `failed` — no desk (refused, or
  * the device lost). `message` names the cause.
+ *
+ * `faults` (petition I24) — the KINDS this desk draws as MISSING, each its name and why, in the order they went: refused at create (a
+ * pass that would not compile, a pipeline that failed validation) or quarantined at three strikes (a `resolve`, `record`, `chip`, `hit`,
+ * `tick` or `due` that threw — src/faults.ts). Absent while none is. One kind's fault is that kind's: the state does not move for it
+ * (`ready` stays `ready`), its objects wear the desk's missing face, nothing of it is called again. Each is said ONCE — the status
+ * moves when a kind goes missing (`onStatus` hears it; a kind refused at the boot rides the boot's own `ready`), never again for it.
  */
-export interface DeskLayerStatus { readonly state: "pending" | "ready" | "degraded" | "failed"; readonly message?: string }
+export interface DeskLayerStatus { readonly state: "pending" | "ready" | "degraded" | "failed"; readonly message?: string; readonly faults?: readonly KindFault[] }
 
 /** The mount context — the fields of `@ice/dom`'s `LayerContext` this layer reads, mirrored structurally (dom never imports the desk). */
 export interface DeskLayerContext {
@@ -422,7 +429,9 @@ export interface DeskLayerHandle {
   /**
    * The desk's registered wake taken apart (K7a — "why is the desk awake?"): when each part is next due, on `performance.now()`'s
    * clock (`Infinity`: never on its own) — the reflector's, the drivers' (now while one follows), a kind woken, each kind's `due`,
-   * the tray's layers' let-go (`tray`, K7a over K5a) and the raster queue's waiting asks (`rasters`, K6b: now while any wait).
+   * the tray's layers' let-go (`tray`, K7a over K5a) and the raster queue's waiting asks (`rasters`, K6b: now while any wait). A
+   * MISSING kind (petition I24) is a row of `kinds` whatever it declares: `KIND_MISSING` (−1 — no time; it is never due, nothing of
+   * it runs), and `at` never counts it.
    */
   due(now: number): { readonly at: number; readonly reflector: number; readonly drivers: number; readonly following: readonly string[]; readonly woken: readonly string[]; readonly kinds: Readonly<Record<string, number>>; readonly tray: number; readonly rasters: number };
   geometryOf(e: Entity): unknown | undefined;
@@ -553,8 +562,14 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     let profiler: GpuProfiler | undefined;
     let status: DeskLayerStatus = { state: "pending" };
     const statusHeard = new Set<(status: DeskLayerStatus) => void>();
-    /** Every move of the status goes through here, and `onStatus`'s listeners hear it (K9). */
-    const setStatus = (next: DeskLayerStatus): void => { status = next; for (const l of [...statusHeard]) l(next); };
+    /** THE KIND BOUNDARY (petition I24, faults.ts): every kind's faults on this desk — the builder, the pick, the tray and the ticks report to it. */
+    const faults = createKindFaults();
+    /** Every move of the status goes through here, and `onStatus`'s listeners hear it (K9) — carrying the missing kinds once any is (I24). */
+    const setStatus = (next: DeskLayerStatus): void => {
+      const { faults: _was, ...rest } = next;
+      status = faults.size > 0 ? { ...rest, faults: faults.list() } : rest;
+      for (const l of [...statusHeard]) l(status);
+    };
     let disposed = false;
     let ended = false;
     let grid: GridConfig = opts.grid ?? DEFAULT_GRID;
@@ -608,7 +623,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     }
     const keeps = (owner: string, key: string): boolean => locals.get(owner)?.keeps?.(key) ?? false;
     const readMarquee = ctx.readMarquee;
-    const builder = createDeskBuilder(world, { objects: [...types], locals, ...(opts.springs !== undefined ? { springs: opts.springs } : {}), ...(readMarquee !== undefined ? { marquee: readMarquee } : {}), ...(ctx.spatial !== undefined ? { spatial: ctx.spatial } : {}), ...(hold.reserves !== undefined ? { hold: hold.reserves } : {}) });
+    const builder = createDeskBuilder(world, { objects: [...types], locals, faults, ...(opts.springs !== undefined ? { springs: opts.springs } : {}), ...(readMarquee !== undefined ? { marquee: readMarquee } : {}), ...(ctx.spatial !== undefined ? { spatial: ctx.spatial } : {}), ...(hold.reserves !== undefined ? { hold: hold.reserves } : {}) });
     // the object types by name (K8a): what an object provides and what acts its type declares are read off its PrefabId
     const typeNamed = new Map([...types].map((t) => [t.type, t] as const));
     // the selection's KIND ACTS (K8a): what every selected object's type declares (`defineObject({ menu })`), read off its PrefabId
@@ -684,7 +699,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     };
     const compose = createDeskReflector({
       onFrame: () => { publish(); publishTray(); },
-      world, builder, kinds: objectKinds, ambient,
+      world, builder, kinds: objectKinds, ambient, faults,
       ground: () => ground,
       attach: { resize: (w, h) => { if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; } } },
       theme: opts.theme, palette: opts.palette, grid, locals,
@@ -701,6 +716,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // openable kind with held tools gets its driver the same way. Ticked before the kinds' clocks; idle ones skipped (D7 #14)
     const docs: TypingDocs = opts.docs ?? NO_DOCS;
     const drivers = new Map<string, KindDriver>();
+    /** Each driver's kind, by object type — a MISSING kind's drivers are parked (petition I24: they follow nothing; disposed with the layer). */
+    const driverKinds = new Map<string, string>();
+    const parked: KindDriver[] = [];
     // an INSERT GHOST (core's tray adoption, K5b) is no kind's to drive: its drag is core's until it lands (a print's carry, a pad's
     // hand, a note's typing never take it) — the twin it becomes is theirs
     const ofKind = (e: Entity, name: string): boolean => builder.kindOf(e)?.name === name && !world.has(e, InsertGhost);
@@ -718,7 +736,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         geometryOf: (e) => builder.geometryOf(e), heldToWorld: (e, x, y) => builder.heldToWorld(e, x, y), hand: () => builder.hand(),
         refused: (e) => builder.meetTape(e), wake: () => compose.wake("ink"),
       });
-      if (d !== undefined) drivers.set(t.type, d);
+      if (d !== undefined) { drivers.set(t.type, d); driverKinds.set(t.type, k.name); }
     }
     const driver = (type: string): KindDriver | undefined => drivers.get(type);
     // THE ONE FOCUSED EDITOR (D2c; the DESK's since K8a — host/editor.ts): made here whatever kinds are registered, and LEASED by
@@ -768,9 +786,14 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         restless.clear();
         for (const [name, local] of locals) {
           if (local.tick === undefined) continue;
-          if (timeAlone && !woken.has(name) && (local.due?.(now) ?? now) > now) continue;
-          kindTicks[name] = (kindTicks[name] ?? 0) + 1;
-          if (local.tick(now)) { want = true; restless.add(name); }
+          // THE KIND'S BOUNDARY (petition I24): a `due` or a `tick` that throws is a strike, and the kind is not ticked this step
+          let call = "due";
+          try {
+            if (timeAlone && !woken.has(name) && (local.due?.(now) ?? now) > now) continue;
+            kindTicks[name] = (kindTicks[name] ?? 0) + 1;
+            call = "tick";
+            if (local.tick(now)) { want = true; restless.add(name); }
+          } catch (err) { faults.strike(name, call, err); }
         }
         woken.clear();
         ground?.idleTray();   // the tray's own slots let their layers go once undrawn a while, as the kinds' ticks do the root's (D-K6a.3, K5a)
@@ -799,12 +822,19 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // THE DESK'S REGISTERED WAKE (K7a, `@ice/core` frame-control.ts): after every step the loop asks when the desk is next due — now
     // while a driver follows or a kind was woken, else the soonest of the reflector's (a frame owed, the wind still moving) and each
     // kind's own `due` (a motion now, a blink or a layer's release later, nothing at all); a face landing wakes it
+    /** A kind's `due` asked through the boundary (petition I24): a throw is a strike (its name found by its state — only then), never due. */
+    const dueOf = (local: KindLocal, now: number): number => {
+      try { return local.due?.(now) ?? now; } catch (err) {
+        for (const [name, l] of locals) if (l === local) { faults.strike(name, "due", err); break; }
+        return Number.POSITIVE_INFINITY;
+      }
+    };
     const deskDue = (now: number): number => {
       let t = following || woken.size > 0 ? now : compose.due(now);
       // each kind asked AFTER the step (its draw may have landed something); a kind that never said when is due every frame
       for (const local of locals.values()) {
         if (local.tick === undefined) continue;
-        const d = local.due?.(now) ?? now;
+        const d = dueOf(local, now);
         if (d < t) t = d;
       }
       // the tray's layers (K5a): their release is a TIME — the last tray draw + LAYER_IDLE_MS — so a desk asleep since the drawer
@@ -817,6 +847,32 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     };
     const stopWake = frame?.wakeWhen("desk", deskDue);
     const stopText = opts.text?.onVersion?.(() => frame?.wake("desk:text"));
+
+    /**
+     * A kind gone MISSING (petition I24) STOPS COSTING, not merely drawing (design-009 §16.7's word for a suspended behavior): its desk
+     * state's `dispose` called and the state let go (no tick, no `due`, no word asked of it again), its drivers parked (disposed with
+     * the layer), its raster asks dropped and its charges forgotten, its passes swapped for the missing face in every slot and disposed
+     * (the ground's quarantine) — and the desk woken, so the next frame draws its objects in the missing face.
+     */
+    const retire = (name: string): void => {
+      const local = locals.get(name);
+      locals.delete(name);
+      woken.delete(name);
+      for (const [type, kind] of driverKinds) {
+        const d = drivers.get(type);
+        if (kind === name && d !== undefined) { drivers.delete(type); parked.push(d); }
+      }
+      rasters.clear(name);
+      budget.forget(name);
+      try { local?.dispose?.(); } catch (err) { console.error(`[ice] desk: the missing kind "${name}"'s desk state threw in its dispose`, err); }
+      ground?.quarantine(name);
+      compose.wake("ink");
+    };
+    // said ONCE (petition I24): the status moves with the kind named (a kind refused at the boot rides the boot's own `ready`)
+    faults.subscribe((f) => {
+      retire(f.kind);
+      if (status.state !== "pending") setStatus(status);
+    });
 
     // the pick source (design-015 §4.5): the kinds' mirrors on the builder's geometry — set now, `undefined` for what it cannot see yet (B9)
     const pick = createPickSource(builder, { moving: () => moving });
@@ -879,10 +935,14 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           if (shared === undefined) ownDevice = g.device;
           if (opts.gpuLedger === true) ledger = instrumentMemory(g.device);   // before the ground makes anything
           opts.onDevice?.(g.device);
-          const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)), tray: trayShaders(shaderText) });
+          // each kind's pass in its own error scope (petition I24): a kind refused there is MISSING — the rest boot; a GPU error the
+          // kinds' window caught that no kind raises alone is the device's, as it would have been
+          const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)), tray: trayShaders(shaderText), ...(events.onError !== undefined ? { onError: events.onError } : {}) });
           if (disposed || ended) { made.dispose(); return; }
           made.mat.setNoise(blueNoise());   // the desk's own noise; the plates are the app's (`setPlate`)
           made.grid = grid;
+          // the kinds refused at create: missing from the first frame, said once — with the boot's own `ready` (the status is still pending)
+          for (const f of made.faults()) faults.refuse(f.kind, f.reason);
           ground = made;
           if (status.state === "pending") setStatus({ state: "ready" });   // an error while it booted keeps its word
           compose.ready();
@@ -954,6 +1014,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       hand: () => builder.hand(),
       setPortals: (on) => compose.pinBuild({ portals: on }),
       tuneLaw(kind, law) {
+        if (faults.missing(kind)) return;   // nothing of a missing kind is called again (petition I24)
         for (const t of types) { const k = objectKindOf(t); if (k?.name === kind) k.tune?.(law); }
         ground?.root.kinds.get(kind)?.pass.setLaw?.(law);
         builder.invalidate();   // every record was made under the old law (D6)
@@ -1011,7 +1072,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       wakes: () => compose.wakes(),
       due: (now) => {
         const kinds: Record<string, number> = {};
-        for (const [name, local] of locals) if (local.tick !== undefined) kinds[name] = local.due?.(now) ?? now;
+        for (const [name, local] of locals) if (local.tick !== undefined) kinds[name] = dueOf(local, now);
+        // a MISSING kind is a row whatever it declared (petition I24): no time — never due, nothing of it runs
+        for (const f of faults.list()) kinds[f.kind] = KIND_MISSING;
         // the drivers with something to follow NOW (their `idle` asked — a rig's question, never the loop's)
         const busy: string[] = [];
         for (const [type, d] of drivers) if (d.idle?.() !== true) busy.push(type);
@@ -1024,7 +1087,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       dirty: () => {
         if (compose.dirty() || woken.size > 0) return true;
         const now = performance.now();
-        for (const local of locals.values()) if (local.tick !== undefined && (local.due?.(now) ?? now) <= now) return true;
+        for (const local of locals.values()) if (local.tick !== undefined && dueOf(local, now) <= now) return true;
         return false;
       },
       builder,
@@ -1072,7 +1135,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         listeners.clear();
         trayListeners.clear();
         statusHeard.clear();
-        for (const d of drivers.values()) d.dispose?.();   // the calendar's disposes its DOM half
+        for (const d of [...drivers.values(), ...parked]) d.dispose?.();   // the calendar's disposes its DOM half (a missing kind's parked ones too)
         editor.dispose();
         for (const local of locals.values()) local.dispose?.();
         motionQuery?.removeEventListener("change", syncMotion);

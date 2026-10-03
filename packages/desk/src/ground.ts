@@ -42,7 +42,11 @@
 // no clock — and cost nothing while no portal is on screen and no flight is on.
 
 import type { Surface } from "./engine/device";
-import { CardPass, createCardShared } from "./card/card";
+import { CardPass, type CardShared, createCardShared } from "./card/card";
+import { faultText, type KindFault } from "./faults";
+import { MISSING_KIND } from "./missing/object";
+import { type MissingFaces, missingFaces } from "./missing/pass";
+import { swapToMissing } from "./missing/slots";
 import { beginPass, Target } from "./engine/target";
 import { HoldPass } from "./hold/focus";
 import type { HoldShaders } from "./hold/shaders";
@@ -107,6 +111,11 @@ export interface GroundOptions {
    * `tray`. Absent = a ground with no tray.
    */
   readonly tray?: TrayShaders;
+  /**
+   * A GPU error the kinds' creation window caught that no kind raises alone (petition I24, `createKindPasses`): not a kind's — told
+   * here as the device would have told its uncaptured-error handler (the layer's `onError`: `degraded`). Absent: it is said on the console.
+   */
+  readonly onError?: (error: GPUError) => void;
 }
 
 /** A layer a host rendered first, laid on the mat inside the ground's pass (it sets its own scissor; the ground restores the slot's). */
@@ -227,9 +236,22 @@ export interface SlotKind {
 /** The passes one slot owns: the mat's, and every registered kind's by name, in registration order. The root's are the ground's; the pool spawns the rest on the same pipelines. */
 export interface SlotSet {
   readonly mat: CuttingMat;
+  /**
+   * Every registered kind's entry — a MISSING kind's (petition I24) drawn by a spawn of the slot's missing face under the kind's own
+   * name and stratum — and, made on the first object that names it, `MISSING_KIND`'s (an object whose type has no kind). The ground
+   * swaps an entry when a kind goes missing (`Ground.quarantine`); nothing else writes the map.
+   */
   readonly kinds: ReadonlyMap<string, SlotKind>;
   /** The slot's FLAT-CARD pass (K7b, card/card.ts) over its kinds — absent when no registered kind declares a card material. */
   readonly card?: CardPass;
+  /**
+   * The desk's MISSING FACES (petition I24, missing/ — the root's alone): what draws an object nothing can draw, spawned on a slot's
+   * mat into a kind's entry when the kind goes missing; nothing of them is made until the first is asked for. Absent on a slot set
+   * made by hand (a unit's): such an object is then refused as an unregistered kind is.
+   */
+  readonly missing?: MissingFaces;
+  /** The kinds REFUSED at create (the root's alone; petition I24): each its name and why — their entries draw the missing face from the start. */
+  readonly faults?: readonly KindFault[];
 }
 
 /** One slot's passes for `drawFrame` — the ground's own, or the oracle's. A parent carries its nested slots. */
@@ -258,34 +280,136 @@ export interface DrawSlot {
 /** A slot at opacity 0 draws nothing: "source over" with alpha 0 leaves every pixel as it was. */
 export const visible = (p: Presentation | undefined): boolean => (p?.opacity ?? 1) > 0;
 
-/**
- * The root slot's passes: the mat's (made first — every kind's pass is made on it) and every registered
- * kind's, made in parallel on the root's mat, in registration order. Names must be unique and strata known.
- * Shared by the ground and the Node oracle.
- */
-export async function createSlotSet(device: GPUDevice, format: GPUTextureFormat, mat: CuttingMat, programs: readonly KindProgram[]): Promise<SlotSet> {
+/** A registry the ground can draw: names unique and not the desk's own `MISSING_KIND`, strata known — a host's error, thrown at create. */
+function checkPrograms(programs: readonly KindProgram[]): void {
   const names = new Set<string>();
   for (const p of programs) {
     if (!p.name) throw new Error("ground: a kind needs a name — it is the kind's key in every slot");
+    if (p.name === MISSING_KIND) throw new Error(`ground: the kind name "${MISSING_KIND}" is the desk's own — the missing face's (petition I24)`);
     if (names.has(p.name)) throw new Error(`ground: two kinds are named "${p.name}" — a kind's name is its key in every slot`);
     if (!STRATA.includes(p.stratum)) throw new Error(`ground: kind "${p.name}" lies in no stratum the ground draws ("${p.stratum}"; ${STRATA.join(", ")})`);
     names.add(p.name);
   }
-  const [passes, cards] = await Promise.all([Promise.all(programs.map((p) => p.create(device, format, mat))), createCardShared(device, format, programs)]);
+}
+
+/** The error filters a kind's create is watched under (the oracle's probe's three). */
+const SCOPES: readonly GPUErrorFilter[] = ["validation", "out-of-memory", "internal"];
+/** A device with error scopes — every WebGPU device; a unit's stub may have none (it is not watched: a rejection still refuses). */
+const watched = (device: GPUDevice): boolean => typeof (device as { pushErrorScope?: unknown }).pushErrorScope === "function";
+const pushScopes = (device: GPUDevice): void => { if (watched(device)) for (const f of SCOPES) device.pushErrorScope(f); };
+/** The three scopes popped, all at once (no await between them — another task's scope is never taken for ours): the first error any held. */
+function popScopes(device: GPUDevice): Promise<GPUError | null> {
+  if (!watched(device)) return Promise.resolve(null);
+  const popped = SCOPES.map(() => device.popErrorScope());
+  return Promise.all(popped).then((errors) => errors.find((e) => e !== null) ?? null);
+}
+/** A promise's outcome, never a rejection. */
+const settle = <T>(p: () => Promise<T>): Promise<{ readonly value: T } | { readonly error: unknown }> => {
+  try { return Promise.resolve(p()).then((value) => ({ value }), (error: unknown) => ({ error })); } catch (error) { return Promise.resolve({ error }); }
+};
+/** A kind's pass let go — its own code, so a throw there is said and never stops the rest. */
+function letGo(name: string, pass: KindPass): void {
+  try { pass.dispose(); } catch (err) { console.error(`desk: the kind "${name}"'s pass threw in its dispose`, err); }
+}
+
+/** What `createKindPasses` made: each program's root pass in registration order (undefined: refused), and the refusals. */
+export interface KindPasses {
+  readonly passes: readonly (KindPass | undefined)[];
+  readonly faults: readonly KindFault[];
+}
+
+/**
+ * EVERY KIND'S PASS, EACH IN ITS OWN ERROR SCOPE (petition I24 — one kind's create is that kind's): made in parallel on the root's mat,
+ * as before, each settled alone — a create that rejects (a WGSL that does not compile — the engine's `compile` throws — a pipeline the
+ * device refused) or whose own scope caught an error is REFUSED, and the rest stand. A kind's scope is pushed before its `create` is
+ * called and popped as it returns, so it holds what the kind does before its first await (its layouts, its shader modules — where a
+ * compile error is raised); a WINDOW scope around them all holds whatever any kind does after (a pipeline made synchronously after an
+ * await). When the window caught something, whose it was is found by making each kind that stood ALONE again, wholly in a scope of its
+ * own, one after another (its first pass let go) — a fault's cost; a desk with none pays three scopes a kind. An error the window
+ * caught that no kind raises alone is not a kind's: `onError` hears it (the device's handler would have — the layer's `degraded`).
+ * Nothing else may run on the device while the window is open: the card, the missing face and the chrome are made after it.
+ */
+export async function createKindPasses(device: GPUDevice, format: GPUTextureFormat, mat: CuttingMat, programs: readonly KindProgram[], onError?: (error: GPUError) => void): Promise<KindPasses> {
+  pushScopes(device);   // THE WINDOW
+  const made = programs.map((p) => {
+    pushScopes(device);   // the kind's own: what it does before its first await
+    const created = settle(() => p.create(device, format, mat));
+    return { created, own: popScopes(device) };
+  });
+  const first = await Promise.all(made.map(async (m) => ({ created: await m.created, own: await m.own })));
+  const window = await popScopes(device);
+  const passes: (KindPass | undefined)[] = [];
+  const faults: KindFault[] = [];
+  const refuse = (p: KindProgram, why: string): void => { faults.push({ kind: p.name, reason: why }); };
+  const threw = (err: unknown): string => `refused at create — ${faultText(err)}`;
+  const raised = (err: GPUError): string => `refused at create — a GPU error while its pass was made: ${faultText(err)}`;
+  first.forEach(({ created, own }, i) => {
+    const p = programs[i] as KindProgram;
+    if ("error" in created) { passes.push(undefined); refuse(p, threw(created.error)); return; }
+    if (own !== null) { passes.push(undefined); letGo(p.name, created.value); refuse(p, raised(own)); return; }
+    passes.push(created.value);
+  });
+  if (window !== null) {
+    let found = false;
+    for (let i = 0; i < programs.length; i++) {
+      const p = programs[i] as KindProgram;
+      const had = passes[i];
+      if (had === undefined) continue;
+      letGo(p.name, had);
+      pushScopes(device);
+      const again = await settle(() => p.create(device, format, mat));
+      const own = await popScopes(device);
+      if ("error" in again) { passes[i] = undefined; found = true; refuse(p, threw(again.error)); continue; }
+      if (own !== null) { passes[i] = undefined; found = true; letGo(p.name, again.value); refuse(p, raised(own)); continue; }
+      passes[i] = again.value;
+    }
+    if (!found) onError?.(window);
+  }
+  // in registration order, as the kinds are
+  faults.sort((a, b) => programs.findIndex((p) => p.name === a.kind) - programs.findIndex((p) => p.name === b.kind));
+  return { passes, faults };
+}
+
+/**
+ * The root slot from what was made: each kind's entry — a refused kind's drawn by the desk's missing faces under its name and stratum
+ * (petition I24: their pipeline made now, as the first is asked for) — and the card over the kinds that stood (K7b: their materials
+ * composed into ONE pipeline, their objects interleaving in one run).
+ */
+function slotSetOf(device: GPUDevice, mat: CuttingMat, programs: readonly KindProgram[], made: KindPasses, missing: MissingFaces, cards: CardShared | null): SlotSet {
   const kinds = new Map<string, SlotKind>();
   for (let i = 0; i < programs.length; i++) {
     const p = programs[i] as KindProgram;
-    kinds.set(p.name, { name: p.name, stratum: p.stratum, pass: passes[i] as KindPass, ...(p.composite ? { composite: true } : {}) });
+    const pass = made.passes[i];
+    kinds.set(p.name, pass === undefined ? { name: p.name, stratum: p.stratum, pass: missing.spawn(mat) } : { name: p.name, stratum: p.stratum, pass, ...(p.composite ? { composite: true } : {}) });
   }
-  // the kinds that declare a card material, composed into ONE pipeline (K7b): their objects interleave in one run
-  return cards === null ? { mat, kinds } : { mat, kinds, card: new CardPass(device, cards, mat, kinds) };
+  const card = cards === null ? undefined : new CardPass(device, cards, mat, kinds);
+  return { mat, kinds, missing, ...(card !== undefined ? { card } : {}), ...(made.faults.length > 0 ? { faults: made.faults } : {}) };
 }
+
+/** The kinds that stood (their passes made): what the card composes. */
+const standing = (programs: readonly KindProgram[], made: KindPasses): KindProgram[] => programs.filter((_, i) => made.passes[i] !== undefined);
+
+/**
+ * The root slot's passes: the mat's (made first — every kind's pass is made on it), every registered kind's — made in parallel on the
+ * root's mat, in registration order, each in its own error scope (`createKindPasses`: a kind refused there is MISSING, petition I24) —
+ * then the card over the kinds that stood, and the desk's missing faces (made only if a kind was refused). Names must be unique and
+ * strata known. Shared by the ground and the Node oracle (whose `onError` is its probe's: it watches the creation in scopes of its own).
+ */
+export async function createSlotSet(device: GPUDevice, format: GPUTextureFormat, mat: CuttingMat, programs: readonly KindProgram[], onError?: (error: GPUError) => void): Promise<SlotSet> {
+  checkPrograms(programs);
+  const made = await createKindPasses(device, format, mat, programs, onError);
+  const cards = await createCardShared(device, format, standing(programs, made));
+  return slotSetOf(device, mat, programs, made, missingFaces(device, format, mat), cards);
+}
+
 
 /** Slots beyond the root, spawned on first use and reused every frame: `reset()` then `acquire()` per slot the frame needs. */
 export class SlotPool {
   private readonly slots: SlotSet[] = [];
   private used = 0;
   private readonly root: SlotSet;
+  /** False once a kind the card composes went missing (petition I24 — `Ground.quarantine`): every slot's card, spawned or yet to be, is off. */
+  cardOn = true;
   constructor(root: SlotSet) { this.root = root; }
   reset(): void { this.used = 0; }
   /** The next slot: on first use its mat spawned from the root's, then every registered kind's pass on that mat, in registration order. */
@@ -295,10 +419,13 @@ export class SlotPool {
       const kinds = new Map<string, SlotKind>();
       for (const k of this.root.kinds.values()) kinds.set(k.name, { name: k.name, stratum: k.stratum, pass: k.pass.spawn(mat), ...(k.composite ? { composite: true } : {}) });
       const card = this.root.card?.spawn(mat, kinds);
+      if (card !== undefined && !this.cardOn) card.on = false;
       this.slots.push(card === undefined ? { mat, kinds } : { mat, kinds, card });
     }
     return this.slots[this.used++] as SlotSet;
   }
+  /** Every slot spawned so far (a quarantine walks them). */
+  each(fn: (s: SlotSet) => void): void { for (const s of this.slots) fn(s); }
   /** Slots spawned so far — the churn instrument. */
   get size(): number { return this.slots.length; }
   dispose(): void { for (const s of this.slots) { s.mat.dispose(); s.card?.dispose(); for (const k of s.kinds.values()) k.pass.dispose(); } this.slots.length = 0; this.used = 0; }
@@ -453,7 +580,14 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
     for (const name of s.kinds.keys()) { records.set(name, []); keys.set(name, []); }
     const indexOf: number[] = [];
     for (const o of objects) {
-      const list = records.get(o.kind);
+      let list = records.get(o.kind);
+      if (!list && o.kind === MISSING_KIND && root.missing !== undefined) {
+        // an object whose type has no kind (petition I24): the desk's missing faces under the desk's own name, made on the slot's first
+        (s.kinds as Map<string, SlotKind>).set(MISSING_KIND, { name: MISSING_KIND, stratum: "things", pass: root.missing.spawn(s.mat) });
+        list = [];
+        records.set(MISSING_KIND, list);
+        keys.set(MISSING_KIND, []);
+      }
       if (!list) throw new Error(`ground: no kind "${o.kind}" is registered (${[...s.kinds.keys()].join(", ") || "none"})`);
       indexOf.push(list.length);
       list.push(o.record);
@@ -494,7 +628,8 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
     const drawn: [string, number][] = [];
     for (const k of s.kinds.values()) {
       const list = records.get(k.name) ?? [];
-      if (list.length === 0) { drawn.push([k.name, 0]); continue; }
+      // (the missing face's own entry is no registered kind: it is counted where it drew, never as a 0 — petition I24)
+      if (list.length === 0) { if (k.name !== MISSING_KIND) drawn.push([k.name, 0]); continue; }
       const own = root.kinds.get(k.name);
       if (own && k.pass !== own.pass) k.pass.tune?.(own.pass);
       const told = live.get(k.name);
@@ -696,27 +831,72 @@ export class Ground {
   heldCopies(): number { return this.heldCache.copies; }
   /** The drops last said, by kind (D7). */
   private readonly dropSaid = new Map<string, number>();
+  /** The kinds MISSING on this ground (petition I24): refused at create, or quarantined since — their entries draw the missing face. */
+  private readonly missing = new Set<string>();
 
   private constructor(device: GPUDevice, surface: Surface, root: SlotSet, marks: MarksPass | null, hold: HoldPass | null, tray: TrayPass | null, programs: readonly KindProgram[]) {
     this.device = device; this.surface = surface; this.mat = root.mat; this.root = root; this.marks = marks; this.hold = hold; this.tray = tray;
     this.pool = new SlotPool(root);
     this.traySlots = tray === null ? null : new TraySlots(device, surface.format, root, programs);
+    for (const f of root.faults ?? []) this.missing.add(f.kind);
   }
 
+  /**
+   * The mat first (every kind's pass is made on it), then every kind's pass in its own error scope (`createKindPasses` — a kind refused
+   * there is MISSING from the start: `faults()`, petition I24), then — once the kinds' window has closed, so nothing of theirs is taken
+   * for a kind's — the card over the kinds that stood, the marks, the hand and the tray, together. The missing faces are made only when
+   * one is asked for (a kind refused here, a quarantine, an object with no kind).
+   */
   static async create(opts: GroundOptions): Promise<Ground> {
     const surf = opts.surface;
     const mat = await CuttingMat.create(opts.device, surf.format, opts.mat);
-    const root = await createSlotSet(opts.device, surf.format, mat, opts.kinds);
-    const [marks, hold, tray] = await Promise.all([
+    checkPrograms(opts.kinds);
+    const made = await createKindPasses(opts.device, surf.format, mat, opts.kinds, opts.onError ?? ((e) => console.error("desk: a GPU error while the kinds were made, no kind's alone", e.message)));
+    const [cards, marks, hold, tray] = await Promise.all([
+      createCardShared(opts.device, surf.format, standing(opts.kinds, made)),
       opts.marks === undefined ? null : MarksPass.create(opts.device, surf.format, opts.marks, mat),
       opts.hold === undefined ? null : HoldPass.create(opts.device, surf.format, opts.hold),
       opts.tray === undefined ? null : TrayPass.create(opts.device, surf.format, opts.tray, mat),
     ]);
-    return new Ground(opts.device, surf, root, marks, hold, tray, opts.kinds);
+    return new Ground(opts.device, surf, slotSetOf(opts.device, mat, opts.kinds, made, missingFaces(opts.device, surf.format, mat), cards), marks, hold, tray, opts.kinds);
   }
 
-  /** The root's pass of the kind registered as `name` (undefined if none) — a host reaches its kind's own API through it: the note's ink pages, the whiteboard's rasters. */
-  pass(name: string): KindPass | undefined { return this.root.kinds.get(name)?.pass; }
+  /**
+   * The root's pass of the kind registered as `name` (undefined if none, or MISSING — petition I24: nothing of a missing kind is reached
+   * again) — a host reaches its kind's own API through it: the note's ink pages, the whiteboard's rasters.
+   */
+  pass(name: string): KindPass | undefined { return this.missing.has(name) ? undefined : this.root.kinds.get(name)?.pass; }
+
+  /** The kinds REFUSED when this ground was made (petition I24): each its name and why. Quarantines since are the layer's word. */
+  faults(): readonly KindFault[] { return this.root.faults ?? []; }
+
+  /**
+   * THE QUARANTINE (petition I24): kind `name` is MISSING from now on — its entry in every slot this ground holds (the root, the pool's,
+   * the tray's) becomes a spawn of that slot's missing face, under its name and in its stratum, and the passes it had are disposed (the
+   * pool's and the tray's first; the root's — whose shared resources go with it — last; a dispose that throws is said and passed). A
+   * kind the flat card composes turns the card off in every slot, for good (K7b's own A/B door: each material kind then draws its own
+   * runs — the card's pixels, more draws): its resources leave the card's bind group, and no draw may reach them. The next frame draws
+   * the kind's objects in the missing face (the builder makes their records so); one already made for its own pass is drawn as nothing.
+   * A kind already missing, or none of that name: nothing.
+   */
+  quarantine(name: string): void {
+    if (this.missing.has(name) || !this.root.kinds.has(name)) return;
+    this.missing.add(name);
+    if (this.root.card?.materialOf(name) !== undefined) {
+      this.root.card.on = false;
+      this.pool.cardOn = false;
+      this.pool.each((s) => { if (s.card !== undefined) s.card.on = false; });
+    }
+    const faces = this.root.missing;
+    const gone: KindPass[] = [];
+    this.pool.each((s) => { const p = swapToMissing(s, name, faces); if (p !== undefined) gone.push(p); });
+    gone.push(...(this.traySlots?.quarantine(name, faces) ?? []));
+    const root = swapToMissing(this.root, name, faces);
+    if (root !== undefined) gone.push(root);
+    for (const p of gone) letGo(name, p);
+    // the desk copy behind a hand drew the kind's own pixels: the next held frame makes it again (a stamp no frame carries)
+    if (this.heldCache.stamp !== null) this.heldCache.stamp = "";
+  }
 
   /** Size the canvas to its CSS box; returns the CSS size and dpr the frame should use. (A host may size the canvas itself instead.) */
   fit(maxDpr = 2) { return this.surface.fit(maxDpr); }
@@ -758,8 +938,8 @@ export class Ground {
     return stats;
   }
 
-  /** The pool's slots, then the root's kinds in reverse registration order, then the mat. */
-  dispose(): void { this.pool.dispose(); this.traySlots?.dispose(); this.root.card?.dispose(); for (const k of [...this.root.kinds.values()].reverse()) k.pass.dispose(); this.marks?.dispose(); this.hold?.dispose(); this.tray?.dispose(); this.mat.dispose(); }
+  /** The pool's slots, then the root's kinds in reverse registration order (a missing kind's face among them), its missing face, then the mat. */
+  dispose(): void { this.pool.dispose(); this.traySlots?.dispose(); this.root.card?.dispose(); for (const k of [...this.root.kinds.values()].reverse()) k.pass.dispose(); this.root.missing?.dispose(); this.marks?.dispose(); this.hold?.dispose(); this.tray?.dispose(); this.mat.dispose(); }
 
   /** Make the passes the tray's composite specimens need (K5a — `TraySlots.warm`); `onReady` asks for the frame that shows them. */
   warmTray(wanted: readonly (readonly [string, string])[], onReady: () => void): void { this.traySlots?.warm(wanted, onReady); }

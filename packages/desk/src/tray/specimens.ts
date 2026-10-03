@@ -8,12 +8,16 @@
 // SPAWNED from the root's, a composite kind's (root only, D-D18) made from its program the first time the tray shows one.
 
 import { specimenFit, type TrayAccessory } from "@ice/kernel";
+import type { KindFaults } from "../faults";
 import type { GridConfig } from "../mat/grid";
 import type { Lamp } from "../mat/lamp";
 import type { SlotKind, SlotSet } from "../ground";
-import type { KindProgram } from "../kind";
+import type { KindPass, KindProgram } from "../kind";
 import { LAYER_IDLE_MS } from "../kit/layer";
 import type { ObjectContext, ObjectKind } from "../kinds/world";
+import { missingFace } from "../missing/layout";
+import type { MissingFaces } from "../missing/pass";
+import { swapToMissing } from "../missing/slots";
 import type { View } from "../lattice/lod";
 import type { PortalClip, Presentation } from "../nav/portal";
 import type { GroundTheme } from "../theme";
@@ -76,6 +80,21 @@ export interface TraySpecimenEnv {
   readonly grid: GridConfig;
   readonly looks: ReadonlyMap<string, unknown>;
   readonly lift: (type: string) => number;
+  /**
+   * THE KIND BOUNDARY (petition I24, faults.ts): a MISSING kind's specimen is recorded as the missing face, and a kind whose `resolve`
+   * or `record` throws here takes a strike and its specimen is left out of this frame. Absent (the oracle's stills): a throw is the caller's.
+   */
+  readonly faults?: KindFaults;
+}
+
+/**
+ * One specimen's or carried copy's record by its kind, through the boundary: the missing face for a missing kind; the kind's own
+ * record otherwise — or, when it throws under a boundary, a strike and `undefined` (the frame goes on without it).
+ */
+function recordOf(kind: ObjectKind, ctx: ObjectContext, faults: KindFaults | undefined): unknown {
+  if (faults === undefined) return kind.record(kind.resolve(ctx), ctx);
+  if (faults.missing(kind.name)) return missingFace(ctx.rect, ctx.theme, ctx.flux.fade);
+  try { return kind.record(kind.resolve(ctx), ctx); } catch (err) { faults.strike(kind.name, "record", err, ctx.entity); return undefined; }
 }
 
 /**
@@ -149,7 +168,8 @@ export function specimenFrames(specimens: readonly TraySpecimen[], drawn: TrayDr
       ...(s.local !== undefined ? { local: s.local } : {}),
       ...(s.asset !== undefined ? { asset: s.asset } : {}),
     };
-    const record = s.kind.record(s.kind.resolve(ctx), ctx);
+    const record = recordOf(s.kind, ctx, env.faults);
+    if (record === undefined) continue;
     // the hang point: the top edge's centre, or a shelf's bottom edge's; the pegs from it
     const hx = x0 + s.rect.w / 2;
     const hy = s.accessory === "shelf" ? y0 + s.rect.h : y0;
@@ -240,9 +260,10 @@ export const carrySlot = (type: string): string => `carry:${type}`;
 /**
  * A carried pose as its kind records it: its view (`carryView` — the object's grab point at the pose's pivot, at its scale), the tray's
  * grid (no dapple: it lies above the desk, D-K3.6), the pose's lift, the desk's lamp where the object is — so the copy lifted off the
- * board and the ghost it becomes are lit alike, and coincide at the hand-off.
+ * board and the ghost it becomes are lit alike, and coincide at the hand-off. Through the boundary (`env.faults`, petition I24): a
+ * missing kind's copy is the missing face; a kind that throws here takes a strike and the copy is not drawn this frame (undefined).
  */
-export function carriedFrame(pose: CarryPose, src: TrayCarriedSource, env: Omit<TraySpecimenEnv, "lift">): TrayCarriedFrame {
+export function carriedFrame(pose: CarryPose, src: TrayCarriedSource, env: Omit<TraySpecimenEnv, "lift">): TrayCarriedFrame | undefined {
   const v = carryView(pose, src.rect);
   const view = { camX: v.camX, camY: v.camY, zoom: v.zoom, width: env.view.width, height: env.view.height, dpr: env.view.dpr };
   const grid = trayGrid(env.grid);
@@ -260,7 +281,8 @@ export function carriedFrame(pose: CarryPose, src: TrayCarriedSource, env: Omit<
     dt: 0,
     ...(src.local !== undefined ? { local: src.local } : {}),
   };
-  const record = src.kind.record(src.kind.resolve(ctx), ctx);
+  const record = recordOf(src.kind, ctx, env.faults);
+  if (record === undefined) return undefined;
   const x0 = (r.x - v.camX) * v.zoom;
   const y0 = (r.y - v.camY) * v.zoom;
   return {
@@ -320,7 +342,8 @@ export class TraySlots {
       const mat = this.root.mat.spawn();
       void program.create(this.device, this.format, mat).then((pass) => {
         this.making.delete(type);
-        if (this.disposed) { pass.dispose(); mat.dispose(); return; }
+        // disposed meanwhile — or the kind went MISSING (petition I24: the root's entry is no longer its pass): the pass is let go
+        if (this.disposed || this.root.kinds.get(kind)?.pass !== own.pass) { pass.dispose(); mat.dispose(); return; }
         this.slots.set(type, { mat, kinds: new Map<string, SlotKind>([[kind, { ...own, pass }]]) });
         onReady();
       }, (err: unknown) => { this.making.delete(type); mat.dispose(); console.error(`desk: the tray's ${kind} pass could not be made`, err); });
@@ -351,6 +374,17 @@ export class TraySlots {
     let t = Number.POSITIVE_INFINITY;
     for (const s of this.slots.values()) for (const k of s.kinds.values()) t = Math.min(t, k.pass.idleAt?.(ms) ?? Number.POSITIVE_INFINITY);
     return t;
+  }
+
+  /**
+   * Kind `name` went MISSING (petition I24 — the ground's quarantine): its entry in every slot made so far becomes the desk's missing
+   * faces on the slot's mat (a slot made from now on spawns the root's entry, which is already the face's). Returns the passes the
+   * entries held; the ground lets them go.
+   */
+  quarantine(name: string, faces: MissingFaces | undefined): KindPass[] {
+    const gone: KindPass[] = [];
+    for (const s of this.slots.values()) { const p = swapToMissing(s, name, faces); if (p !== undefined) gone.push(p); }
+    return gone;
   }
 
   /** The slots made so far (a rig's witness). */

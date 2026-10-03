@@ -296,6 +296,26 @@ export const TRAY = {
   hoverLift: 0.3,
 } as const;
 
+/**
+ * THE MISSING FACE (petition I24 — missing/): what the desk draws for an object NOTHING can draw — its kind refused at create or
+ * quarantined at three strikes (faults.ts), or its type without a kind on this desk. Faint and square to the mat, the size of the
+ * object's box, and no text (the kind's name is said in the notice, never on the desk): a wash of the desk's ink, its hatching at 45°
+ * and a hairline edge — the tray's ink by day, the night vellum's cool milk by night (`MARKS.inks`). The hatching's pitch and
+ * weights are CSS px (it reads at every zoom); the corner is the object's units.
+ */
+export const MISSING = {
+  ink: { light: MARKS.inks.tray.css, dark: "rgb(214 226 255)" },
+  /** The wash under it all, the hatching's and the edge's alpha. */
+  wash: 0.05,
+  hatch: 0.2,
+  edge: 0.36,
+  /** The hatching's pitch and weight, the edge's weight, CSS px; the corner, world units (the box's half side at most). */
+  pitch: 9,
+  weight: 1,
+  edgeWeight: 1,
+  corner: 6,
+} as const;
+
 /** Everything the passes read, as numbers. */
 export interface GroundTheme {
   readonly name: ThemeName;

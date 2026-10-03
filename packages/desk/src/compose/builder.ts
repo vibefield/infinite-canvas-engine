@@ -92,9 +92,11 @@ import {
   type WidgetType,
   type World,
 } from "@ice/core";
+import type { KindFaults } from "../faults";
 import type { HeldFrameInputs, OutgoingInputs, PortalInputs, SlotObject } from "../ground";
 import { carryOf, HELD_USER_REST, heldCamera, heldFocus, heldFrame, heldPose, HOLD, type HoldReserves, homePose, progressOf, readingTarget } from "../hold/pose";
 import { FLUX_REST, type InsideContext, type KindLocal, numberProp, type ObjectContext, type ObjectFlux, type ObjectKind, type ObjectRect, rectFrame, rectOf, type RungContext } from "../kinds/world";
+import { MISSING_OBJECT } from "../missing/object";
 import type { MarksInput } from "../marks/layout";
 import { createMarksCollector, type MarkRow, type SelectionAnchor } from "./marks";
 import type { GridConfig } from "../mat/grid";
@@ -141,6 +143,15 @@ export interface DeskBuilderOptions {
   readonly spatial?: SpatialSource;
   /** The hand's reserves (petition I20 — `deskLayer({ hold })`): where the reading fit keeps clear of the host's chrome; `HOLD`'s by default. */
   readonly hold?: HoldReserves;
+  /**
+   * THE KIND BOUNDARY (petition I24, faults.ts): every call into a kind's world half — `resolve`, `record` (and what a remake asks with
+   * them: `face`, `frame`, `rung`, its desk state's `landed`), `chip`, `hit`, the hand's, a ghost's, `lifted` and `veils` — is caught at the
+   * kind: the throw is a strike, the object it was made for is left out of this frame (its record reset, made afresh next time), and
+   * the frame goes on. A MISSING kind's objects — and an object whose type has no kind — are drawn by the missing face
+   * (`MISSING_OBJECT`) under their kind's name; nothing of a missing kind is called again. Absent (a unit, a bare host): as before — a
+   * throw is the caller's, and an object whose type has no kind is not drawn.
+   */
+  readonly faults?: KindFaults;
 }
 
 /**
@@ -350,6 +361,12 @@ export interface DeskBuilder {
   heldPoint(e: Entity, wx: number, wy: number): readonly [number, number] | undefined;
   /** The held kind's part under such a point — its `hit` on the geometry it was drawn with in hand; null over nothing (the pose seam's `part`, D3t-a). */
   heldPart(e: Entity, x: number, y: number): string | null;
+  /**
+   * What is under a world point of `e` as the last build drew it (the pick source's mirror, design-015 §4.5): its kind's `hit` on that
+   * geometry — or, drawn as the MISSING face (petition I24), its box. `null`: a miss (a kind whose `hit` throws takes a strike and misses
+   * — the pick goes on to the next object down); `undefined`: not drawn (unseen, culled, its kind gone missing since).
+   */
+  hitAt(e: Entity, wx: number, wy: number): string | null | undefined;
   /** The objects the last build painted LIFTED by their kind's own state (D3t-a — a print carried or in the air): above their siblings, asked first by the pick. */
   lifted(): readonly Entity[];
   /** An entity a kind's state veiled in the last build (D3t-c — a note gone with its month): not drawn, never picked. */
@@ -369,8 +386,12 @@ export interface DeskBuilder {
 }
 
 interface ObjectState {
+  /** Its kind — `MISSING_OBJECT` when its type has none (petition I24). */
   readonly kind: ObjectKind;
-  readonly widget: WidgetType;
+  /** Its widget type; undefined when no catalog on this desk holds its type (it is the missing face's). */
+  readonly widget: WidgetType | undefined;
+  /** Its geometry and record were made by the MISSING FACE (petition I24): its kind is missing, or it has none. */
+  face: boolean;
   /** The cached facts — refreshed on the journal's word, never per frame. */
   rect: ObjectRect;
   props: Record<string, unknown>;
@@ -518,8 +539,30 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   /** The one context every `rung` read is handed (K6b): filled afresh before each read, never kept by a kind. */
   const rungCtx: { -readonly [K in keyof RungContext]: RungContext[K] } = { entity: NO_ENTITY, rect: { cx: 0, cy: 0, w: 0, h: 0 }, props: {}, zoom: 1, dpr: 1, local: undefined, px: 0 };
   const locals = opts.locals;
+  const faults = opts.faults;
   /** The entity is gone from this desk for good: its kind's own state lets go of it (D2c). */
   const forget = (kind: ObjectKind, e: Entity): void => { locals?.get(kind.name)?.forget?.(e); };
+  /**
+   * What DRAWS an object of `kind` (petition I24): the kind — or, the kind missing (refused at create, quarantined) or none at all, the
+   * missing face. One size test while nothing is missing.
+   */
+  const drawerOf = (kind: ObjectKind): ObjectKind => (kind === MISSING_OBJECT || faults?.missing(kind.name) === true ? MISSING_OBJECT : kind);
+  /**
+   * A throw out of `kind`'s world half (petition I24): under the boundary, a strike — the caller leaves the object out of this frame;
+   * without one, the caller's, as before.
+   */
+  const fault = (kind: ObjectKind, call: string, err: unknown, e?: Entity): void => {
+    if (faults === undefined) throw err;
+    faults.strike(kind.name, call, err, e);
+  };
+  /** The types met with no kind on this desk, said once each (petition I24 — their objects wear the missing face). */
+  const kindless = new Set<string>();
+  /** Does `st`'s kind's desk state draw `e` LIFTED (D3t-a)? A missing kind's state is gone (no word); one that throws takes a strike and says no (petition I24). */
+  const liftedBy = (st: ObjectState, e: Entity): boolean => {
+    const local = locals?.get(st.kind.name);
+    if (local?.lifted === undefined) return false;
+    try { return local.lifted(e) === true; } catch (err) { fault(st.kind, "lifted", err, e); return false; }
+  };
   const ghostS = (opts.ghostMs ?? GHOST_MS) / 1000;
   const marginPx = opts.marginPx ?? MARGIN_PX;
   const redressMs = opts.redressMs ?? REDRESS_MS;
@@ -658,7 +701,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     const h = world.readField(e, Size, "h") ?? 0;
     st.rect = rectOf({ x, y }, { w, h });
     const props: Record<string, unknown> = {};
-    for (const g of st.widget.groups) {
+    for (const g of st.widget?.groups ?? []) {
       const v = world.get(e, g.component) as Record<string, unknown> | undefined;
       if (v !== undefined) for (const name of Object.keys(g.fields)) props[name] = v[name];
     }
@@ -679,18 +722,26 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     st.stale = true;
   };
 
-  /** Meet an entity: its widget type through the engine's catalog, its kind off the binding; not an object = nothing. */
+  /**
+   * Meet an entity: its widget type through the engine's catalog, its kind off the binding. No `PrefabId`: not an object, nothing. A type
+   * with NO KIND on this desk — no catalog holds it (a document from a desk with more kinds), or it binds none (VibeField's ghost stubs) —
+   * is the missing face's under the boundary (petition I24; said once a type), and nothing without one, as before.
+   */
   const enter = (e: Entity): ObjectState | undefined => {
     if (!world.isAlive(e)) return undefined;
     const id = world.get(e, PrefabId)?.id;
     if (typeof id !== "string") return undefined;
     const widget = widgetTypeFor(world, id);
-    const kind = objectKindOf(widget);
-    if (widget === undefined || kind === undefined) return undefined;
+    let kind = objectKindOf(widget);
+    if (kind === undefined) {
+      if (faults === undefined) return undefined;
+      kind = MISSING_OBJECT;
+      if (!kindless.has(id)) { kindless.add(id); console.warn(`[ice] desk: the type "${id}" has no kind on this desk — its objects are drawn as missing (petition I24)`); }
+    }
     meet(kind);
     const insert = world.has(e, InsertGhost);
     const st: ObjectState = {
-      kind, widget, rect: { cx: 0, cy: 0, w: 0, h: 0 }, props: {}, selected: false, grabbed: false, locked: false, resizable: false, band: DEFAULT_STRATUM_BAND, dirty: true,
+      kind, widget, face: false, rect: { cx: 0, cy: 0, w: 0, h: 0 }, props: {}, selected: false, grabbed: false, locked: false, resizable: false, band: DEFAULT_STRATUM_BAND, dirty: true,
       lift: insert ? 1 : 0, liftV: 0, hover: 0, hoverV: 0, geometry: null, record: null, inside: null, slot: "root", next: undefined, seen: 0,
       rank: -1, active: false, lifted: false, stale: true, give: 0, content: null, zoom: Number.NaN, rung: 0, landed: 0, markRow: null, insert,
     };
@@ -712,7 +763,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     if (st === undefined) return undefined;
     if (st.dirty) refresh(e, st);
     if (had === undefined && landing.length > 0 && !st.insert) {
-      const i = landing.findIndex((l) => l.type === st.widget.type && Math.abs(l.rect.cx - st.rect.cx) < 0.5 && Math.abs(l.rect.cy - st.rect.cy) < 0.5);
+      const i = landing.findIndex((l) => l.type === st.widget?.type && Math.abs(l.rect.cx - st.rect.cx) < 0.5 && Math.abs(l.rect.cy - st.rect.cy) < 0.5);
       const l = landing[i];
       if (l !== undefined) { st.lift = l.lift; st.liftV = l.liftV; landing.splice(i, 1); }
     }
@@ -765,28 +816,33 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   const frameGridOf = (frame: Entity | undefined, root: GridConfig, looks: ReadonlyMap<string, unknown>): GridConfig => {
     if (frame === undefined || !world.isAlive(frame) || !world.hasTag(frame, Container)) return root;
     const st = stateOf(frame);
-    if (st === undefined || st.kind.insideGrid === undefined) return root;
-    return st.kind.insideGrid({ props: st.props, look: looks.get(st.kind.name) }, root);
+    const kind = st === undefined ? undefined : drawerOf(st.kind);   // a missing container draws no inside of its own (petition I24)
+    if (st === undefined || kind?.insideGrid === undefined) return root;
+    try { return kind.insideGrid({ props: st.props, look: looks.get(kind.name) }, root); } catch (err) { fault(kind, "insideGrid", err, frame); return root; }
   };
 
-  /** THE SEAM's answer (design-015 §9) — see `DeskBuilder.navFace`. */
+  /** THE SEAM's answer (design-015 §9) — see `DeskBuilder.navFace`. A missing container has no face: nothing to enter (petition I24). */
   const navFace = (container: Entity, cam: CameraState): NavFace | undefined => {
     const st = stateOf(container);
-    if (st === undefined || st.kind.face === undefined) return undefined;
+    const kind = st === undefined ? undefined : drawerOf(st.kind);
+    if (st === undefined || kind?.face === undefined) return undefined;
     // as DRAWN when it was built in the current frame this frame; at REST otherwise (the frame's own container, an exit's)
-    let G: unknown;
-    if (st.seen === seq && st.geometry !== null && st.slot === "root") G = st.geometry;
-    else {
-      const grid = lastGrid;
-      const theme = lastTheme;
-      if (grid === undefined || theme === undefined) return undefined;
-      const vp = world.getResource(Viewport);
-      const view: ObjectContext["view"] = { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp?.w ?? 0, height: vp?.h ?? 0, dpr: vp?.dpr ?? 1 };
-      const local = locals?.get(st.kind.name);
-      const ctx: ObjectContext = { entity: container, rect: st.rect, props: st.props, flux: FLUX_REST, look: lastLooks?.get(st.kind.name), theme, lamp: lampOf(grid.mat.plane), view, grid, dt: 0, ...(local !== undefined ? { local } : {}) };
-      G = st.kind.resolve(ctx);
-    }
-    const face = st.kind.face(G);
+    let face: Rect | undefined;
+    try {
+      let G: unknown;
+      if (st.seen === seq && st.geometry !== null && st.slot === "root" && !st.face) G = st.geometry;
+      else {
+        const grid = lastGrid;
+        const theme = lastTheme;
+        if (grid === undefined || theme === undefined) return undefined;
+        const vp = world.getResource(Viewport);
+        const view: ObjectContext["view"] = { camX: cam.x, camY: cam.y, zoom: cam.zoom, width: vp?.w ?? 0, height: vp?.h ?? 0, dpr: vp?.dpr ?? 1 };
+        const local = locals?.get(kind.name);
+        const ctx: ObjectContext = { entity: container, rect: st.rect, props: st.props, flux: FLUX_REST, look: lastLooks?.get(kind.name), theme, lamp: lampOf(grid.mat.plane), view, grid, dt: 0, ...(local !== undefined ? { local } : {}) };
+        G = kind.resolve(ctx);
+      }
+      face = kind.face(G);
+    } catch (err) { fault(kind, "face", err, container); return undefined; }
     if (face === undefined) return undefined;
     const vpSize = viewportOf();
     const view = insideViewOfFace(face, st.kind.faceLaw?.radius ?? 0, contentOf(container), cam, vpSize, FIT, PORTAL_GATE);
@@ -902,10 +958,13 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         for (const c of childrenOf(e)) {
           if (chips.length >= cap) break;
           const cst = stateOf(c);
-          if (cst === undefined || cst.kind.chip === undefined) continue;
+          // a missing kind's child, or one with no kind, has no chip (petition I24): the missing face draws none
+          const ckind = cst === undefined ? undefined : drawerOf(cst.kind);
+          if (cst === undefined || ckind?.chip === undefined) continue;
           const cctx = contextOf(c, cst, insideView, insideGrid, insideLamp, false);
           work.resolved += 1;
-          const chip = cst.kind.chip(cst.kind.resolve(cctx), cctx);
+          let chip: ChildShape | null;
+          try { chip = ckind.chip(ckind.resolve(cctx), cctx); } catch (err) { fault(ckind, "chip", err, c); continue; }
           if (chip === null) continue;
           const finish = finishOf(chip.finish, finishes);
           if (finish === undefined) { work.unchipped += 1; continue; }
@@ -919,26 +978,28 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
        * chips — and the candidate for a live slot when the gate lets it through. Kept on the state (D6): the content the record was
        * made with, and the view, which a pan moves even when the record stands (`insideViewOf`).
        */
-      const insideOf = (e: Entity, st: ObjectState, G: unknown, ctx: ObjectContext, slotCam: CameraState, slotGrid: GridConfig): InsideContext | undefined => {
-        const face = st.kind.face?.(G);
+      const insideOf = (e: Entity, st: ObjectState, kind: ObjectKind, G: unknown, ctx: ObjectContext, slotCam: CameraState, slotGrid: GridConfig): InsideContext | undefined => {
+        const face = kind.face?.(G);
         if (face === undefined) { st.inside = null; st.content = null; return undefined; }
         const content = contentOf(e);
-        const view = insideViewOfFace(face, st.kind.faceLaw?.radius ?? 0, content, slotCam, vpSize, FIT, PORTAL_GATE);
+        const view = insideViewOfFace(face, kind.faceLaw?.radius ?? 0, content, slotCam, vpSize, FIT, PORTAL_GATE);
         st.inside = view;
         st.content = content;
         return { content, view, chips: chipsOf(e, st, ctx, view, slotGrid) };
       };
 
       /** Under `verify`: a reused record against a fresh resolve of the same state — a difference is a staleness the law above missed. */
-      const checkReuse = (e: Entity, st: ObjectState, view: ObjectContext["view"], slotGrid: GridConfig, slotLamp: Lamp, springs: boolean, give: number, slotCam: CameraState): void => {
+      const checkReuse = (e: Entity, st: ObjectState, kind: ObjectKind, view: ObjectContext["view"], slotGrid: GridConfig, slotLamp: Lamp, springs: boolean, give: number, slotCam: CameraState): void => {
         const r = st.rect;
         const drawn = give === 0 ? r : { ...r, cx: r.cx + give / slotCam.zoom };
         const ctx = contextOf(e, st, view, slotGrid, slotLamp, springs, drawn);
-        const G = st.kind.resolve(ctx);
-        const face = st.kind.face?.(G);
-        const inside: InsideContext | undefined = face === undefined ? undefined : { content: st.content, view: st.inside, chips: chipsOf(e, st, ctx, st.inside, slotGrid) };
-        const R = st.kind.record(G, inside === undefined ? ctx : { ...ctx, inside });
-        if (!sameRecord(R, st.record)) mismatches += 1;
+        try {
+          const G = kind.resolve(ctx);
+          const face = kind.face?.(G);
+          const inside: InsideContext | undefined = face === undefined ? undefined : { content: st.content, view: st.inside, chips: chipsOf(e, st, ctx, st.inside, slotGrid) };
+          const R = kind.record(G, inside === undefined ? ctx : { ...ctx, inside });
+          if (!sameRecord(R, st.record)) mismatches += 1;
+        } catch (err) { fault(kind, "record", err, e); }
       };
 
       /**
@@ -977,68 +1038,91 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           if (slot === "root" && presented?.has(e) === true) { stepSprings(e, st); st.geometry = null; st.record = null; st.inside = null; continue; }
           // veiled by a kind's own state (D3t-c — a stuck note whose month the calendar is not showing): not drawn, never picked, no marks
           if (veiledNow.has(e) && !st.grabbed) { st.geometry = null; st.record = null; st.inside = null; continue; }
+          // what draws it (petition I24): its kind, or — the kind missing, or none — the missing face, under the kind's name
+          const kind = drawerOf(st.kind);
+          const face = kind === MISSING_OBJECT;
           const r = st.rect;
-          const hx = r.w / 2 + st.kind.reach;
-          const hy = r.h / 2 + st.kind.reach;
+          const hx = r.w / 2 + kind.reach;
+          const hy = r.h / 2 + kind.reach;
           if (r.cx + hx < x0 || r.cx - hx > x1 || r.cy + hy < y0 || r.cy - hy > y1) { st.geometry = null; st.record = null; st.inside = null; culled += 1; continue; }
           // a drag that met the tape shivers the object by its give (CSS px → world) — in the root slot alone, where the marks are (D4a)
           const give = slot === "root" ? marks.giveOf(e) : 0;
           const fluxMoved = springs ? stepSprings(e, st) : false;
-          const kind = st.kind;
           const fresh = st.record === null || st.geometry === null;
-          let remake = fresh || st.stale || remakeAll || fluxMoved || prevSlot !== slot || give !== st.give
+          let remake = fresh || st.stale || remakeAll || fluxMoved || prevSlot !== slot || give !== st.give || st.face !== face
             || kind.composite === true || restless?.has(kind.name) === true;
           if (fresh) work.fresh += 1;
           if (restless?.has(kind.name) === true) work.restless += 1;
-          // the zoom (D6; K6b): a `rung` kind is remade only when its rung moved — a zoom within the rung remakes and writes nothing, the
-          // zoom it was read at kept — and a `rezoom` kind (it reads the zoom continuously) on any move
-          if (!remake && (redpr || slotCam.zoom !== st.zoom)) {
-            if (kind.rung !== undefined) {
-              if (rungOf(kind, e, st, slotCam) !== st.rung) { remake = true; work.rerung += 1; }
-              else st.zoom = slotCam.zoom;
-            } else if (kind.rezoom === true) { remake = true; work.rezoomed += 1; }
-          }
           let G: unknown;
           let R: unknown;
-          if (!remake) {
-            G = st.geometry;
-            R = st.record;
-            work.reused += 1;
-            // a container's inside this frame: its view under the slot camera moves with a pan even when its record stands
-            if (kind.face !== undefined) {
-              const face = kind.face(G);
-              st.inside = face === undefined ? null : insideViewOfFace(face, st.kind.faceLaw?.radius ?? 0, st.content, slotCam, vpSize, FIT, PORTAL_GATE);
+          // THE KIND'S BOUNDARY (petition I24): a throw out of anything the kind is asked here is a strike, and the object is left out
+          // of this frame — its record reset (made afresh next time), no row, no marks — while the frame goes on
+          let call = "rung";
+          try {
+            // the zoom (D6; K6b): a `rung` kind is remade only when its rung moved — a zoom within the rung remakes and writes nothing, the
+            // zoom it was read at kept — and a `rezoom` kind (it reads the zoom continuously) on any move
+            if (!remake && (redpr || slotCam.zoom !== st.zoom)) {
+              if (kind.rung !== undefined) {
+                if (rungOf(kind, e, st, slotCam) !== st.rung) { remake = true; work.rerung += 1; }
+                else st.zoom = slotCam.zoom;
+              } else if (kind.rezoom === true) { remake = true; work.rezoomed += 1; }
             }
-            if (verifying) checkReuse(e, st, view, slotGrid, slotLamp, springs, give, slotCam);
-          } else {
-            const drawn = give === 0 ? r : { ...r, cx: r.cx + give / slotCam.zoom };
-            const ctx = contextOf(e, st, view, slotGrid, slotLamp, springs, drawn);
-            work.resolved += 1;
-            G = kind.resolve(ctx);
-            const inside = insideOf(e, st, G, ctx, slotCam, slotGrid);
-            work.recorded += 1;
-            R = kind.record(G, inside === undefined ? ctx : { ...ctx, inside });
-            // something LANDED on it since its record was last made (a picture, a replay, tiles — not a running motion): the desk behind
-            // the hand looks different though no fact moved, and its blurred copy must be made again (D7)
-            const landed = locals?.get(kind.name)?.landed?.(e) ?? 0;
-            if (landed !== st.landed) { st.landed = landed; deskLanded = true; }
-            st.geometry = G;
-            st.record = R;
-            st.stale = false;
-            st.give = give;
-            st.zoom = slotCam.zoom;
-            st.rung = kind.rung === undefined ? 0 : rungOf(kind, e, st, slotCam);
-            // the marks go around what was drawn: the kind's frame on the geometry just resolved, ICE's rect (D4a) — kept with the record
-            st.markRow = slot === "root"
-              ? { entity: e, frame: kind.frame?.(G) ?? rectFrame(drawn), rect: { x0: r.cx - r.w / 2, y0: r.cy - r.h / 2, x1: r.cx + r.w / 2, y1: r.cy + r.h / 2 }, selected: st.selected, locked: st.locked, grabbed: st.grabbed, resizable: st.resizable }
-              : null;
+            if (!remake) {
+              G = st.geometry;
+              R = st.record;
+              work.reused += 1;
+              // a container's inside this frame: its view under the slot camera moves with a pan even when its record stands
+              if (kind.face !== undefined) {
+                call = "face";
+                const shown = kind.face(G);
+                st.inside = shown === undefined ? null : insideViewOfFace(shown, kind.faceLaw?.radius ?? 0, st.content, slotCam, vpSize, FIT, PORTAL_GATE);
+              }
+              if (verifying) checkReuse(e, st, kind, view, slotGrid, slotLamp, springs, give, slotCam);
+            } else {
+              const drawn = give === 0 ? r : { ...r, cx: r.cx + give / slotCam.zoom };
+              const ctx = contextOf(e, st, view, slotGrid, slotLamp, springs, drawn);
+              work.resolved += 1;
+              call = "resolve";
+              G = kind.resolve(ctx);
+              call = "face";
+              const inside = insideOf(e, st, kind, G, ctx, slotCam, slotGrid);
+              work.recorded += 1;
+              call = "record";
+              R = kind.record(G, inside === undefined ? ctx : { ...ctx, inside });
+              // something LANDED on it since its record was last made (a picture, a replay, tiles — not a running motion): the desk behind
+              // the hand looks different though no fact moved, and its blurred copy must be made again (D7)
+              call = "landed";
+              const landed = face ? 0 : (locals?.get(kind.name)?.landed?.(e) ?? 0);
+              if (landed !== st.landed) { st.landed = landed; deskLanded = true; }
+              call = "rung";
+              const rung = kind.rung === undefined ? 0 : rungOf(kind, e, st, slotCam);
+              // the marks go around what was drawn: the kind's frame on the geometry just resolved, ICE's rect (D4a) — kept with the record
+              call = "frame";
+              const markRow = slot === "root"
+                ? { entity: e, frame: kind.frame?.(G) ?? rectFrame(drawn), rect: { x0: r.cx - r.w / 2, y0: r.cy - r.h / 2, x1: r.cx + r.w / 2, y1: r.cy + r.h / 2 }, selected: st.selected, locked: st.locked, grabbed: st.grabbed, resizable: st.resizable }
+                : null;
+              st.geometry = G;
+              st.record = R;
+              st.stale = false;
+              st.give = give;
+              st.zoom = slotCam.zoom;
+              st.rung = rung;
+              st.face = face;
+              st.markRow = markRow;
+            }
+          } catch (err) {
+            st.geometry = null; st.record = null; st.inside = null; st.markRow = null; st.stale = true;
+            fault(kind, call, err, e);
+            continue;
           }
           const at = rows.length;
-          rows.push({ entity: e, kind: kind.name, record: R, band: st.band });
+          rows.push({ entity: e, kind: st.kind.name, record: R, band: st.band });
           if (slot === "root" && st.markRow !== null) markRows.push(st.markRow);
           const iv = st.inside;
           if (iv !== null && portalsOn && depth < PORTAL_DEPTH && e !== skip && iv.presence > 0) {
-            cands.push({ at, e, view: iv, grid: kind.insideGrid?.({ props: st.props, look: looks.get(kind.name) }, slotGrid) ?? slotGrid });
+            let inner = slotGrid;
+            try { inner = kind.insideGrid?.({ props: st.props, look: looks.get(kind.name) }, slotGrid) ?? slotGrid; } catch (err) { fault(kind, "insideGrid", err, e); continue; }
+            cands.push({ at, e, view: iv, grid: inner });
           }
         }
         // the live insides: the largest faces first, up to the cap (MINIMAT.md §3), each a slot of its own through its face
@@ -1086,9 +1170,19 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       // what the kinds' own states veil (D3t-c — a note stuck to a day of a month its calendar is not showing): asked row by row, so a
       // pad drawn earlier in this very build (the pads stratum paints first) has already said which of its notes go with its month
       // (the kinds that veil at all, gathered once a build: a row asks each by index — no iterator a row, K7a)
-      const veilers: KindLocal[] = [];
-      if (locals !== undefined) for (const local of locals.values()) if (local.veils !== undefined) veilers.push(local);
-      const veiledNow = { has: (e: Entity): boolean => { for (let i = 0; i < veilers.length; i++) if ((veilers[i] as KindLocal).veils?.().has(e) === true) return true; return false; } };
+      // (a veiler that throws takes a strike and veils nothing — petition I24: its name rides with it for the strike)
+      const veilers: (readonly [string, KindLocal])[] = [];
+      if (locals !== undefined) for (const [name, local] of locals) if (local.veils !== undefined) veilers.push([name, local]);
+      const veiledNow = {
+        has: (e: Entity): boolean => {
+          for (let i = 0; i < veilers.length; i++) {
+            const [name, local] = veilers[i] as readonly [string, KindLocal];
+            if (faults?.missing(name) === true) continue;   // gone missing during this build: its state is let go
+            try { if (local.veils?.().has(e) === true) return true; } catch (err) { if (faults === undefined) throw err; faults.strike(name, "veils", err, e); }
+          }
+          return false;
+        },
+      };
       /** What rides with the object in hand (D3t-c — its stuck notes): drawn in the hand's slot, never on the desk behind. */
       const handRiders = new Set<Entity>();
       const heldNow = heldEntity(world);
@@ -1099,7 +1193,8 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       let heldBuild: HeldBuild | undefined;
       if (hand !== null) {
         const hst = world.isAlive(hand.entity) ? stateOf(hand.entity) : undefined;
-        const binding = hst?.kind.open;
+        // (a missing kind is never in a hand — petition I24: the missing face does not open; it lies on the desk)
+        const binding = hst === undefined || drawerOf(hst.kind) === MISSING_OBJECT ? undefined : hst.kind.open;
         if (hst === undefined || binding === undefined) hand = null;   // gone (deleted, undone) or no opening after all: nothing is in the hand
         else {
           const pin = bopts.hold;
@@ -1116,7 +1211,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           // LANDED once home (p ≥ 1, the carry at 0): the cover's last hundredth shuts on the desk (D-D4b); a carry pinned at 0 is
           // the rest frame — the object rides the desk's rows this frame, byte for byte
           if (hand.dir < 0 && hand.p >= 1) hand = null;
-          else if (hand.e > 0) {
+          else if (hand.e > 0) { try {
             const extentLocal = binding.extent({ rect: hst.rect, props: hst.props });
             const angle = numberProp(hst.props, "angle", 0);
             // the extent turned with the object about its centre — where it lies on the desk (the home pose); in hand the turn lets go
@@ -1160,9 +1255,12 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             for (const rider of typeof typeId === "string" ? (widgetTypeFor(world, typeId)?.riders?.(world, hand.entity) ?? []) : []) {
               const rst = veiledNow.has(rider) ? undefined : stateOf(rider);
               if (rst === undefined) continue;
+              const rkind = drawerOf(rst.kind);   // a missing kind's rider rides as the missing face (petition I24)
               const rctx = contextOf(rider, rst, heldView, heldGrid, lampOf(heldGrid.mat.plane), false);
               work.resolved += 1; work.recorded += 1;
-              riders.push({ kind: rst.kind.name, record: rst.kind.record(rst.kind.resolve(rctx), rctx), key: rider as number });
+              let record: unknown;
+              try { record = rkind.record(rkind.resolve(rctx), rctx); } catch (err) { fault(rkind, "record", err, rider); continue; }
+              riders.push({ kind: rst.kind.name, record, key: rider as number });
               handRiders.add(rider);
             }
             heldBuild = {
@@ -1171,7 +1269,16 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
               inputs: { object: { kind: hst.kind.name, record: R, key: hand.entity as number }, ...(riders.length > 0 ? { riders } : {}), view: heldView, grid: heldGrid, e: hand.e, ...heldFocus(hand.e, vpSize, theme) },
               deskSeq,
             };
-          }
+          } catch (err) {
+            // the held kind threw (petition I24): a strike, and nothing in the hand this frame — the object lies on the desk again,
+            // its record made afresh; the fact (`Held`) is core's, so the next frame picks it up again (a third strike: missing, never held)
+            const held = hand?.entity;
+            hst.geometry = null; hst.record = null; hst.inside = null; hst.stale = true;
+            hand = null;
+            heldBuild = undefined;
+            handRiders.clear();
+            fault(hst.kind, "record", err, held);
+          } }
         }
       }
 
@@ -1184,7 +1291,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       // object every frame); a host that gives no word on restlessness (a test, a bare host) has every object asked. A change re-sorts.
       if (locals !== undefined) {
         const check = (e: Entity, st: ObjectState): void => {
-          const v = !st.grabbed && locals.get(st.kind.name)?.lifted?.(e) === true;
+          const v = !st.grabbed && liftedBy(st, e);
           if (v !== st.lifted) { st.lifted = v; orderDirty = true; }
         };
         if (restless === undefined) { for (const [e, st] of states) if (st.rank >= 0) check(e, st); }
@@ -1205,7 +1312,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             const st = stateOf(e);
             if (st === undefined) continue;
             st.active = true;
-            st.lifted = !st.grabbed && locals?.get(st.kind.name)?.lifted?.(e) === true;
+            st.lifted = !st.grabbed && liftedBy(st, e);
             (st.grabbed || st.lifted ? tiers[1] : tiers[0]).push(e);
           }
         });
@@ -1263,8 +1370,11 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
         const local = locals?.get(g.kind.name);
         const ctx: ObjectContext = { entity: e, rect: g.rect, props: g.props, flux: { ...g.flux, ring: 0, fade: 1 - g.del }, look: looks.get(g.kind.name), theme, lamp: rootLamp, view: rootView, grid: frameGrid, dt, ...(g.asset !== undefined ? { asset: g.asset } : {}), ...(local !== undefined ? { local } : {}) };
         work.resolved += 1; work.recorded += 1;
-        const G = g.kind.resolve(ctx);
-        const row: Row = { entity: undefined, kind: g.kind.name, record: g.kind.record(G, ctx), band: g.band, ghostOf: e };
+        // a missing kind's ghost fades as the missing face (petition I24); a ghost whose kind throws takes a strike and is let go
+        const gkind = drawerOf(g.kind);
+        let record: unknown;
+        try { record = gkind.record(gkind.resolve(ctx), ctx); } catch (err) { ghosts.delete(e); forget(g.kind, e); fault(gkind, "record", err, e); continue; }
+        const row: Row = { entity: undefined, kind: g.kind.name, record, band: g.band, ghostOf: e };
         let at = g.next === undefined ? -1 : rows.findIndex((q) => q.entity === g.next);
         if (at < 0) { at = rows.length; for (let i = 0; i < rows.length; i++) { if ((rows[i] as Row).band > row.band) { at = i; break; } } }
         rows.splice(at, 0, row);
@@ -1337,7 +1447,10 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
       const objects: SlotObject[] = rows.map((r) => ({ kind: r.kind, record: r.record, key: r.entity !== undefined ? (r.entity as number) : -(r.ghostOf as number) }));
       // the pick's word on what was veiled, as this build left it
       const veiledSet = new Set<Entity>();
-      for (const local of locals?.values() ?? []) for (const e of local.veils?.() ?? []) veiledSet.add(e);
+      for (const [name, local] of veilers) {
+        if (locals?.get(name) !== local) continue;   // gone missing during this build (petition I24): its state is let go
+        try { for (const e of local.veils?.() ?? []) veiledSet.add(e); } catch (err) { if (faults === undefined) throw err; faults.strike(name, "veils", err); }
+      }
       veiledList = veiledSet;
       // the marks: the root slot's rows under the root camera — the current frame's desk — and its grid's rulers (an entered mini mat prints none) (D4a)
       const ruler = frameGrid.mat.ruler;
@@ -1403,7 +1516,7 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
           if (st === undefined) continue;
           if (st.insert) {
             // an insert ghost leaves without a delete fade (K5b): promoted, its twin lands in its place with its lift; flown home, it has shrunk to nothing
-            landing.push({ type: st.widget.type, rect: st.rect, lift: st.lift, liftV: st.liftV });
+            landing.push({ type: st.widget?.type ?? "", rect: st.rect, lift: st.lift, liftV: st.liftV });
             forget(st.kind, e);
           } else {
             ghostOf(e, st);   // the ghost takes the asset with it
@@ -1480,8 +1593,16 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
     heldPart(e, x, y) {
       const w = heldToWorld(e, x, y);
       const st = states.get(e);
-      if (w === undefined || st === undefined || st.geometry === null) return null;
-      return st.kind.hit(st.geometry, w[0], w[1]);
+      if (w === undefined || st === undefined || st.geometry === null || st.face) return null;
+      try { return st.kind.hit(st.geometry, w[0], w[1]); } catch (err) { fault(st.kind, "hit", err, e); return null; }
+    },
+    hitAt(e, wx, wy) {
+      const st = states.get(e);
+      if (st === undefined || st.geometry === null) return undefined;
+      // drawn as the missing face: its box (petition I24); a kind gone missing since its record was made is not drawn as anything yet
+      if (st.face) return MISSING_OBJECT.hit(st.geometry as ObjectRect, wx, wy);
+      if (drawerOf(st.kind) === MISSING_OBJECT) return undefined;
+      try { return st.kind.hit(st.geometry, wx, wy); } catch (err) { fault(st.kind, "hit", err, e); return null; }
     },
     stats: () => stats,
     dispose() {

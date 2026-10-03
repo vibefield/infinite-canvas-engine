@@ -44,6 +44,7 @@ import {
   type WidgetType,
   type World,
 } from "@ice/core";
+import type { KindFaults } from "../faults";
 import type { Ground, GroundFrameInputs, GroundStats } from "../ground";
 import { type KindLocal, type ObjectKind, rectOf } from "../kinds/world";
 import { lampOf } from "../mat/lamp";
@@ -82,6 +83,11 @@ export interface DeskReflectorOptions {
   readonly locals?: ReadonlyMap<string, KindLocal>;
   /** The drawer as the host set it (petition I21 — `deskLayer({ tray })`): its foot inset. */
   readonly tray?: TrayOptions;
+  /**
+   * THE KIND BOUNDARY (petition I24, faults.ts): the tray's specimens and carried copies are recorded through it (a missing kind's are the
+   * missing face; a throw is a strike), and a missing kind is never asked for its look again.
+   */
+  readonly faults?: KindFaults;
   /**
    * Called when a frame is asked for from OUTSIDE the flush — a wake (a pin, an ink landing, the ambient's policy), the ground
    * arriving, a theme, a grid, a harness's pin (K7a): the host wakes a sleeping loop with it.
@@ -157,12 +163,14 @@ const trayQ = defineQuery([Tray]);
 const insertQ = defineQuery([InsertGhost, Position, Size]);
 
 export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
-  const { world, builder, ambient } = opts;
+  const { world, builder, ambient, faults } = opts;
   const maxDpr = opts.maxDpr ?? 2;
   let theme = opts.theme;
   let palette = opts.palette;
   let grid = opts.grid ?? DEFAULT_GRID;
-  let looks = looksOf(opts.kinds, palette, theme);
+  /** The kinds a look is made for: every one but a MISSING kind (petition I24 — nothing of it is called again). */
+  const lookKinds = (): readonly ObjectKind[] => (faults === undefined || faults.size === 0 ? opts.kinds : opts.kinds.filter((k) => !faults.missing(k.name)));
+  let looks = looksOf(lookKinds(), palette, theme);
   let dirty = true;
   let disposed = false;
   let redraws = 0;
@@ -300,7 +308,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
         if (specimens.length > 0) {
           ground.warmTray(specimens.map((q) => [q.type, q.kind.name] as const), trayLanded);
           for (const q of specimens) if (q.local !== undefined) faced.set(q.key, q.local as KindLocal);
-          drawnSpecimens = specimenFrames(specimens, { rect: drawerRect(vp.w, vp.h, trayed.p), scroll: trayed.scroll, ...(trayed.foot !== undefined ? { foot: trayed.foot } : {}) }, { view: { width: vp.w, height: vp.h, dpr }, theme, grid, looks, lift: (t) => tray.lift(t) });
+          drawnSpecimens = specimenFrames(specimens, { rect: drawerRect(vp.w, vp.h, trayed.p), scroll: trayed.scroll, ...(trayed.foot !== undefined ? { foot: trayed.foot } : {}) }, { view: { width: vp.w, height: vp.h, dpr }, theme, grid, looks, lift: (t) => tray.lift(t), ...(faults !== undefined ? { faults } : {}) });
           trayed = { ...trayed, specimens: drawnSpecimens };
         }
       }
@@ -332,7 +340,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       drawnCarried = [];
       if (trayed !== undefined && poses.length > 0) {
         const L = lampOf(built.grid.mat.plane);
-        const env = { view: { width: vp.w, height: vp.h, dpr }, theme, grid, looks };
+        const env = { view: { width: vp.w, height: vp.h, dpr }, theme, grid, looks, ...(faults !== undefined ? { faults } : {}) };
         const made: TrayCarriedFrame[] = [];
         for (const pose of poses) {
           const widget = widgetTypeFor(w, pose.type);
@@ -345,7 +353,8 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
             const size = w.get(g, Size);
             if (at === undefined || size === undefined) continue;
             const r = rectOf(at, size);
-            made.push(carriedFrame(pose, { kind, rect: { x: r.cx - r.w / 2, y: r.cy - r.h / 2, w: r.w, h: r.h }, props: propsOf(w, g, widget), key: g as number, lamp: L, ...(local !== undefined ? { local } : {}) }, env));
+            const frame = carriedFrame(pose, { kind, rect: { x: r.cx - r.w / 2, y: r.cy - r.h / 2, w: r.w, h: r.h }, props: propsOf(w, g, widget), key: g as number, lamp: L, ...(local !== undefined ? { local } : {}) }, env);
+            if (frame !== undefined) made.push(frame);
             continue;
           }
           const n = widget.defaultSize;
@@ -354,7 +363,8 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
           const cy = cam.y + pose.py / cam.zoom - (pose.v - 0.5) * n.h;
           const key = -(0x40000000 + pose.id);
           if (copyLocal !== undefined) faced.set(key, copyLocal as KindLocal);
-          made.push(carriedFrame(pose, { kind, rect: { x: -n.w / 2, y: -n.h / 2, w: n.w, h: n.h }, props: takenProps(widget), key, lamp: { x: L.x - cx, y: L.y - cy, h: L.h }, ...(copyLocal !== undefined ? { local: copyLocal } : {}) }, env));
+          const frame = carriedFrame(pose, { kind, rect: { x: -n.w / 2, y: -n.h / 2, w: n.w, h: n.h }, props: takenProps(widget), key, lamp: { x: L.x - cx, y: L.y - cy, h: L.h }, ...(copyLocal !== undefined ? { local: copyLocal } : {}) }, env);
+          if (frame !== undefined) made.push(frame);
         }
         // a composite kind's pass is made async: made ahead, from the lift, so the hand-off never waits a frame for it
         ground.warmTray(carry.types().flatMap((t) => { const k = objectKindOf(widgetTypeFor(w, t)); return k === undefined ? [] : [[carrySlot(t), k.name] as const]; }), trayLanded);
@@ -404,7 +414,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
     setTheme(t, p) {
       theme = t;
       if (p !== undefined) palette = p;
-      looks = looksOf(opts.kinds, palette, theme);
+      looks = looksOf(lookKinds(), palette, theme);
       dirty = true;
       wakes.theme += 1;
       themeGen += 1;

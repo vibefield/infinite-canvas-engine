@@ -10,11 +10,14 @@
 // the spatial index holds rects, and a kind's drawing may reach past its rect. `live` while a
 // spring moves — or a kind's own body (a print in the air, D3t-a): the part under a still pointer is the part that is
 // there now. `lifted` (D3t-a): what the builder painted lifted by its kind's word, asked first where it is drawn.
+// THE KIND BOUNDARY (petition I24): through the builder's `hitAt`, an object drawn as the MISSING face is picked by its box (the
+// object itself — a tap selects it, a drag moves it), and a kind whose `hit` throws takes a strike and MISSES — the pick goes on to
+// the next object down, nothing else is lost.
 
 import type { Entity, FramePickSource } from "@ice/core";
 import type { DeskBuilder } from "./builder";
 
-export function createPickSource(builder: Pick<DeskBuilder, "geometryOf" | "kindOf" | "live" | "reach" | "lifted"> & Partial<Pick<DeskBuilder, "veiled" | "heldPoint" | "hand">>, opts: { readonly moving?: () => boolean } = {}): FramePickSource {
+export function createPickSource(builder: Pick<DeskBuilder, "geometryOf" | "kindOf" | "live" | "reach" | "lifted"> & Partial<Pick<DeskBuilder, "veiled" | "heldPoint" | "hand" | "hitAt">>, opts: { readonly moving?: () => boolean } = {}): FramePickSource {
   return {
     pad: () => builder.reach(),
     // what a kind draws lifted (D3t-a — a print carried or gliding) is asked first, where it is drawn, not where its facts are —
@@ -29,6 +32,7 @@ export function createPickSource(builder: Pick<DeskBuilder, "geometryOf" | "kind
       // goes through the pose the last build drew; anywhere else it is picked where it is drawn, its rest rect answers nothing
       const hp = builder.heldPoint?.(e, wx, wy);
       const [x, y] = hp ?? [wx, wy];
+      if (builder.hitAt !== undefined) { const part = builder.hitAt(e, x, y); return part === undefined ? undefined : (part ?? "outside"); }
       return kind.hit(G, x, y) ?? "outside";
     },
     live: () => builder.live() || opts.moving?.() === true,

@@ -53,12 +53,39 @@ export interface FakeGpu {
   readonly device: GPUDevice;
   /** What reached the queue. */
   readonly queue: { submits: number; writes: number };
+  /** The errors no scope captured — what the device's `uncapturederror` listeners heard (petition I24's witness). */
+  readonly uncaptured: { readonly message: string }[];
+}
+
+export interface FakeDeviceOptions {
+  /**
+   * A shader the device REFUSES (petition I24 — a WGSL that does not compile): the compiler's message for `code`, or undefined to
+   * compile it. A refused module raises a GPUValidationError — into the innermost `validation` scope open when it was made, else
+   * to the `uncapturederror` listeners — and its compilation info carries the message as an error, as WebGPU's does.
+   */
+  readonly refuse?: (code: string) => string | undefined;
 }
 
 /** A device of stubs; every render pass an encoder begins logs into `log` (after a `pass <label>` line). */
-export function fakeDevice(log: string[] = []): FakeGpu {
+export function fakeDevice(log: string[] = [], opts: FakeDeviceOptions = {}): FakeGpu {
   const queue = { submits: 0, writes: 0 };
   const labelled = (d?: { readonly label?: string }) => ({ label: d?.label ?? "" });
+  // THE ERROR SCOPES as WebGPU keeps them: a stack; an error goes to the innermost scope of its filter (kept only if it holds none
+  // yet), else to the `uncapturederror` listeners
+  const scopes: { readonly filter: GPUErrorFilter; error: { readonly message: string } | null }[] = [];
+  const listeners: ((ev: { readonly error: unknown }) => void)[] = [];
+  const uncaptured: { readonly message: string }[] = [];
+  const raise = (filter: GPUErrorFilter, message: string, name: string): void => {
+    const error = { message, constructor: { name } };
+    for (let i = scopes.length - 1; i >= 0; i--) {
+      const s = scopes[i] as (typeof scopes)[number];
+      if (s.filter !== filter) continue;
+      s.error ??= error;
+      return;
+    }
+    uncaptured.push(error);
+    for (const l of listeners) l({ error });
+  };
   const device = {
     // WebGPU's default limits — what the flat-card pipeline's plan counts its bindings against (K7b, card/card.ts `planCards`)
     limits: { maxSampledTexturesPerShaderStage: 16, maxSamplersPerShaderStage: 16, maxStorageBuffersPerShaderStage: 8, maxUniformBuffersPerShaderStage: 12, maxBindingsPerBindGroup: 1000 },
@@ -66,7 +93,11 @@ export function fakeDevice(log: string[] = []): FakeGpu {
     createBindGroup: labelled,
     createPipelineLayout: labelled,
     createSampler: labelled,
-    createShaderModule: (d: GPUShaderModuleDescriptor) => ({ ...labelled(d), getCompilationInfo: async () => ({ messages: [] }) }),
+    createShaderModule: (d: GPUShaderModuleDescriptor) => {
+      const refused = opts.refuse?.(d.code);
+      if (refused !== undefined) raise("validation", `Error while parsing WGSL: ${refused}`, "GPUValidationError");
+      return { ...labelled(d), getCompilationInfo: async () => ({ messages: refused === undefined ? [] : [{ type: "error", lineNum: 1, linePos: 1, message: refused }] }) };
+    },
     createRenderPipelineAsync: async (d: GPURenderPipelineDescriptor) => labelled(d),
     // (a texture's mips — photo/mips.ts, the notebook's and the calendar's paper — compile one synchronously)
     createRenderPipeline: (d: GPURenderPipelineDescriptor) => ({ ...labelled(d), getBindGroupLayout: () => ({ label: `${d.label ?? ""} group` }) }),
@@ -81,11 +112,13 @@ export function fakeDevice(log: string[] = []): FakeGpu {
       finish: () => ({}),
     }),
     queue: { writeBuffer: () => { queue.writes += 1; }, writeTexture: () => {}, submit: () => { queue.submits += 1; } },
-    // a pass that watches its first frames (the notebook's `render`, the calendar's `renderLayer`) finds nothing wrong here
-    pushErrorScope: () => {},
-    popErrorScope: async () => null,
+    // a pass that watches its first frames (the notebook's `render`, the calendar's `renderLayer`) finds nothing wrong here — unless
+    // something raised an error into its scope (a refused shader, petition I24)
+    pushErrorScope: (filter: GPUErrorFilter) => { scopes.push({ filter, error: null }); },
+    popErrorScope: async () => scopes.pop()?.error ?? null,
+    addEventListener: (type: string, fn: (ev: { readonly error: unknown }) => void) => { if (type === "uncapturederror") listeners.push(fn); },
   };
-  return { device: device as unknown as GPUDevice, queue };
+  return { device: device as unknown as GPUDevice, queue, uncaptured };
 }
 
 /** A canvas as `surface()` asks it: a webgpu context that configures and hands out a swap texture, and a drawing buffer size. */

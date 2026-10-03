@@ -42,6 +42,11 @@ export interface RasterBudget {
   /** The owner let the raster (or the resident array) go itself (no eviction). */
   release(owner: string, key: string): void;
   /**
+   * Every raster `owner` holds, let go WITHOUT its eviction (petition I24 — a kind gone MISSING: its caches went with its passes,
+   * and nothing of it is called again). Returns the bytes forgotten.
+   */
+  forget(owner: string): number;
+  /**
    * Evict least-recently-used caches until they are within their room — never one `keep` says to hold (an owner's word on
    * what is on screen this frame; absent, every cache may go), never a resident charge. Returns the bytes freed.
    */
@@ -91,6 +96,11 @@ export function createRasterBudget(cap: number, floor: number = Math.floor(cap *
       const k = id(owner, key);
       const ent = entries.get(k);
       if (ent !== undefined) drop(k, ent);
+    },
+    forget(owner) {
+      let bytes = 0;
+      for (const [k, ent] of [...entries]) if (ent.owner === owner) { drop(k, ent); bytes += ent.bytes; }
+      return bytes;
     },
     trim(keep) {
       const limit = room();

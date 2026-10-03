@@ -23,6 +23,11 @@ export { type DataChildren, FLUX_REST, type HeldContext, type HeldReadoutContext
 // the hand's pose (design-015 §8, D4b): the reading size, the pose between the desk and the hand, the pose as a camera
 export { carryOf, focusOf, HELD_USER_REST, type HeldPose, type HeldUser, type HeldViewport, heldCamera, heldFrame, heldPose, HOLD, type HoldOptions, type HoldReserves, type HomePose, homePose, isNarrow, type ReadingTarget, readingTarget } from "./hold/pose";
 export { NO_DOCS, type TypingDocs, type WritableSession, writable } from "./docs";
+// THE KIND BOUNDARY (petition I24): one kind's fault is that kind's — the faults a layer keeps and says (`DeskLayerStatus.faults`),
+// the ladder's numbers, `due().kinds`' word for a missing kind — and the missing face both hosts draw what nothing can draw with
+export { createKindFaults, faultText, KIND_MISSING, KIND_STRIKES, type KindFault, type KindFaults } from "./faults";
+export { MISSING_KIND, MISSING_OBJECT } from "./missing/object";
+export { isMissingRecord, missingFace, type MissingRecord } from "./missing/layout";
 export * from "./theme";
 export * from "./shaders";
 export { BLUE_NOISE_SIZE, blueNoise } from "./assets/blue-noise.gen";
