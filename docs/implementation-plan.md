@@ -1763,7 +1763,9 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   only when the desk was mounted with it — a type registered after the mount wears I24's missing face, said once a type ("remount to
   draw it"), and the tray hangs none of it (before: the ground threw `no kind "…" is registered` out of every frame that showed one).
   With `createDeskHost`/`<Desk>` the catalog is the engine's, built once, so a new type is a new engine and a new mount anyway; the
-  refusal covers a catalog a host hands the layer itself. The mount's cost is each layer's own instrument (`perf().boot`: device,
+  refusal covers a catalog a host hands the layer itself. On one engine a remount compiles that engine's catalog again — a host whose
+  kinds change makes the engine anew too (VibeField's generation is both, B4), and that engine's making and the document's reopening
+  are the host's cost, not in the numbers below. The mount's cost is each layer's own instrument (`perf().boot`: device,
   compiled, presented — ms since the mount), read by rig:remount, the twentieth rig (`__desk.remount()` — the product's `<Desk>` on a
   new generation, same engine and document): on an Apple M1 Max, Chrome 154 headless, five runs of five remounts of the showcase (six
   kinds and the clock): the device 4–6 ms, the passes 34–47 ms, the first frame presented 92–120 ms after the mount (each run's medians

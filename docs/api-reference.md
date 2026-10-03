@@ -334,13 +334,16 @@ catalog a host hands a layer itself (the context's structural `catalog`) is read
 the desk was not mounted with wears the missing face (petition I24's, pickable by its box), the desk says so once a type on the
 console ("… remount to draw it"), and the tray hangs no specimen of it. A host that changes its kinds — a plugin enabled, updated or
 removed — REMOUNTS the layer on a new generation (a new factory: `<Desk>` disposes the mount and mounts the new one; `createDeskHost`
-is disposed and made again). What a remount costs, measured by `rig:remount` — the showcase (the six kinds and the clock, one of each)
-remounted five times a run, five runs, on an Apple M1 Max (macOS 26, Chrome 154 headless, 1200 × 800 @ 2): the device in hand 4–6 ms,
-the passes compiled 34–47 ms, the first frame presented 92–120 ms after the mount (each run's medians 4.3–4.7 / 35–37 / 104–110 ms);
-the page's first mount, cold, 31–36 / 173–192 / 188–221 ms. A remount compiles the same programs again, warm (a fifth of the cold
-compile here); a plugin whose program changed pays that program's cold compile on top (not measured). A host veils it or not on these;
-each mount reads its own off `perf().boot` (`DeskLayerBoot`: `device`, `compiled` — the status `ready` —, `presented` — the first
-frame's GPU work done —, ms since the mount, each absent until it happens). A document survives a remount untouched — the layer holds
+is disposed and made again), on a new engine when its catalog changes: the desk resolves an object's type through the engine's
+catalog, and on one engine a remount compiles that catalog's kinds again (VibeField's generation is both, its B4 remount; making
+the engine and reopening the document are the host's cost, not counted here). What a remount costs, measured by `rig:remount` — the
+showcase (the six kinds and the clock, one of each) remounted five times a run, five runs, on an Apple M1 Max (macOS 26, Chrome 154
+headless, 1200 × 800 @ 2): the device in hand 4–6 ms, the passes compiled 34–47 ms, the first frame presented 92–120 ms after the
+mount (each run's medians 4.3–4.7 / 35–37 / 104–110 ms); the page's first mount, cold, 31–36 / 173–192 / 188–221 ms. A remount
+compiles the same programs again, warm (a fifth of the cold compile here); a plugin whose program changed pays that program's cold
+compile on top (not measured). A host veils it or not on these; each mount reads its own off `perf().boot` (`DeskLayerBoot`:
+`device`, `compiled` — the status `ready` —, `presented` — the first frame's GPU work done —, ms since the mount, each absent until
+it happens). A document survives a remount untouched — the layer holds
 no document state: it draws what it reads from the world, the document is the engine's, and a typing session open at the unmount
 commits as it ends (the editor's lease ends with the desk). Proven by `packages/desk/test/kind-set.test.ts` (no commit across an
 unmount and the next mount, the snapshot byte for byte; the next generation draws the same objects), by
