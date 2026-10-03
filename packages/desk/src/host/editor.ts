@@ -238,6 +238,9 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     },
     placement: () => placed,
     dispose() {
+      // a lease still held ends with the editor (petition I25 — a desk unmounted mid-typing, a remount among them): its `ended` is told,
+      // so a typing session commits and lifts its claim, never left open with its idle commit cleared below
+      end();
       if (idle !== undefined) clearTimeout(idle);
       lent = undefined;
       el.removeEventListener("input", onInput);

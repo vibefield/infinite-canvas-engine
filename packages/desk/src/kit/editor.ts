@@ -32,7 +32,8 @@ export interface EditorPlace {
 
 /**
  * A LEASE on the ONE editor (D3t-c; K8a — any kind's): while lent, the textarea's value, keys, caret and blur are the lease's, and
- * it says where the textarea stands; another lease, a blur, `release`, or `live()` answering false ends it (`ended`).
+ * it says where the textarea stands; another lease, a blur, `release`, `live()` answering false or the editor's `dispose` (the desk
+ * unmounted — petition I25) ends it (`ended`).
  */
 export interface EditorLease {
   /** The TEXT PART this lease writes — its kind's declared `TextPart.part` ("note.body", "calendar.line"): what `lease()` names. */
@@ -75,6 +76,7 @@ export interface DeskEditor {
   follow(): void;
   /** Where the editor's box stands on screen (container px): its centre, size and turn — null while hidden. */
   placement(): { readonly cx: number; readonly cy: number; readonly w: number; readonly h: number; readonly angle: number } | null;
+  /** The editor goes with its desk: a lease still held ends first (`ended` — a typing session commits), then the textarea leaves. */
   dispose(): void;
 }
 

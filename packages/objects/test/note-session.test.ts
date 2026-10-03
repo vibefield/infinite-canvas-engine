@@ -91,4 +91,19 @@ describe("a typing session lives until 1 s after the last key, and ends only by 
     expect(r.doc()).toBe("ab");
     r.dispose();
   });
+
+  it("the editor's DISPOSE ends its lease: a session still open commits — a desk unmounted mid-typing (a remount on a new generation, petition I25) loses no keystroke and leaves no claim behind", () => {
+    const r = rig();
+    r.body.focus(r.note);
+    r.type("mid");
+    expect(r.typing.open()).toBe(true);
+    expect(r.doc()).toBe("");
+    r.editor.dispose();   // the layer's dispose: the generation ends with the session open
+    expect(r.typing.open()).toBe(false);
+    expect(r.typing.editing()).toBeUndefined();   // the claim lifted with it
+    expect(r.doc()).toBe("mid");   // ONE commit — the session's
+    vi.advanceTimersByTime(5000);   // no idle left armed behind the editor
+    expect(r.doc()).toBe("mid");
+    r.dispose();
+  });
 });
