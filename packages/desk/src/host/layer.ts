@@ -497,6 +497,14 @@ function tellAwake(kind: string): void {
   console.warn(`[ice] desk: the kind "${kind}" declares a local \`tick\` and no \`due\` — it is due every frame, so the desk never sleeps. Declare \`KindLocal.due(now)\`: now while it moves, a later time, or Infinity until a fact, an input or \`KindHost.wake\` moves it (design-016 K7a).`);
 }
 
+/** The kinds told, once a page, that their `open.readout` threw (I22): the held bar kept their tools and showed no word. */
+const toldReadout = new Set<string>();
+function tellReadout(kind: string, err: unknown): void {
+  if (toldReadout.has(kind)) return;
+  toldReadout.add(kind);
+  console.error(`[ice] desk: the kind "${kind}"'s \`open.readout\` threw — the anchor carries its held tools and no word (petition I22); said once a page`, err);
+}
+
 /** A host's length or time for the desk's chrome (I20, I21): a finite number ≥ 0, or the mount refuses it by its name. */
 function hostNumber(name: string, v: number | undefined): number | undefined {
   if (v === undefined) return undefined;
@@ -605,10 +613,29 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const typeNamed = new Map([...types].map((t) => [t.type, t] as const));
     // the selection's KIND ACTS (K8a): what every selected object's type declares (`defineObject({ menu })`), read off its PrefabId
     const menuOf = (e: Entity): readonly MenuActionDef[] => { const id = world.isAlive(e) ? world.get(e, PrefabId)?.id : undefined; return typeof id === "string" ? (typeNamed.get(id)?.menu ?? []) : []; };
+    /** An object's props as the world holds them now — its type's groups' cells, flat: what a held tool's act reads (`HeldToolApi.props`). */
+    const propsOf = (e: Entity): Readonly<Record<string, unknown>> => {
+      const id = world.isAlive(e) ? world.get(e, PrefabId)?.id : undefined;
+      const props: Record<string, unknown> = {};
+      for (const g of (typeof id === "string" ? typeNamed.get(id)?.groups : undefined) ?? []) Object.assign(props, (world.get(e, g.component) as Record<string, unknown> | undefined) ?? {});
+      return props;
+    };
+    // the kind's WORD in hand (I22): its `open.readout` — a string, or read off the world, the object's props and the kind's desk state
+    // each time the anchor is recomposed; a throw is the kind's, caught here (the anchor keeps its tools, no word) and said once
+    const readoutOf = (kind: ObjectKind | undefined, e: Entity): string | undefined => {
+      const r = kind?.open?.readout;
+      if (r === undefined || kind === undefined) return undefined;
+      let word: unknown = r;
+      if (typeof r === "function") {
+        try { word = r({ world, entity: e, props: () => propsOf(e), local: locals.get(kind.name) }); }
+        catch (err) { tellReadout(kind.name, err); return undefined; }
+      }
+      return typeof word === "string" && word.length > 0 ? word : undefined;
+    };
     // the selection menu's source: the anchor published whenever a frame moved it — the marks' word, and the hand's (D4b: with an
     // object in hand the menu travels to the foot and becomes the held bar; it hides while the object flies home). D3t-a: the kind's
     // tools as the bar's slots (their swatches from the kind's look) and the mode in hand — core's `HeldTool`, the one slot marked;
-    // I20: the bar's travel when the host set one
+    // I20: the bar's travel when the host set one; I22: the kind's word in hand when it says one
     const anchorOf = (): SelectionAnchor => {
       const a = builder.anchor();
       // the pegboard tray is out (design-017 §4): the desk under it is inert, so the menu has nothing to act on — it steps away
@@ -618,7 +645,8 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       const kind = builder.kindOf(h.entity);
       const swatches = kind?.open?.swatches?.(compose.look(kind.name)) ?? {};
       const active = world.isAlive(h.entity) ? (world.get(h.entity, HeldTool)?.id ?? "") : "";
-      return { ...a, held: { tools: heldSlots(kind?.open?.tools ?? [], swatches), active, landing: h.landing, settled: h.settled, ...(hold.travelMs !== undefined ? { travelMs: hold.travelMs } : {}) } };
+      const readout = readoutOf(kind, h.entity);
+      return { ...a, held: { tools: heldSlots(kind?.open?.tools ?? [], swatches), active, landing: h.landing, settled: h.settled, ...(hold.travelMs !== undefined ? { travelMs: hold.travelMs } : {}), ...(readout !== undefined ? { readout } : {}) } };
     };
     const listeners = new Set<() => void>();
     let published = "";

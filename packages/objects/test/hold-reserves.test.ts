@@ -36,12 +36,13 @@ describe("the hand's reserves on the layer (petition I20)", () => {
     }
   });
 
-  it("without the option: HOLD's fit (56 / 72) and no travel on the anchor — the anchor is the one 0.14.0 published", async () => {
+  it("without the option: HOLD's fit (56 / 72) and no travel on the anchor — the bar keeps its own", async () => {
     desk = await mountDesk(undefined, { frameMs: 16 });
     const { settled, frame, held } = pickUp(desk);
     expect(settled).toBe(true);
     expect((frame?.cy ?? 0) - (frame?.hy ?? 0)).toBeCloseTo(HOLD.top, 6);
     expect(800 - ((frame?.cy ?? 0) + (frame?.hy ?? 0))).toBeCloseTo(HOLD.band, 6);
-    expect(held === undefined ? [] : Object.keys(held).sort()).toEqual(["active", "landing", "settled", "tools"]);
+    expect(held).toBeDefined();
+    expect(held).not.toHaveProperty("travelMs");
   });
 });

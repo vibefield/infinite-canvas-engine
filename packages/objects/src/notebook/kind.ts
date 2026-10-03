@@ -637,6 +637,9 @@ export function notebookKind(opts: NotebookKindOptions = {}): ObjectKind<Noteboo
       tools: NOTEBOOK_TOOLS,
       tool: () => penToolId(DEFAULT_PEN),
       swatches: (look) => (look as NotebookObjectLook).swatches,
+      // the WORD in hand (I22 — MC-D9): the page the book is open at as the bar's ‹ › count it — "Page 1" at its first spread, one on
+      // for each turn — from the spread a turn is heading for (its transaction not landed yet), else the document's
+      readout: (c) => `Page ${((c.local as Books | undefined)?.state(c.entity).pending ?? clamp(Math.round(numberProp(c.props(), "spread", 0)), 0, sheets)) + 1}`,
     },
     theme(palette: Palette, _name: ThemeName): NotebookObjectLook {
       const n = (palette as NotebookPalette).notebooks;

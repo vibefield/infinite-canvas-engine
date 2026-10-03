@@ -16,6 +16,7 @@ last step of `gate:landing`, after `pack:audit` builds the umbrella) compiles it
 | a tray entry | a clock on a hook (`tray`), showing the shop's 10:10:30 |
 | a menu act | `desk-clock.seconds` (`defineObject({ menu })`), its own glyph |
 | an opening | picked up, its held tools set it (seconds, 24-hour ring, zone ±1 h, the next dial), each glyph its own (`{ path }`) |
+| a word in hand | `open.readout` (petition I22): the time its hands show — "10:08:42", to the minute without its seconds hand, 24-hour on its ring (`clockWord`) — on the selection's anchor as `held.readout` |
 | a container's chip | a disc of its dial in the paper finish (`chip`) — it provides `CONTAINABLE` |
 | its pick | its round face (`hit`) — the rect's corners are not the clock's |
 

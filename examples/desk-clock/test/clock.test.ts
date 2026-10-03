@@ -119,6 +119,29 @@ describe("the desk clock's world half", () => {
     expect(local.due(now + 696)).toBeCloseTo(now + 696 + 1000, 6);   // and waits a second on
   });
 
+  it("I22 — its WORD in hand is the time its hands show, as its last record drew them: the wall's, moving with them; a still's pinned hour; on the 24-hour ring to 23; without its seconds hand to the minute; none before it is drawn", () => {
+    let wall = AT;   // 10:08:42.300 UTC
+    const k = clockKind({ now: () => wall });
+    const local = k.local?.({ pass: () => undefined }) as ClockLocal;
+    const readout = k.open?.readout;
+    expect(typeof readout).toBe("function");
+    const word = (props: Record<string, unknown>): string | undefined => (typeof readout === "function" ? readout({ world: createWorld(), entity: 1 as Entity, props: () => props, local }) : readout);
+    const draw = (props: Record<string, unknown>, extra: Partial<ObjectContext> = {}): void => { const c = ctxOf(1, props, { local, ...extra }); k.record(k.resolve(c), c); };
+    expect(word(PROPS)).toBeUndefined();   // not drawn yet: nothing shown, no word
+    draw(PROPS);
+    expect(word(PROPS)).toBe("10:08:42");
+    wall += 1000;
+    expect(word(PROPS)).toBe("10:08:42");   // the word is the hands' — they move at the next record, and the word with them
+    draw(PROPS);
+    expect(word(PROPS)).toBe("10:08:43");
+    draw({ ...PROPS, seconds: false });
+    expect(word({ ...PROPS, seconds: false })).toBe("10:08");
+    const evening = { ...PROPS, ring24: true };
+    draw(evening, { asset: { at: Date.UTC(2026, 8, 28, 22, 5, 9) } });
+    expect(word(evening)).toBe("22:05:09");
+    expect(word(PROPS)).toBe("10:05:09");   // the twelve-hour face of the same hour
+  });
+
   it("a minute clock (no seconds hand) is due at the next minute; a clock not drawn at a move is waited on no more", () => {
     let wall = AT;
     const k = clockKind({ now: () => wall });

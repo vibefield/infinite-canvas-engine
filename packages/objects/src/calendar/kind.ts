@@ -32,7 +32,7 @@ import type { CalEvent } from "./events";
 import { padFrame, buildPad } from "./pad";
 import { CALENDAR, type CalendarLaw } from "./law";
 import type { CalendarColours } from "./layout";
-import { dayIn, isWeekendCol, monthGrid, monthOfDay, phasesBetween, today as todayOf } from "./month";
+import { dayIn, isWeekendCol, MONTH_NAMES, monthGrid, monthOf, monthOfDay, phasesBetween, today as todayOf } from "./month";
 import { type CalendarDraw, CalendarPass, type SheetBox, type SheetDraw } from "./pass";
 import { anyIn, type EventLine, onSheet, type PrintLook, printSheet, type SheetPrint } from "./print";
 import { type PinnedSheet, PrintTiles } from "./printing";
@@ -764,6 +764,9 @@ export function calendarKind(opts: CalendarKindOptions = {}): ObjectKind<Calenda
         { id: "pen", label: "The pen", kind: "mode", keys: ["p"], hint: "P", glyph: "pen" },
       ],
       tool: () => "pen",
+      // the WORD in hand (I22 — MC-D9): the month the pad is turned to, by its name — the document's (a turn of the bar lands at once),
+      // or with none chosen the month of the pad's today, as the sheet shows it
+      readout: (c) => MONTH_NAMES[monthOf(monthOfKey(stringProp(c.props(), "month", "")) ?? monthOfDay((c.local as Pads | undefined)?.today() ?? todayOf())).m - 1],
     },
     resolve(ctx: ObjectContext): CalendarGeometry {
       const pads = ctx.local as Pads | undefined;

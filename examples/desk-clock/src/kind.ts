@@ -14,7 +14,7 @@ import { type ChildShape, type Lamp, type MarkFrame, PAPER_FINISH, type ShaderTe
 import type { HeldToolDef } from "@vibecook/ice";
 import { CLOCK, CLOCK_STYLES, type ClockLaw, type ClockStyle, caseOf, clockReach, EARLY_MS, handAngles, keyAt, offsetAt, SHOP_TIME, stepOf, timeOfDay, zoneOf } from "./law";
 import type { ClockGeometry, ClockInstance } from "./layout";
-import { type ClockLocal, createClockLocal } from "./local";
+import { type ClockLocal, type ClockShown, createClockLocal } from "./local";
 import { ClockPass } from "./pass";
 import { clockShaders } from "./shaders";
 import { type ClockLook, type ClockPalette, CLOCK_PALETTE, clockLook } from "./theme";
@@ -76,6 +76,21 @@ export const CLOCK_TOOLS: readonly HeldToolDef[] = [
   { id: "dial", label: "Next dial", kind: "action", keys: ["f"], hint: "F", glyph: { path: DIAL_GLYPH }, run: (api) => { const s = styleOf(api.props()); api.setProps({ style: CLOCK_STYLES[(CLOCK_STYLES.indexOf(s) + 1) % CLOCK_STYLES.length] }); } },
 ];
 
+/**
+ * The clock's WORD in hand (petition I22 — a plugin's readout, declared as a built-in's is): the time its hands show, as its last record
+ * drew them (`ClockLocal.shown` — a still's pinned hour, or the wall's, moving with the hands: the desk draws a frame at every move and
+ * recomposes the word with it) — "10:08", or "10:08:42" with its seconds hand; on the 24-hour ring the hour runs to 23, as the ring
+ * reads. None before the clock has been drawn.
+ */
+export function clockWord(shown: Pick<ClockShown, "tod" | "seconds"> | undefined, ring24: boolean): string | undefined {
+  if (shown === undefined) return undefined;
+  const t = Math.floor(shown.tod);
+  const h = Math.floor(t / 3600) % 24;
+  const hour = ring24 ? String(h).padStart(2, "0") : String(h % 12 === 0 ? 12 : h % 12);
+  const mm = String(Math.floor(t / 60) % 60).padStart(2, "0");
+  return shown.seconds ? `${hour}:${mm}:${String(t % 60).padStart(2, "0")}` : `${hour}:${mm}`;
+}
+
 /** The clock's program for a host's shader text (the kit's pieces from it; its own from shaders.ts): its pass on the root's mat. */
 export function clockProgram(text?: ShaderText): KindProgram<ClockInstance> {
   return {
@@ -131,7 +146,8 @@ export function clockKind(opts: ClockKindOptions = {}): ObjectKind<ClockGeometry
     // the desk's marks go round the round case as drawn (its corner its radius)
     frame: (G: ClockGeometry): MarkFrame => ({ cx: G.centre[0], cy: G.centre[1], hx: G.radius, hy: G.radius, angle: 0, r: G.radius }),
     theme: (palette: Palette, _name: ThemeName): ClockLook => clockLook((palette as ClockPalette).clocks ?? CLOCK_PALETTE),
-    // picked up, it is set: the held bar's tools are its own (a flat kind: the held slot's camera frames the case)
-    open: { extent: (c) => c.rect, tools: CLOCK_TOOLS },
+    // picked up, it is set: the held bar's tools are its own (a flat kind: the held slot's camera frames the case); its word in hand
+    // is the time it shows (I22)
+    open: { extent: (c) => c.rect, tools: CLOCK_TOOLS, readout: (c) => clockWord((c.local as ClockLocal | undefined)?.shown(c.entity), flagProp(c.props(), "ring24", false)) },
   };
 }

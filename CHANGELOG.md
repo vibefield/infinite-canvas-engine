@@ -71,6 +71,24 @@ its own block here as it is built.** Additive, every one: nothing of 0.14.0's su
   pixel of a hole, and above the foot's ramp it is tray-scrolled byte for byte), drawn in Chrome by rig:parity and FROM THE WORLD by
   rig:world on a page mounted with the foot (`rig.html?trayFoot=88`), maxΔ 0 both.
 
+<!-- petition I22 — a kind's word in hand, on the selection's anchor (2026-10-02) -->
+- **THE WORD IN HAND — `open.readout` → `HeldAnchor.readout`** (petition I22 — MC-D9 "readouts"; DK-12): a kind declares its word
+  beside its held tools — `readout?: string | ((ctx: HeldReadoutContext) => string | undefined)` on its `open` binding, `ctx` the read
+  side of what its held tools' acts are handed (`world`, `entity`, `props()` as the world holds them now) and its own desk state
+  (`local`, as `open.page` and `open.openness` read it); a readout never writes. The layer reads it each time it recomposes the
+  selection's anchor — the pickup, a mode taken up, an act run, every frame drawn while held — and publishes it as
+  `anchor().held.readout`, so a host's bar (VibeField's, DK-D23) prints it as data. `undefined`, "" or a non-string: no word, and the
+  anchor is 0.14.0's (no key). A readout that throws is caught at the kind's boundary — the anchor keeps the tools and carries no word,
+  the frame never sees it — and said once a page on the console, naming the kind (I24's whole-kind containment is a later ask). The
+  reference kinds that have a word declare it: the notebook "Page N" — the page it is open at as its ‹ › count it, read from the spread a
+  turn is heading for, so the word moves no later than the frame the document's spread does — and the desk calendar its month's name;
+  the example's desk clock (`examples/desk-clock`, a plugin kind: `clockWord`) the time its hands show ("10:08:42"; to the minute without
+  its seconds hand; 24-hour on its ring). `@ice/react`'s `<SelectionMenu>` does not print it (ICE's demo chrome stays as it is —
+  DK-D23, MC-D11 deferred). Witnesses: `packages/desk/test/held-readout.test.ts` (kinds of its own on the fake device: the props and the
+  desk state at the pickup and after an act, in the frame that draws it; a string, none, "" and a non-string; the throw contained — no
+  reflector fault — and said once), `packages/objects/test/held-readout.test.ts` (the notebook's Page 1 → Page 2, never heard behind the
+  document's spread; the calendar's September → October in the first frame after the act), `examples/desk-clock/test/clock.test.ts`.
+
 ## [0.14.0] — 2026-10-02
 
 **The first publish since 0.11.0, and it carries M20 + M21 + M22** — the desk (design-015), the kit and the

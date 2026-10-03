@@ -92,6 +92,8 @@ export interface HeldAnchor {
    * foot over it and back. Absent — the host set none — the bar keeps its own.
    */
   readonly travelMs?: number;
+  /** The kind's WORD in hand (petition I22 — its `open.readout`): "Page 2", "September". Absent — the kind says none (or none now). */
+  readonly readout?: string;
 }
 
 /** A kind's act as the selection menu shows it (K8a): plain data — the op stays on the widget type (`ops.runMenuAction`). */

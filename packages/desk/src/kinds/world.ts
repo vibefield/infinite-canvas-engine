@@ -20,7 +20,7 @@
 // select it, as in the prototype — and the real parts (a notebook's turn zone, a board's marker)
 // arrive with D3.
 
-import type { Component, Entity, HeldToolDef, Relation, Tag, WidgetType, World } from "@ice/core";
+import type { Component, Entity, HeldToolApi, HeldToolDef, Relation, Tag, WidgetType, World } from "@ice/core";
 import type { TypingDocs } from "../docs";
 import type { RasterBudget } from "../engine/budget";
 import type { RasterQueue } from "../engine/rasters";
@@ -82,6 +82,15 @@ export type ObjectHit = "content" | "frame" | (string & {});
 export type { HeldToolDef } from "@ice/core";
 
 /**
+ * What a kind's `open.readout` reads (petition I22): the READ side of what its held tools' acts are handed (core's `HeldToolApi` —
+ * the world, the object in hand, its props as the world holds them now) and the kind's own state on this desk (`local`, as `page`
+ * and `openness` read it: the spread a turn is heading for, the time a clock's hands show). A readout never writes.
+ */
+export interface HeldReadoutContext extends Pick<HeldToolApi, "world" | "entity" | "props"> {
+  readonly local: unknown;
+}
+
+/**
  * The kind's OPENING (design-015 §8; D4b) — what "pick it up" means for this kind. `extent`: the OPEN rect in the object's
  * own desk units, centred as its rect is and UNTURNED (the builder turns it with the object): a notebook's spread (twice the
  * case's width, left of the spine), a board's face, a calendar's month — what the reading size fits into the view. `pose`: how
@@ -103,6 +112,14 @@ export interface OpenBinding {
   readonly tools?: readonly HeldToolDef[];
   tool?(props: Readonly<Record<string, unknown>>): string;
   swatches?(look: unknown): Readonly<Record<string, string>>;
+  /**
+   * The kind's WORD IN HAND (petition I22 — MC-D9's readouts): where the hand is, said beside its tools — the notebook's "Page 2",
+   * the calendar's "September", a clock's time. A string, or read each time the selection's anchor is recomposed (the pickup, a
+   * mode taken up, a held tool's act run — every frame drawn while it is held) and surfaced as `HeldAnchor.readout`; `undefined`
+   * or "" — no word. A readout that throws is caught at the kind's boundary: the anchor keeps the tools and carries no word, and the
+   * desk says so once.
+   */
+  readonly readout?: string | ((ctx: HeldReadoutContext) => string | undefined);
 }
 
 /**

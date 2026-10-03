@@ -1718,6 +1718,14 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   line is never hovered or taken — R4's rule mirrored (the strip between the foot's line and a host's line would otherwise take a
   hidden specimen). The oracle's new still `tray-foot` holds the foot to its bare board and the rest to its footless twin byte for
   byte; the 113 committed stills are byte-identical; rig:parity and rig:world (from the world, on `rig.html?trayFoot=88`) maxΔ 0.
+- **I22 — a kind's word in hand** (**BUILT 2026-10-02**, branch `i20-22-host-options`; DK-12, MC-D9 ruled readouts): `open.readout` —
+  a string, or a function of its held tools' read side and its desk state — surfaced as `HeldAnchor.readout`, recomposed with the
+  anchor (every frame drawn while held), so a word that follows a motion (a clock's second) moves with its frames and asks no wake of
+  its own. Decided in the build: the readout reads the kind's `local` beside what the acts read (the petition named the acts' world,
+  entity and props) — a notebook's turn lands in the document a microtask after the frame that starts it, and a word read off the
+  document alone published "Page 1" over a turning sheet for a frame (the unit's red); "Page N" counts the reader's turns (‹ ›, "Next
+  page"), not the folio of a spread's left page. The notebook and the calendar declare theirs, the example's clock its time; a throw is
+  contained at the kind's boundary and said once — I24 owns the rest.
 
 ## Release cut & downstream
 

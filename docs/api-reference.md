@@ -346,6 +346,11 @@ engine names a kind:
   the finishes it draws; a chip in none of them is left out and counted (`BuildWork.unchipped`).
 - **Held-tool glyphs**: `HeldGlyph` — a name of the bar's set or the tool's own drawing (`{ path, fill? }`); the held bar marks an
   unknown name missing (its initial, `data-glyph-missing`), never drawing another glyph.
+- **Words in hand** (petition I22): a kind's `open.readout` — a string, or `(ctx: HeldReadoutContext) => string | undefined` reading what
+  its held tools' acts read (`world`, `entity`, `props()`) and its desk state (`local`) — is carried on the selection's anchor as
+  `held.readout`, recomposed with it (every frame drawn while held), for a host's bar to print; none, "" or a non-string — no word; a
+  throw is caught at the kind's boundary and said once. The notebook says its page ("Page 2"), the calendar its month ("September"), and
+  the example's desk clock (`examples/desk-clock`) the time its hands show — a plugin's word, declared as a built-in's.
 - **Menu acts**: `defineObject({ menu })` (core's `MenuActionDef`) — the anchor's `menu` carries a selection's shared acts
   (`withKindActs`), the React menu shows them first and runs `ops.runMenuAction`.
 - **Tray entries and their chips** (design-017 §8, design-018 §6): `defineObject({ tray: { label, hang, category?, … } })` hangs a
@@ -384,7 +389,7 @@ engine names a kind:
 **The worked third-party kind (design-016 K8b)** — `examples/desk-clock` (`@ice-examples/desk-clock`, private, never published): an
 analogue desk clock in a package of its own that imports ICE only as `@vibecook/ice`, `@vibecook/ice/desk`, `/desk/kit` and
 `/desk/engine` — its own WGSL (`kitWgsl(["view", "portal", "sdf", "light"])`), its pass, durable props, a registered wake, a tray
-entry, a menu act and held tools with their own glyphs, a chip, a round pick, a still's time through `pinAsset` — registered by
+entry, a menu act and held tools with their own glyphs, a word in hand (its time, I22), a chip, a round pick, a still's time through `pinAsset` — registered by
 apps/desk beside the six (`c`, `s`) and drawn in the golden through the oracle's OPEN kind list (`createOracleDesk({ objects })`; a
 scene's `objects: [{ type, x, y, props, asset }]`). Its walls: `test/imports.test.ts` and the cruiser rule
 `examples-import-only-the-published-entries` (the published entries only, never `/desk/objects`), and `dts:check` — it compiles against
