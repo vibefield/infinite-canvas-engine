@@ -1140,6 +1140,45 @@ async function trayCheck(sc) {
   return ok;
 }
 
+/**
+ * THE CAPTURE DOOR (petition I23 — ground.ts `captureFrame`, what `handle.capture` runs; frame.mjs `captureOf`), as pixels: the same
+ * still (1) captured at 1× IS the frame the golden pins — the same size, the same sha-256 as the render beside it (and the committed
+ * one); (2) captured at 0.25× is the still drawn at a quarter of the dpr directly, to the byte — every kind draws from the view's dpr
+ * alone, so a thumbnail is the desk, never an approximation of it; (3) a rect is that rect of the frame, byte for byte. Each capture
+ * runs inside the probe's scopes: a validation error anywhere on the capture's path fails the run.
+ */
+async function captureCheck(sc) {
+  const s = sc.scene;
+  const d = VIEW.dpr;
+  const { px: A, w, h } = await render(s, { marks: true });
+  const shaOf = (b) => createHash("sha256").update(b).digest("hex");
+  const full = await scoped(`capture ${sc.name} 1×`, () => desk.captureOf(s));
+  const quarter = await scoped(`capture ${sc.name} 0.25×`, () => desk.captureOf(s, { scale: 0.25 }));
+  const rect = { x: 150, y: 100, width: 400, height: 300 };
+  const part = await scoped(`capture ${sc.name} rect`, () => desk.captureOf(s, { rect }));
+  const { px: Q, w: qw, h: qh } = await render({ ...s, view: { cssW: VIEW.cssW, cssH: VIEW.cssH, dpr: d / 4 } }, { marks: true });
+  const fullOk = full !== undefined && full.width === w && full.height === h && shaOf(full.bytes) === shaOf(A);
+  const pinned = golden[sc.name] === undefined ? "no entry in shas.json" : golden[sc.name] === shaOf(A) ? "the committed golden" : "NOT the committed golden";
+  let qMax = 0;
+  let qDiff = 0;
+  const quarterOk = quarter !== undefined && quarter.width === qw && quarter.height === qh;
+  if (quarterOk) for (let o = 0; o < Q.length; o += 4) { const dd = Math.max(delta(quarter.bytes, Q, o), Math.abs(quarter.bytes[o + 3] - Q[o + 3])); if (dd > 0) qDiff++; if (dd > qMax) qMax = dd; }
+  if (quarterOk && qDiff > 0 && process.env.ORACLE_DEBUG) {
+    let x0 = 1e9; let x1 = -1; let y0 = 1e9; let y1 = -1;
+    for (let y = 0; y < qh; y++) for (let x = 0; x < qw; x++) { const o = (y * qw + x) * 4; if (delta(quarter.bytes, Q, o) > 0 || quarter.bytes[o + 3] !== Q[o + 3]) { x0 = Math.min(x0, x); x1 = Math.max(x1, x); y0 = Math.min(y0, y); y1 = Math.max(y1, y); } }
+    console.log(`      debug: the quarter's differing px lie in (${x0},${y0})–(${x1},${y1}) of ${qw}×${qh}; buffers in oracle/results/debug-${sc.name}-quarter-{capture,direct}.rgba`);
+    writeFileSync(resolve(results, `debug-${sc.name}-quarter-capture.rgba`), quarter.bytes); writeFileSync(resolve(results, `debug-${sc.name}-quarter-direct.rgba`), Q);
+  }
+  const rw = rect.width * d;
+  const rh = rect.height * d;
+  const rectOk = part !== undefined && part.width === rw && part.height === rh;
+  let rMax = 0;
+  if (rectOk) for (let y = 0; y < rh; y++) for (let x = 0; x < rw; x++) { const src = ((y + rect.y * d) * w + x + rect.x * d) * 4; const dst = (y * rw + x) * 4; for (let c = 0; c < 4; c++) rMax = Math.max(rMax, Math.abs(part.bytes[dst + c] - A[src + c])); }
+  const ok = fullOk && quarterOk && qMax === 0 && rectOk && rMax === 0;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  capture    ${sc.name.padEnd(24)} at 1× ${full ? `${full.width}×${full.height}` : "nothing"}, its sha ${fullOk ? "=" : "≠"} the frame's (${pinned}) · at 0.25× ${quarter ? `${quarter.width}×${quarter.height}` : "nothing"} vs the frame drawn at dpr ${d / 4}: maxΔ ${qMax} on ${qDiff.toLocaleString()} px · the rect ${rect.width}×${rect.height} css at (${rect.x}, ${rect.y}): ${rectOk ? `maxΔ ${rMax} against the frame's crop` : "wrong size"}`);
+  return ok;
+}
+
 /** THE GOLDEN (design-015 D7): every scene's pixels, pinned by sha-256 in the committed oracle/shas.json. */
 const GOLDEN = resolve(root, "oracle/shas.json");
 const bless = process.env.ORACLE_BLESS === "1";
@@ -1232,6 +1271,7 @@ for (const sc of scenes) if (sc.padNote) { if (!(await padNoteCheck(sc))) failed
 for (const sc of scenes) if (sc.printed) { if (!(await printCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.held) { if (!(await heldCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.trayed) { if (!(await trayCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.capture) { if (!(await captureCheck(sc))) failed += 1; }
 // THE GOLDEN's verdict: every scene drawn as committed — or, blessing, the drawn shas written (ORACLE_ONLY merges its scenes in)
 if (bless) {
   const next = only ? { ...golden, ...drawnShas } : drawnShas;

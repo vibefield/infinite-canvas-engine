@@ -35,7 +35,6 @@
 // pads wear them too (D3w): each marks object is the frame its kind's world half draws — the whiteboard's, the print's, the
 // notebook's and the desk calendar's (kinds `boardFrame`, `photoFrame`, `bookFrame`, `calendarFrame`), one function on both sides.
 import { VIEW } from "./scenes.mjs";
-import { beginPass } from "../../desk/src/engine/target.ts";
 import { CuttingMat } from "../../desk/src/mat/mat-pass.ts";
 import { matShaders, MAT_SHADER_FILES } from "../../desk/src/mat/shaders.ts";
 import { DEFAULT_MAT_CONFIG, HERO_MATRIX } from "../../desk/src/mat/layout.ts";
@@ -44,7 +43,7 @@ import { DEFAULT_PAPER_LAW, lampOf, resolvePaper, tiltOf } from "../src/paper/pa
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from "../src/minimat/minimat.ts";
 import { finishOf, flightLights, flightPresent, insidePresent } from "../../desk/src/kit/inside.ts";
 import { insideView, miniMatInstance } from "../src/minimat/inside.ts";
-import { createSlotSet, drawFrame, drawTray, prepareFrame, renderHeldFrame, SlotPool, tagsOf } from "../../desk/src/ground.ts";
+import { captureFrame, createSlotSet, encodeFrame, renderHeldFrame, SlotPool } from "../../desk/src/ground.ts";
 import { DRAWER, drawerRect, drawerSize } from "../../desk/src/tray/drawer.ts";
 import { SAMPLE_SIZE, samplePicture } from "../src/photo/sample.ts";
 import { specimenFrames, TraySlots } from "../../desk/src/tray/specimens.ts";
@@ -617,8 +616,9 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     }
     const rulers = s.ruler === undefined ? null : { ...DEFAULT_MAT_CONFIG.ruler, ...s.ruler };
     const q = M.marquee;
+    const v = viewSpecOf(s);   // the scene's own view where it names one (I23: a still drawn at another dpr lays its marks at that dpr)
     return assembleMarks({
-      view: { width: VIEW.cssW, height: VIEW.cssH, dpr: VIEW.dpr }, cam, night: theme.name === "dark", objects,
+      view: { width: v.cssW, height: v.cssH, dpr: v.dpr }, cam, night: theme.name === "dark", objects,
       union: { t: M.unionT ?? 1, a: 1 },
       marquee: q ? { rect: { x0: q.x0, y0: q.y0, x1: q.x1, y1: q.y1 }, pointer: q.pointer ?? { x: (q.x1 - cam.x) * cam.zoom, y: (q.y1 - cam.y) * cam.zoom } } : null,
       fold: M.fold ?? null, guides, bars, strike: M.strike ?? 0,
@@ -770,26 +770,28 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     return samplePic;
   }
 
-  function encode(encoder, target, size, s, opts = {}) {
+  /** The desk's passes as the ground's `encodeFrame` and `captureFrame` take them (ground.ts `FramePasses`) — the root slot on the scene's root grid. */
+  const passesOn = (rootGrid) => ({ root: rootSlot, pool, grid: rootGrid, marks, hold, tray, traySlots });
+
+  /**
+   * A REST still's inputs (petition I23 — one builder of a scene's inputs for `encode` and `captureOf`): the desk reset for the scene
+   * (the ink pages carved afresh, so a scene's rasters land where the lab's do; the notebooks' page layers handed out afresh — D3t-b;
+   * the boards' rasters released — each scene's boards replay into fresh ones), then exactly the `GroundFrameInputs` the ground's
+   * `encodeFrame` takes: the root desk, the live insides of its mini mats, a flight's departed desk through the mini mat, the pegboard
+   * drawer and its specimens (K5a), and the desk's marks (stratum 5) — a still's, unless a check measures the objects alone (`marks:
+   * false`), the prototype's ring is on, or a flight is on (its chrome waits for its landing; the tray's name tags ride the marks pass
+   * either way). `rootGrid` beside, for the passes.
+   */
+  function inputsOf(s, opts = {}) {
     prototypeRing = opts.prototypeRing === true;
     const theme = opts.theme ?? THEMES[s.theme];
     themeNow = theme;
     const m = matOf(s);
-    // the hand (D4b): a carry above 0 is the held frame's own path; at 0 the frame is the rest frame, byte for byte
-    if (s.hold !== undefined && s.hold.e > 0) {
-      papers.law = DEFAULT_PAPER_LAW; papers.chain = false;
-      papers.reset(); inkRaster = null;
-      pageInk = new PageInk();
-      for (const id of rastered) boards.release(id);
-      rastered.clear(); nextBoard = 1;
-      return encodeHeld(target, size, s, theme, gridFor(s, true), m);
-    }
     papers.law = DEFAULT_PAPER_LAW; papers.chain = s.paper?.chain ?? false;
-    papers.reset(); inkRaster = null;   // the ink pages carved afresh, so a scene's rasters land where the lab's do
-    pageInk = new PageInk();   // …and the notebooks' page layers handed out afresh (D3t-b)
-    for (const id of rastered) boards.release(id);   // and the boards' rasters: each scene's boards replay into fresh ones
+    papers.reset(); inkRaster = null;
+    pageInk = new PageInk();
+    for (const id of rastered) boards.release(id);
     rastered.clear(); nextBoard = 1;
-    const bg = theme.canvasBg;
     const rootGrid = { ...gridFor(s, true), ...(opts.rootGround ? { mat: { ...gridFor(s, true).mat, ground: opts.rootGround } } : {}) };
     let inputs;
     let nav = null;
@@ -816,19 +818,41 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     if (opts.ownLitInsides) inputs = litOwn(inputs);
     // the pegboard drawer (design-017): a still's slide and shown scroll, over the marks — and its specimens (K5a)
     const trayIn = s.tray === undefined || s.nav ? undefined : trayInputsOf(s, inputs.view, theme, rootGrid);
-    const trayed = trayIn === undefined ? 0 : tray.prepare(inputs.view, theme, rootGrid, m, trayIn);
-    const prepared = prepareFrame(encoder, rootSlot, pool, trayIn === undefined ? inputs : { ...inputs, tray: trayIn }, rootGrid, undefined, trayed > 0 ? traySlots : undefined);
-    // the desk's marks (stratum 5): a still's — a flight's chrome waits for its landing; off for a check that measures the objects alone
-    // (the tray's name tags ride the marks pass either way)
-    const tags = trayed > 0 ? { view: inputs.view, tags: tagsOf(trayIn), night: theme.matLight.night } : undefined;
-    const marked = opts.marks === false || prototypeRing || s.nav ? (tags === undefined ? 0 : marks.prepare(undefined, tags)) : marks.prepare(marksOf(s, { x: s.camX, y: s.camY, zoom: s.zoom }, theme), tags);
-    const pass = beginPass(encoder, target, [bg[0], bg[1], bg[2], 1]);
-    drawFrame(pass, size, viewSpecOf(s).dpr, prepared.incoming, prepared.outgoing);
-    if (marked > 0) marks.draw(pass);
-    if (trayed > 0) drawTray(pass, size, viewSpecOf(s).dpr, tray, prepared.tray, marks);
-    pass.end();
+    const marked = !(opts.marks === false || prototypeRing || s.nav);
+    return { theme, nav, rootGrid, inputs: { ...inputs, ...(trayIn === undefined ? {} : { tray: trayIn }), ...(marked ? { marks: marksOf(s, { x: s.camX, y: s.camY, zoom: s.zoom }, theme) } : {}) } };
+  }
+
+  function encode(encoder, target, size, s, opts = {}) {
+    // the hand (D4b): a carry above 0 is the held frame's own path; at 0 the frame is the rest frame, byte for byte
+    if (s.hold !== undefined && s.hold.e > 0) {
+      prototypeRing = opts.prototypeRing === true;
+      const theme = opts.theme ?? THEMES[s.theme];
+      themeNow = theme;
+      const m = matOf(s);
+      papers.law = DEFAULT_PAPER_LAW; papers.chain = false;
+      papers.reset(); inkRaster = null;
+      pageInk = new PageInk();
+      for (const id of rastered) boards.release(id);
+      rastered.clear(); nextBoard = 1;
+      return encodeHeld(target, size, s, theme, gridFor(s, true), m);
+    }
+    // the rest frame: its inputs, through the ground's own encoding of a frame — the same function the desk's swap chain and the
+    // capture door go through (I23); the host submits
+    const { theme, nav, rootGrid, inputs } = inputsOf(s, opts);
+    const { prepared, marked } = encodeFrame(encoder, passesOn(rootGrid), inputs, { view: () => target, size: () => size });
     return { theme, nav, prepared, marks: marked > 0 ? marks.laid : [] };
   }
 
-  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, tray, traySlots, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, bookOf, pages: () => pageInk, encode, heldFrame: () => heldFrameDrawn };
+  /**
+   * THE CAPTURE of a still (petition I23 — ground.ts `captureFrame`, the very function the desk handle's `capture` runs): the scene's
+   * inputs as `encode` builds them (its marks on), drawn once more into a readable still at the view's dpr × `scale`, `rect` (CSS px)
+   * read back — the bytes in the oracle's format, rows tight. A rest still only: a held still's capture is the rigs' and the units'.
+   */
+  function captureOf(s, opts = {}) {
+    if (s.hold !== undefined && s.hold.e > 0) throw new Error("oracle: captureOf draws a rest frame — a held still's capture is rig:capture's and packages/desk/test/capture-frame.test.ts's");
+    const { rootGrid, inputs } = inputsOf(s, { marks: true });
+    return captureFrame(device, passesOn(rootGrid), format, inputs, { stamp: null, stats: null, copies: 0 }, opts);
+  }
+
+  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, tray, traySlots, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, bookOf, pages: () => pageInk, encode, inputsOf, captureOf, heldFrame: () => heldFrameDrawn };
 }

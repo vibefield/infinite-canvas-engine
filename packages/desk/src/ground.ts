@@ -869,6 +869,28 @@ export function checkCapture(opts: CaptureOptions): void {
 }
 
 /**
+ * The frame's inputs with EVERY view's dpr × `scale` — the root's, each live inside's (recursively: a nested slot carries a view of
+ * its own, and its mat prepares its lattice against it), the departed desk's and its insides', the hand's, the marks' (their
+ * hairlines are 1/dpr), the tray's specimens' and carried copies' — so every slot names the capture's attachment (kit/layer.ts
+ * `attachmentOf`), exactly as the reflector's inputs would at that dpr. At scale 1, the inputs themselves.
+ */
+export function scaledInputs(inputs: GroundFrameInputs, scale: number): GroundFrameInputs {
+  if (scale === 1) return inputs;
+  const dprOf = <V extends { readonly dpr: number }>(v: V): V => ({ ...v, dpr: v.dpr * scale });
+  const slotOf = <S extends SlotInputs>(s: S): S => ({ ...s, view: dprOf(s.view), ...(s.portals !== undefined ? { portals: s.portals.map(slotOf) } : {}) });
+  const { outgoing, held, marks, tray } = inputs;
+  return {
+    ...slotOf(inputs),
+    ...(outgoing !== undefined ? { outgoing: slotOf(outgoing) } : {}),
+    ...(held !== undefined ? { held: { ...held, view: dprOf(held.view) } } : {}),
+    ...(marks !== undefined ? { marks: { ...marks, view: dprOf(marks.view) } } : {}),
+    ...(tray !== undefined
+      ? { tray: { ...tray, ...(tray.specimens !== undefined ? { specimens: tray.specimens.map((f) => ({ ...f, view: dprOf(f.view) })) } : {}), ...(tray.carried !== undefined ? { carried: tray.carried.map((f) => ({ ...f, view: dprOf(f.view) })) } : {}) } }
+      : {}),
+  };
+}
+
+/**
  * THE CAPTURE (petition I23 — the covers' still, the thumbnails, "Send to…"): `inputs` — the last PRESENTED frame's, as
  * `Ground.render` took them (the same camera, theme, marks, hand and tray) — drawn ONCE MORE, outside any frame, into a readable
  * texture at the view's size × its dpr × `scale`, through the same encoding the swap chain's frame went through (`encodeFrame`;
@@ -882,9 +904,10 @@ export function checkCapture(opts: CaptureOptions): void {
  */
 export async function captureFrame(device: GPUDevice, passes: FramePasses, format: GPUTextureFormat, inputs: GroundFrameInputs, cache: HeldCache, opts: CaptureOptions = {}): Promise<CaptureBytes | undefined> {
   checkCapture(opts);
-  const dpr = inputs.view.dpr * (opts.scale ?? 1);
+  const frame = scaledInputs(inputs, opts.scale ?? 1);
+  const dpr = frame.view.dpr;
   // the still's size: the attachment a view of this dpr names (kit/layer.ts `attachmentOf` — `surface().fit`'s rule, the reflector's)
-  const size = { w: Math.max(1, Math.round(inputs.view.width * dpr)), h: Math.max(1, Math.round(inputs.view.height * dpr)) };
+  const size = { w: Math.max(1, Math.round(frame.view.width * dpr)), h: Math.max(1, Math.round(frame.view.height * dpr)) };
   // the rect in the still's device px, clipped to it
   let box = { x: 0, y: 0, w: size.w, h: size.h };
   const r = opts.rect;
@@ -896,9 +919,6 @@ export async function captureFrame(device: GPUDevice, passes: FramePasses, forma
     box = { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
     if (box.w <= 0 || box.h <= 0) return undefined;
   }
-  const view = { ...inputs.view, dpr };
-  const held = inputs.held;
-  const frame: GroundFrameInputs = { ...inputs, view, ...(held !== undefined ? { held: { ...held, view: { ...held.view, dpr } } } : {}) };
   const still = new Target(device, { format, label: "capture/still", readable: true }, size.w, size.h);
   const into: HeldInto = { view: () => still.view, size: () => size };
   const rowBytes = Math.ceil((box.w * 4) / 256) * 256;

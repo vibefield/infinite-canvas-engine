@@ -6,7 +6,7 @@
 // held frame goes through its own path, named for the capture, the standing desk copy reused at the view's own size. On the fake
 // device (test/fake-gpu.ts — a MAP_READ buffer maps its whole size, every byte its own index) the bytes prove the row unpadding.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { captureFrame, checkCapture, Ground, type GroundFrameInputs } from "../src/ground";
+import { captureFrame, checkCapture, Ground, type GroundFrameInputs, type PortalInputs, scaledInputs } from "../src/ground";
 import { HOLD_SHADER_FILES, holdShaders } from "../src/hold/shaders";
 import type { KindPass, KindProgram, SlotContext } from "../src/kind";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
@@ -114,6 +114,40 @@ describe("the capture's GPU half (I23)", () => {
     ground.render(rest);
     expect(seen.slice(-1)).toEqual(["frame:3@2"]);
     ground.dispose();
+  });
+
+  /** A live inside at the view's centre: a nested slot with a view of its own (the pool's), prepared by the same recording kind. */
+  const portal: PortalInputs = { at: 1, grid: DEFAULT_GRID, view: { camX: -300, camY: -200, zoom: 0.5, width: 1200, height: 800, dpr: 2 }, present: { opacity: 1, portal: { cx: 600, cy: 400, hx: 250, hy: 180, r: 8 } }, objects: [{ kind: "thing", record: { id: "inside" } }] };
+
+  it("every view in the tree is scaled — the root's, a live inside's (the nested slot prepares against its OWN view), the departed desk's, the hand's, the marks', the tray's", async () => {
+    const seen: string[] = [];
+    const t = instrumented();
+    const ground = await Ground.create({ device: t.device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [recording("thing", seen)] });
+    const withInside: GroundFrameInputs = { ...rest, portals: [portal] };
+    ground.render(withInside);
+    expect(seen).toEqual(["frame:1@2", "frame:3@2"]);   // the inside's slot prepares first (its records), then the root's
+    seen.length = 0;
+    await ground.capture(withInside, { scale: 0.25 });
+    expect(seen).toEqual(["capture:1@0.5", "capture:3@0.5"]);   // the inside at the capture's dpr too — not the frame's 2
+    ground.dispose();
+    // the pure walk: every dpr × the scale, nothing else touched; at 1 the inputs themselves
+    const tray = { p: 1, scroll: 0, specimens: [{ view: { camX: 0, camY: 0, zoom: 1, width: 1200, height: 800, dpr: 2 } }], carried: [{ view: { camX: 0, camY: 0, zoom: 1, width: 1200, height: 800, dpr: 2 } }] } as unknown as NonNullable<GroundFrameInputs["tray"]>;
+    const marks = { view: { width: 1200, height: 800, dpr: 2 }, records: [] } as unknown as NonNullable<GroundFrameInputs["marks"]>;
+    const nested: PortalInputs = { ...portal, portals: [{ ...portal, at: 0 }] };
+    const full: GroundFrameInputs = { ...rest, portals: [nested], outgoing: { view: VIEW, grid: DEFAULT_GRID, order: "under", objects, portals: [portal] }, held: (held("s") as Required<GroundFrameInputs>).held, marks, tray };
+    expect(scaledInputs(full, 1)).toBe(full);
+    const s = scaledInputs(full, 0.25);
+    const dprs = (f: GroundFrameInputs): number[] => [
+      f.view.dpr, f.portals?.[0]?.view.dpr ?? -1, f.portals?.[0]?.portals?.[0]?.view.dpr ?? -1, f.outgoing?.view.dpr ?? -1, f.outgoing?.portals?.[0]?.view.dpr ?? -1,
+      f.held?.view.dpr ?? -1, f.marks?.view.dpr ?? -1, f.tray?.specimens?.[0]?.view.dpr ?? -1, f.tray?.carried?.[0]?.view.dpr ?? -1,
+    ];
+    expect(dprs(full)).toEqual([2, 2, 2, 2, 2, 2, 2, 2, 2]);
+    expect(dprs(s)).toEqual([0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5]);
+    expect(s.objects).toBe(full.objects);   // the records untouched
+    expect(s.outgoing?.order).toBe("under");
+    expect(s.portals?.[0]?.at).toBe(1);
+    expect(s.held?.stamp).toBe("s");
+    expect(s.tray?.p).toBe(1);
   });
 
   it("a rect: the whole frame drawn, the rect's device pixels alone copied and returned; one wholly off the view is undefined", async () => {

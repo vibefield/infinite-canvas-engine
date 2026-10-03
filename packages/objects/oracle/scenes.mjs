@@ -373,6 +373,16 @@ export const TRAY_SCENES = [
 ];
 ORACLE_SCENES.push(...TRAY_SCENES);
 
+// THE CAPTURE DOOR (petition I23 — `handle.capture`, ground.ts `captureFrame`): one still carrying what the door must carry — two mini
+// mats (the first with a live inside, a mini mat of its own in it), a SELECTED note (the marks) and a blank one, a bare whiteboard, a
+// print, a closed notebook — on the reference desk at 1:1. `capture` runs the check: the still captured at 1× is the golden frame byte
+// for byte; at 0.25× it is the frame drawn at a quarter of the dpr; a rect is the frame's crop. rig:capture stages the same still FROM
+// THE WORLD and holds the door's bitmap to this render.
+export const CAPTURE_SCENES = [
+  { name: "capture-desk-z1", capture: true, scene: { ...mmBase, zoom: 1, minimats: [DESK[0], DESK[1]], notes: [note(700, 610, 23, { selected: true }), note(640, 80, 27, { greek: undefined })], boards: [{ x: 1000, y: 650 }], prints: [{ x: 980, y: 430, angle: 0.06 }], books: [nb({ x: 850, y: 480, angle: 0.05 })] } },
+];
+ORACLE_SCENES.push(...CAPTURE_SCENES);
+
 // THE OPEN KIND LIST (design-016 K8b): a PLUGIN's stills join the golden — the desk clock's, from its own package
 // (examples/desk-clock, built on the published entries alone), drawn through its kind's own contract; its object types are handed to
 // the desk by each host (render.mjs here, the parity page in Chrome) from the same package. New rows only: every scene above draws
