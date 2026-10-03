@@ -19,10 +19,13 @@
 // goes in, one ⌘Z undoing both; a long-press hold on the drag's exit tick is the drag's (arbitration
 // decides once per tick). And the desk's pick (petition I27): on a showcase of its own, a right-click's point — read as a host
 // reads it, through `handle.pick` — names what a primary click there selects, at ten points, the note on top where two overlap.
-// Exit 0 = every check passed.
+// And a secondary button never acts (petition I28): there, a right-click selects nothing and opens no editor while the pick still
+// names what is under it, and one on the bare mat still closes an open editor; a right drag on a note or the bare mat, a middle
+// click and a middle drag on a note leave the still byte-identical. Exit 0 = every check passed.
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
+import { decodePng } from "./png.mjs";
 import { dblClick, watchdog } from "./timing.mjs";
 import { kindsRig } from "./interact-kinds.mjs";
 
@@ -607,6 +610,94 @@ try {
       return { same: read() === a, got };
     })()`);
     check(quiet.same && quiet.got.every((e, i) => e === POINTS[i].want), `ten picks in one task draw nothing, wake nothing and select nothing — and answer as above (${quiet.got.join(", ")})`);
+
+    // --- 17. A SECONDARY BUTTON NEVER ACTS (petition I28 — the bar's right-click opens the host's menu, and that is ALL it does): on
+    //     the same showcase, a real right-click at each of the ten points selects nothing and puts the editor on nothing, while the
+    //     host's listener still hears it and `handle.pick` names what is there — the press is a POINT; a primary click on a note
+    //     then does both (the control: the editor check can see one), and with the editor on a right-click on the bare mat still
+    //     CLOSES it (its lease ends on the blur the press brings) while keeping the selection. Then, the mat's clocks pinned and the
+    //     pointer parked on the bare mat, a right drag on a note, a right drag on the bare mat (which a primary drag pans), a middle
+    //     click and a middle drag on the note: the still is byte-identical before and after — nothing moved, nothing panned, nothing
+    //     selected — and no commit left the tab. Each press is sent as the hardware sends it (`buttons` with `button`), and the page's
+    //     own pointerdowns say so.
+    await q(`window.__pressHeard = []; addEventListener("pointerdown", (e) => { window.__pressHeard.push([e.button, e.buttons]); }, { capture: true }); 0`);
+    const RIGHT = { button: "right", buttons: 2 };
+    const MIDDLE = { button: "middle", buttons: 4 };
+    for (const p of POINTS) {
+      await q("window.__pickHeard.length = 0; window.__pressHeard.length = 0");
+      await mouse("mouseMoved", p.x, p.y, { button: "none" });
+      await mouse("mousePressed", p.x, p.y, RIGHT);
+      await sleep(30);
+      await mouse("mouseReleased", p.x, p.y, { button: "right", buttons: 0 });
+      await settle();
+      const got = await q(`({ heard: window.__pickHeard, press: window.__pressHeard, selection: window.__desk.selection(), editing: window.__desk.note.editing(),
+        claimed: window.__desk.note.claimed(), focused: window.__desk.note.editorFocused() })`);
+      await sleep(350);   // clear of the tap window, so no two right-clicks could ever pair into a double
+      const pick = got.heard[0]?.pick;
+      const names = p.want === null ? pick === null : pick?.entity === p.want && pick.type === typeOf[p.want];
+      const said = pick === undefined ? "no contextmenu heard" : pick === null ? "null" : `${pick.type} #${pick.entity}`;
+      const real = got.press.length === 1 && got.press[0][0] === 2 && got.press[0][1] === 2;
+      check(real && got.heard.length === 1 && names && got.selection.length === 0 && got.editing === -1 && got.claimed.length === 0 && !got.focused,
+        `I28 — ${p.name}: a right-click (the page's press [${got.press.map((b) => b.join("/")).join(" ")}] button/buttons) selects [${got.selection.join(", ")}] and puts the editor on ${got.editing === -1 ? "nothing" : `#${got.editing}`}${got.focused ? " (focused)" : ""}; the host's pick there says ${said}`);
+    }
+    // the control: a primary click on the first note selects it and puts the editor on it
+    await click(POINTS[1].x, POINTS[1].y);
+    await settle();
+    const lent = await q("({ selection: window.__desk.selection(), editing: window.__desk.note.editing() })");
+    check(lent.selection.length === 1 && lent.selection[0] === show.notes[0] && lent.editing === show.notes[0],
+      `the control: a primary click on the first note selects [${lent.selection.join(", ")}] and puts the editor on #${lent.editing}`);
+    // and a right-click elsewhere still CLOSES what a press closes — the editor's lease ends on the blur its press brings (the host's
+    // surface, on its own DOM event) — while it clears no selection, as a primary click on the bare mat would
+    await q("window.__pickHeard.length = 0");
+    await mouse("mouseMoved", BARE[0], BARE[1], { button: "none" });
+    await mouse("mousePressed", BARE[0], BARE[1], RIGHT);
+    await sleep(30);
+    await mouse("mouseReleased", BARE[0], BARE[1], { button: "right", buttons: 0 });
+    await settle();
+    const closed = await q("({ selection: window.__desk.selection(), editing: window.__desk.note.editing(), focused: window.__desk.note.editorFocused(), heard: window.__pickHeard.length })");
+    await key("Escape", "Escape", 27);
+    await sleep(350);
+    await click(BARE[0], BARE[1]);
+    await settle();
+    await sleep(350);
+    check(closed.heard === 1 && closed.editing === -1 && !closed.focused && closed.selection.length === 1 && closed.selection[0] === show.notes[0],
+      `I28 — a right-click on the bare mat with the editor on the note: the editor on ${closed.editing === -1 ? "nothing" : `#${closed.editing}`}${closed.focused ? " (focused)" : ""}, the selection kept [${closed.selection.join(", ")}], the host's menu heard (${closed.heard})`);
+    // the still, byte for byte: the mat's clocks pinned (rig:ruler's still), the pointer parked on the bare mat before and after
+    await q("window.__desk.pinMat({ time: 3.7, goboTime: 57.14, noise: [0.37, 0.61], wind: 0 })");
+    const shot = async () => (await tab.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true })).data;
+    const park = async () => { await mouse("mouseMoved", BARE[0], BARE[1], { button: "none" }); await settle(); };
+    const stroke = async (from, to, held) => {
+      await mouse("mouseMoved", from[0], from[1], { button: "none" });
+      await mouse("mousePressed", from[0], from[1], held);
+      for (let i = 1; i <= 8; i++) await mouse("mouseMoved", from[0] + ((to[0] - from[0]) * i) / 8, from[1] + ((to[1] - from[1]) * i) / 8, held);
+      await mouse("mouseReleased", to[0], to[1], { button: held.button, buttons: 0 });
+      await settle();
+      await sleep(350);
+    };
+    await park();
+    const at = async () => ({ camera: await q("window.__desk.camera()"), commits: await q("window.__desk.room.commits()"), note: await entity(show.notes[0]), selection: await q("window.__desk.selection()") });
+    await q("window.__desk.room.commits()");   // the first call arms the count
+    const a = await at();
+    const before = await shot();
+    await q("window.__pressHeard.length = 0");
+    await stroke([100, 150], [160, 230], RIGHT);                      // a right drag on the first note
+    await stroke(BARE, [BARE[0] - 120, BARE[1] + 80], RIGHT);         // a right drag on the bare mat
+    await stroke([100, 150], [100, 150], MIDDLE);                     // a middle click on the note
+    await stroke([100, 150], [160, 230], MIDDLE);                     // a middle drag on the note: over an object, no pan
+    await park();
+    const presses = await q("window.__pressHeard");
+    const b = await at();
+    const after = await shot();
+    let differ = 0;
+    if (after !== before) {
+      const [p0, p1] = [decodePng(Buffer.from(before, "base64")), decodePng(Buffer.from(after, "base64"))];
+      for (let i = 0; i < Math.min(p0.rgba.length, p1.rgba.length); i += 4) if (p0.rgba[i] !== p1.rgba[i] || p0.rgba[i + 1] !== p1.rgba[i + 1] || p0.rgba[i + 2] !== p1.rgba[i + 2]) differ++;
+    }
+    await q("window.__desk.pinMat(null)");
+    const pressed = presses.map((x) => x.join("/")).join(" ");
+    check(pressed === "2/2 2/2 1/4 1/4" && after === before && b.commits === a.commits && b.camera.x === a.camera.x && b.camera.y === a.camera.y && b.camera.zoom === a.camera.zoom
+      && b.note.cx === a.note.cx && b.note.cy === a.note.cy && b.selection.length === 0,
+      `I28 — a right drag on a note and on the bare mat, a middle click and a middle drag on the note (the page's presses ${pressed}): the still ${after === before ? "byte-identical" : `differs (${differ} px)`}, ${b.commits - a.commits} commits, the camera ${b.camera.x === a.camera.x && b.camera.y === a.camera.y && b.camera.zoom === a.camera.zoom ? "as it was" : `at (${b.camera.x}, ${b.camera.y}, ${b.camera.zoom}) of (${a.camera.x}, ${a.camera.y}, ${a.camera.zoom})`}, the note at (${b.note.cx.toFixed(1)}, ${b.note.cy.toFixed(1)}) of (${a.note.cx.toFixed(1)}, ${a.note.cy.toFixed(1)}), selected [${b.selection.join(", ")}]`);
     await q("window.__desk.bar(true)");
   }
 
