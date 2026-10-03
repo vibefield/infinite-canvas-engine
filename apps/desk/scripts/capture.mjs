@@ -105,10 +105,11 @@ try {
   console.log(`  capture at 1× (${still.bmp?.width}×${still.bmp?.height}): ${ms(still.took)} ms first, then ${still.again.map(ms).join(" / ")} ms`);
 
   // ── the thumbnail and the rect
+  const THUMB = 0.25;   // the thumbnails' scale (VibeField DK-4 asks a quarter)
   const small = await qa(`(async () => {
     const d = window.__desk;
-    const t0 = performance.now(); const b = await d.handle.capture({ scale: ${0.25} }); const took = performance.now() - t0;
-    const again = []; for (let k = 0; k < 2; k++) { const t = performance.now(); const x = await d.handle.capture({ scale: 0.25 }); again.push(performance.now() - t); x.close(); }
+    const t0 = performance.now(); const b = await d.handle.capture({ scale: ${THUMB} }); const took = performance.now() - t0;
+    const again = []; for (let k = 0; k < 2; k++) { const t = performance.now(); const x = await d.handle.capture({ scale: ${THUMB} }); again.push(performance.now() - t); x.close(); }
     const r = await d.handle.capture({ rect: { x: 100, y: 80, width: 320, height: 200 } });
     const out = { thumb: b ? { width: b.width, height: b.height } : null, took, again, rect: r ? { width: r.width, height: r.height } : null };
     b?.close(); r?.close();
@@ -119,7 +120,7 @@ try {
   console.log(`  capture at 0.25× (${small.thumb?.width}×${small.thumb?.height}): ${ms(small.took)} ms first, then ${small.again.map(ms).join(" / ")} ms`);
 
   // ── the share: equal options in flight together are one answer; a different one its own
-  const share = await qa(`(async () => { const d = window.__desk; const a = d.handle.capture(); const b = d.handle.capture(); const c = d.handle.capture({ scale: 0.5 }); const [ra, rb, rc] = await Promise.all([a, b, c]); const out = { same: a === b && ra === rb, other: c !== a && rc !== ra, sizes: [ra?.width, rc?.width] }; ra?.close(); rc?.close(); return out; })()`);
+  const share = await qa("(async () => { const d = window.__desk; const a = d.handle.capture(); const b = d.handle.capture(); const c = d.handle.capture({ scale: 0.5 }); const [ra, rb, rc] = await Promise.all([a, b, c]); const out = { same: a === b && ra === rb, other: c !== a && rc !== ra, sizes: [ra?.width, rc?.width] }; ra?.close(); rc?.close(); return out; })()");
   check(share.same === true && share.other === true && share.sizes[0] === 2400 && share.sizes[1] === 1200, `two captures asked at once with equal options share one promise and one bitmap; a third with another scale is its own (${share.sizes.join(" / ")} px wide)`);
   await q("window.__thaw()");
 
