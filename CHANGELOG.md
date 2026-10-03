@@ -135,9 +135,9 @@ its own block here as it is built.** Additive, every one: nothing of 0.14.0's su
   record under a name it never compiled: `ground: no kind "…" is registered` threw out of every frame that showed one. THE MOUNT'S
   COST as each boot went: `perf().boot` (`DeskLayerBoot` — `device`, `compiled`, `presented`: ms since the mount; three stamps and one
   promise a mount, nothing a frame). Measured by `rig:remount` (the twentieth rig; `__desk.remount()` remounts the product's `<Desk>`
-  on a new generation, same engine and document): the showcase — six kinds and the clock — remounted five times a run, five runs, on an
-  Apple M1 Max (Chrome 154 headless, 1200 × 800 @ 2): the device in hand 4–6 ms, the passes compiled 34–47 ms, the first frame
-  presented 92–120 ms (medians 4.3–4.7 / 35–37 / 104–110); the page's first mount, cold, 31–36 / 173–192 / 188–221 ms. Within 250 ms:
+  on a new generation, same engine and document): the showcase — six kinds and the clock — remounted five times a run, eight runs, on
+  an Apple M1 Max (Chrome 154 headless, 1200 × 800 @ 2): the device in hand 4–6 ms, the passes compiled 34–48 ms, the first frame
+  presented 92–124 ms (medians 4.3–4.7 / 35–37 / 104–111); the page's first mount, cold, 30–38 / 173–210 / 188–236 ms. Within 250 ms:
   the door (`handle.kinds.replace`, the petition's answer 1) stays deferred. Nothing outlives its generation: the memory ledger reads
   ZERO after every unmount — a generation with a kind refused at create and one quarantined at three strikes included, then one
   mounted clean — and the document is untouched (its snapshot byte for byte, no commit). Found and fixed on the way: a kind QUARANTINED
@@ -145,7 +145,8 @@ its own block here as it is built.** Additive, every one: nothing of 0.14.0's su
   arrived, and its objects' missing-face records were handed to it — the frame lost; the boot now quarantines it in the new ground. And
   the editor's dispose ends a lease still held: a typing session open at an unmount commits and lifts its claim (before, it stayed
   open for good — its idle commit cleared, its claim held). The app: `__desk.remount()` / `__desk.generation`; what a mount adds to
-  the engine goes with it (the flight pin's and the glyph feed's tick systems outlived their mount). Witnesses:
+  the engine goes with it (the flight pin's and the glyph feed's tick systems, and a devtools dock left open, outlived their mount —
+  rig:remount counts them). Witnesses:
   `packages/desk/test/kind-set.test.ts` (the late type, the tray, `perf().boot`, the document across a remount, the ledger at zero
   across generations), `packages/desk/test/kind-faults.test.ts` (the kind quarantined while the ground is made),
   `packages/objects/test/note-session.test.ts` (the session open at the editor's dispose), rig:remount. `docs/api-reference.md`
