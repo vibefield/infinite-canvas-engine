@@ -222,11 +222,13 @@ export function App(): ReactElement {
         // D5a: the dev panel first — a saved desk is projected before the first frame (a desk in a room keeps nothing)
         panelRef.current = installDevPanel({ engine, handle, params, theme: themeRef.current, storageKey: deskRoom() === undefined ? "ice-desk-panel" : undefined });
         themeRef.current.apply();
-        dockRef.current = createProfilerDock(engine, handle);
-        const api = installDeskApi(engine, handle, themeRef.current, panelRef.current, glyphs, dockRef.current, { generation: generationRef.current, remount: () => setGeneration((g) => g + 1) });
+        const dock = createProfilerDock(engine, handle);
+        dockRef.current = dock;
+        const api = installDeskApi(engine, handle, themeRef.current, panelRef.current, glyphs, dock, { generation: generationRef.current, remount: () => setGeneration((g) => g + 1) });
         apiRef.current = api;
         const undoDrop = installPictureDrop(engine, handle, fail);   // D3w: a pasted or dropped picture is a print
-        // what this mount adds to the ENGINE goes with it (I25: the engine outlives a remount — a system left behind is a generation's leak)
+        // what this mount adds to the ENGINE goes with it (I25: the engine outlives a remount — a system left behind, or a devtools dock
+        // open on the profiler of a device that is gone, is a generation's leak)
         let stopGlyphs: (() => void) | undefined;
         // the product's plates and a runtime glyph atlas the moment the ground is here
         const feed = async (): Promise<void> => {
@@ -246,7 +248,7 @@ export function App(): ReactElement {
           api.state.ready = true;
         };
         feed().catch((e: unknown) => { if (!cancelled) fail(e); });
-        return () => { cancelled = true; undoDrop(); offStatus(); stopGlyphs?.(); api.dispose(); };
+        return () => { cancelled = true; undoDrop(); offStatus(); stopGlyphs?.(); api.dispose(); dock.close(); };
       }}
     >
       {trayBar !== null ? <TrayBar source={trayBar} /> : null}

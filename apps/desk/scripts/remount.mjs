@@ -11,6 +11,8 @@
 //   the ledger     after each unmount the generation that went reads ZERO on its memory ledger: no texture, no buffer, no row — no
 //                  leak across generations
 //   the document   across the five remounts: no outbound commit, its snapshot byte for byte, the same objects
+//   the engine     outlives every remount: what each mount added to it — two tick systems (the flight pin's, the glyph feed's), the
+//                  devtools dock when open — taken back by its unmount
 //   I24's paths    `rig.html?plugins&kindFaults`: a generation with two broken kinds of the LAYER's own — one refused at create, one
 //                  quarantined at three strikes —, unmounted: its ledger zero; the next, its kinds dropped from the host's options
 //                  (`__deskRig.layer`), mounts CLEAN — ready, no fault — and its own unmount reads zero too
@@ -109,6 +111,12 @@ try {
   check(cold.generation === 0 && cold.status.state === "ready" && typeof cold.boot.presented === "number" && SEVEN.every((k) => (drawn0[k] ?? 0) >= 1),
     `the showcase drawn: the seven kinds (${SEVEN.map((k) => `${k} ${drawn0[k] ?? 0}`).join(", ")}) — the page's own boot (generation 0, cold): the device ${ms(cold.boot.device)} ms, compiled ${ms(cold.boot.compiled)} ms, the first frame presented ${ms(cold.boot.presented)} ms`);
   const doc0 = await A.q(DOC);   // arms the commit count (the room door counts from its first ask)
+  // the ENGINE outlives a remount: every system a mount adds from here on counted, and every one its unmount takes back
+  await A.q(`(() => {
+    const E = window.__desk.engine.engine; const add = E.addSystems.bind(E); const k = (window.__i25sys = { added: 0, removed: 0 });
+    E.addSystems = (group, ...systems) => { k.added += systems.length; const off = add(group, ...systems); let gone = false; return () => { if (!gone) { gone = true; k.removed += systems.length; } return off(); }; };
+    return 0;
+  })()`);
 
   // ── FIVE REMOUNTS: each generation's boot, the one before it at ledger zero
   const rows = [];
@@ -137,6 +145,15 @@ try {
   const doc1 = await A.q(DOC);
   check(doc1.hash === doc0.hash && doc1.objects === doc0.objects && doc1.commits === 0 && doc0.objects.split(",").length >= 9,
     `the document survives ${REMOUNTS} remounts untouched: its snapshot ${doc1.hash === doc0.hash ? "byte for byte" : "CHANGED"} (${doc1.bytes} B, sha-256 ${doc1.hash.slice(0, 12)}…), the same ${doc0.objects.split(",").length} objects, ${doc1.commits} outbound commits`);
+  // ── WHAT A MOUNT ADDS TO THE ENGINE GOES WITH IT: the systems the app's mounts added since the count (each mount two — the flight
+  //    pin's and the glyph feed's), and a devtools dock left open in generation 5 when it goes
+  await A.q("window.__desk.dock.toggle(); 0");
+  for (let i = 0; i < 100 && !(await A.q("window.__desk.dock.isOpen()")); i++) await sleep(50);
+  const docked = await A.q("({ open: window.__desk.dock.isOpen(), dom: document.querySelectorAll('.ice-dock').length })");
+  const last = await A.q(REMOUNT, 90000);
+  const after = await A.q("({ docks: document.querySelectorAll('.ice-dock').length, old: window.__i25old.dock.isOpen(), sys: window.__i25sys })");
+  check(docked.open && docked.dom === 1 && last.timeout !== true && after.docks === 0 && after.old === false && after.sys.added === 2 * (REMOUNTS + 1) && after.sys.added - after.sys.removed === 2,
+    `what a mount adds to the engine goes with it: ${after.sys.added} systems added by ${REMOUNTS + 1} mounts, ${after.sys.removed} taken back by their unmounts (${after.sys.added - after.sys.removed} standing — the live generation's two); the dock open in generation ${REMOUNTS} (${docked.dom} in the page) closed with it (${after.docks} left)`);
   const faultsA = await faultsOf(A.tab, "A");
   check(logsA.length === 0 && faultsA.length === 0, `no page errors or contained faults (${logsA.length + faultsA.length}${logsA.length + faultsA.length > 0 ? `: ${[...logsA, ...faultsA].slice(0, 4).join(" · ")}` : ""})`);
   await A.tab.close?.();
