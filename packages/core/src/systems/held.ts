@@ -26,7 +26,9 @@
  *    drawing surface with a mode in hand (D3t-a): that press is the TOOL's (`HeldPress` `tool` — the
  *    board's stroke; a double-click there is two dots, never a way back) — or on one of the kind's named
  *    PARTS (D3t-b: any part but `content` and `frame`, the object itself): that press is the KIND's
- *    (`HeldPress` `part`, with the part it began on — a notebook's turn: two clicks there turn two pages).
+ *    (`HeldPress` `part`, with the part it began on — a notebook's turn: two clicks there turn two pages);
+ *  - every route above is the PRIMARY button's (petition I28, press-button.ts): a secondary press — and a middle one with nothing
+ *    to pan — is a point in the hand as on the desk: it keeps no `HeldPress`, so it puts nothing down, works no part, lays no stroke.
  * The ways back are OPS (`ops.putDown`, structural) and a system may not run them mid-tick: it writes
  * the one-tick `HeldIntent` and the facade applies it after the step (D2b's `NavIntent`, same shape).
  * Nothing here reads a kind: the seam gives a frame and (D3t-a) the part under a point; the tool in
@@ -52,6 +54,7 @@ import {
 import { GestureSettings } from "../catalog/settings-resources";
 import { FrameInfo } from "../engine/frame-info";
 import { GESTURE_DEFAULTS } from "../settings/defaults";
+import { pressButton } from "./press-button";
 
 /** The held object's frame ON SCREEN as the renderer drew it this frame (CSS px): its centre, half extents, its scale (CSS px per object unit), and whether the pickup has settled (the wheel waits for it). */
 export interface HeldScreenFrame {
@@ -181,14 +184,18 @@ export function createHeldInput(world: World, opts: { readonly pose: HeldPoseSlo
         // in hand it is the TOOL's (D3t-a — the board's stroke); on a named part the KIND's (D3t-b — a notebook's turn): never a
         // pan, never a tap that puts the object down
         if (ctx.hasTag(p, WentDown)) {
-          const buttons = ctx.get(p, PointerButtons)?.buttons ?? 0;
-          const pan = ((buttons & 4) !== 0 || space) && next.zoom > 1.001;
-          const tool = part === "content" && (world.get(held, HeldTool)?.id ?? "") !== "";
-          const named = part !== "" && part !== "content" && part !== "frame";
-          const kind = pan ? "pan" : tool ? "tool" : named ? "part" : inside ? "object" : "desk";
-          const press = { kind, part, x: s.x, y: s.y, panX0: next.panX, panY0: next.panY, moved: false } as const;
-          if (ctx.has(p, HeldPress)) ctx.edit(p).set(HeldPress, press);
-          else ctx.addComponent(p, HeldPress, press);
+          // the button it began with (petition I28, press-button.ts): the primary's press is the hand's, a middle one only pans; a
+          // secondary press — or a middle one with nothing to pan — is a POINT, and keeps no press
+          const button = pressButton(ctx.get(p, PointerButtons)?.buttons ?? 0);
+          const pan = (button === "middle" || (button === "primary" && space)) && next.zoom > 1.001;
+          if (pan || button === "primary") {
+            const tool = part === "content" && (world.get(held, HeldTool)?.id ?? "") !== "";
+            const named = part !== "" && part !== "content" && part !== "frame";
+            const kind = pan ? "pan" : tool ? "tool" : named ? "part" : inside ? "object" : "desk";
+            const press = { kind, part, x: s.x, y: s.y, panX0: next.panX, panY0: next.panY, moved: false } as const;
+            if (ctx.has(p, HeldPress)) ctx.edit(p).set(HeldPress, press);
+            else ctx.addComponent(p, HeldPress, press);
+          } else if (ctx.has(p, HeldPress)) ctx.removeComponent(p, HeldPress);
         } else if (ctx.has(p, HeldPress)) {
           const pr = ctx.read(p, HeldPress);
           const dx = s.x - pr.x;

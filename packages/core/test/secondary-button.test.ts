@@ -18,8 +18,11 @@ import {
   type FramePickSource,
   GESTURE_DEFAULTS,
   Grab,
+  HOLD_INPUT,
   Held,
   HeldIntent,
+  HeldPress,
+  HeldView,
   type InputEvent,
   LocalPointer,
   LongPress,
@@ -255,8 +258,14 @@ function deskRig() {
     ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: NO_MODS });
   };
   const tap = (x: number, y: number, buttons: number): void => { send("move", x, y, 0); step(); send("down", x, y, buttons); step(); send("up", x, y, 0); step(); };
+  const drag = (from: readonly [number, number], to: readonly [number, number], buttons: number): void => {
+    send("move", from[0], from[1], 0); step();
+    send("down", from[0], from[1], buttons); step();
+    for (let i = 1; i <= 6; i++) { send("move", from[0] + ((to[0] - from[0]) * i) / 6, from[1] + ((to[1] - from[1]) * i) / 6, buttons); step(); }
+    send("up", to[0], to[1], 0); step(2);
+  };
   const epochs = () => ({ nav: ce.world.getResource(NavIntent)?.epoch ?? 0, held: ce.world.getResource(HeldIntent)?.epoch ?? 0 });
-  return { ce, world: ce.world, step, tap, epochs, folder, book };
+  return { ce, world: ce.world, step, send, tap, drag, epochs, folder, book };
 }
 
 describe("a secondary or middle double-click enters nothing and opens nothing (petition I28)", () => {
@@ -281,5 +290,65 @@ describe("a secondary or middle double-click enters nothing and opens nothing (p
     r.tap(400, 300, 1);
     r.tap(400, 300, 1);
     expect(r.ce.nav.depth()).toBe(1);
+  });
+});
+
+/** The book in the hand at its reading pose, as the renderer would publish it (held.test.ts's): centred, 300 × 200 on screen at 1.5 px a unit, following the held zoom and pan. */
+function handRig() {
+  const r = deskRig();
+  const FRAME = { cx: 400, cy: 300, hx: 150, hy: 100, s: 1.5 };
+  r.ce.stack.heldPose.current = {
+    frame: (e) => {
+      if (e !== r.book) return undefined;
+      const v = r.world.get(r.book, HeldView) ?? { zoom: 1, panX: 0, panY: 0 };
+      return { cx: FRAME.cx + v.panX, cy: FRAME.cy + v.panY, hx: FRAME.hx * v.zoom, hy: FRAME.hy * v.zoom, s: FRAME.s * v.zoom, settled: true };
+    },
+  };
+  r.ce.ops.open(r.book);
+  r.step();
+  const held = (): boolean => r.world.hasTag(r.book, Held);
+  const view = () => r.world.get(r.book, HeldView);
+  const pressKept = (): boolean => { const p = r.world.firstOf(mouseQ); return p !== undefined && r.world.has(p, HeldPress); };
+  /** ⌘-wheel at the frame's centre: brought close about it, no pan. */
+  const closer = (): void => {
+    r.ce.stack.queue.enqueue({ kind: "wheel", pointerId: "mouse", device: "mouse", screenX: 400, screenY: 300, buttons: 0, mods: { ...NO_MODS, meta: true }, wheel: { dx: 0, dy: -50, pinch: 0 } });
+    r.step();
+  };
+  return { ...r, held, view, pressKept, closer };
+}
+
+describe("the hand takes the primary press too (petition I28; design-015 §8)", () => {
+  it("a secondary click on the soft desk puts nothing down, nor a secondary double-click on the object, nor a middle click at the reading size — no press is kept; a primary click on the soft desk does (the control)", () => {
+    const r = handRig();
+    expect(r.held()).toBe(true);
+    for (const [x, y] of [[700, 550], [400, 300]] as const) {
+      r.send("move", x, y, 0); r.step();
+      r.send("down", x, y, RIGHT); r.step();
+      expect(r.pressKept()).toBe(false);
+      r.send("up", x, y, 0); r.step(2);
+    }
+    r.tap(400, 300, RIGHT);
+    expect(r.held()).toBe(true);
+    r.tap(700, 550, MIDDLE);   // at the reading size a middle press has nothing to pan
+    expect(r.held()).toBe(true);
+    expect(r.world.getResource(HeldIntent)).toBeUndefined();
+    r.tap(700, 550, 1);
+    expect(r.held()).toBe(false);
+    expect(r.world.getResource(HeldIntent)).toMatchObject({ kind: "putDown" });
+  });
+
+  it("brought close, a middle drag still moves the object under the eye; a secondary drag on the soft desk moves nothing", () => {
+    const r = handRig();
+    r.closer();
+    const zoom = r.view()?.zoom ?? 1;
+    expect(zoom).toBeCloseTo(Math.exp(50 * HOLD_INPUT.wheelRate), 9);
+    expect(r.view()).toMatchObject({ panX: 0, panY: 0 });
+    r.drag([700, 550], [640, 520], RIGHT);   // before I28 a drag on the soft desk, brought close, moved it
+    expect(r.view()).toEqual({ zoom, panX: 0, panY: 0 });
+    expect(r.held()).toBe(true);
+    r.drag([700, 550], [640, 520], MIDDLE);
+    expect(r.view()?.panX).toBeCloseTo(-60, 9);
+    expect(r.view()?.panY).toBeCloseTo(-30, 9);
+    expect(r.held()).toBe(true);
   });
 });
