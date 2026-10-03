@@ -1672,11 +1672,12 @@ glyph and the chips' ids. (D-R1.7, the row of holes peeking under the edge at re
 `OverInteractive`); an accessory's shadow darkens the holes it falls on; rig:tray takes ≈ 137 s; a lamp push configured to
 0 would make `normalize(shadow.zw)` NaN.
 
-## M23 — The 0.15.0 asks (petitions I20–I25) — **IN BUILD (I23 LANDED 2026-10-02)**
+## M23 — The 0.15.0 asks (petitions I20–I26) — **IN BUILD (I23 LANDED 2026-10-02)**
 
 VibeField's desk migration (track DK, `vibe-field/draft/thinking-desk-migration.md` §8 A4 — the covers DK-15, the thumbnails
-DK-4, "Send to…" DK-14) files six asks against the desk for 0.15.0; each is built in a worktree off `main` behind the 0.14.0 cut
-and graded on the exact SHA (`pnpm run ci` + `gate:landing`: the Dawn oracle at 113 stills, nineteen rigs, pack:audit, dts:check).
+DK-4, "Send to…" DK-14) files seven asks against the desk for 0.15.0 (I26 from the §8 canon review, 3 Oct); each is built in a
+worktree off `main` behind the 0.14.0 cut and graded on the exact SHA (`pnpm run ci` + `gate:landing`: the Dawn oracle at 113
+stills, nineteen rigs, pack:audit, dts:check).
 Their status rows live in `docs/downstream-petitions.md`; what each built is here.
 
 - **I23 — the capture door** (**LANDED 2026-10-02**; DK-D25, James: "frozen desk should be still and consume no render time at
@@ -1783,6 +1784,19 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   the glyph feed's systems, an open devtools dock — rig:remount counts them). Not done, said plainly: no door to replace a kind on a live desk; a remount re-acquires the device even
   when only one kind changed (an engine with `compositorDevice` keeps it — not measured here); `perf().boot` stamps the first frame's
   GPU work done, not its display; a remount mid-gesture other than typing (a pen stroke, a carry in flight) is not witnessed.
+- **I26 — a host that draws its own peers** (**BUILT 2026-10-03**, branch `i26-cursors-off`; DK-16 — VibeField draws each peer by face,
+  from `usePresencePeers`, and the desk's host drew them too): `deskLayer({ cursors: false })`, read at the mount — the host the layer
+  is mounted in mounts no remote cursors (no plane, no reflector). The remote cursors are the dom's (design-015 §9) and the desk
+  reaches the dom as an opaque factory, so the word travels back on the HANDLE: `DeskLayerHandle.cursors`, read through dom's
+  structural `LayerHandle.cursors?` when the factory returns; absent, the boot is reflector for reflector what it was. Found in the
+  build: that reflector is the desk host's ONE observing reflector (the desk's and the OS cursor's are `always`), so it is what armed
+  the world's reactive layer — and strata's dev access enforcement — at the mount; off, the world arms at the host's own first
+  observer (`usePresencePeers` is one). Decided: no sentinel observer keeps the host arming (a no-op observation registered for its
+  side effect) — core's petition-7 pin S5 stands, arming comes from what the mount observes; the units pin both sides. rig:collab gains
+  a third tab (`&cursors=false`, after A and B's rows, which run unchanged): A draws Carol's cursor; her world holds both other people
+  and their hands at their tabs' pointers; her page draws nobody's — no chip, no reflector, the desk's pixel where Alice's chip would
+  be. Not done, said plainly: read at the mount alone — a host that changes its mind remounts (I25's rule); nothing on the handle hides
+  the cursors live.
 
 ## Release cut & downstream
 

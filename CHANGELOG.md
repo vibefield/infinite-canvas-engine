@@ -6,7 +6,7 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
-**The 0.15.0 asks (M23) — VibeField's desk migration (track DK) files six against the desk, petitions I20–I25; each lands as
+**The 0.15.0 asks (M23) — VibeField's desk migration (track DK) files seven against the desk, petitions I20–I26; each lands as
 its own block here as it is built.** Additive, every one: nothing of 0.14.0's surface moves.
 
 ### Added
@@ -152,6 +152,25 @@ its own block here as it is built.** Additive, every one: nothing of 0.14.0's su
   across generations), `packages/desk/test/kind-faults.test.ts` (the kind quarantined while the ground is made),
   `packages/objects/test/note-session.test.ts` (the session open at the editor's dispose), rig:remount. `docs/api-reference.md`
   states the rule, the numbers and where the document's survival is proven; Plugin parity: your kind is compiled at the layer's mount.
+
+<!-- petition I26 — the room's other people, host-settable (2026-10-03) -->
+- **A HOST THAT DRAWS ITS OWN PEERS — `deskLayer({ cursors: false })`** (petition I26 — VibeField draws each peer by face, from
+  `usePresencePeers`; DK-16, presence on the mat): default `true`, read at the mount. `false` — the host the layer is mounted in
+  (`createDeskHost`, `<Desk>`) mounts no remote cursors: no plane, no reflector, so no peer is drawn twice. The remote cursors are the
+  dom's (design-015 §9) and the desk reaches the dom as an opaque factory, so the word travels back on the handle:
+  `DeskLayerHandle.cursors` (the option as read, `true` when absent), read through dom's structural `LayerHandle.cursors?` when the
+  factory returns. The presence session, core's derived hands (`CursorVisual "remote"`), `usePresencePeers` and the OS cursor are
+  untouched. Absent, byte-identical: the boot registers the same reflectors in the same order — the oracle's 115 stills and every rig
+  as before. Found in the build: that reflector is the desk host's ONE observing reflector (the desk's and the OS cursor's are
+  `always`), so it is what armed the world's reactive layer — and strata's dev access enforcement with it — at the mount; with
+  `cursors: false` the host arms nothing, and the world arms at the host's own first observer (`usePresencePeers` is one — core's
+  petition-7 pin S5, arming comes from the mount). Witnesses: `packages/dom/test/desk-host.test.ts` (two peers' hands: no plane, no
+  reflector, nothing drawn, the host arming nothing; absent or `true`, both drawn), `packages/react/test/facade.test.ts` (the
+  petition's acceptance 1 on a real presence session — `<Desk>` with `cursors: false` and two peers: no cursor element,
+  `usePresencePeers` lists both; absent, both drawn), `packages/desk/test/cursors.test.ts` (the handle's word), and rig:collab's
+  third tab (`rig.html?…&cursors=false`: A draws Carol's cursor; her world holds both other people and their hands; her page draws
+  nobody's — no chip, no reflector, the desk's pixel where Alice's chip would be). `docs/api-reference.md` lists it beside `grid`,
+  `hold` and `tray`.
 
 ## [0.14.0] — 2026-10-02
 

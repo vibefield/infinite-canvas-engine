@@ -239,14 +239,14 @@ CHANGELOG's `### Removed` lists them).
 |---|---|
 | `<EngineProvider engine>` | Context root; all hooks require it. |
 | `<Desk engine layer keymapOverrides? onReady? className? style?>` | Mounts the desk: `createDeskHost({ container, engine, layer })` + `attachKeymap`. `onReady({ engine, host, layer, focus })`, once per mount — it may return a cleanup, run when that mount ends, before the host goes (StrictMode's discarded development mount included: what `onReady` starts, its cleanup undoes). Unmount disposes the host; the engine outlives it. Children render in the container, above the canvas — screen-space chrome only (§2 law 2). |
-| `LayerFactory` / `LayerHandle` / `LayerContext` | Re-exported from `@ice/dom`: the structural seam a layer factory is typed against (`deskLayer` returns one). |
+| `LayerFactory` / `LayerHandle` / `LayerContext` | Re-exported from `@ice/dom`: the structural seam a layer factory is typed against (`deskLayer` returns one). `LayerHandle.cursors?` is the layer's word on the room's other people (petition I26): `false`, the host mounts no remote cursors. |
 | `useCommit()` | `(fn: (tx: GuardedTx) => void, {undoable?}) => void` — THE write path; one call = one undo step. |
 | `useBehavior(world, entity, behavior)` | Live behavior data for one entity; `p.json` fields parsed; `undefined` when unattached (a legitimate render state). READ-ONLY — chrome renders behavior state, never writes it. |
 | `useWidgetProps(world, entity, type, group?)` | Tier-3 subscription, json-parsed. |
 | `useSelected` / `useBreakpoint` / `useWorldComponent` | Equality-suppressed snapshots (strata `get()` returns fresh objects — the hooks cache by shallow-eq). |
 | `useTool()` / `useToolState(id)` | `[id, setTool]` over the `ActiveTool` resource. |
 | `useUndoStatus()` | `{canUndo, canRedo}` via the `DurableUndoStatus` resource — survives doc swaps. |
-| `usePresencePeers()` | Remote peers (`PresencePeer` × `Not(Local)`), membership-keyed stable snapshots. |
+| `usePresencePeers()` | Remote peers (`PresencePeer` × `Not(Local)`), membership-keyed stable snapshots. A host that draws them itself mounts the desk with `deskLayer({ cursors: false })` (petition I26), and the desk's remote cursors stay off. |
 | `attachKeymap(ce, target?, overrides?)` · `nudgeSelection` · `toggleTape` | Defaults: ⌫ delete · ⌘Z/⇧⌘Z · ⌘D · ⌘A · Esc · arrows nudge (one tx/press) · ⏎ opens / enters · tool shortcuts. All resolve to ops; editable targets and keyboard claims skipped. |
 | `<SelectionMenu source actions>` · `defaultSelectionActions` · `placeSelectionMenu` · `SELECTION_MENU` · `SELECTION_GLYPHS` · `selectionTaped` | *Marks on the Mat*'s ink bar and the held bar (design-015 §7–§8, D4a/D4b): placed from the desk layer's `selection` anchor. K8a: the anchor's `menu` puts a selection's KIND ACTS first (`SelectionMenuAct` — a type's `defineWidget({ menu })`, run by `ops.runMenuAction`); a held tool's or an act's glyph is a name of `SELECTION_GLYPHS` or its own drawing (`SelectionGlyph` `{ path, fill? }`), and a name the set lacks is marked missing (its initial, `data-glyph-missing`), never drawn as the ellipsis. |
 | `<TrayBar source label? keys?>` · `placeTrayBar` · `TRAY_BAR` · `TRAY_BAR_GLYPHS` · `DESK_TAPE` | The pegboard drawer's HANDLE and its FILTERS (design-018 §5–§6, R4), the menu's sibling: two islands under one root. `source` is the desk handle's `tray` door, read structurally (`TrayBarSource` — `anchor()`, `subscribe()`, `toggle()`, `category(id?)`). THE PILL, in the desk's ink (the same `--ice-menu-*` custom properties, declared on its own root — an app re-points both islands alike): shut, a 40 px pill 16 px above the view's foot — the pegboard glyph and "Objects", titled "Objects (A)", `aria-expanded`; out, it rides the drawer's top edge as "× Objects", its bottom at `min(vh − 16, drawer.y − 10)`. THE CATEGORY CHIPS (R4) lie in the drawer's clear HEADER (the anchor's `drawer.header`) as LABEL TAPE — the specimens' own tags, `DESK_TAPE`'s custom properties (the tape, its raised capitals, the chosen cream, the mono face) — All, then the drawer's categories, the chosen one cream tape with ink letters; `aria-pressed`, a `role="toolbar"`; centred on the drawer and in the band, following the slide and fading in over its last part (`smoothstep(0.6, 1, p)`), scrolling inside the band past its width (each end fading where more lies beyond), stepping back by night by the anchor's `night` as the tags do. `placeTrayBar(anchor)` → `{ y, head: { x, y, w, h, opacity } | null }`. Both are written each frame the desk publishes (no render per frame, no rAF of its own) and step aside in hand and with nothing to offer. The pill and the chips' toolbar are `data-canvas-interactive`: the tray's input never takes their downs (a chip never closes the drawer) and the desk's tap lends nothing under them — the header's bare board beside them stays the drawer's. Enter/Space act on a focused button, ←/→/Home/End walk the chips; a pointer's click leaves no focus (Space still pans). |
@@ -258,7 +258,8 @@ CHANGELOG's `### Removed` lists them).
 SCREEN SPACE ONLY (design-015 §3, D-D15): `createCanvasHost(container)` (the styled container —
 no planes; `CanvasHost { container, dispose }`) · **`createDeskHost({ container, engine, layer })`**
 — the vanilla mount: host → the layer factory (`LayerContext { host, world, framePick, navGeometry,
-heldPose, transitions, catalog, readMarquee }`) → reflectors [ the layer's · cursor · remote cursors ]
+heldPose, transitions, catalog, readMarquee }`) → reflectors [ the layer's · cursor · remote cursors — none when the
+layer's handle says `cursors: false`, petition I26 ]
 → `attachPointerAdapter(host, queue)` → `attachWidgetFocus(host, lookup?)` → the viewport sync
 (one layout read, then a ResizeObserver) → `startRafLoop`; `DeskHost { engine, host, layer, focus,
 dispose }` · `startRafLoop(engine)` (rAF + the freeze park) · input ownership (`isEditableTarget`,
@@ -318,7 +319,7 @@ one composite) keeps the contract as one object: the kit's composite lays the la
 bindings `layerCompositeLayout(device, label)`, and `BoxTargets(device, label, layoutComp, samples, view)` — `view` the slot's view
 block, `MatPass.view`).
 
-**The host's chrome on the desk (petitions I20, I21)** — beside `grid` (the root's mat config — its rulers, its gobo; `configureMat`
+**The host's chrome on the desk (petitions I20, I21, I26)** — beside `grid` (the root's mat config — its rulers, its gobo; `configureMat`
 live), `deskLayer` takes the numbers a host's own chrome sets, read at the mount, each the desk's own when absent: **`hold: { top?,
 band?, travelMs? }`** — the held object's reading fit keeps `top` CSS px under the view's top (56; a phone keeps its 60) and `band`
 above its foot (72), and the held bar travels `travelMs` (M1; 340) — the bar being the host's, the selection's anchor carries it
@@ -326,6 +327,13 @@ above its foot (72), and the held bar travels `travelMs` (M1; 340) — the bar b
 ends `foot` CSS px above the board's bottom edge (0), the header's mirror: the face's clip and the tags end there, the veil lays the
 plain board over the foot and feathers it, the scroll's range grows by it so the last line is still reached, and core never hovers or
 takes a specimen there (the pose seam's `TrayScreenFrame.foot`); the board runs to its edge. A malformed number throws at the mount.
+And **`cursors?: boolean`** (petition I26; `true` when absent) — a host that draws the room's people itself (VibeField, each by face,
+from `usePresencePeers`) passes `false`, and the host the layer is mounted in (`createDeskHost`, `<Desk>`) mounts no remote cursors:
+no plane, no reflector. The layer says it on its handle (`DeskLayerHandle.cursors`, read at the mount), where the host reads it
+(`@ice/dom`'s structural `LayerHandle.cursors?`); the presence session, core's derived hands (`CursorVisual "remote"`),
+`usePresencePeers` and the OS cursor are untouched. Their reflector is the desk host's one OBSERVING reflector (the desk's and the OS
+cursor's are `always`), so it is what arms the world's reactive layer — and strata's dev access enforcement with it — at the mount;
+with it off, the world arms at the host's own first observer (`usePresencePeers` is one).
 
 **The kind set — fixed for a layer's life (petition I25)** — a desk draws its objects by the kinds it was MOUNTED with: the
 catalog's object types and `deskLayer({ objects })`, read once at the mount and compiled there (`Ground.create`). Registering a type
