@@ -135,10 +135,11 @@ its own block here as it is built.** Additive, every one: nothing of 0.14.0's su
   record under a name it never compiled: `ground: no kind "…" is registered` threw out of every frame that showed one. THE MOUNT'S
   COST as each boot went: `perf().boot` (`DeskLayerBoot` — `device`, `compiled`, `presented`: ms since the mount; three stamps and one
   promise a mount, nothing a frame). Measured by `rig:remount` (the twentieth rig; `__desk.remount()` remounts the product's `<Desk>`
-  on a new generation, same engine and document): the showcase — six kinds and the clock — remounted five times a run, eight runs, on
+  on a new generation, same engine and document): the showcase — six kinds and the clock — remounted five times a run, nine runs, on
   an Apple M1 Max (Chrome 154 headless, 1200 × 800 @ 2): the device in hand 4–6 ms, the passes compiled 34–48 ms, the first frame
-  presented 92–124 ms (medians 4.3–4.7 / 35–37 / 104–111); the page's first mount, cold, 30–38 / 173–210 / 188–236 ms. Within 250 ms:
-  the door (`handle.kinds.replace`, the petition's answer 1) stays deferred. Nothing outlives its generation: the memory ledger reads
+  presented 92–124 ms (medians 4.3–4.7 / 35–37 / 104–113), the ninth under another landing gate's load (16–20) among them; the page's
+  first mount, cold, 30–38 / 173–210 / 188–236 ms at load 5–14 and 102 / 274 / 301 ms under that load — a cold mount past 250 ms, no
+  remount near it. A remount within 250 ms: the door (`handle.kinds.replace`, the petition's answer 1) stays deferred. Nothing outlives its generation: the memory ledger reads
   ZERO after every unmount — a generation with a kind refused at create and one quarantined at three strikes included, then one
   mounted clean — and the document is untouched (its snapshot byte for byte, no commit). Found and fixed on the way: a kind QUARANTINED
   while the ground was being made (its desk state's `tick` threw three times in the boot's frames) kept its pass in the ground that

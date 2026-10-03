@@ -1767,9 +1767,11 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   kinds change makes the engine anew too (VibeField's generation is both, B4), and that engine's making and the document's reopening
   are the host's cost, not in the numbers below. The mount's cost is each layer's own instrument (`perf().boot`: device,
   compiled, presented — ms since the mount), read by rig:remount, the twentieth rig (`__desk.remount()` — the product's `<Desk>` on a
-  new generation, same engine and document): on an Apple M1 Max, Chrome 154 headless, eight runs of five remounts of the showcase (six
+  new generation, same engine and document): on an Apple M1 Max, Chrome 154 headless, nine runs of five remounts of the showcase (six
   kinds and the clock): the device 4–6 ms, the passes 34–48 ms, the first frame presented 92–124 ms after the mount (each run's medians
-  4.3–4.7 / 35–37 / 104–111); the page's first mount, cold, 30–38 / 173–210 / 188–236 ms. Within the brief's 250 ms, so the DOOR —
+  4.3–4.7 / 35–37 / 104–113), the ninth under another landing gate's load (16–20) included; the page's first mount, cold, 30–38 /
+  173–210 / 188–236 ms at load 5–14 and 102 / 274 / 301 ms under that load — a COLD mount past 250 ms (a document's first open, not
+  a remount). The remount within the brief's 250 ms, so the DOOR —
   `handle.kinds.replace` (answer 1) — stays deferred; what reopens it: a first frame past ~250 ms on a machine VibeField ships to, or
   the plugin dev loop's ten-minute bar (DK-10) missed for the remount's sake. Nothing outlives a generation: the memory ledger reads
   zero after every unmount (102 of 102 resources each), a broken generation (a kind refused at create, one quarantined) included, then
