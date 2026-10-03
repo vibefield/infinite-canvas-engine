@@ -292,7 +292,10 @@ The desk (design-015): every object under the camera drawn by ONE WebGPU rendere
 the DOM in screen space. Entries mirror the umbrella's: **`@ice/desk`** (the root barrel — the
 renderer `Ground`/`prepareFrame`/`drawFrame`, `deskLayer(opts)` and its `DeskLayerHandle` (`handle.editor()`
 is the desk's ONE focused editor — the desk makes it at every mount, whatever kinds are registered, K8a; `status()` says whether
-it draws and `onStatus(listener)` hears each move — a device lost after the boot included, K9; `setTheme(theme, palette?)` re-dresses the desk, and beside it
+it draws and `onStatus(listener)` hears each move — a device lost after the boot included, K9 — and `status().faults` (petition I24:
+`readonly { kind, reason }[]`, absent while none) names the KINDS the desk draws as MISSING, contained per kind — refused at create, or
+quarantined at three strikes; the state stays `ready`, each kind said once (Plugin parity, below, says what a kind's author can expect);
+`due(now).kinds[kind]` is `KIND_MISSING` (−1) for one; `setTheme(theme, palette?)` re-dresses the desk, and beside it
 `capture({ rect?, scale? }) → Promise<ImageBitmap | undefined>` is THE CAPTURE DOOR (petition I23): the desk as the LAST PRESENTED frame showed it — the same
 camera, theme, marks, hand and tray — as a bitmap of `rect` (CSS px of the view; the whole view when absent) at the view's dpr × `scale` (1; a thumbnail asks
 0.25), drawn ONCE MORE from that frame's inputs into a readable still and read back (never a copy kept of every frame, never a frame: no redraw, no wake, the
@@ -385,6 +388,29 @@ engine names a kind:
      (design-015 §6.1, D2c) — a behavior's durable store would sync every keystroke — so `noteTyping` stays a driver, and the plan's
      `behaviors: [noteTyping]` is superseded. In short: drawn from time or a device → `local` with `due`; worked by hand → `drivers`;
      durable or peer-shared logic → `behaviors`.
+- **When a kind breaks — contained per kind (petition I24)**: a plugin kind runs in the renderer's realm on the host's device, and its
+  fault is its own — said once, drawn as missing, never the desk down. What its author can expect:
+  1. **At create** — its pass is made beside every other kind's, each in an error scope of its own. If its `create` rejects (a WGSL
+     that will not compile: the engine's `compile` throws) or raises a GPU error while it is made (a pipeline that fails validation),
+     the kind is REFUSED: the rest of the desk boots, `status()` is `ready` with `faults: [{ kind, reason }]` — the compiler's first
+     line in the reason — and the device's uncaptured-error handler never hears it (the desk is not `degraded` for it).
+  2. **Per frame** — a throw out of its world half (`resolve`, `record` and what a remake asks with them — `face`, `frame`, `rung`,
+     `landed` —, `chip`, `hit`, `lifted`, `veils`, its desk state's `tick` and `due`) is caught at the kind: a STRIKE, said on the
+     console (`console.warn`: the call, the entity, the error) and never to the host; the frame goes on without that object (its
+     record reset and made afresh next time; a `hit` that throws is a miss — the pick goes on to the object under it). The THIRD
+     strike quarantines the kind (design-009 §16's ladder).
+  3. **Missing** — refused or quarantined, the kind is MISSING for the desk's life: nothing of it is called again; its passes are
+     swapped out of every slot and their `dispose` called, its desk state's `dispose` called and let go (no tick, no `due`), its
+     drivers parked, its raster asks dropped and charges forgotten — the memory ledger counts none of it. Its objects wear the desk's
+     MISSING FACE — a faint hatched card the size of the object's box, square to the mat, no text, picked by its box as the object
+     itself (selected, moved, deleted as any object), never opened. An object whose type has NO kind on this desk (a type no catalog
+     here holds, or one declared without an `object`) wears the same face. Said ONCE: the status moves with the kind named
+     (`onStatus`; a kind refused at the boot rides the boot's own `ready`) and one `console.error`; `due(now).kinds[kind]` is
+     `KIND_MISSING`. A kind whose card material the flat card composes turns the card off when it is quarantined (each material kind
+     then draws its own runs — the same pixels, more draws) until the desk is mounted again.
+  Not caught, said plainly: a throw out of a kind's PASS per frame (`prepare`, `drawRange`, `aux`) is the frame's (the reflector's
+  fault: that frame skipped), and its mount-time calls (`theme`, `local`, the drivers' factory, a DOM half) are the mount's. The
+  worked broken kind is the clock's fault fixture (`examples/desk-clock`: `brokenClockKind`, `DeskClockBroken`, `DeskClockFaulty`).
 
 **The worked third-party kind (design-016 K8b)** — `examples/desk-clock` (`@ice-examples/desk-clock`, private, never published): an
 analogue desk clock in a package of its own that imports ICE only as `@vibecook/ice`, `@vibecook/ice/desk`, `/desk/kit` and

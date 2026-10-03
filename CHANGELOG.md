@@ -89,6 +89,36 @@ its own block here as it is built.** Additive, every one: nothing of 0.14.0's su
   reflector fault — and said once), `packages/objects/test/held-readout.test.ts` (the notebook's Page 1 → Page 2, never heard behind the
   document's spread; the calendar's September → October in the first frame after the act), `examples/desk-clock/test/clock.test.ts`.
 
+<!-- petition I24 — fault containment per kind (2026-10-02) -->
+- **FAULT CONTAINMENT PER KIND — one bad kind is drawn as MISSING, said once, never the desk down** (petition I24 — VibeField DK-D22:
+  a plugin's kind runs in the renderer realm on the host's device, contained per kind by ICE; DK-9 admits a third-party kind only
+  behind it). AT CREATE every kind's pass is made in parallel as before but SETTLED ALONE, each in its own error scope
+  (`createKindPasses`: a scope around what a kind does before its first await — where a WGSL error is raised — and a window around
+  them all, a fault's attribution made by remaking each kind alone): a kind whose WGSL will not compile or whose pipeline fails
+  validation is REFUSED and the rest boot — `status()` stays `ready`, the compile error never reaches the device's handler (before
+  I24 one rejected `create` failed the whole desk, and an uncaptured error said `degraded` for the device as a whole). PER FRAME every
+  call into a kind's world half — `resolve`, `record` (and what a remake asks with them), `chip`, `hit`, its desk state's `tick` and
+  `due`, the hand's, a ghost's, the tray's specimens' — is caught at the kind: a STRIKE, the frame going on without that object (its
+  record reset, made afresh next time); at THREE (design-009 §16's ladder, I17's words) the kind is QUARANTINED. A missing kind stops
+  costing, not merely drawing: nothing of it is called again, its passes are swapped out of every slot and disposed (`Ground.quarantine`;
+  a kind the flat card composes turns the card off — its pixels, more draws), its desk state's `dispose` called, its drivers parked, its
+  raster asks dropped and charges forgotten (`RasterBudget.forget`) — and its objects wear the desk's own MISSING FACE (`MISSING_OBJECT`,
+  `missingFace`): a faint hatched card the size of the object's box, no text, pickable by its box (the object itself: a tap selects
+  it, a drag moves it). The same face for an object whose type has NO kind on this desk (before, invisible — VibeField's ghost stubs):
+  one face for "nothing can draw this". Said ONCE: `DeskLayerStatus.faults: readonly { kind, reason }[]` (absent while none — a
+  state for the desk's life, so a host that subscribes late reads it; `onStatus` hears each kind once, a boot refusal riding the boot's
+  own `ready`) and one `console.error`; a strike before the third is a `console.warn` alone. The ledger: `due().kinds[kind] ===
+  KIND_MISSING` (−1); apps/desk's dev panel says the kinds too. Nothing costs while nothing faults: the missing face is made at the
+  first one asked for (no pipeline, no buffer before), the boundary's try/catch allocates nothing, idle-zero holds with a missing kind
+  registered. The FAULT FIXTURE: examples/desk-clock `brokenClockKind`, `DeskClockBroken` (its WGSL names what nothing declares) and
+  `DeskClockFaulty` (its record throws from its third call, its hit always) — VibeField's playground v2 registers them (DK-7).
+  Witnesses: units (`packages/desk/test/kind-faults.test.ts` on a fake device that refuses the WGSL as a compiler does and keeps
+  WebGPU's error scopes; the fixture's own), the oracle's new still `fault-missing-z1` (the showcase with the broken clock registered —
+  on the desk and in a mini mat's live inside: byte for byte the showcase outside their boxes, the face in them; the other 114 stills
+  byte-identical with the refused kind registered on the one desk; the creation's error scopes clean — Dawn's own compiler refused it),
+  rig:parity on it (maxΔ 0), and rig:clock's rows 11–15 (`rig.html?plugins&broken`: the boot ready, the quarantine said once, the
+  ledger rows, both faces, a press in each box selects its entity). `docs/api-reference.md` says what a kind's author can expect.
+
 ## [0.14.0] — 2026-10-02
 
 **The first publish since 0.11.0, and it carries M20 + M21 + M22** — the desk (design-015), the kit and the

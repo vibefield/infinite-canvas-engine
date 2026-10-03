@@ -1726,6 +1726,29 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   document alone published "Page 1" over a turning sheet for a frame (the unit's red); "Page N" counts the reader's turns (‹ ›, "Next
   page"), not the folio of a spread's left page. The notebook and the calendar declare theirs, the example's clock its time; a throw is
   contained at the kind's boundary and said once — I24 owns the rest.
+- **I24 — fault containment per kind** (**BUILT 2026-10-02**, branch `i24-kind-faults`; DK-D22 — a plugin's kind runs in the renderer
+  realm on the host's device, contained per kind by ICE; DK-9 admits a third-party kind only behind it): one kind's fault is that
+  kind's — drawn as MISSING, said once, never the desk down. At create every kind's pass is made in parallel and settled ALONE, each
+  in its own error scope (`createKindPasses` — a scope around what a kind does before its first await, where a WGSL error is raised;
+  a window around them all for what any does after, a fault attributed by remaking each kind alone, wholly scoped — the cost is a
+  fault's alone); the card, the marks, the hand and the tray are made after the window, the card over the kinds that stood. Per frame
+  every call into a kind's world half (the builder's `resolve`/`record` and what a remake asks with them, `chip`, `hit`, the hand's,
+  a ghost's, `lifted`, `veils`; the tray's specimens and carried copies; the layer's `tick` and `due`) is caught at the kind — a
+  strike, the frame going on without the object; three, and the kind is QUARANTINED (`Ground.quarantine` swaps it out of every slot
+  for the missing faces and disposes its passes; the layer lets its desk state go — `dispose` called — parks its drivers, drops its
+  raster asks and charges). The face (`src/missing/`, `MISSING_OBJECT`): a faint hatched card the size of the object's box, no text,
+  pickable — also an object whose type has no kind (VibeField's ghost stubs, r5). The notice is a STATE: `DeskLayerStatus.faults`
+  (chosen over an `onKindFault` event — a missing kind is missing for the desk's life, and a host that subscribes late reads it from
+  `status()`), `onStatus` told once per kind, one `console.error`; the ledger `due().kinds[kind] === KIND_MISSING` (−1) and the
+  dev panel's "the kinds". The golden is 115 stills: `fault-missing-z1` (the showcase with the fixture's broken clock registered —
+  byte for byte the showcase outside the broken objects' boxes, the face in them), the other 114 byte-identical with the refused kind
+  registered on the one desk, the creation's scopes clean. rig:clock rows 11–15 (`?plugins&broken`). The cost, measured (a 2,000-object
+  desk, the base builder against the boundary's, interleaved): +10–15 ns an object on the reuse path (base 227–254), +11–23 on the remake
+  path (base 313–347) — while nothing is missing an object costs one field read, and the try/catch nothing measurable; nothing at rest,
+  idle-zero held with a missing kind registered (a unit's witness). Not done, said plainly: a kind's
+  PASS half per frame (`prepare`, `drawRange`, `aux`) and its mount-time calls (`theme`, `local`, the drivers' factory and `follow`,
+  a DOM half) are not caught — the first throws out of the frame as before (the reflector's fault: the frame skipped), the second at
+  the mount; a quarantined material kind turns the flat card off until the desk is mounted again (no re-compose).
 
 ## Release cut & downstream
 

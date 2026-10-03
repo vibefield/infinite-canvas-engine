@@ -28,3 +28,14 @@ const engine = createCanvasEngine({ ...DESK_ENGINE, widgets: [...DESK_ENGINE.wid
 ```
 
 A still pins its time through the handle's generic door: `handle.pinAsset(entity, { at: epochMs })`.
+
+## The fault fixture (petition I24)
+
+`src/broken.ts` is the clock broken ON PURPOSE, the ways a plugin's kind breaks — what ICE's containment per kind is held to:
+`brokenClockKind({ wgsl?, recordFrom?, hit?, name? })` (its WGSL names `BROKEN_WGSL_TOKEN`, which nothing declares — the compiler
+refuses it; its `record` throws from the `recordFrom`th call on; its `hit` throws), and two objects of their own beside the clock —
+`DeskClockBroken` (refused at create: the desk boots without its kind and draws its objects as the missing face, `status().faults`
+naming it) and `DeskClockFaulty` (its record throws from its third frame: three strikes and the desk quarantines it, said once) —
+`BROKEN_CLOCK_OBJECTS`. ICE's units register it, the oracle draws a refused one (`fault-missing-z1`), `rig:clock` boots
+`rig.html?plugins&broken`, and VibeField's playground v2 registers it as its fault fixture (DK-7). `test/broken.test.ts` holds it
+to breaking exactly as it says.
