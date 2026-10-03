@@ -34,7 +34,7 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, closeTray, type Entity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type MenuActionDef, type NavFace, type NavGeometrySlot, NavTransition, openTray, PrefabId, type PresentationTransitionAdapter, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, closeTray, type Entity, frameParent, heldEntity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type MenuActionDef, type NavFace, type NavGeometrySlot, NavTransition, NO_ENTITY, openTray, type PointPick, PrefabId, type PresentationTransitionAdapter, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
 import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin, type SpatialSource } from "../compose/builder";
@@ -197,6 +197,11 @@ export interface DeskLayerContext {
   readonly host: { readonly container: HTMLElement };
   readonly world: World;
   readonly framePick?: FramePickSlot;
+  /**
+   * The interaction stack's exact pick out of the tick (`stack.pickAt`, petition I27 — what a press at a screen point would touch now,
+   * through `framePick` above): the handle's `pick` answers a host through it. Absent (a bare host), `pick` answers null.
+   */
+  readonly pickAt?: (sx: number, sy: number) => PointPick | undefined;
   /** The nav geometry seam (design-015 §9, D2b): the desk sets its word on its containers' drawn faces here, clears it at dispose. */
   readonly navGeometry?: NavGeometrySlot;
   /** The held pose seam (design-015 §8, D4b): the desk publishes where the object in hand is ON SCREEN as it drew it; core's held input maps every pointer through it. */
@@ -227,6 +232,27 @@ export interface DeskLayerContext {
 export interface SelectionSource {
   anchor(): SelectionAnchor;
   subscribe(listener: () => void): () => void;
+}
+
+/**
+ * The object under a screen point as the desk's own pick resolves it (petition I27 — `DeskLayerHandle.pick`): what a press there
+ * touches, so what a primary click there selects — the host selects it through the engine's ops (`ops.setSelection([entity])`) and
+ * reads its acts off the selection's anchor.
+ */
+export interface PickResult {
+  readonly entity: Entity;
+  /** Its object type (its `PrefabId`) — what the host names it by and finds its type with (`engine.catalog.widget(type)`). */
+  readonly type: string;
+  /**
+   * The canvas it lies in — the frame the pick is made in: the board root on the root desk, the container entered (a mini mat whose
+   * desk is the view); `NO_ENTITY` in a world with no document.
+   */
+  readonly canvas: Entity;
+  /**
+   * Its kind's PART under the point (design-014): `""` the object itself — its body or its frame, which a click selects; a named part
+   * (the calendar's roll, corner and foot) is the kind's own — a click there works the part and selects nothing.
+   */
+  readonly part: string;
 }
 
 
@@ -381,6 +407,19 @@ export interface DeskLayerHandle {
    * same picture (equal options, no frame since) while another is in flight resolves to that one's bitmap.
    */
   capture(opts?: CaptureOptions): Promise<ImageBitmap | undefined>;
+  /**
+   * THE DESK'S PICK (petition I27 — a host's right-click selects the object under the pointer before it grows the menu): the object
+   * at `point` (CSS px of the view, the container's top-left at 0, 0 — a pointer event's client point less the container's rect) as
+   * the desk's own pick resolves it. Inside: the interaction stack's exact pick (`stack.pickAt`, through the mount context) — the one
+   * body a press's `TouchesExact` is written by, never a second hit path — so the answer is what a primary click there selects: the
+   * topmost object by stratum and sibling order through its kind's mirror on the last frame's geometry, its PART reported; on a live
+   * mini mat's face the mini mat (its inside's objects are no members of this frame — entered, they pick with it as their canvas).
+   * Synchronous; reads the last frame's world — no redraw, no wake, no write; it never selects (the host decides). `null` over the
+   * bare mat and its rulers (printed on it), over what is not an object (a resize handle), while an object is in hand or the
+   * pegboard drawer is out (the desk inert to the pointer — D4b, design-017 §4), before the first frame, and while `status()` is
+   * `pending` or `failed` (`degraded` picks: the desk still draws, a click still selects). A point that is not two finite numbers throws.
+   */
+  pick(point: { readonly x: number; readonly y: number }): PickResult | null;
   /** The mat's config over the current one (the rulers, the gobo): the root's grid. */
   configureMat(mat: Partial<MatConfig>): void;
   /** The lattice's fade-in window. */
@@ -1041,6 +1080,24 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       return run;
     };
 
+    // THE DESK'S PICK (petition I27): the stack's exact pick (`ctx.pickAt` — what a press touches, through this layer's pick source
+    // above), answered for an object of the frame. Nothing with no desk as last drawn — no ground (it is here only while the status
+    // is `ready` or `degraded`: pending, failed, ended and disposed have none) or no frame drawn yet — and nothing while the desk is
+    // inert to the pointer: an object in hand (D4b — a click there is the hand's; on the soft desk it puts the object down). The
+    // drawer's inertness is the stack's own rule
+    const pickAt = ctx.pickAt;
+    const pickPoint = (point: { readonly x: number; readonly y: number }): PickResult | null => {
+      if (typeof point?.x !== "number" || typeof point.y !== "number" || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+        throw new Error(`[ice] desk: pick — the point is ${JSON.stringify(point) ?? String(point)}: { x, y } in CSS px of the view, two finite numbers`);
+      }
+      if (pickAt === undefined || ground === null || compose.lastInputs() === null || heldEntity(world) !== undefined) return null;
+      const hit = pickAt(point.x, point.y);
+      // an object has a type: a resize handle, a port, a wire — the frame's chrome — has none, and a click there selects nothing
+      const type = hit === undefined ? undefined : world.get(hit.entity, PrefabId)?.id;
+      if (hit === undefined || typeof type !== "string") return null;
+      return { entity: hit.entity, type, canvas: frameParent(world) ?? NO_ENTITY, part: hit.part };
+    };
+
     return {
       reflector,
       cursors,
@@ -1052,6 +1109,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       ground: () => ground,
       setTheme: (t, p) => compose.setTheme(t, p),
       capture,
+      pick: pickPoint,
       configureMat: (mat) => setGrid({ ...grid, mat: { ...grid.mat, ...mat, ...(mat.gobo !== undefined ? { gobo: { ...grid.mat.gobo, ...mat.gobo } } : {}), ...(mat.ruler !== undefined ? { ruler: { ...grid.mat.ruler, ...mat.ruler } } : {}) } }),
       configureFadeIn: (fadeIn) => setGrid({ ...grid, fadeIn }),
       setPlate(name, bytes) { ground?.mat.setPlate(name, bytes); compose.wake("pin"); },
