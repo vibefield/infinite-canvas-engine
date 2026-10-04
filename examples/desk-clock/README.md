@@ -29,6 +29,17 @@ const engine = createCanvasEngine({ ...DESK_ENGINE, widgets: [...DESK_ENGINE.wid
 
 A still pins its time through the handle's generic door: `handle.pinAsset(entity, { at: epochMs })`.
 
+## Its still (petition I30)
+
+The first third-party still through the published door: `test/still.ts` lays three dials (classic in UTC, the station dial with its
+24-hour ring in +09:00, the graphite without seconds in −05:00) through `createStill` (`@vibecook/ice/desk`) — a world of the
+clock's own, staged by `engine.ops.spawnWidget`, each dial's hands stood at the oracle's hour by `pinAsset({ at })` — and
+`test/still.dawn.test.ts` draws it on Dawn (the `webgpu` package, `acquire` from `@vibecook/ice/desk/engine`) by day and by night and
+holds each still to `test/still.golden.json` (its size and the sha-256 of its RGBA), counts each dial's face against the bare mat,
+and reads the device's memory ledger back at zero. `pnpm --filter @ice-examples/desk-clock still` runs it (each still lands in
+`results/<name>.png`); `STILL_BLESS=1` re-blesses — a deliberate event. It is not part of `test` (CI runs no Dawn): `gate:landing`
+runs it right after the oracle, and `dts:check` compiles `test/still.ts` against the umbrella's built declarations.
+
 ## The fault fixture (petition I24)
 
 `src/broken.ts` is the clock broken ON PURPOSE, the ways a plugin's kind breaks — what ICE's containment per kind is held to:

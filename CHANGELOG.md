@@ -10,11 +10,12 @@ All notable changes to ICE are documented here. The format follows
 > migration to pin exactly while its landing branch is open (its DK-D12): `desk.1` (17:25Z) carried the nine 0.15.0 asks I20–I28;
 > `desk.2` adds I29's fix (`### Fixed` — every pass converts device px by the attachment's own ratio, so a capture at any scale
 > draws every kind). The section stays `[Unreleased]` until 0.15.0 is cut; later prereleases are `0.15.0-desk.N`. Nothing of
-> 0.14.0's surface moves.
+> 0.14.0's surface moves. `### Added`'s last block, I30 (`createStill`), came after `desk.2`: it rides the next prerelease.
 
 **The 0.15.0 asks (M23) — VibeField's desk migration (track DK) files nine against the desk, petitions I20–I28; each lands as
 its own block here as it is built.** Additive, every one but I28 — a behaviour change by the product's law, with no API change:
-nothing of 0.14.0's surface moves. A tenth, I29, is a defect of I23's door, fixed (`### Fixed`).
+nothing of 0.14.0's surface moves. A tenth, I29, is a defect of I23's door, fixed (`### Fixed`). An eleventh, I30, is DK-7's — a
+plugin's still drawn on the caller's device through the published door (`### Added`, last).
 
 ### Added
 
@@ -207,6 +208,41 @@ nothing of 0.14.0's surface moves. A tenth, I29, is a defect of I23's door, fixe
   listener against a primary click's selection, at ten points of a showcase — the note on top where two overlap, twice — all agreeing;
   ten picks in one task draw, wake and select nothing). The oracle's 115 stills byte-identical. `docs/api-reference.md` lists it beside
   `capture`.
+
+<!-- petition I30 — a host-less desk for a plugin's still (2026-10-04; DK-7, after `0.15.0-desk.2`) -->
+- **THE STILL — `createStill(opts) → Promise<Still>`** (petition I30 — a kind author's pixel proof: VibeField's kind-conformance
+  harness, its playground's `--still` and its plugin template's still test, DK-7): ONE frame of a desk on the CALLER's device — no
+  canvas, no swap chain — through `@vibecook/ice/desk` alone (design-016 K-L1). `{ device, format: "rgba8unorm" | "bgra8unorm", size:
+  { width, height }` (CSS px)`, dpr, objects, theme?: "light" | "dark", palette?, camera?: { x, y, zoom }, stage }`: `objects` are the
+  OBJECT TYPES the still's world holds (`defineObject`'s — the petition's `kinds`, renamed: a world spawns types, and a type carries its
+  kind, as `deskLayer({ objects })` takes them); `palette` is `STILL_PALETTE` (the desk's own tokens) when absent; the camera, absent,
+  puts the world's origin at the still's centre at zoom 1. `stage({ engine, world, pinAsset, pinFlux })` lays the still's WORLD — core's
+  `createCanvasEngine` over the types, its document open, its Viewport and Camera the still's — through the doors a desk layer's handle
+  has: durable spawns (`engine.ops.spawnWidget`), a kind's asset for a still (`pinAsset` — the desk clock's pinned hour) and a held lift
+  (`pinFlux`); the desk's builder makes the frame from it (the records, the live insides), and `captureFrame` (I23's GPU half,
+  `encodeFrame` inside) draws it once into a readable texture of `round(width × dpr) × round(height × dpr)` and reads it back:
+  `Still { width, height, rgba, dispose() }` — RGBA rows, tight, whatever the format, alpha as drawn. A still is its facts and its
+  pins: no desk state (a kind is handed no `local`, as the oracle draws a plugin's kind), no chrome, the mat at rest and lit whole (no
+  plate). Everything made for it — the passes, the mat, the still and its readback, the engine and its document — is released before
+  the promise settles, on every path out: the memory ledger reads zero BEFORE `dispose()` (kept for the petition's shape; idempotent).
+  A malformed option throws at the call; the promise rejects when a kind is refused at create (its reason — I24), a GPU error is raised
+  while the kinds are made or the frame is drawn, the stage or a kind's world half throws, or the device is lost before the read. Stills
+  on one device are drawn IN TURN, so a kind's GPU error lands in its own still's scopes. Under it, the HOST-LESS DESK (still.ts
+  `createStillDesk`, the module's): the mat from the GENERATED shader text (`shaderText(MAT_SHADER_FILES)` — no file read, Node and
+  browsers alike), the slot set over the kinds, the desk's own blue noise, the pool — and the Node oracle's `createOracleDesk` is
+  REBASED on it (its mat, root slot and pool; its chrome its own on that mat), so the golden pins the desk every still is drawn on:
+  116 of 116 byte for byte (a line moved in that mat's text turns `board-rest-z1` red). Not on `createStill` whole: the oracle's scenes
+  are data drawn through its own scene builder, never a world (rig:world is their world-staged twin, in Chrome — its staging needs the
+  DOM half Node lacks). Witnesses: `packages/desk/test/still.test.ts` (eight units on the desk's own test device — the fake with a
+  raster, `test/fake-raster.ts`: a clear fills, a draw under a named pipeline paints its scissor, a copy copies rows — and a stub kind
+  of the test's own: the asked size at the dpr with the kind's pixels exactly where the camera puts its object, RGBA from a BGRA
+  texture; a caller's camera and zoom; the ledger at zero; a refused kind and a throwing stage released; malformed options at the
+  call; the defaults; two stills on one device in turn — each red-proven), and `examples/desk-clock`, the first third-party still
+  through the door: `test/still.ts` (three dials laid and pinned at the oracle's hour) drawn on Dawn by `pnpm still`
+  (`test/still.dawn.test.ts` — gate:landing runs it after the oracle; `test` does not, CI runs no Dawn) and held to
+  `test/still.golden.json` by day and by night (the same bytes twice; each dial's face 97.7–100 % off the bare mat and nothing past its
+  reach moved; the ledger at zero), and compiled by `dts:check` against the umbrella's built declarations beside `src/`.
+  `docs/api-reference.md` "Plugin parity" gives the recipe.
 
 ### Changed
 

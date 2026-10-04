@@ -325,7 +325,8 @@ the kind CONTRACT — `defineObject`/`objectKindOf`/`driversOf`/`hostOf`, `Objec
 of `compose`, `instrumentSubmits`, the GPU profiler (design-016 K2: `createGpuProfiler` — the layer's `handle.profiler()`, unarmed until
 `arm()` — `instrumentPasses`, `instrumentMemory` under `deskLayer({ gpuLedger: true })`, `ablateKinds`/`withoutKind`,
 `traceOf`; `packages/devtools/README.md` says what each number means), the theme (`themeFrom`, `Palette`, `MAT`, …), `shaderText`
-(the desk's WGSL: the kit, the mat, the hold, the marks), `blueNoise`, the mat config `DEFAULT_MAT_CONFIG`/`GLYPHS`, the springs
+(the desk's WGSL: the kit, the mat, the hold, the marks), `blueNoise`, `createStill` (petition I30 — one still of a desk on the
+caller's device, no canvas: Plugin parity, below), the mat config `DEFAULT_MAT_CONFIG`/`GLYPHS`, the springs
 `SPRINGS`, the zoom band `ZOOM_MIN`/`ZOOM_MAX`) · **`@ice/desk/engine`** (the raw-WebGPU engine: `acquire`/`adopt`, the
 `Surface` type, `compose`/`compile`, pipelines, `Target`/`beginPass`/`readback`, `defineStruct` — the swap chain `surface()` is
 `@ice/desk`'s, and no pass ships here) · **`@ice/desk/kit`** (the render kit a kind's pass is written against besides the engine:
@@ -415,7 +416,25 @@ engine names a kind:
   (`paper`, `surfaces`) or the example clock's (`things`) by naming it; none, and it is laid under All alone. The chips list what
   the CURRENT frame hangs (inside a container that takes none of a category there is no chip for it; a category left empty falls
   back to All).
-- **Stills**: `handle.pinAsset(entity, asset)` — a kind's own asset (`ctx.asset`) in the shape the kind defines.
+- **Stills**: `handle.pinAsset(entity, asset)` — a kind's own asset (`ctx.asset`) in the shape the kind defines. And a kind
+  author's PIXEL PROOF without a desk layer (petition I30): `createStill({ device, format, size, dpr, objects, theme?, palette?,
+  camera?, stage }) → Promise<Still { width, height, rgba, dispose() }>` draws ONE frame of a desk on YOUR device — Dawn in Node
+  (`acquire({ gpu: create([]) })`, `acquire` from `/desk/engine`, `create` from the `webgpu` package) or a browser's — with no canvas.
+  `format` is `rgba8unorm` or `bgra8unorm` (the bytes come back RGBA either way, rows top-down, tight, alpha as drawn); `size` is CSS
+  px and the still `round(width × dpr) × round(height × dpr)`; `objects` are your object types (`defineObject`'s — each one's kind is
+  compiled on the still's desk; a type with no desk kind throws); `theme` is `light` (the default) or `dark`; `palette` is what your
+  kind's `theme()` reads (`STILL_PALETTE`, the desk's own tokens, when absent — extend it with your kind's roles); `camera` is ICE's
+  (the world point at the top-left, the zoom) and, absent, puts the world's origin at the still's centre at zoom 1.
+  `stage({ engine, world, pinAsset, pinFlux })` lays the still's world — `engine` is core's `createCanvasEngine({ widgets: objects })`
+  with its document open: `engine.ops.spawnWidget(type, { x, y, w?, h?, props?, parent?, undoable: false })` (the TOP-LEFT, world
+  units — a CSS px at zoom 1), `pinAsset(e, asset)` your kind's asset for the still (`ctx.asset` — pin anything time- or host-dependent:
+  a still never reads a wall clock), `pinFlux(e, { lift })` a held lift. The desk's builder makes the frame from that world and it is
+  read back. A still is its facts and its pins: your kind is handed no `local`, there are no marks, hand or tray, and the mat lies at
+  rest, lit whole. Everything made for it is released before the promise settles (the memory ledger at zero); a malformed option throws
+  at the call, and the promise rejects when your kind is refused at create (the compiler's line in the reason), a GPU error is raised,
+  your stage or your world half throws, or the device is lost. Stills on one device are drawn in turn. Hold `rgba` to a golden of your
+  own (a sha-256 is Dawn's bytes on the host that blessed it): `examples/desk-clock/test/still.ts` (the stage) and
+  `test/still.dawn.test.ts` (Dawn, the golden, the dials' pixels against the bare mat, the ledger) are the worked recipe — `pnpm still`.
 - **Wakes — a desk at rest takes no step** (design-015 §2.4, design-016 K7a): the loop sleeps unless something is due, and a
   kind that does not say when it is due pays the whole desk's idle. `KindLocal.due(now)` — asked after each of the kind's ticks:
   `now` while a motion runs, a later time (a caret's blink, a layer let go), `Infinity` until a fact, an input or a wake moves
@@ -476,7 +495,10 @@ entry, a menu act and held tools with their own glyphs, a word in hand (its time
 apps/desk beside the six (`c`, `s`) and drawn in the golden through the oracle's OPEN kind list (`createOracleDesk({ objects })`; a
 scene's `objects: [{ type, x, y, props, asset }]`). Its walls: `test/imports.test.ts` and the cruiser rule
 `examples-import-only-the-published-entries` (the published entries only, never `/desk/objects`), and `dts:check` — it compiles against
-the umbrella's BUILT `.d.ts` (`skipLibCheck: false`) and every name it imports is declared there; `rig:clock` witnesses it live.
+the umbrella's BUILT `.d.ts` (`skipLibCheck: false`) and every name it imports is declared there; `rig:clock` witnesses it live. Its
+STILL (petition I30) is the first third-party still through the door: `test/still.ts` lays three dials through `createStill`, Dawn
+draws them (`pnpm still`, in gate:landing after the oracle — not in `test`: CI runs no Dawn) and `test/still.golden.json` holds them, by
+day and by night; `dts:check` compiles the still beside `src/`.
 
 **`@ice/objects`** is `@vibecook/ice/desk/objects` (design-016 K4b: the six reference kinds' own package, built on the three desk
 entries alone, exactly as a plugin kind is): `Note`/`NOTE_TYPE`, `MiniMat`, `Notebook`, `Board`, `Calendar`, `Photo`,

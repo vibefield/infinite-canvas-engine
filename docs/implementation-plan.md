@@ -1677,7 +1677,8 @@ glyph and the chips' ids. (D-R1.7, the row of holes peeking under the edge at re
 VibeField's desk migration (track DK, `vibe-field/draft/thinking-desk-migration.md` §8 A4 — the covers DK-15, the thumbnails
 DK-4, "Send to…" DK-14) files nine asks against the desk for 0.15.0 (I26 from the §8 canon review, I27 from DESIGN.md §8's
 right-click, I28 found by I27's builder, 3 Oct) — and a tenth, I29, a defect of I23's door the DK-4 builder found against
-`0.15.0-desk.1` (3 Oct); each is built in a
+`0.15.0-desk.1` (3 Oct), and an eleventh, I30, DK-7's plugin still, found by both its builders against `0.15.0-desk.2` (4 Oct);
+each is built in a
 worktree off `main` behind the 0.14.0 cut and graded on the exact SHA (`pnpm run ci` + `gate:landing`: the Dawn oracle at 113
 stills, nineteen rigs, pack:audit, dts:check).
 Their status rows live in `docs/downstream-petitions.md`; what each built is here.
@@ -1860,6 +1861,27 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   (mean |Δ| ≤ 6, 99 % within 24) with EVERY KIND COUNTED (≥ 90 % of a kind's pixels), on `capture-desk-z1` and the new
   `capture-six-z0.5` (the six on a desk calendar: 98.7–100 %; with the floor back 0 % for the mini mats, the whiteboard and the print,
   5.4 % for the notes); rig:capture counts the six in Chrome, each kind staged away in turn — the Node render's numbers to the pixel.
+- **I30 — a host-less desk for a plugin's still** (built 2026-10-04 on branch `i30-create-still`; DK-7 — the kind author's pixel
+  proof: VibeField's conformance harness, its playground's `--still`, its plugin template's still test; found by both DK-7 builders
+  against `0.15.0-desk.2`; ADDITIVE): the petition's PREFERRED ask. `@vibecook/ice/desk` exports `createStill({ device, format,
+  size, dpr, objects, theme?, palette?, camera?, stage }) → Promise<Still { width, height, rgba, dispose() }>` (and `STILL_PALETTE`,
+  `StillOptions`, `StillStage`, `StillFormat`) — the petition's `kinds` named `objects`: a world spawns object TYPES and a type carries
+  its kind. still.ts: the HOST-LESS DESK (`createStillDesk`, kept the module's — the mat from the GENERATED shader text, `createSlotSet`
+  over the kinds, the desk's blue noise, the pool), a world of core's (`createCanvasEngine` over the types, its document open) laid by
+  `stage` through the engine's doors (`spawnWidget`, `pinAsset`, `pinFlux`), the desk's builder making the frame under the still's
+  camera, `captureFrame` reading it back as RGBA; every GPU object, the engine and its document released before the promise settles
+  (the ledger at zero before `dispose`); a malformed option thrown at the call; a refused kind, a GPU error, a throwing stage or world
+  half rejecting it; stills on one device drawn in turn. The oracle's `createOracleDesk` is REBASED on the host-less desk — not on
+  `createStill` whole: its 116 scenes are DATA drawn through its own scene builder (frame.mjs's `deskInputs` and the kinds' makers —
+  the prototype's arithmetic, a committed raster placed, ink replayed, poses pinned, flights, the hand, the tray), never a world; one
+  desk serves all 116; and the world-staged twin of every scene, rig:world in Chrome, stages through the DOM half Node lacks (the text
+  raster, the picture decoder, the print raster). So the golden pins the desk a still is drawn on and the frame's encoding
+  (`encodeFrame`, which `captureFrame` runs) — golden 116/116 byte for byte, and red when a line of that mat's text moves — and the
+  world→frame half is pinned by the desk clock's still and the unit. Witnesses: `packages/desk/test/still.test.ts` (eight units on the
+  fake device with a raster — `test/fake-raster.ts` — and a stub kind of the test's own; each red-proven hunk by hunk), the desk
+  clock's still on Dawn (`examples/desk-clock` `pnpm still`, in gate:landing after the oracle: three dials by day and by night held to
+  `test/still.golden.json`, each dial's face off the bare mat, the ledger at zero) and `dts:check` compiling it against the built
+  declarations. The MINIMUM (exporting `CuttingMat`, `matShaders`, `MAT_SHADER_FILES`) was not needed and not shipped.
 
 ## Release cut & downstream
 

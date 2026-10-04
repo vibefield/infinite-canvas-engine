@@ -102,7 +102,9 @@ export const Clock = defineObject({
 - **Being a container** — `ObjectKind.face` and `faceLaw: { radius, chips, finishes }`; a child's `chip()` names its finish.
 - **Held tools and menu acts** — a tool's `glyph` is a name of the bar's set or its own `{ path }`; `menu` acts show for a
   selection of the kind and run through `ops.runMenuAction`.
-- **Stills** — `handle.pinAsset(entity, asset)` pins the kind's own `ctx.asset`.
+- **Stills** — `handle.pinAsset(entity, asset)` pins the kind's own `ctx.asset`; and a kind's pixel proof needs no desk layer:
+  `createStill({ device, format, size, dpr, objects, stage })` draws ONE frame on your device (Dawn in Node, or a browser's), no
+  canvas — `stage` lays its world (`engine.ops.spawnWidget`, `pinAsset`) — and hands back its RGBA to hold to a golden of your own.
 
 React and `react-dom` are **optional** peer dependencies — the core, desk and dom
 entries are React-free; `three` is imported nowhere.
