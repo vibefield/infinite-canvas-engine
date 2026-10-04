@@ -31,5 +31,9 @@ export { isMissingRecord, missingFace, type MissingRecord } from "./missing/layo
 export * from "./theme";
 export * from "./shaders";
 export { BLUE_NOISE_SIZE, blueNoise } from "./assets/blue-noise.gen";
+// THE STILL (petition I30): one frame of a desk on the CALLER's device, no canvas — a world staged through the engine's doors, drawn
+// into a readable texture and read back as RGBA (a plugin's pixel proof through this door alone); the host-less desk it draws on
+// (still.ts `createStillDesk`) is the Node oracle's too, and stays the module's
+export { createStill, STILL_PALETTE, type Still, type StillFormat, type StillOptions, type StillStage } from "./still";
 // the desk's scale-free zoom band (design-015 §9): what an engine preset spreads (`@ice/objects`' `DESK_ENGINE`)
 export { ZOOM_MAX, ZOOM_MIN } from "./lattice/lod";
