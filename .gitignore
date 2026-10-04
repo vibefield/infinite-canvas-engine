@@ -12,4 +12,6 @@ dist-profile/
 # The desk's pixel witnesses (design-015 D1; the B1 discipline): the Dawn oracle's renders and apps/desk's rig captures are results, never sources.
 packages/objects/oracle/results/
 apps/desk/results/
+# …and a worked plugin's stills (petition I30: examples/desk-clock's `pnpm still` writes each one it draws there)
+examples/*/results/
 docs/.local-*.html

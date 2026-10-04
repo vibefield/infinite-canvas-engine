@@ -2,8 +2,10 @@
 // THE PUBLISHED-D.TS CHECK (design-016 K8b): the desk clock compiles against the umbrella's BUILT declarations — what an outside
 // plugin gets from npm — and every name it imports from ICE resolves there. Two questions, both over packages/ice/dist/types (the
 // `build` of `@vibecook/ice` makes it; `pack:audit` builds it first, so gate:landing runs this after it):
-//   1. the clock's shipped modules (src/) typecheck with `@vibecook/ice*` mapped to the built entries' `.d.ts` — and with
-//      `skipLibCheck: false`, so a declaration that names a type the tree cannot resolve is an error, never a quiet `any`;
+//   1. the clock's shipped modules (src/) — and its STILL (test/still.ts, petition I30: the clock drawn by `createStill`, the first
+//      third-party still through the door; test/still.dawn.test.ts hands it Dawn) — typecheck with `@vibecook/ice*` mapped to the
+//      built entries' `.d.ts` — and with `skipLibCheck: false`, so a declaration that names a type the tree cannot resolve is an
+//      error, never a quiet `any`;
 //   2. every name each ICE import declaration of theirs names (types and values, `type`-only included) resolves, through the
 //      entry's re-exports, to a DECLARATION in the published tree — dist/types, or a package the umbrella DEPENDS on (strata-ecs's
 //      `Entity`, re-exported by `@vibecook/ice`, is installed with it) — never the checker's unknown symbol, never a source file.
@@ -35,7 +37,7 @@ if (missing.length > 0) {
 }
 
 const walk = (dir) => readdirSync(dir, { withFileTypes: true }).flatMap((e) => (e.isDirectory() ? walk(join(dir, e.name)) : /\.ts$/.test(e.name) ? [join(dir, e.name)] : []));
-const roots = walk(resolve(pkg, "src"));
+const roots = [...walk(resolve(pkg, "src")), resolve(pkg, "test/still.ts")];
 const base = JSON.parse(readFileSync(resolve(repo, "tsconfig.base.json"), "utf8")).compilerOptions;
 const options = {
   target: ts.ScriptTarget.ES2022, module: ts.ModuleKind.ESNext, moduleResolution: ts.ModuleResolutionKind.Bundler,

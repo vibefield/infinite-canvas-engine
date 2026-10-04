@@ -1,0 +1,12 @@
+{
+  "clock-day": {
+    "width": 960,
+    "height": 400,
+    "sha256": "27fe69ee68f5e3886673f34376af7993e9aa88c310728b8d3ae09f1a84e3dd33"
+  },
+  "clock-night": {
+    "width": 960,
+    "height": 400,
+    "sha256": "9285a72f63a5cb59de1ad80fc9a5879991bbc5a6d2957c6c2a49b0155f707107"
+  }
+}

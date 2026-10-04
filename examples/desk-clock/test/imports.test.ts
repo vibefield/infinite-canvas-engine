@@ -4,8 +4,9 @@
 // `/desk/engine` … — READ from packages/ice/package.json's exports map, so an entry the package does not ship cannot pass), and
 // never another kind (`/desk/objects`, the reference six: no kind imports a kind). A workspace name (`@ice/desk`), a path out of
 // the package (`../../packages/…`), a deep `src`/`dist` import, an npm package or a Node builtin is a violation; so is a relative
-// import that climbs out of the package. The units under test/ may add the runner (`vitest`) and Node's builtins. The
-// dependency-cruiser rule `examples-import-only-the-published-entries` is the same wall at the module graph (depcruise).
+// import that climbs out of the package. The units under test/ may add the runner (`vitest`), Node's builtins and Dawn (`webgpu` —
+// the device the clock's still is drawn on, petition I30). The dependency-cruiser rule `examples-import-only-the-published-entries`
+// is the same wall at the module graph (depcruise).
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { dirname, join, relative, resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -20,8 +21,8 @@ function published(): string[] {
 }
 /** What a plugin kind may import: every published entry but the reference kinds' (K-L1 — a kind never imports another). */
 const ALLOWED = new Set(published().filter((s) => s !== "@vibecook/ice/desk/objects"));
-/** What its units may add. */
-const TEST_ONLY = /^(vitest|node:[a-z/_]+)$/;
+/** What its units may add: the runner, Node's builtins, and Dawn — the still's device (I30). */
+const TEST_ONLY = /^(vitest|webgpu|node:[a-z/_]+)$/;
 
 function walk(dir: string): string[] {
   if (!existsSync(dir)) return [];

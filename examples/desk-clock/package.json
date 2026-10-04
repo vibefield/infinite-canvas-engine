@@ -11,6 +11,7 @@
   "scripts": {
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
+    "still": "vitest run --config vitest.still.config.ts",
     "dts:check": "node scripts/dts-check.mjs"
   },
   "peerDependencies": {
@@ -19,6 +20,7 @@
   "devDependencies": {
     "@vibecook/ice": "workspace:*",
     "@webgpu/types": "^0.1.72",
-    "vitest": "^3"
+    "vitest": "^3",
+    "webgpu": "0.4.0"
   }
 }
