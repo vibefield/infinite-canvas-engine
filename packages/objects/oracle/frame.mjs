@@ -35,15 +35,14 @@
 // pads wear them too (D3w): each marks object is the frame its kind's world half draws — the whiteboard's, the print's, the
 // notebook's and the desk calendar's (kinds `boardFrame`, `photoFrame`, `bookFrame`, `calendarFrame`), one function on both sides.
 import { VIEW } from "./scenes.mjs";
-import { CuttingMat } from "../../desk/src/mat/mat-pass.ts";
-import { matShaders, MAT_SHADER_FILES } from "../../desk/src/mat/shaders.ts";
+import { createStillDesk } from "../../desk/src/still.ts";
 import { DEFAULT_MAT_CONFIG, HERO_MATRIX } from "../../desk/src/mat/layout.ts";
 import { DEFAULT_GRID } from "../../desk/src/mat/grid.ts";
 import { DEFAULT_PAPER_LAW, lampOf, resolvePaper, tiltOf } from "../src/paper/paper.ts";
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from "../src/minimat/minimat.ts";
 import { finishOf, flightLights, flightPresent, insidePresent } from "../../desk/src/kit/inside.ts";
 import { insideView, miniMatInstance } from "../src/minimat/inside.ts";
-import { captureFrame, createSlotSet, encodeFrame, renderHeldFrame, SlotPool } from "../../desk/src/ground.ts";
+import { captureFrame, encodeFrame, renderHeldFrame } from "../../desk/src/ground.ts";
 import { missingFace } from "../../desk/src/missing/layout.ts";
 import { DRAWER, drawerRect, drawerSize } from "../../desk/src/tray/drawer.ts";
 import { SAMPLE_SIZE, samplePicture } from "../src/photo/sample.ts";
@@ -198,13 +197,15 @@ export function pinnedAt(c, day) {
 
 /**
  * The desk both hosts draw: the root's passes on `device` in `format`, composed from `text(files)` — a shader-file map
- * (`MAT_SHADER_FILES`, …) to its text: the .wgsl files on disk in Node, the generated module in a browser — and the
+ * (`MARKS_SHADER_FILES`, …) to its text: the .wgsl files on disk in Node, the generated module in a browser — and the
  * fixtures' bytes (`assets`: the engine's blue noise; the host's gobo plates, the rulers' glyph atlas, the note's
  * committed ink raster and the prints' picture, each with its metadata; a missing atlas, raster or picture is `null`
- * and the desk draws without it).
+ * and the desk draws without it). Its MAT, ROOT SLOT and POOL are the HOST-LESS DESK every `createStill` draws on (petition I30 —
+ * `@ice/desk`'s still.ts `createStillDesk`: the mat from the desk's GENERATED shader text, the same bytes as the .wgsl files on disk
+ * — `gen:check` —, the slot set over the kinds, the desk's own blue noise), so the golden pins the desk a plugin's still is drawn on;
+ * the chrome (the marks, the hand, the tray) is the oracle's own, on that mat.
  */
 export async function createOracleDesk({ device, format, text, assets, log = console.log, objects = [], onError }) {
-  const mat = await CuttingMat.create(device, format, matShaders(text(MAT_SHADER_FILES)));
   // THE OPEN KIND LIST (design-016 K8b): object types a host hands the desk beyond the reference six — a PLUGIN's (the desk clock,
   // examples/desk-clock) — each drawn through its own kind's contract alone (`resolve` → `record`, `chip`), never by name here: a
   // scene lays them as `objects: [{ type, x, y, w?, h?, props?, asset? }]` on any desk. Their programs join the root's registry after
@@ -217,7 +218,9 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   // (NOTEBOOK.md) — and the passes a scene reaches into: the notes' (the ink pages, the law), the mini mats', the boards', …
   // (each kind's pass in its own error scope — petition I24: a kind refused there is MISSING and the rest are made; an error the kinds'
   // window caught that no kind raises alone is the host's probe's, `onError`)
-  const rootSlot = await createSlotSet(device, format, mat, [...deskKinds(text), ...pluginKinds], onError);
+  const hostless = await createStillDesk({ device, format, kinds: [...deskKinds(text), ...pluginKinds], ...(onError !== undefined ? { onError } : {}) });
+  const mat = hostless.mat;
+  const rootSlot = hostless.root;
   /**
    * THE KINDS REFUSED at create (petition I24 — a plugin's WGSL that will not compile: the fault fixture's broken clock): each object of
    * one is the desk's MISSING FACE — `missingFace`, the one function the builder draws it with — and nothing of the kind is asked again.
@@ -240,7 +243,8 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   // the whiteboard's materials, as the bench's BoardDesk hands its pass them (lab/board.ts)
   const look = boardLook();
   boards.look = { barrel: look.barrel, felt: look.felt, wood: look.wood };
-  // The engine's asset (the blue noise) and the HOST's (the gobo plates, the rulers' glyphs, the note's ink — the product's, a fixture here) — raw bytes either way.
+  // The engine's asset (the blue noise — the host-less desk laid its own, the same tile; the host's bytes are uploaded as every host
+  // asset is) and the HOST's (the gobo plates, the rulers' glyphs, the note's ink — the product's, a fixture here) — raw bytes either way.
   mat.setPlate("c", assets.goboC); mat.setPlate("b", assets.goboB); mat.setNoise(assets.noise);
   const glyphMeta = assets.glyphMeta;
   if (glyphMeta && glyphMeta.count >= 12) mat.setGlyphs(assets.glyphs, glyphMeta);
@@ -269,8 +273,8 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   /** The chip finishes a mini mat's face draws (its kind's own `faceLaw`, K8a) — a plugin's chip is drawn in the first it names of these. */
   const FACE_FINISHES = DESK_OBJECTS.map((t) => objectKindOf(t)).find((k) => k?.name === MINIMAT_KIND)?.faceLaw?.finishes ?? [];
 
-  // The slots beyond the root — the departed desk's, the live insides — from the same pool the ground keeps.
-  const pool = new SlotPool(rootSlot);
+  // The slots beyond the root — the departed desk's, the live insides — from the host-less desk's pool (the same the ground keeps).
+  const pool = hostless.pool;
   const VP = { width: VIEW.cssW, height: VIEW.cssH };
   /** A scene's view: the oracle's one, unless the scene names its own (a phone's portrait still, D4b). */
   const viewSpecOf = (s) => s?.view ?? VIEW;
