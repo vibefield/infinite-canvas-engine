@@ -6,11 +6,12 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
-> **Published as `0.15.0-desk.2` on the `next` dist-tag (2026-10-03)** — a prerelease carrying everything below for VibeField's desk
-> migration to pin exactly while its landing branch is open (its DK-D12): `desk.1` (17:25Z) carried the nine 0.15.0 asks I20–I28;
-> `desk.2` adds I29's fix (`### Fixed` — every pass converts device px by the attachment's own ratio, so a capture at any scale
-> draws every kind). The section stays `[Unreleased]` until 0.15.0 is cut; later prereleases are `0.15.0-desk.N`. Nothing of
-> 0.14.0's surface moves. `### Added`'s last block, I30 (`createStill`), came after `desk.2`: it rides the next prerelease.
+> **Published as `0.15.0-desk.3` on the `next` dist-tag (2026-10-04)** — a prerelease carrying everything below for VibeField's desk
+> migration to pin exactly while its landing branch is open (its DK-D12): `desk.1` (3 Oct 17:25Z) carried the nine 0.15.0 asks
+> I20–I28; `desk.2` (3 Oct 23:51Z) added I29's fix (`### Fixed` — every pass converts device px by the attachment's own ratio, so a
+> capture at any scale draws every kind); `desk.3` adds I30 (`### Added`'s last block — `createStill`, a host-less desk on the
+> caller's device for a plugin's still). The section stays `[Unreleased]` until 0.15.0 is cut; later prereleases are
+> `0.15.0-desk.N`. Nothing of 0.14.0's surface moves.
 
 **The 0.15.0 asks (M23) — VibeField's desk migration (track DK) files nine against the desk, petitions I20–I28; each lands as
 its own block here as it is built.** Additive, every one but I28 — a behaviour change by the product's law, with no API change:
