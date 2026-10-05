@@ -4,7 +4,8 @@
 // with the springs settled, 240 frames pass with ZERO submits — the submit instrument wraps
 // `queue.submit` itself, installed before anything on the device could submit — and ZERO engine
 // steps: the loop SLEEPS (K7a, registered wakes); the page's main thread over 7 windows of 1 s
-// beside it. Exit 0 = every check passed.
+// beside it. And a RESTING pointer's move re-sent at its own point — trusted, and re-dispatched by the
+// page — wakes nothing over 5 s (petition I33). Exit 0 = every check passed.
 import { spawn } from "node:child_process";
 import { loadavg } from "node:os";
 import { resolve } from "node:path";
@@ -97,6 +98,24 @@ try {
   console.log(`  the page at rest, 7 × 1 s: every task ${med(tasks).toFixed(3)} ms/s (min ${Math.min(...tasks).toFixed(3)}, max ${Math.max(...tasks).toFixed(3)}) · script ${med(windows.map((w) => w.script)).toFixed(3)} ms/s · engine steps ${windows.map((w) => w.steps).join(" ")} · load ${windows.map((w) => w.load).join(" ")}`);
   // (a step a registered time starts — a layer let go LAYER_IDLE_MS after it was last drawn — is the sleep's own; none other)
   check(windows.every((w) => w.untimed === 0 && w.outside === 0), `the loop sleeps through 7 windows of 1 s: ${windows.reduce((a, w) => a + w.steps, 0)} engine steps, ${windows.reduce((a, w) => a + w.untimed, 0)} not a registered time's, ${windows.reduce((a, w) => a + w.outside, 0)} outside wakes`);
+
+  // A RESTING POINTER RE-SENT (petition I33; VibeField DK-10b): the pointer last moved to (500, 400) and has rested since. Chromium
+  // re-sends a resting pointer's move on a focus or visibility change, and other windows' input raises trusted moves with no motion —
+  // each one, before I33, a wake, a PointerVersion bump and a touch of the wind. Re-sent here twice over: a TRUSTED move at the resting
+  // point through the browser's own input (CDP), then the page's own `pointermove` re-dispatched on the element under it, after a
+  // `pointerleave`/`pointerenter` pair there. Neither wakes the desk: over 5 s no submit, no engine step but a registered time's, no
+  // outside wake, the wind still and its clock standing — and the moves did reach the page (counted by a capturing listener).
+  await q("window.__i33 = 0; window.addEventListener('pointermove', () => { window.__i33 += 1; }, true); true");
+  const soonR = await q("(() => { const now = performance.now(); return window.__desk.handle.due(now).at - now; })()");
+  if (soonR < 6500) await sleep(Math.max(0, soonR) + 150);
+  const restOf = () => q("(() => { const f = window.__desk.engine.engine.frame.sleepStats(); return { n: window.__desk.submits().total, steps: f.steps, timed: f.timed, input: f.wakes.input ?? 0, outside: Object.values(f.wakes).reduce((a, b) => a + b, 0), t: window.__desk.ambient().clocks.goboTime, phase: window.__desk.ambient().phase, moves: window.__i33 }; })()");
+  const r0 = await restOf();
+  await mouse("mouseMoved", 500, 400);
+  const under = await q(`(() => { const el = document.elementFromPoint(500, 400); const o = { bubbles: true, composed: true, pointerId: 1, pointerType: "mouse", isPrimary: true, clientX: 500, clientY: 400, buttons: 0 }; for (const type of ["pointerleave", "pointerenter", "pointermove"]) el.dispatchEvent(new PointerEvent(type, o)); return el.tagName.toLowerCase(); })()`);
+  await sleep(5000);
+  const r1 = await restOf();
+  check(r1.moves - r0.moves >= 1 && r1.n === r0.n && r1.steps - r0.steps === r1.timed - r0.timed && r1.outside === r0.outside && r1.phase === "still" && r1.t === r0.t,
+    `a resting pointer's move re-sent at its own point wakes nothing over 5 s (petition I33): ${r1.moves - r0.moves} moves reached the page (trusted, then re-dispatched on the ${under} after a leave/enter pair) — ${r1.n - r0.n} submits, ${(r1.steps - r0.steps) - (r1.timed - r0.timed)} engine steps not a registered time's, ${r1.outside - r0.outside} outside wakes (${r1.input - r0.input} input), the wind ${r1.phase}, its clock Δ ${r1.t - r0.t}`);
 
   // a touch wakes it again — and `still` mode never blows
   await mouse("mouseMoved", 520, 420);

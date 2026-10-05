@@ -36,7 +36,20 @@
  *    canvas pan/zoom. Everything else: `preventDefault`, dx/dy (deltaMode
  *    lines → px ×16) — unchanged;
  *  - window blur enqueues a synthetic `cancel` for every pointer still down
- *    (design-003 §8) — the browser will not send the pointerups.
+ *    (design-003 §8) — the browser will not send the pointerups;
+ *  - a NO-OP move is dropped (petition I33): a `pointermove` with no button down
+ *    and no press of ours live, whose position, target, hover verdict and
+ *    modifiers are those of the last move this adapter enqueued for that pointer,
+ *    says nothing the world does not hold — so it enqueues nothing: no wake, no
+ *    step, no `PointerVersion` bump, no touch of the desk's wind. Chromium
+ *    re-sends a resting pointer's move on a focus or visibility change, and other
+ *    windows' input raises trusted moves with no motion (VibeField DK-10b); each
+ *    held a still desk out of rest. Every press is untouched — a down, an up, a
+ *    cancel, and every move while a button is down or a press of ours is live
+ *    (a held drag's same-position moves included) are enqueued as before — and a
+ *    transition or a wheel starts the comparison afresh, so the first move after
+ *    one always lands. `pointerleave`/`pointerenter` are not listened to: a pair
+ *    at one position is a no-op, and the move that follows it is the same move.
  *
  * Widget opt-out (the pinned widget-event contract, design-002 §8 / design-004 §4):
  * on `pointerdown` ONLY, if the event's target chain (up to the container) crosses
@@ -133,6 +146,12 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
   };
   // Last emitted keyboard tuple — emit a `key` fact only when it actually changes.
   let lastMods = { shift: false, ctrl: false, alt: false, meta: false, space: false };
+  // THE LAST MOVE AT REST (petition I33): per pointer, the last move enqueued with no button down and no press of ours live —
+  // what a no-op move is measured against. A press or a wheel deletes it (the first move after one always lands); the window's
+  // blur keeps it (a resting pointer's re-dispatch after the focus returns is exactly the no-op to drop); detach clears it.
+  const atRest = new Map<string, { x: number; y: number; target: EventTarget | null; over: boolean; mods: InputMods }>();
+  const sameMods = (a: InputMods, b: InputMods): boolean =>
+    a.shift === b.shift && a.ctrl === b.ctrl && a.alt === b.alt && a.meta === b.meta && a.space === b.space;
 
   const relative = (clientX: number, clientY: number): { x: number; y: number } => {
     const rect = container.getBoundingClientRect();
@@ -155,6 +174,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     // flags the fact so recognizers skip it (design-002 §8).
     const native = crossesInteractive(e.target, container);
     live.set(id, { device, x, y, downX: x, downY: y, native, captured: false });
+    atRest.delete(id);
     const surfaceHandled = native;
     queue.enqueue({
       kind: "down",
@@ -176,6 +196,8 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     const id = pointerIdOf(e);
     const device = deviceOf(e);
     const { x, y } = relative(e.clientX, e.clientY);
+    const over = crossesInteractive(e.target, container);
+    const mods = pointerMods(e);
     let seen = live.get(id);
     // ADOPTED-gesture hardening (ops.insertByDrag, 2026-07-19): a held-button
     // move for a pointer whose down we never saw means widget content started
@@ -185,7 +207,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     // mid-drag, and the blur sweep knows to cancel it. Gated off interactive
     // targets: a move over opted-out content (text selection in a widget's
     // input, the tray panel itself) must never trigger a container capture.
-    if (seen === undefined && e.buttons !== 0 && !crossesInteractive(e.target, container)) {
+    if (seen === undefined && e.buttons !== 0 && !over) {
       seen = { device, x, y, downX: x, downY: y, native: false, captured: false };
       live.set(id, seen);
     }
@@ -204,6 +226,13 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
         seen.captured = true;
       }
     }
+    // A NO-OP move (petition I33): at rest — no button down, no press of ours live — and the last move enqueued for this pointer
+    // in every fact it carries but the time. Dropped: the world already holds all of it, and an enqueue would wake the loop.
+    if (seen === undefined && e.buttons === 0) {
+      const last = atRest.get(id);
+      if (last !== undefined && last.x === x && last.y === y && last.target === e.target && last.over === over && sameMods(last.mods, mods)) return;
+      atRest.set(id, { x, y, target: e.target, over, mods });
+    } else atRest.delete(id);
     queue.enqueue({
       kind: "move",
       pointerId: id,
@@ -211,10 +240,10 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
       screenX: x,
       screenY: y,
       buttons: e.buttons,
-      mods: pointerMods(e),
+      mods,
       tMs: e.timeStamp,
       // Hover fact, every move: the DOM chain check.
-      overInteractive: crossesInteractive(e.target, container),
+      overInteractive: over,
     });
   };
 
@@ -225,6 +254,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
       const device = deviceOf(e);
       const { x, y } = relative(e.clientX, e.clientY);
       live.delete(id);
+      atRest.delete(id);
       if (typeof container.releasePointerCapture === "function") {
         try {
           container.releasePointerCapture(e.pointerId);
@@ -248,6 +278,8 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
   const onPointerCancel = endPointer("cancel");
 
   const onWheel = (e: WheelEvent): void => {
+    // a wheel moves the camera under the pointer: the next move is measured afresh (petition I33), never dropped as a repeat
+    atRest.delete("mouse");
     const { x, y } = relative(e.clientX, e.clientY);
     const scale = e.deltaMode === 1 ? WHEEL_LINE_PX : 1; // DOM_DELTA_LINE → px
     if (e.ctrlKey) {
@@ -372,6 +404,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     // Sweep first (a detach can land mid-gesture) — same clean-slate cancel as
     // blur; facts drain on the engine's next step. Then unwire the listeners.
     cancelAllInput();
+    atRest.clear();
     container.removeEventListener("pointerdown", onPointerDown);
     container.removeEventListener("pointermove", onPointerMove);
     container.removeEventListener("pointerup", onPointerUp);

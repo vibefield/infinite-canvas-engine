@@ -275,6 +275,14 @@ PRIMARY press — the left button, a touch, a pen's tip or its eraser end — is
 (right) or middle press is a POINT whose position, exact pick (`handle.pick`) and hover move with it while nothing selects, drags,
 enters, opens or works a part (in the hand too), the middle button keeping only its pan (of the bare mat, and of an object in hand
 brought close), and `contextmenu`, which the adapter never listens to, is the host's.
+**A resting pointer keeps no desk awake** (petition I33): the adapter DROPS a `pointermove` that says nothing new — no button down
+and no press of its own live, and the same position, target, hover verdict and modifiers as the last move it enqueued for that
+pointer — so it enqueues nothing: no wake, no step, no `PointerVersion` bump, no touch of the desk's wind (Chromium re-sends a
+resting pointer's move on a focus or visibility change, and other windows' input raises trusted moves with no motion). Every press
+is untouched — a down, an up, a cancel, and every move while a button is down or a press is live, a held drag's same-position moves
+included — and a transition or a wheel starts the comparison afresh, so the first move after one always lands; a
+`pointerleave`/`pointerenter` pair (never listened to) changes nothing. `rig:idle` re-sends the resting move, trusted and
+re-dispatched, and holds the desk at zero submits over 5 s.
 
 ## @ice/r3f — RETIRED (design-015 D5b, 2026-09-26)
 
