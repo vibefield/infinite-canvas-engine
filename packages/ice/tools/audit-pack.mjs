@@ -27,6 +27,10 @@
  *      hold none of the six reference kinds' durable type ids nor their WGSL files' keys, read off `packages/objects`; the
  *      `/desk/objects` closure holds every one (no dead needle). The kinds are a package of their own: a desk that shipped one
  *      would be a desk a plugin kind does not stand on equal to.
+ *  10. THE KIT'S WGSL SHIPS ITS DOCS (petition I31): `/desk/kit`'s own `shaderText`, imported from dist/, hands every kit module
+ *      (`KIT_WGSL_FILES` and `LAYER_COMPOSITE_FILE`) byte for byte as its .wgsl source — the `///` blocks with it — and the same
+ *      parser check-docs holds the source to (scripts/wgsl-docs.mjs) finds no declaration unsaid in that text; the d.ts carries
+ *      each kit record's JSDoc (`MatUniforms`, `NbUniforms`, `NbBook`) naming every field the shipped record declares.
  *
  * Run: `node packages/ice/tools/audit-pack.mjs` (`pnpm --filter ./packages/ice pack:audit` builds first).
  */
@@ -34,6 +38,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from "node:fs";
 import { builtinModules } from "node:module";
 import { dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { docLines, dtsRecordProblems, kitPieces, wgslDocProblems } from "../../../scripts/wgsl-docs.mjs";
 
 const repo = resolve(import.meta.dirname, "../../..");
 const pkgDir = resolve(repo, "packages/ice");
@@ -264,7 +269,36 @@ say(
     : [...deskHits.slice(0, 6), ...deadNeedles.map((n) => `dead needle ${n} (not in ./desk/objects)`)].join(" · "),
 );
 
-console.log("[pack-audit] @vibecook/ice — design-013 D-B8.1 · design-015 §11.5 · D7 · design-016 K4b");
+// --- 10. the kit's WGSL ships its docs (petition I31) ----------------------------------------------------------------------
+// asked of the SHIPPED kit: its own `shaderText` over its own file names, the text compared with the source and read by the parser
+// check-docs holds the source to; the records' JSDoc read off the built d.ts against the shipped records' fields
+const kitDist = await import(pathToFileURL(resolve(dist, entryFile("./desk/kit"))).href);
+const kitFiles = { ...kitDist.KIT_WGSL_FILES, composite: kitDist.LAYER_COMPOSITE_FILE };
+const kitText = kitDist.shaderText(kitFiles);
+const kitProblems = [];
+let kitDocLines = 0;
+for (const [key, file] of Object.entries(kitFiles)) {
+  const text = kitText[key];
+  if (text !== readFileSync(resolve(repo, "packages/desk/shaders", file), "utf8")) kitProblems.push(`${file}: the shipped text is not its .wgsl source`);
+  kitProblems.push(...wgslDocProblems(text, file));
+  kitDocLines += docLines(text);
+}
+const kitRecords = kitPieces(readFileSync(join(deskSrc, "kit/wgsl.ts"), "utf8")).structs;
+for (const name of kitRecords) {
+  const record = kitDist[name];
+  const file = dts.find((f) => readFileSync(f, "utf8").includes(`export declare const ${name}:`));
+  if (record === undefined || file === undefined) { kitProblems.push(`${name}: ${record === undefined ? "not exported by /desk/kit" : "declared in no d.ts"}`); continue; }
+  kitProblems.push(...dtsRecordProblems(readFileSync(file, "utf8"), name, record.fields.map((f) => f[0]), relative(dist, file)));
+}
+say(
+  kitProblems.length === 0 && kitDocLines > 0,
+  "the kit's WGSL SHIPS ITS DOCS",
+  kitProblems.length === 0
+    ? `/desk/kit's shaderText hands ${Object.keys(kitFiles).length} modules (${Object.values(kitFiles).join(", ")}) byte for byte as their sources — ${kitDocLines} /// lines, every declaration said; the d.ts names every field of ${kitRecords.join(", ")} in its JSDoc (petition I31)`
+    : kitProblems.slice(0, 6).join(" · "),
+);
+
+console.log("[pack-audit] @vibecook/ice — design-013 D-B8.1 · design-015 §11.5 · D7 · design-016 K4b · I31");
 for (const r of rows) console.log(`[pack-audit] ${r}`);
 console.log(fail.length === 0 ? "[pack-audit] ALL PASS" : `[pack-audit] ${fail.length} FAILED`);
 process.exit(fail.length === 0 ? 0 : 1);

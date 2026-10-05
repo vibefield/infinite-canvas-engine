@@ -13,24 +13,44 @@
 // level's sites; the left ruler's labels are the top's rotated a quarter turn
 // clockwise (reading down the band, their tops toward the field) — James's
 // mockup. All distances are DEVICE px inside; positions arrive as CSS px.
+//
+// THE KIT'S `ruler` PIECE (`kitWgsl([..., "ruler"])`, after `light`, whose `mat_zoom` and `mat_dpr` it reads; petition I31 —
+// every declaration's `///` block says what it takes and gives). A face that prints the mat's numerals composes it; the ink it
+// answers is coverage 0..1, mixed into an albedo before the light (the mat's `mat_albedo` takes it as `ruler`).
 
+/// The ruler's levels: `u.rulerSites` and `u.rulerFormat` hold one record each (lattice/ruler.ts lays them out).
 const RULER_LEVELS = 5;
+/// Texels between a glyph-atlas cell's left edge and its glyph's origin — mat/layout.ts `GLYPH_PAD`.
 const GLYPH_PAD = 2.0;
 
-// A printed line's coverage across `d` device px at half-width `hw`: a 1 px AA ramp.
+/// A printed line's coverage.
+/// `d` — the signed distance across the line, DEVICE px; `hw` — its half-width, device px, ≥ 0.
+/// → [0, 1]: 1 within `hw − 0.5` of the line, 0 beyond `hw + 0.5`, a smoothstep between (a one-device-px AA ramp).
 fn ruler_line(d: f32, hw: f32) -> f32 { return 1.0 - smoothstep(hw - 0.5, hw + 0.5, abs(d)); }
-// Inside [a, b] — the ends of a segment and the extents of a band.
+/// Inside [a, b] — the ends of a segment, the extents of a band.
+/// `x` — the value; `a`, `b` — the closed interval's ends, in `x`'s units (`a` ≤ `b`).
+/// → 1 when `a` ≤ `x` ≤ `b`, else 0.
 fn ruler_in(x: f32, a: f32, b: f32) -> f32 { return step(a, x) * step(x, b); }
 
+/// The decimal digits a number is written with.
+/// `a` — the number, ≥ 0.
+/// → its digit count, ≥ 1 (0 is written with one).
 fn ruler_digits(a: i32) -> i32 { var n = 1; var v = a; loop { if (v < 10) { break; } v = v / 10; n += 1; } return n; }
+/// A power of ten, as an integer.
+/// `p` — the exponent, 0 … 9 (past 9 the i32 overflows).
+/// → 10^`p`.
 fn ruler_pow10(p: i32) -> i32 { var r = 1; for (var i = 0; i < p; i++) { r = r * 10; } return r; }
-// The i-th digit (0 = leftmost) of `a` written with `nd` digits — leading zeros where `a` is short.
+/// One digit of a number written to a width.
+/// `a` — the number, ≥ 0; `i` — the digit's place, 0 = the leftmost; `nd` — the width in digits (leading zeros where `a` is
+/// shorter), ≥ `ruler_digits(a)`.
+/// → the digit, 0 … 9.
 fn ruler_digit_at(a: i32, i: i32, nd: i32) -> i32 { return (a / ruler_pow10(nd - 1 - i)) % 10; }
 
-// A label's text — lattice/ruler.ts `formatLabel`, per character: the glyph
-// index at slot `k` of `index · mult · 10^exp` (0–9, 10 '-', 11 '.', -1 past
-// the end), and (x < 0) the character count. Plain digits, no suffix; a
-// fraction with its trailing zeros stripped, so "1.0" is "1" at every level.
+/// A label's text, one character at a time — lattice/ruler.ts `formatLabel`: plain digits, no suffix; a fraction with its
+/// trailing zeros stripped, so "1.0" is "1" at every level.
+/// `index` — the site's index along the ruler (any sign); `mult`, `exp` — the level's format: the label is `index · mult ·
+/// 10^exp`; `k` — the character slot, ≥ 0.
+/// → the glyph at slot `k`: 0 … 9 a digit, 10 '-', 11 '.' (the atlas's first twelve cells, `GLYPHS`), −1 past the end.
 fn ruler_label(index: i32, mult: i32, exp: i32, k: i32) -> i32 {
   let M = index * mult;
   if (M == 0) { return select(-1, 0, k == 0); }
@@ -55,21 +75,26 @@ fn ruler_label(index: i32, mult: i32, exp: i32, k: i32) -> i32 {
   if (j < fracLen) { return ruler_digit_at(a, intDigits + j, nd); }
   return -1;
 }
+/// A label's length.
+/// `index`, `mult`, `exp` — as `ruler_label`'s.
+/// → the number of characters `ruler_label` answers before −1, 0 … 16.
 fn ruler_label_len(index: i32, mult: i32, exp: i32) -> i32 {
   var n = 0;
   loop { if (n >= 16) { break; } if (ruler_label(index, mult, exp, n) < 0) { break; } n += 1; }
   return n;
 }
 
-// The ticks and the label along ONE band. `along` is the fragment's CSS px
-// along the band (x for the top, y for the left), `across` its device px in
-// from the outer line; `phase` the lattice's wrapped camera coordinate along
-// it, `wraps` the wrap count, `lim` the band's extent along (CSS px: the inner
-// corner, the far frame line), `turned` the left band. `glyph` receives the
-// atlas texel to sample when the fragment lies in a label (its .z the label's
-// presence), else .z 0.
+/// What one band prints at a fragment: `ink` — the ticks' coverage, 0..1 (times their alpha); `glyph` — where the fragment lies
+/// in a label, the atlas point to sample (x, y — texels) and the label's presence (z, 0..1); z = 0 where no label is.
 struct RulerHit { ink: f32, glyph: vec3f }
 
+/// The ticks and the label along ONE band, at one fragment.
+/// `u` — the slot's view block (the `ruler*` records); `along` — the fragment's CSS px along the band (x for the top band, y for
+/// the left); `across` — its DEVICE px in from the band's outer line; `phase` — the lattice's wrapped camera coordinate along
+/// the band (`u.phase.x` or `.y`, world units); `wraps` — that coordinate's wrap count (`u.rulerOrigin.x` or `.y`); `lim` —
+/// the band's extent along, CSS px (the inner corner, the far frame line); `turned` — the left band (its glyphs turned a
+/// quarter clockwise).
+/// → a `RulerHit`: nothing (ink 0, glyph.z 0) outside the band's own pixels.
 fn ruler_band(u: MatUniforms, along: f32, across: f32, phase: f32, wraps: f32, lim: vec2f, turned: bool) -> RulerHit {
   var hit: RulerHit;
   hit.ink = 0.0; hit.glyph = vec3f(0.0);
@@ -129,6 +154,11 @@ fn ruler_band(u: MatUniforms, along: f32, across: f32, phase: f32, wraps: f32, l
 
 // The whole print: the frame's lines, the two bands' ticks, the labels'
 // texels sampled from the atlas. Returns ink coverage 0..1 at this fragment.
+/// The rulers' whole print at a fragment: the frame's lines, both bands' ticks, the labels' texels.
+/// `u` — the slot's view block (`u.ruler.x` on/off, the `ruler*` records, the view's size `u.view.xy`); `screen` — the
+/// fragment's CSS px; `frag` — its device px (`@builtin(position).xy`); `glyph_tex` — the glyph atlas (r8; `MatPass
+/// .glyphTexture`); `samp` — a sampler for it.
+/// → ink coverage, 0..1 — exactly 0 when the rulers are off (`u.ruler.x` ≤ 0).
 fn ruler_ink(u: MatUniforms, screen: vec2f, frag: vec2f, glyph_tex: texture_2d<f32>, samp: sampler) -> f32 {
   if (u.ruler.x <= 0.0) { return 0.0; }
   let dpr = mat_dpr(u);

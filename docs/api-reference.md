@@ -338,6 +338,43 @@ one composite) keeps the contract as one object: the kit's composite lays the la
 bindings `layerCompositeLayout(device, label)`, and `BoxTargets(device, label, layoutComp, samples, view)` — `view` the slot's view
 block, `MatPass.view`).
 
+**The kit's WGSL (petition I31)** — what `kitWgsl(names, own, text?)` composes before a kind's own text, in this order, each piece
+once however many of its names are asked. Every function, struct and const in them carries a `///` block naming each parameter
+with its units and range and saying its answer (`/// →`); `shaderText(KIT_WGSL_FILES)` hands their text with the blocks in it,
+`check-docs` holds every declaration to one and pack:audit holds the SHIPPED text to the same. THE CONVENTIONS: world units — one
+is one CSS px at zoom 1, x right and y DOWN; CSS px = (world − `u.cam.xy`) · zoom, origin the attachment's top-left; device px =
+CSS px · dpr, a fragment's `@builtin(position).xy`; zoom = `mat_zoom(u)` (CSS px per world unit) and dpr = `mat_dpr(u)` (the
+attachment's own — below 1 for a thumbnail); the lamp's desk in metres, y up; colours 0..1, sRGB-encoded unless a parameter says
+LINEAR.
+- **`view`** — `MatUniforms`, the slot's view block, bound as `u` at `@group(0) @binding(0)`: the camera (`cam` — the world point
+  at the attachment's top-left, the zoom, the dpr), the view (`view` — its CSS size, the grain's clock, the objects' opacity), the
+  lattice, the gobo, the night, the portal chain, the rulers, the light; its JSDoc lists every field with its units.
+- **`portal`** (portal.wgsl) — `portal_cover(p_css, u.portals, u.clips, dpr)` → [0, 1]: the cover through the slot's chain of
+  faces (1 everywhere at the root, a one-device-px ramp on each edge, a face's top feather) — what every kind multiplies its
+  output by; `portal_cover_one`, `portal_cover_grown` and `portal_sd` its parts.
+- **`sdf`** (primitives.wgsl) — exact signed distances in the units given, negative inside: `sdf_box`, `sdf_round_box` (its CPU
+  mirror is `sdRoundBox`), `sdf_circle`, `sdf_segment` (unsigned), `sdf_rounded_x`; the fillets `op_union_round` and
+  `op_isect_round`.
+- **`light`** (mat/mat.wgsl; `lamp`, `gobo`, `night` and `noise` name it too) — `mat_zoom` and `mat_dpr`; the noise `hash12` and
+  `value_noise` → [0, 1); the sRGB curve both ways (`srgb_to_linear`, `night_encode`), `rgb2hsb` and `hsb2rgb`; the gobo —
+  `desk_of(u, world)` (world → the desk, metres), `sample_gobo` → [0, 1] (1 = lit), `lit_desk` and `lit_gobo` (under the light
+  the slot is lit by); the day's chain `shade_mat(u, albedo, gobo)` (sRGB in, sRGB out — exactly `albedo` where lit) and the
+  night's `night_mat(u, albedo, gobo, noise)` (LINEAR in, sRGB out); `mat_colour`, the MAT's (one albedo into both chains — a
+  kind with an sRGB colour splits it as the book's `nb_colour` does); the lattice's `line_coverage`, `grid2`, `line_weight` and
+  `mat_albedo`.
+- **`ruler`** (mat/ruler.wgsl) — `ruler_ink(u, screen, frag, glyph_tex, samp)` → the rulers' ink coverage, 0..1 (the frame, the
+  ticks, the numerals); `ruler_band` and the label arithmetic (`ruler_label`, `ruler_label_len` …).
+- **`book`** (kit/book.wgsl over `NbUniforms` and `NbBook`, after `light`) — the 3D kit, a world with HEIGHT (z up off the
+  desk): the desk eye `nb_clip` (perspective from an eye above the view's centre — exactly the slot's map at z = 0) and
+  `nb_desk_at`; the PCSS shadow `nb_shadow` → [0, 1]; the colour chain `nb_colour`; noise with gradients (`nb_hash`, `nb_vn`,
+  `nb_fbm`); the cloth (`nb_cloth`), the paper (`nb_paper`, `nb_ruling`), the cover (`nb_design`, `nb_cover_g`,
+  `nb_cover_albedo`), a board's inside and edge (`nb_endpaper`, `nb_board`), a stack's edge (`nb_edge`).
+- The composite (kit/composite.wgsl — `LAYER_COMPOSITE_FILE`, composed by `layerComposite`) — a layered kind's resolved,
+  premultiplied layer laid through the slot's chain.
+- `defineStruct` (`@ice/desk/engine`) — `FieldType`'s JSDoc gives each type's alignment and size (`vec3f` 16 and 12 — a scalar
+  after it rides in its tail; `mat4x4f` column-major; `array<vec4f, N>` at stride 16) and `defineStruct`'s the placement: each
+  field at its alignment, the struct rounded up to 16 so one record is a legal uniform member and storage element alike.
+
 **The host's chrome on the desk (petitions I20, I21, I26)** — beside `grid` (the root's mat config — its rulers, its gobo; `configureMat`
 live), `deskLayer` takes the numbers a host's own chrome sets, read at the mount, each the desk's own when absent: **`hold: { top?,
 band?, travelMs? }`** — the held object's reading fit keeps `top` CSS px under the view's top (56; a phone keeps its 60) and `band`

@@ -5,6 +5,7 @@
 // (the rows match the stale CLAIM, not the name). Run by the root `gen:check` (so `ci`).
 import { readdirSync, readFileSync, statSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
+import { kitPieces, structDocProblems, wgslDocProblems } from "./wgsl-docs.mjs";
 
 const root = resolve(import.meta.dirname, "..");
 const read = (p) => readFileSync(resolve(root, p), "utf8");
@@ -41,7 +42,29 @@ const ROWS = [
   ["the CHANGELOG's K8a renames name NoteEditorOptions beside NoteEditor and createNoteEditor (K9)", ["CHANGELOG.md"], /`NoteEditorOptions` → split in two/, false],
 ];
 
+/**
+ * The rows a pattern cannot hold, each a function answering its problems (none = it holds). THE KIT'S WGSL SAYS WHAT IT MEANS
+ * (petition I31): every module the kit hands out — the pieces `kitWgsl` composes (read off kit/wgsl.ts's PIECES, so a new piece is
+ * held from its first line) and every file under shaders/kit/ — documents each declaration (wgsl-docs.mjs: a `///` block naming
+ * every parameter and saying the answer), and each kit record declared in TypeScript (the PIECES' `structs`) names every field in
+ * its JSDoc. The same parser holds the SHIPPED text in pack:audit.
+ */
+const shaders = resolve(root, "packages/desk/shaders");
+const kit = kitPieces(read("packages/desk/src/kit/wgsl.ts"));
+const kitFiles = [...new Set([...kit.files, ...readdirSync(join(shaders, "kit")).filter((f) => f.endsWith(".wgsl")).map((f) => `kit/${f}`)])];
+const recordAt = (name) => jsdoc.find((p) => p.startsWith(resolve(root, "packages/desk/src")) && readFileSync(p, "utf8").includes(`export const ${name} = defineStruct("${name}", [`));
+const COMPUTED = [
+  [`every declaration of the kit's WGSL (${kitFiles.join(", ")}) has a /// block naming each parameter and its answer, and each kit record's JSDoc (${kit.structs.join(", ")}) names every field (petition I31)`, () => [
+    ...kitFiles.flatMap((f) => wgslDocProblems(readFileSync(join(shaders, f), "utf8"), f)),
+    ...kit.structs.flatMap((n) => { const at = recordAt(n); return at === undefined ? [`no defineStruct for ${n} in packages/desk/src`] : structDocProblems(readFileSync(at, "utf8"), n, relative(root, at)); }),
+  ]],
+];
+
 const bad = [];
+for (const [what, problems] of COMPUTED) {
+  const found = problems();
+  if (found.length > 0) bad.push(`${what}: ${found.slice(0, 8).join(" · ")}${found.length > 8 ? ` (and ${found.length - 8} more)` : ""}`);
+}
 for (const [what, files, re, absent] of ROWS) {
   const hits = files.flatMap((f) => (read(f).match(re) ? [relative(root, resolve(root, f))] : []));
   if (absent && hits.length > 0) bad.push(`${what}: ${hits.join(", ")}`);
@@ -49,4 +72,4 @@ for (const [what, files, re, absent] of ROWS) {
 }
 for (const b of bad) console.error(`check-docs: ${b}`);
 if (bad.length > 0) process.exit(1);
-console.log(`check-docs: ${ROWS.length} rows — the docs and the JSDoc say what the code does`);
+console.log(`check-docs: ${ROWS.length + COMPUTED.length} rows — the docs and the JSDoc say what the code does`);

@@ -17,7 +17,25 @@ import { type ShaderText, shaderText } from "../shaders";
 
 export { type ShaderText, shaderText } from "../shaders";
 
-/** The kit's pieces of WGSL (below, in compose order). */
+/**
+ * The kit's pieces of WGSL, in compose order (petition I31: every function, struct and const in them carries a `///` block saying
+ * what it takes — units and ranges — and what it gives; `shaderText(KIT_WGSL_FILES)` hands their text, comments and all):
+ * - `view` — the slot's view block, `MatUniforms` (its JSDoc lists the fields), bound as `u` at `@group(0) @binding(0)`;
+ * - `portal` — `portal_cover` and its parts: a fragment's cover through the slot's chain of faces, CSS px (portal.wgsl);
+ * - `sdf` — exact signed distances: `sdf_box`, `sdf_round_box`, `sdf_circle`, `sdf_segment`, `sdf_rounded_x`, the fillets
+ *   `op_union_round` and `op_isect_round` (primitives.wgsl);
+ * - `light` — the mat's light as an object reads it: `mat_zoom`, `mat_dpr`, the noise (`hash12`, `value_noise` — [0, 1)), the
+ *   gobo (`sample_gobo`, `lit_gobo`, `desk_of`, `lit_desk`), the day's chain (`shade_mat` — sRGB in, sRGB out) and the night's
+ *   (`night_mat` — LINEAR in, sRGB out), `mat_colour`, the lattice's lines (mat/mat.wgsl — its header states the conventions);
+ * - `ruler` — the rulers' print: `ruler_ink`, `ruler_band` and their glyph arithmetic (mat/ruler.wgsl);
+ * - `book` — the 3D kit: the desk eye (`nb_clip`), the PCSS shadow (`nb_shadow`), the colour chain (`nb_colour`), the cloth, the
+ *   paper, the cover's designs (kit/book.wgsl), over its records `NbUniforms` and `NbBook`.
+ *
+ * THE CONVENTIONS they share: world units (one is one CSS px at zoom 1), x right and y DOWN; CSS px = (world − `u.cam.xy`) ·
+ * zoom, origin the attachment's top-left; device px = CSS px · dpr, a fragment's `@builtin(position).xy`; zoom = `mat_zoom(u)`
+ * (CSS px per world unit), dpr = `mat_dpr(u)` (the attachment's device px per CSS px — below 1 for a thumbnail); the lamp's
+ * desk in metres, y up (`desk_of`); colours 0..1, sRGB-encoded unless a parameter says LINEAR.
+ */
 export type KitWgslPiece = "view" | "portal" | "sdf" | "light" | "ruler" | "book";
 
 /** A name of the kit's WGSL: a piece, or another name for one (`lamp`, `gobo`, `night` and `noise` are `light`). */
@@ -54,7 +72,10 @@ const PIECES = {
 /** The names a piece also answers to. */
 const ALIASES: Readonly<Record<Exclude<KitWgslName, KitWgslPiece>, KitWgslPiece>> = { lamp: "light", gobo: "light", night: "light", noise: "light" };
 
-/** The .wgsl file behind each of the kit's module pieces — what a host's `ShaderText` is asked for. */
+/**
+ * The .wgsl file behind each of the kit's module pieces — what a host's `ShaderText` is asked for. `shaderText(KIT_WGSL_FILES)`
+ * is the pieces' text, their `///` blocks with it: what a consumer's docs generator quotes (petition I31).
+ */
 export const KIT_WGSL_FILES: Readonly<Partial<Record<KitWgslPiece, string>>> = Object.fromEntries(
   Object.entries(PIECES).flatMap(([name, p]) => ("file" in p ? [[name, p.file]] : [])),
 );

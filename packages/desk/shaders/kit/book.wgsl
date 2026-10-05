@@ -13,12 +13,30 @@
 // with its fibre, tooth, cockle and dots, the stacked edges of the sheets, the endpaper framed
 // by the cloth's turn-in; and the light — a lambert normalised so a flat face reads its own
 // albedo, the sky's share where the lamp is blocked, the leaves' dapple.
+//
+// THE KIT'S `book` PIECE (`kitWgsl([..., "book"])`, after `light`; its records `NbUniforms` and `NbBook` are kit/book.ts's;
+// petition I31 — every declaration's `///` block says what it takes and gives). Its world is the desk's with HEIGHT: a point
+// is (x, y, z) — x, y world units on the desk (y DOWN, the desk's), z world units UP off it, toward the desk eye. A face's own
+// point `q` is world units along its u and v (each function says from where). `px` is world units per device px at the
+// fragment — under the eye's perspective it varies (the notebook takes `max(length(dpdx(P)), length(dpdy(P)))`).
 
+/// π, to f32's precision.
 const NB_PI = 3.14159265;
 
+/// Clamp to [0, 1].
+/// `x` — any value.
+/// → [0, 1].
 fn nb_sat(x: f32) -> f32 { return clamp(x, 0.0, 1.0); }
 
 // ---- the desk eye: a world point → clip space (x, y 2·zoom·(p − E)/viewport; w = (H − z)/H; a perspective depth)
+/// The DESK EYE's projection (kit/eye.ts `project` and `eyeValues` are the same arithmetic): an eye `k.eye.z` world units above
+/// the view's centre, so a point with height is seen in perspective — and the desk itself (z = 0) exactly as the slot's camera
+/// maps it.
+/// `k` — the pass's knobs (`k.eye`: the eye's foot x, y — the view's centre, world units — its height H, world units, and the
+/// zoom; `k.view`: the viewport w, h, CSS px, and the depth range's near and far, world units from the eye); `P` — the point:
+/// x, y world units on the desk (y down), z its height above it, world units, below H.
+/// → clip space: xy = 2 · zoom · (P.xy − the foot) / the viewport, y flipped to clip's up; w = (H − z) / H; z / w a depth,
+///   0 at `near` … 1 at `far` from the eye.
 fn nb_clip(k: NbUniforms, P: vec3f) -> vec4f {
   let H = k.eye.z;
   let d = H - P.z;
@@ -30,13 +48,18 @@ fn nb_clip(k: NbUniforms, P: vec3f) -> vec4f {
   return vec4f(x, y, z, d / H);
 }
 
-// A world point raised off the desk, in the projector's frame (mat.wgsl `desk_of` with a height).
+/// A point raised off the desk, in the projector's frame (mat.wgsl `desk_of` with a height).
+/// `u` — the slot's view block (`u.plane`); `P` — x, y world units on the desk (y down), z its height above it, world units.
+/// → metres, y up: `desk_of(u, P.xy)` raised by z · `u.plane.z`.
 fn nb_desk_at(u: MatUniforms, P: vec3f) -> vec3f {
   return vec3f(u.plane.x + P.x * u.plane.z, u.plane.w + P.z * u.plane.z, u.plane.y + P.y * u.plane.z);
 }
 
 // ---- noise in a face's own world units: an integer hash (no sin — a page fragment reads a dozen of these),
 // value noise with its analytic gradient (so a bump costs one evaluation, not three)
+/// An integer hash — no `sin` (a page fragment reads a dozen of these).
+/// `p` — an integer lattice point, any i32 (a negative one wraps through u32).
+/// → [0, 1): one pseudo-random value per lattice point.
 fn nb_hash(p: vec2i) -> f32 {
   var h = (u32(p.x) * 668265261u) ^ (u32(p.y) * 374761393u);
   h = (h ^ (h >> 15u)) * 2246822519u;
@@ -45,7 +68,9 @@ fn nb_hash(p: vec2i) -> f32 {
   return f32(h) * 2.3283064e-10;
 }
 
-// value (centred on 0), d/dx, d/dy
+/// Value noise with its analytic gradient: a bump costs one evaluation, not three.
+/// `p` — the point, in the noise's cells (one per unit).
+/// → x the value, centred on 0, [−0.5, 0.5); y, z its derivatives d/dx and d/dy, per unit of `p`.
 fn nb_vn(p: vec2f) -> vec3f {
   let fl = floor(p);
   let i = vec2i(fl);
@@ -60,7 +85,9 @@ fn nb_vn(p: vec2f) -> vec3f {
   return vec3f(a + (b - a) * w.x + (c - a) * w.y + k * w.x * w.y - 0.5, dw.x * (b - a + k * w.y), dw.y * (c - a + k * w.x));
 }
 
-// three octaves, the gradient carried through
+/// Three octaves of `nb_vn` — frequencies 1, 2.03 and 4.11, amplitudes 1, 0.5 and 0.25 — the gradient carried through.
+/// `p` — the point, in the first octave's cells.
+/// → x the value, [−0.875, 0.875); y, z its derivatives, per unit of `p`.
 fn nb_fbm(p: vec2f) -> vec3f {
   let a = nb_vn(p);
   let b = nb_vn(p * 2.03 + vec2f(17.1, 3.7));
@@ -68,19 +95,28 @@ fn nb_fbm(p: vec2f) -> vec3f {
   return vec3f(a.x + b.x * 0.5 + c.x * 0.25, a.yz + b.yz * 1.015 + c.yz * 1.0275);
 }
 
-// A pattern's detail faded as its period falls under the pixel: 1 while `period` spans ≥ 3 px of `px` world, 0 under 1.
+/// A pattern's detail, faded as its period falls under the pixel.
+/// `period` — the pattern's period, world units; `px` — world units per device px, > 0.
+/// → [0, 1]: 1 while the period spans ≥ 3 device px, 0 at ≤ 1.2, a smoothstep between.
 fn nb_detail(period: f32, px: f32) -> f32 { return smoothstep(1.2, 3.0, period / max(px, 1e-5)); }
 
-// Coverage of a signed distance (negative inside) at a pixel of `px` world units.
+/// The coverage of a signed distance at a pixel.
+/// `d` — the signed distance, world units, negative inside; `px` — world units per device px, > 0.
+/// → [0, 1]: `0.5 − d / px` clamped — a one-px linear ramp centred on the edge.
 fn nb_cov(d: f32, px: f32) -> f32 { return nb_sat(0.5 - d / max(px, 1e-5)); }
 
-// A rounded box, centred, half extents `b`, radius `r`.
+/// A rounded box centred on the origin. Unlike `sdf_round_box`, `r` is NOT clamped.
+/// `p` — the point; `b` — the half extents, ≥ 0; `r` — the corner radius, 0 … min(b.x, b.y). All in one unit.
+/// → the signed distance, in that unit: negative inside.
 fn nb_sd_box(p: vec2f, b: vec2f, r: f32) -> f32 {
   let q = abs(p) - b + vec2f(r);
   return length(max(q, vec2f(0.0))) + min(max(q.x, q.y), 0.0) - r;
 }
 
-// A face [0, w] × [0, h] whose corners at u = w are rounded by r (the spine side square): signed distance.
+/// A book's face, [0, w] × [0, h]: its two corners at u = w (the fore-edge) rounded by `r`, the spine side (u = 0) square.
+/// `q` — the point, the face's world units (u from the spine side, v from the head); `w`, `h` — the face's size, world units;
+/// `r` — the fore-edge corners' radius, world units, 0 … min(w, h / 2).
+/// → the signed distance, world units: negative inside.
 fn nb_sd_fore(q: vec2f, w: f32, h: f32, r: f32) -> f32 {
   // mirror the square side out of reach: extend the box past u = 0 by r
   let c = vec2f((w - r) * 0.5, h * 0.5);
@@ -89,9 +125,19 @@ fn nb_sd_fore(q: vec2f, w: f32, h: f32, r: f32) -> f32 {
 }
 
 // ---- the shadow: PCSS on the book's own map (the blocker's gap → the desk's penumbra law)
-// The golden angle as a rotation: a Vogel spiral's next direction is this times the last.
+/// The golden angle (≈ 2.39996 rad) as a rotation: a Vogel spiral's next direction is this times the last.
 const NB_GOLDEN = mat2x2f(-0.7373688, 0.6754903, -0.6754903, -0.7373688);
 
+/// The book's own shadow at a point — PCSS on its shadow map: a blocker search as wide as the widest penumbra the book can cast,
+/// then a Gaussian-weighted filter whose width grows with the blocker's height over the receiver by the desk's law
+/// (σ = `k.shadow.x` + `k.shadow.y` · the gap, world units).
+/// `k` — the pass's knobs (`k.shadow`; `k.shadow2.z` the map's size, texels; `k.ring.y` & 1 turns self-shadowing off); `B` —
+/// the book (`B.light` its map's matrix, `B.lamp.w` its layer, `B.sh` the map's texel and depth range, mapped, its tallest
+/// point); `P` — the receiver: x, y world units on the desk, z its height, world units; `n` — the receiver's unit normal;
+/// `rot` — the spirals' start angle, radians (blue noise × 2π); `tex` — the books' shadow maps (depth, a layer a book); `cmp`
+/// — a comparison sampler.
+/// → [0, 1]: 1 lit, 0 wholly shadowed — exactly 1 when the book has no map (`B.sh.z` < 0.5), with self-shadowing off, or where
+///   `P` falls outside the map.
 fn nb_shadow(k: NbUniforms, B: NbBook, P: vec3f, n: vec3f, rot: f32, tex: texture_depth_2d_array, cmp: sampler_comparison) -> f32 {
   if (B.sh.z < 0.5 || (u32(k.ring.y) & 1u) != 0u) { return 1.0; }
   let texel = B.sh.x;
@@ -137,6 +183,12 @@ fn nb_shadow(k: NbUniforms, B: NbBook, P: vec3f, n: vec3f, rot: f32, tex: textur
 }
 
 // ---- the colour chain: the lamp's light on a face, then the desk's day or night
+/// The book's colour chain: the lamp's light on a face, then the desk's day or night — the split a kind with an sRGB colour
+/// makes (`mat_colour` hands one albedo to both chains).
+/// `u` — the slot's view block; `albedo` — the face's sRGB colour, 0..1; `light` — the lamp's and the sky's share on it,
+/// LINEAR, ≥ 0 (1 = a flat face lit straight on reads its own albedo); `gobo` — the dapple, 0..1; `noise` — blue noise 0..1.
+/// → sRGB-encoded RGB: `shade_mat` of `albedo · light^(1/2.2)` by day, `night_mat` of `srgb_to_linear(albedo) · light` by
+///   night, mixed by `u.night.x` between.
 fn nb_colour(u: MatUniforms, albedo: vec3f, light: f32, gobo: f32, noise: f32) -> vec3f {
   let day = shade_mat(u, clamp(albedo * pow(max(light, 0.0), 1.0 / 2.2), vec3f(0.0), vec3f(1.0)), gobo);
   if (u.night.x <= 0.0) { return day; }
@@ -146,7 +198,13 @@ fn nb_colour(u: MatUniforms, albedo: vec3f, light: f32, gobo: f32, noise: f32) -
 }
 
 // ---- the cloth: a plain weave as a height, with its threads' own shades
+/// A plain weave at a point: `h` — its height, unitless, ≈ −0.73 … 0.63 (the caller scales it); `g` — the height's slope,
+/// d/du and d/dv per world unit; `shade` — the threads' own shade, ≈ −0.65 … 0.61 (a multiplier's offset). All three fade to 0
+/// as the threads' pitch falls under the pixel.
 struct NbCloth { h: f32, g: vec2f, shade: f32 }
+/// The bookcloth's plain weave: warp over weft on alternate cells, each thread a little thicker or lighter along its run.
+/// `q` — the face's point, world units; `pitch` — the threads' pitch, world units, > 0; `px` — world units per device px.
+/// → an `NbCloth`, faded to nothing as `px / pitch` rises from 0.35 to 0.9.
 fn nb_cloth(q: vec2f, pitch: f32, px: f32) -> NbCloth {
   let fade = 1.0 - smoothstep(0.35, 0.9, px / pitch);
   let a = q / pitch;
@@ -170,11 +228,23 @@ fn nb_cloth(q: vec2f, pitch: f32, px: f32) -> NbCloth {
 }
 
 // ---- the cover's DESIGNS, printed on the cloth past the spine band (u, v in the face's world units from the band's edge and the head)
+/// A ring's coverage.
+/// `d` — the distance from the ring's centre; `r` — its radius; `w` — its line's width; `px` — world units per device px. All
+/// world units.
+/// → [0, 1]: 1 on the ring's line, a one-px ramp at its edges.
 fn nb_ring(d: f32, r: f32, w: f32, px: f32) -> f32 { return nb_cov(abs(d - r) - w * 0.5, px); }
 
+/// A hash of a point: `hash12` on a scrambled copy (the designs' per-cell choices).
+/// `p` — any point.
+/// → [0, 1).
 fn nb_hash2(p: vec2f) -> f32 { return hash12(p * vec2f(0.1031, 0.1030) + vec2f(19.19, 7.7)); }
 
-// 0 plain cloth · 1 orbit (rings round a brass sun) · 2 tiles (a grid of quarter-rounds, halves and dots) · 3 label (a cream label on kraft) · 4 bordered (a blind-pressed frame)
+/// The cover's printed DESIGN, by `B.look.x`: 0 plain cloth · 1 orbit (rings round a brass sun) · 2 tiles (a grid of
+/// quarter-rounds, halves and dots) · 3 label (a cream label on kraft) · 4 bordered (a blind-pressed frame).
+/// `B` — the book (`B.look`: the design, and its seed in w; `B.col2` … `B.col4` and `B.col7` its inks, sRGB); `q` — the point
+/// on the design's field, world units from the spine band's edge (u) and the head (v); `w`, `h` — the field's size, world
+/// units; `px` — world units per device px; `base` — the cloth's sRGB colour under the design.
+/// → rgb the colour there, sRGB 0..1; a a blind press's height, ≤ 0 (0 = none).
 fn nb_design(B: NbBook, q: vec2f, w: f32, h: f32, px: f32, base: vec3f) -> vec4f {
   let id = i32(B.look.x + 0.5);
   var c = base;
@@ -235,12 +305,23 @@ fn nb_design(B: NbBook, q: vec2f, w: f32, h: f32, px: f32, base: vec3f) -> vec4f
 }
 
 // ---- the paper: its albedo (fibre, mottle) and its height (tooth, cockle), in the page's world units
+/// A page's offset into the paper's tiles, so no two pages share their mottle.
+/// `seed` — the page's number, any value.
+/// → (0 … 97, 0 … 89), world units.
 fn nb_paper_seed(seed: f32) -> vec2f { return vec2f(fract(seed * 0.618034) * 97.0, fract(seed * 0.381966) * 89.0); }
 
 // The paper from its baked texture (src/notebook/paper-tex.ts): the mottle and the fibres over a 64-unit
 // tile, the tooth's slope over a 9.6-unit one, each page's tiles offset by its number; the cockle, slow
 // enough for one noise. Explicit gradients, so it may be read anywhere and filters by its mips.
+/// The paper at a point: `albedo` — its sRGB colour, the base with its mottle and fibres; `g` — its height's slope, the tooth
+/// and the cockle, d/du and d/dv per world unit.
 struct NbPaperS { albedo: vec3f, g: vec2f }
+/// The paper from its baked texture (kit/paper-tex.ts).
+/// `k` — the pass's knobs (`k.paper`: fibre, mottle, tooth, cockle); `base` — the paper's sRGB colour; `q` — the page's point,
+/// world units; `dqdx`, `dqdy` — `q`'s screen derivatives, world units per device px (the texture filters by them); `seed` —
+/// the page's number; `tex` — the baked paper (rgba8, mipmapped: r the mottle, g the fibres, b and a the tooth's slope);
+/// `samp` — a repeating trilinear sampler.
+/// → an `NbPaperS`.
 fn nb_paper(k: NbUniforms, base: vec3f, q: vec2f, dqdx: vec2f, dqdy: vec2f, seed: f32, tex: texture_2d<f32>, samp: sampler) -> NbPaperS {
   let s = nb_paper_seed(seed);
   let a = textureSampleGrad(tex, samp, q / 64.0 + s / 64.0, dqdx / 64.0, dqdy / 64.0);
@@ -255,7 +336,12 @@ fn nb_paper(k: NbUniforms, base: vec3f, q: vec2f, dqdx: vec2f, dqdy: vec2f, seed
   return out;
 }
 
-// The ruling printed on a page: dots on a pitch, inside a margin, faded as they fall under the pixel.
+/// The ruling printed on a page, by `B.look.y`: 0 none · 1 dots · 2 lines · else a grid — on `k.rule.x`'s pitch, inside
+/// `k.rule.z`'s margin, laid from the head and the fore-edge so it sits the same on every page.
+/// `k` — the pass's knobs (`k.rule`: the pitch, a dot's radius, the margin — world units); `B` — the book; `q` — the page's
+/// point, world units (u from the gutter, v from the head); `w`, `h` — the page's size, world units; `px` — world units per
+/// device px.
+/// → [0, 1]: the ruling's ink coverage, faded out as the pitch falls from 5 to 2 device px.
 fn nb_ruling(k: NbUniforms, B: NbBook, q: vec2f, w: f32, h: f32, px: f32) -> f32 {
   let kind = i32(B.look.y + 0.5);
   if (kind == 0) { return 0.0; }
@@ -280,8 +366,12 @@ fn nb_ruling(k: NbUniforms, B: NbBook, q: vec2f, w: f32, h: f32, px: f32) -> f32
 
 // ---- the case: the cover's face (u from the spine edge, v from the head, world units)
 
-// Its height's slope (d/du, d/dv): the cloth rolling over the board's edge (the bevel), the groove
-// where the band's edge lies under the cover's cloth, the hinge's pressed groove, the weave, a blind press.
+/// The cover's height slope: the cloth rolling over the board's edge (the bevel), the groove where the band's edge lies under
+/// the cover's cloth, the hinge's pressed groove, the weave (a paper cover's grain instead), a blind press.
+/// `k` — the pass's knobs (`k.cloth`); `B` — the book (`B.size`, `B.page.w` the spine band's width, `B.foot.y` a paper cover,
+/// `B.look.x` the design); `q` — the cover's point, world units (u from the spine edge, v from the head); `px` — world units
+/// per device px.
+/// → d/du and d/dv of the cover's height, per world unit (the caller tips the face's normal by it).
 fn nb_cover_g(k: NbUniforms, B: NbBook, q: vec2f, px: f32) -> vec2f {
   let w = B.size.x;
   let h = B.size.y;
@@ -309,6 +399,11 @@ fn nb_cover_g(k: NbUniforms, B: NbBook, q: vec2f, px: f32) -> vec2f {
   return g;
 }
 
+/// The cover's colour: the design on the cloth past the spine band, the band's cloth before it, the weave's shade (a paper
+/// cover's grain instead).
+/// `k` — the pass's knobs; `B` — the book (`B.col0` the cloth, `B.col1` the band, sRGB); `q` — the cover's point, world units
+/// (u from the spine edge, v from the head); `px` — world units per device px.
+/// → sRGB, ≈ 0..1.
 fn nb_cover_albedo(k: NbUniforms, B: NbBook, q: vec2f, px: f32) -> vec3f {
   let w = B.size.x;
   let h = B.size.y;
@@ -320,8 +415,13 @@ fn nb_cover_albedo(k: NbUniforms, B: NbBook, q: vec2f, px: f32) -> vec3f {
   return c;
 }
 
-// The inside of a board: the endpaper, framed by the cloth's turn-in along the head, the fore-edge and the tail.
+/// A board's inside at a point: `albedo` — sRGB 0..1; `ao` — its occlusion, a multiplier 0..1 (1 = none).
 struct NbEnd { albedo: vec3f, ao: f32 }
+/// The inside of a board: the endpaper, framed by the cloth's turn-in along the head, the fore-edge and the tail.
+/// `k` — the pass's knobs; `B` — the book (`B.col0` the cloth, `B.col5` the endpaper); `q` — the board's point, world units
+/// (u from the spine side, v from the head); `px` — world units per device px; `stacked` — the text block stands on this board
+/// (its foot occludes it); `dqdx`, `dqdy`, `tex`, `samp` — as `nb_paper`'s.
+/// → an `NbEnd`.
 fn nb_endpaper(k: NbUniforms, B: NbBook, q: vec2f, px: f32, stacked: bool, dqdx: vec2f, dqdy: vec2f, tex: texture_2d<f32>, samp: sampler) -> NbEnd {
   let w = B.size.x;
   let h = B.size.y;
@@ -344,7 +444,11 @@ fn nb_endpaper(k: NbUniforms, B: NbBook, q: vec2f, px: f32, stacked: bool, dqdx:
   return out;
 }
 
-// A board's edge: the cloth wrapped over it — the band's near the spine, the cover's beyond.
+/// A board's edge: the cloth wrapped over it — the band's near the spine, the cover's beyond.
+/// `k` — the pass's knobs (`k.cloth.x` the weave's pitch); `B` — the book (`B.size`, `B.page.w`, `B.col0`, `B.col1`); `q` —
+/// the edge's point, world units (u along the board's edge from the spine, round the fore-edge and back; v across the board's
+/// thickness); `px` — world units per device px.
+/// → sRGB, ≈ 0..1.
 fn nb_board(k: NbUniforms, B: NbBook, q: vec2f, px: f32) -> vec3f {
   let w = B.size.x;
   let h = B.size.y;
@@ -357,7 +461,11 @@ fn nb_board(k: NbUniforms, B: NbBook, q: vec2f, px: f32) -> vec3f {
   return c;
 }
 
-// A stack's edge: the sheets' edges, one stripe each, each sheet a shade of its own; averaged as they fall under the pixel.
+/// A stack's edge: the sheets' edges, one stripe each, each sheet a shade of its own; averaged as they fall under the pixel.
+/// `k` — unread; `B` — the book (`B.foot.z` a sheet's thickness, world units; `B.col6` the paper); `q` — the edge's point,
+/// world units (v across the sheets); `sheets` — unread (the face's own number, kept for the call's shape); `side` — which
+/// edge, a seed (the head's, the tail's and the fore-edge's shades differ); `px` — world units per device px.
+/// → sRGB: the paper's colour × ≈ 0.54 … 0.97.
 fn nb_edge(k: NbUniforms, B: NbBook, q: vec2f, sheets: f32, side: f32, px: f32) -> vec3f {
   let t = max(B.foot.z, 1e-3);
   let f = q.y / t;

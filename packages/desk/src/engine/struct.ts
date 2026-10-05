@@ -5,16 +5,24 @@
 // and a typo in a field name fails WGSL compilation, loudly, at startup, rather
 // than silently reading garbage. (Lineage: research/sdf-card/src/gpu/uniforms.js.)
 //
-// Layout follows the WGSL host-shareable rules for the types we use:
-//   f32 / i32 / u32   align 4   size 4
-//   vec2f             align 8   size 8
-//   vec3f             align 16  size 12   (a following scalar packs into its tail)
-//   vec4f             align 16  size 16
-//   mat4x4f           align 16  size 64   (four vec4f columns)
-// A struct's size is rounded up to 16 so it is a legal uniform member AND a
-// legal storage-array element with the same stride in both address spaces.
+// Layout follows the WGSL host-shareable rules for the types we use — the table is
+// `FieldType`'s JSDoc and the placement rule `defineStruct`'s, so the d.ts carries both
+// (petition I31). A struct's size is rounded up to 16 so it is a legal uniform member
+// AND a legal storage-array element with the same stride in both address spaces.
 
-/** The scalar and vector types, and a fixed array of vec4f (`array<vec4f, N>`: stride 16, legal in a uniform block) — the portal chain's. */
+/**
+ * A field's WGSL type — the scalars, the float vectors and the matrix, and a fixed array of vec4f (the portal chain's) — and how
+ * it PACKS, by the WGSL host-shareable layout rules (`typeInfo` answers them; petition I31):
+ *
+ * - `f32` · `i32` · `u32` — align 4, size 4: one number (`i32` written `| 0`, `u32` `>>> 0`, a boolean as 1 or 0);
+ * - `vec2f` — align 8, size 8: two numbers;
+ * - `vec3f` — align 16, size 12: three numbers — a scalar declared after it rides in its tail (bytes 12–15);
+ * - `vec4f` — align 16, size 16: four numbers;
+ * - `mat4x4f` — align 16, size 64: sixteen numbers, column-major (four vec4f columns — what a projector matrix is uploaded as);
+ * - `array<vec4f, N>` — align 16, size 16·N, N ≥ 1: 4·N numbers as one flat list (stride 16 — legal in a uniform block).
+ *
+ * The vectors and the matrix are f32 alone (no `vec4i`, no `vec4u`).
+ */
 export type FieldType = "f32" | "i32" | "u32" | "vec2f" | "vec3f" | "vec4f" | "mat4x4f" | `array<vec4f, ${number}>`;
 
 interface TypeInfo { readonly align: number; readonly size: number; readonly n: number; readonly scalar: "f" | "i" | "u" }
@@ -68,6 +76,18 @@ export interface StructBuffer<F extends string> {
   view(elements?: number): Uint8Array<ArrayBuffer>;
 }
 
+/**
+ * ONE declaration of a GPU struct: the WGSL `struct` text a shader is compiled against (`wgsl` — the fields in declaration
+ * order, so the shader's layout and the CPU's cannot differ, and a misspelt field fails WGSL compilation at startup), the byte
+ * layout the CPU packs to (`slots`, `size`), and a packer that writes by field name (`alloc(count).set({ … }, index)`).
+ *
+ * PACKING (petition I31): each field is placed at the next offset that is a multiple of its type's alignment (`FieldType`), so
+ * padding appears only where an alignment demands it — a `vec3f`, `vec4f`, `mat4x4f` or vec4f array after a scalar or a `vec2f`
+ * starts at the next multiple of 16, a `vec2f` at the next multiple of 8, and a scalar after a `vec3f` rides in its tail. The
+ * struct's `size` is rounded up to a multiple of 16, so one record is a legal uniform member AND a storage-array element with the
+ * same stride (`size`) in both address spaces. A duplicate field name or an unknown type throws here; a wrong field name or
+ * arity throws at `set`.
+ */
 export function defineStruct<F extends string>(
   name: string,
   fields: ReadonlyArray<readonly [F, FieldType]>,
