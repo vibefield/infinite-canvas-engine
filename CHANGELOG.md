@@ -16,7 +16,10 @@ All notable changes to ICE are documented here. The format follows
 **The 0.15.0 asks (M23) — VibeField's desk migration (track DK) files nine against the desk, petitions I20–I28; each lands as
 its own block here as it is built.** Additive, every one but I28 — a behaviour change by the product's law, with no API change:
 nothing of 0.14.0's surface moves. A tenth, I29, is a defect of I23's door, fixed (`### Fixed`). An eleventh, I30, is DK-7's — a
-plugin's still drawn on the caller's device through the published door (`### Added`, last).
+plugin's still drawn on the caller's device through the published door (`### Added`). Three more, after `0.15.0-desk.3`, are DK-10's
+(the ten-minute bar) and DK-10b's (stillness): I31, the kit's WGSL says what it means (`### Added`, last — docs and their checks, no
+behaviour); I32, an unparsed colour answers the missing ink and never throws, and I33, a resting pointer keeps no desk awake (both
+`### Changed` — behaviour changes for INVALID and NO-OP input alone; every valid colour and every press as before).
 
 ### Added
 
@@ -245,6 +248,27 @@ plugin's still drawn on the caller's device through the published door (`### Add
   reach moved; the ledger at zero), and compiled by `dts:check` against the umbrella's built declarations beside `src/`.
   `docs/api-reference.md` "Plugin parity" gives the recipe.
 
+<!-- petition I31 — the kit's WGSL says what it means (2026-10-05; DK-10, after `0.15.0-desk.3`) -->
+- **THE KIT'S WGSL SAYS WHAT IT MEANS** (petition I31 — a kind author reading the kit's pieces by name had to guess their
+  semantics; DK-10's agents hand-ported shaders to JS to see them; DOCS ONLY — no code line moves): every function, struct, const and
+  binding of every module the kit hands out — `kitWgsl`'s pieces (portal.wgsl, primitives.wgsl, mat/mat.wgsl, mat/ruler.wgsl,
+  kit/book.wgsl) and `LAYER_COMPOSITE_FILE` (kit/composite.wgsl) — carries a `///` block directly above it: each parameter named with
+  its units and range, the answer on a `/// →` line with its range (321 lines over 83 declarations). The CONVENTIONS are said once in
+  mat.wgsl's header and again in `KitWgslPiece`'s JSDoc: world units (one CSS px at zoom 1), x right and y DOWN; CSS px = (world −
+  `u.cam.xy`) · zoom, origin the attachment's top-left; device px = CSS px · dpr (a fragment's `@builtin(position)`); `mat_zoom`,
+  `mat_dpr` (the attachment's own, below 1 for a thumbnail); the lamp's desk in metres, y up; colours sRGB-encoded unless LINEAR. Said
+  now, among what an author could not have known: `value_noise` → [0, 1); `shade_mat` keeps its input's encoding (sRGB in, sRGB out,
+  exactly the input where lit) while `night_mat` takes LINEAR and answers sRGB, and `mat_colour` is the MAT's (one albedo into both — a
+  kind splits it as `nb_colour` does); `srgb_to_linear` is NaN below −0.055 (clamp first); `nb_clip`'s eye stands over the view's
+  centre while `u.cam.xy` is its top-left. The kit's records — `MatUniforms` (the view block), `NbUniforms`, `NbBook` — list every
+  field with its units in their JSDoc (the inline notes moved there, one source; `NbUniforms.ring`'s stale note corrected), and
+  `FieldType` and `defineStruct` carry the packing rules (each type's alignment and size, a scalar in a `vec3f`'s tail, the 16-byte
+  round-up) — all in the d.ts. `shaderText(KIT_WGSL_FILES)` hands the text with its blocks. Held by `check-docs`' seventeenth row (every
+  declaration of every kit module — read off kit/wgsl.ts's PIECES and shaders/kit/ — names each parameter and its answer; each kit
+  record's JSDoc names every field; the parser scripts/wgsl-docs.mjs) and pack:audit's tenth (`/desk/kit`'s own `shaderText`, imported
+  from dist/, hands its six modules byte for byte as their sources, every declaration said, and the built d.ts names every field of
+  the shipped records). `docs/api-reference.md`: "The kit's WGSL" lists the pieces with one-line semantics.
+
 ### Changed
 
 <!-- petition I28 — a secondary button never acts (2026-10-03; the last of the 0.15.0 asks) -->
@@ -277,6 +301,46 @@ plugin's still drawn on the caller's device through the published door (`### Add
   mat ends its lease and keeps the selection; the mat pinned, a right drag on a note and on the bare mat, a middle click and a middle
   drag on the note: the still byte-identical, no commit). The oracle's 115 stills byte-identical. `docs/api-reference.md` says it
   under `@ice/dom`.
+
+<!-- petition I32 — an unparsed colour never throws (2026-10-05; DK-10, after `0.15.0-desk.3`) -->
+- **AN UNPARSED COLOUR ANSWERS THE MISSING INK — `rgb` and `cssColor` never throw inside a kind's `record`** (petition I32 — DK-10's
+  fifth run: a template fed its free-string `color` prop to `rgb` inside `record`, `rgb("red")` threw, and I24's containment STRUCK the
+  kind — three strikes and every one of its objects wore the missing face, for one bad string): a string the parser cannot read —
+  another syntax (a name, `#rgb`, `hsl()` — the grammar is unchanged: `#rrggbb`, `rgb(r g b / a)`, `rgba(r, g, b, a)`), a typo, or no
+  string at all — answers `MISSING_INK` (new: the missing face's ink by day, `MISSING.ink.light`, opaque; `rgb` its three channels; a
+  copy each time) and is said ONCE a page on the console (`console.warn` naming the string, once per distinct one — the first 32),
+  never a throw: such a kind draws that object in the desk's ink and is never struck for it. Why the ink and not transparent: one law
+  with I24's face — what the desk cannot read is drawn in the desk's own ink, visible, pickable and plainly not the colour asked for;
+  transparent would hide the very object whose colour is wrong, and `rgb` has no alpha to zero. Why the console and not `status()`:
+  the parse is a pure function with no desk or kind in hand, and `status().faults` means a MISSING kind — this kind draws. A kind that
+  wants the throw asks `rgb(s, { strict: true })` (`ColourParse`, new); the engine parses its own colours strictly (`MAT_COLORS`,
+  `EIGENGRAU`, `MISSING_INK`) and a host's palette too — `themeFrom` still throws on a malformed one, at the call. Every valid colour
+  parses as before, byte for byte. Witnesses: `packages/desk/test/colour-parse.test.ts` (the syntaxes strict or not, the ink, one note
+  however often asked, no string at all, the copy, strict, `themeFrom`) and `packages/desk/test/kind-faults.test.ts`'s stub kind — the
+  desk clock with its dial's colour from a free-string prop through `rgb` inside `record`, every record remade five frames running:
+  drawn by its own pass in the missing ink, no strike, no fault, `status()` untouched, the colour said once (red with the old throw:
+  quarantined at its third record). The objects' theme units ask `{ strict: true }` where they pin the throw or compare tokens.css
+  against the projection. `docs/api-reference.md` "Plugin parity" says what an author can expect.
+
+<!-- petition I33 — a resting pointer keeps no desk awake (2026-10-05; DK-10b, after `0.15.0-desk.3`) -->
+- **A RESTING POINTER KEEPS NO DESK AWAKE** (petition I33 — DK-10b's 20 ms recorder over VibeField's stillness smokes: `PointerVersion`
+  was bumped by EVERY pointer event, one at the last one's position included, and every bump touched the wind; Chromium re-sends a
+  resting pointer's move on a focus or visibility change, and other windows' input raised trusted moves with no motion, so a resting
+  mouse could hold the desk out of rest indefinitely — idle power, and the covers' zero-frames law DK-D25): `@ice/dom`'s pointer
+  adapter DROPS a `pointermove` with no button down and no press of its own live whose position, target, hover verdict and modifiers
+  are those of the last move it enqueued for that pointer — nothing enqueued: no wake, no step, no `PointerVersion` bump, no wind touch.
+  Every press is untouched: a down, an up, a cancel, and every move while a button is down or a press is live (a held drag's
+  same-position moves, a second button joining at the same point) land as before; a transition or a wheel starts the comparison afresh
+  (the first move after one always lands — a wheel moves the camera under the pointer); a window's blur keeps it (the re-dispatch after
+  the focus returns is the no-op); `pointerleave`/`pointerenter` were never listened to, so a pair at one position changes nothing and
+  the move after it is dropped. No consumer needs a hover repeat: a hover's pick reads the position the world holds, and every
+  time-driven gesture is a registered wake of the stack's own, never an event's. No API change. Witnesses:
+  `packages/dom/test/pointer-rest.test.ts` (a real engine: two moves at one position bump `PointerVersion` once and wake nothing, 1 px
+  — and half a px — bumps again, a button change at the same position bumps and so does the first move after it, a held button never
+  dedupes, another target, verdict or modifier is a move, a leave/enter pair and a blur change nothing, a wheel makes the next move land)
+  and rig:idle's new row (after the 7 × 1 s rest, the resting move re-sent at its own point — trusted through CDP, then re-dispatched by
+  the page on the element under it after a leave/enter pair — wakes nothing over 5 s: 0 submits, 0 engine steps but a registered
+  time's, the wind still; red on a desk built without the drop, 182 submits). `docs/api-reference.md` says it under `@ice/dom`.
 
 ### Fixed
 

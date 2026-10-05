@@ -1677,7 +1677,8 @@ glyph and the chips' ids. (D-R1.7, the row of holes peeking under the edge at re
 VibeField's desk migration (track DK, `vibe-field/draft/thinking-desk-migration.md` §8 A4 — the covers DK-15, the thumbnails
 DK-4, "Send to…" DK-14) files nine asks against the desk for 0.15.0 (I26 from the §8 canon review, I27 from DESIGN.md §8's
 right-click, I28 found by I27's builder, 3 Oct) — and a tenth, I29, a defect of I23's door the DK-4 builder found against
-`0.15.0-desk.1` (3 Oct), and an eleventh, I30, DK-7's plugin still, found by both its builders against `0.15.0-desk.2` (4 Oct);
+`0.15.0-desk.1` (3 Oct), and an eleventh, I30, DK-7's plugin still, found by both its builders against `0.15.0-desk.2` (4 Oct), and
+three more, I31–I33, from DK-10's ten-minute bar and DK-10b's stillness investigation against `0.15.0-desk.3` (5 Oct);
 each is built in a
 worktree off `main` behind the 0.14.0 cut and graded on the exact SHA (`pnpm run ci` + `gate:landing`: the Dawn oracle at 113
 stills, nineteen rigs, pack:audit, dts:check).
@@ -1882,6 +1883,28 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   clock's still on Dawn (`examples/desk-clock` `pnpm still`, in gate:landing after the oracle: three dials by day and by night held to
   `test/still.golden.json`, each dial's face off the bare mat, the ledger at zero) and `dts:check` compiling it against the built
   declarations. The MINIMUM (exporting `CuttingMat`, `matShaders`, `MAT_SHADER_FILES`) was not needed and not shipped.
+- **I31 — the kit's WGSL says what it means** (built 2026-10-05 on branch `i31-33-kit-asks`; DK-10 punch-list row 18 — DOCS ONLY):
+  a `///` block above every function, struct, const and binding of every module the kit hands out (the five pieces' files and
+  kit/composite.wgsl — 321 lines over 83 declarations; no code line moves, each file's comment-stripped code byte-identical): each
+  parameter's units and range, the answer's range, the conventions in mat.wgsl's header and `KitWgslPiece`'s JSDoc (world y DOWN,
+  CSS vs device px, `mat_zoom`/`mat_dpr`, the desk in metres, sRGB vs LINEAR — `shade_mat` sRGB in and out, `night_mat` LINEAR in);
+  `MatUniforms`, `NbUniforms` and `NbBook` list their fields in JSDoc, `FieldType`/`defineStruct` the packing rules — the d.ts carries
+  all of it. Held by check-docs' seventeenth row (scripts/wgsl-docs.mjs: every declaration names each parameter and its answer, each
+  record's JSDoc every field — the files read off kit/wgsl.ts's PIECES) and pack:audit's tenth (the shipped `/desk/kit`'s own
+  `shaderText` hands the six modules byte for byte as their sources; the built d.ts names every field). docs/api-reference.md lists
+  the pieces with one-line semantics.
+- **I32 — an unparsed colour answers the missing ink** (built 2026-10-05 on branch `i31-33-kit-asks`; DK-10 rows 15–16 — a
+  behaviour change for INVALID input only): `rgb`/`cssColor` answer a string they cannot parse — or no string — with `MISSING_INK`
+  (the missing face's day ink, opaque: one law with I24's face, never invisible) and say it once a page (`console.warn` — the parse
+  has no desk or kind in hand, and `status().faults` means a missing kind), never a throw; `{ strict: true }` (`ColourParse`) throws,
+  and the engine's own colours and `themeFrom` (a host's palette) parse strictly. Witnesses: desk/test/colour-parse.test.ts and
+  kind-faults.test.ts's stub kind (a free-string prop through `rgb` in `record`: drawn in the ink, never struck, said once).
+- **I33 — a resting pointer keeps no desk awake** (built 2026-10-05 on branch `i31-33-kit-asks`; DK-10b — a behaviour change for
+  NO-OP events only): the dom adapter drops a hover move (no button down, no press of its own live) that repeats the last move it
+  enqueued for that pointer in position, target, hover verdict and modifiers — no wake, no `PointerVersion` bump, no wind touch; a
+  down, an up, a cancel or a wheel starts the comparison afresh, a blur keeps it, and every move of a press lands as before (the
+  adapter reads no world, and every time-driven gesture is the stack's own registered wake). Witnesses: dom/test/pointer-rest.test.ts
+  (a real engine's stamp and wakes) and rig:idle's new row (the resting move re-sent, trusted and re-dispatched: 0 submits over 5 s).
 
 ## Release cut & downstream
 
