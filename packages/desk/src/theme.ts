@@ -21,13 +21,27 @@ export type RGB = readonly [number, number, number];
 export type RGBA = readonly [number, number, number, number];
 export type ThemeName = "light" | "dark";
 
+/** How `cssColor` and `rgb` treat a string they cannot parse (petition I32). */
+export interface ColourParse {
+  /**
+   * THROW (`theme: unparsed colour "…"`) instead of answering `MISSING_INK` — for a colour whose typo is a bug to fail on at the
+   * call: the engine's own colours and a host's palette (`themeFrom`) are parsed so. A kind's colour from a prop never is.
+   */
+  readonly strict?: boolean;
+}
+
 /**
  * Parse the CSS colour syntaxes tokens.css uses — `#rrggbb`, `rgb(r g b / p%)`,
  * `rgba(r, g, b, a)` — into sRGB 0..1 + alpha. The swap chain is a plain
  * 8-bit format, so what CSS shows is what the shader writes.
+ *
+ * A string it cannot parse — another syntax (a name, `#rgb`, `hsl(…)`), a typo, or no string at all — answers `MISSING_INK` (the
+ * desk's ink, opaque) and is SAID ONCE: a `console.warn` naming it, the first time a page meets that string — never a throw, so a
+ * kind whose `record` or `resolve` feeds a user's colour through here draws in the missing ink instead of being struck for it
+ * (petition I32; I24's ladder). `{ strict: true }` throws instead.
  */
-export function cssColor(css: string): RGBA {
-  const s = css.trim().toLowerCase();
+export function cssColor(css: string, opts?: ColourParse): RGBA {
+  const s = typeof css === "string" ? css.trim().toLowerCase() : "";
   let m = /^#([0-9a-f]{6})$/.exec(s);
   if (m) {
     const v = Number.parseInt(m[1] as string, 16);
@@ -38,9 +52,28 @@ export function cssColor(css: string): RGBA {
     const a = m[4] === undefined ? 1 : m[5] === "%" ? Number(m[4]) / 100 : Number(m[4]);
     return [Number(m[1]) / 255, Number(m[2]) / 255, Number(m[3]) / 255, a];
   }
-  throw new Error(`theme: unparsed colour "${css}"`);
+  if (opts?.strict === true) throw new Error(`theme: unparsed colour "${String(css)}"`);
+  return unparsed(css);
 }
-export const rgb = (css: string): RGB => cssColor(css).slice(0, 3) as unknown as RGB;
+/** `cssColor` without its alpha: sRGB 0..1. An unparsed string answers `MISSING_INK`'s three channels, said once (`{ strict: true }` throws). */
+export const rgb = (css: string, opts?: ColourParse): RGB => cssColor(css, opts).slice(0, 3) as unknown as RGB;
+/** The engine's own colours parse strictly: a typo there is the engine's bug, thrown at import. */
+const STRICT: ColourParse = { strict: true };
+
+/** The unparsed colours already said on this page (petition I32): each distinct one once, the first `UNPARSED_SAID` of them. */
+const unparsedSaid = new Set<string>();
+const UNPARSED_SAID = 32;
+/** An unparsed colour: said once a page — what it was, what it is drawn as, how to get the throw — and answered `MISSING_INK`. */
+function unparsed(css: unknown): RGBA {
+  const key = typeof css === "string" ? css : `(${css === null ? "null" : typeof css})`;
+  if (unparsedSaid.size < UNPARSED_SAID && !unparsedSaid.has(key)) {
+    unparsedSaid.add(key);
+    const shown = typeof css === "string" ? JSON.stringify(css.length > 64 ? `${css.slice(0, 64)}…` : css) : `(${key.slice(1, -1)} — not a string)`;
+    const last = unparsedSaid.size === UNPARSED_SAID ? `; ${UNPARSED_SAID} have now been said, and the rest will not be` : "";
+    console.warn(`[ice] desk: unparsed colour ${shown} — drawn in the missing ink. The parser reads #rrggbb, rgb(r g b / a) and rgba(r, g, b, a); \`rgb(s, { strict: true })\` throws instead (petition I32)${last}.`);
+  }
+  return [MISSING_INK[0], MISSING_INK[1], MISSING_INK[2], MISSING_INK[3]];   // a copy, as every parse answers one: a caller's write never reaches the constant
+}
 
 /** A colour as the design kit names it, with its CSS value verbatim. */
 export interface TokenRef {
@@ -91,7 +124,7 @@ export const MAT = {
   cast: { token: "tree-shadow design mat.css `--cast-rgb`", css: "#0e1a0a" },   // 14 26 10
 } as const;
 /** The same, parsed — what a pass reads (nothing outside this file parses a colour). */
-export const MAT_COLORS: { readonly ground: RGB; readonly line: RGB; readonly cast: RGB } = { ground: rgb(MAT.ground.css), line: rgb(MAT.line.css), cast: rgb(MAT.cast.css) };
+export const MAT_COLORS: { readonly ground: RGB; readonly line: RGB; readonly cast: RGB } = { ground: rgb(MAT.ground.css, STRICT), line: rgb(MAT.line.css, STRICT), cast: rgb(MAT.cast.css, STRICT) };
 
 /**
  * The mat's line law and the gobo's numbers (research/tree-shadow/prototype:
@@ -176,7 +209,7 @@ export const NIGHT = {
 export { dayLuminance, type MatLight, nightLight } from "./mat/night";
 
 /** Eigengrau, parsed — what a host hands `nightLight` (lab/params.ts rebuilds the night from its panel). */
-export const EIGENGRAU: RGB = rgb(NIGHT.eigengrau.css);
+export const EIGENGRAU: RGB = rgb(NIGHT.eigengrau.css, STRICT);
 
 /** The light the mat pass reads, per theme: the Sun (the reference's chain, bit for bit) by day, the Moon by night. */
 export const MAT_LIGHT: Record<ThemeName, MatLight> = {
@@ -316,6 +349,15 @@ export const MISSING = {
   corner: 6,
 } as const;
 
+/**
+ * THE MISSING INK (petition I32) — what `cssColor` answers for a colour it cannot parse, and `rgb` its three channels: the missing
+ * face's ink by day (`MISSING.ink.light`, the tray's `--desk-ink`), opaque. One law with I24's face — what the desk cannot read is
+ * drawn in the desk's own ink: the object stays visible and pickable, plainly not the colour that was asked for. Not transparent:
+ * that would hide the very object whose colour is wrong (and `rgb` has no alpha to zero). Theme-blind: a kind's colour is an
+ * albedo the desk's light grades, by day and by night alike.
+ */
+export const MISSING_INK: RGBA = cssColor(MISSING.ink.light, STRICT);
+
 /** Everything the passes read, as numbers. */
 export interface GroundTheme {
   readonly name: ThemeName;
@@ -329,5 +371,6 @@ export interface GroundTheme {
 
 /** A theme from a palette — the host's projection (lab/theme.ts builds VibeField's two). */
 export function themeFrom(name: ThemeName, p: Palette): GroundTheme {
-  return { name, canvasBg: rgb(p.canvasBg.css), select: rgb(p.select.css), matLight: MAT_LIGHT[name] };
+  // a host's palette is parsed strictly: a malformed colour throws at the call (petition I32 keeps the throw where the caller is the host)
+  return { name, canvasBg: rgb(p.canvasBg.css, STRICT), select: rgb(p.select.css, STRICT), matLight: MAT_LIGHT[name] };
 }

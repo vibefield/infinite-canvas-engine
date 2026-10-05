@@ -9,8 +9,8 @@
 // defaults read back from ICE retired with them, 2026-09-25 — MINIMAT.md §1.)
 import { readFileSync, readdirSync, statSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { describe, expect, it } from "vitest";
-import { cssColor, GRID, PORTAL_GATE } from "@ice/desk";
+import { describe, expect, it, vi } from "vitest";
+import { cssColor, GRID, MISSING_INK, PORTAL_GATE } from "@ice/desk";
 import { MINIMAT } from "../src/minimat/theme";
 
 const ground = resolve(import.meta.dirname, "..");
@@ -29,7 +29,13 @@ describe("theme (the engine's half)", () => {
     expect(cssColor("#4a90d9")).toEqual([0x4a / 255, 0x90 / 255, 0xd9 / 255, 1]);
     expect(cssColor("rgb(28 28 30 / 70%)")).toEqual([28 / 255, 28 / 255, 30 / 255, 0.7]);
     expect(cssColor("rgba(255, 255, 255, 0.08)")).toEqual([1, 1, 1, 0.08]);
-    expect(() => cssColor("neutral-800")).toThrow();
+    // a string it cannot parse throws only when asked to; else it answers the missing ink, said once (petition I32)
+    expect(() => cssColor("neutral-800", { strict: true })).toThrow(/unparsed colour "neutral-800"/);
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+    try {
+      expect(cssColor("neutral-800")).toEqual(MISSING_INK);
+      expect(warn).toHaveBeenCalledTimes(1);
+    } finally { warn.mockRestore(); }
   });
 
   it("a colour literal has two homes — the desk's src/theme.ts (the engine's) and the objects' src/palette.ts (the product's, shipped as the reference objects' default) — and none in the rest of either package's src/ and shaders/, the oracle and apps/desk", () => {

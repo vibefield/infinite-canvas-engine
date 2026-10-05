@@ -39,7 +39,8 @@ function cssBlock(text: string, selector: RegExp): Map<string, string> {
   }
   return out;
 }
-const same = (a: string, b: string) => expect(cssColor(a)).toEqual(cssColor(b));
+// strictly: an unparsed token must fail here, never pass as the missing ink on both sides (petition I32)
+const same = (a: string, b: string) => expect(cssColor(a, { strict: true })).toEqual(cssColor(b, { strict: true }));
 /** tokens.css carries some colours as channel triplets (`255, 255, 255`) for `rgba(var(--ic-…), α)`. */
 const triplet = (v: string) => (/^\d+\s*,\s*\d+\s*,\s*\d+$/.test(v) ? `rgb(${v})` : v);
 
@@ -84,7 +85,7 @@ describe.skipIf(!beside)("theme vs the design kit (vibe-field beside us)", () =>
           expect(must(row).toLowerCase(), `${themeName}.${role}: ${ref.token} ${ref.css} vs DESIGN.md`).toContain(ref.css.toLowerCase());
           continue;
         }
-        expect(cssColor(triplet(value)), `${themeName}.${role}: ${ref.token} ${ref.css} vs tokens.css ${value}`).toEqual(cssColor(ref.css));
+        expect(cssColor(triplet(value), { strict: true }), `${themeName}.${role}: ${ref.token} ${ref.css} vs tokens.css ${value}`).toEqual(cssColor(ref.css, { strict: true }));
       }
     }
     for (const [name, ref] of Object.entries(SURFACES)) {

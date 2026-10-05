@@ -5,9 +5,9 @@
 // `DeskClockBroken`: a function naming what nothing declares — the module raises a validation error into the scope open when it was
 // made, else to the device's uncaptured handler), its reflector registered, frames drawn through it; the working desk clock beside
 // the broken one is the "other kind" that must go on drawing. And an object whose type has no kind wears the same face.
-import { createCanvasEngine, defineWidget, type Entity, Viewport, type WidgetType } from "@ice/core";
+import { createCanvasEngine, defineWidget, type Entity, p, Viewport, type WidgetType } from "@ice/core";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
-import { BROKEN_WGSL_TOKEN, brokenClockKind, DeskClock, DeskClockBroken } from "../../../examples/desk-clock/src/index";
+import { BROKEN_WGSL_TOKEN, brokenClockKind, type ClockInstance, clockKind, DeskClock, DeskClockBroken } from "../../../examples/desk-clock/src/index";
 import { KIND_MISSING } from "../src/faults";
 import type { SlotObject } from "../src/ground";
 import { deskLayer, type DeskLayerHandle, type DeskLayerStatus } from "../src/host/layer";
@@ -15,7 +15,7 @@ import type { ObjectKind } from "../src/kinds/world";
 import { isMissingRecord } from "../src/missing/layout";
 import { MISSING_KIND } from "../src/missing/object";
 import { defineObject } from "../src/object";
-import { type Palette, themeFrom } from "../src/theme";
+import { MISSING_INK, type Palette, rgb, themeFrom } from "../src/theme";
 import { fakeDevice, installGpuFlags } from "./fake-gpu";
 
 const PALETTE: Palette = { canvasBg: { token: "--bg", css: "#fafafa" }, select: { token: "--sel", css: "#3080ff" } };
@@ -189,6 +189,47 @@ describe("fault containment per kind (petition I24)", () => {
       expect(d.handle.local("test-faulty")).toBeUndefined();
       // the capture door draws the frame's inputs once more: the face is drawn there too, and nothing throws (I23 under I24)
       expect(await d.handle.capture({ scale: 0.25 })).toMatchObject({ width: 300, height: 200 });
+    } finally { d.dispose(); }
+  });
+
+  it("a `record` that feeds an UNPARSED colour through `rgb` — a user's free string, frame after frame — draws its object in the MISSING INK and is NEVER STRUCK: no strike, no fault, the status untouched, the colour said once (petition I32)", async () => {
+    const warns = vi.spyOn(console, "warn").mockImplementation(() => {});
+    const errors = vi.spyOn(console, "error").mockImplementation(() => {});
+    // VibeField's wax seal (DK-10's fifth run): the clock with its dial's colour taken from a free-string prop, through the kit's `rgb`,
+    // inside `record` — what struck the kind three times and put every one of its objects in the missing face before I32
+    const base = clockKind();
+    let records = 0;
+    const seal: ObjectKind = {
+      ...base,
+      name: "test-seal",
+      record: (G, ctx) => {
+        records += 1;
+        const r = base.record(G as never, ctx);
+        return { ...r, colours: { ...r.colours, dial: rgb(ctx.props.colour as string) } } satisfies ClockInstance;
+      },
+    };
+    const Seal = defineObject({ type: "test.seal", version: 1, props: { colour: p.string({ default: "sealing-wax red (petition I32)" }) }, size: { w: 150, h: 150 }, kind: seal });
+    const d = await mountDesk([Seal]);
+    try {
+      const one = d.at(Seal.type, 100, 100);
+      const two = d.at(Seal.type, 400, 100);
+      // every frame remakes every record (a law tuned — `invalidate`): `record` is asked for both objects, every frame, past three
+      for (let i = 0; i < 5; i++) { d.handle.builder.invalidate(); d.frame(); }
+      expect(records).toBeGreaterThanOrEqual(10);
+      // drawn by its OWN pass, in the missing ink — not the missing face
+      expect(d.kinds()).toEqual({ "test-seal": 2 });
+      for (const e of [one, two]) {
+        const record = d.row(e)?.record as ClockInstance | undefined;
+        expect(isMissingRecord(record)).toBe(false);
+        expect(record?.colours.dial).toEqual(MISSING_INK.slice(0, 3));
+      }
+      // never struck, never missing: no strike said, no fault, the status untouched
+      expect(said(warns, "test-seal")).toEqual([]);
+      expect(said(errors, "test-seal")).toEqual([]);
+      expect(d.handle.status()).toEqual({ state: "ready" });
+      expect(d.handle.due(performance.now()).kinds["test-seal"]).not.toBe(KIND_MISSING);
+      // the colour said ONCE however many records were made
+      expect(warns.mock.calls.map((c) => String(c[0])).filter((m) => m.includes('unparsed colour "sealing-wax red (petition I32)"'))).toHaveLength(1);
     } finally { d.dispose(); }
   });
 

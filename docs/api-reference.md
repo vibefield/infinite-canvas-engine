@@ -524,6 +524,12 @@ engine names a kind:
   fault: that frame skipped), its mount-time calls (`theme`, `local`, the drivers' factory, a DOM half) are the mount's, and what
   core's ops ask of it at an act (`open.tool` at the pickup, a held tool's `run`) is the op's caller's. The
   worked broken kind is the clock's fault fixture (`examples/desk-clock`: `brokenClockKind`, `DeskClockBroken`, `DeskClockFaulty`).
+- **A colour from a prop — never a strike (petition I32)**: `rgb(s)` and `cssColor(s)` (`@ice/desk`) read `#rrggbb`, `rgb(r g b / a)`
+  and `rgba(r, g, b, a)`; a string they cannot parse — a name, `#rgb`, `hsl(…)`, a typo, no string at all — answers `MISSING_INK`
+  (the missing face's ink by day, opaque; `rgb` its three channels) and is said ONCE a page on the console (`console.warn`, naming
+  the string) — never a throw, so a kind that feeds a user's colour through it inside `record` or `resolve` draws that object in the
+  desk's ink and is never struck for it. A kind that wants the throw asks `rgb(s, { strict: true })` (`ColourParse`); the engine
+  parses its own colours and a host's palette (`themeFrom`) so — a malformed palette still throws at the call.
 
 **The worked third-party kind (design-016 K8b)** — `examples/desk-clock` (`@ice-examples/desk-clock`, private, never published): an
 analogue desk clock in a package of its own that imports ICE only as `@vibecook/ice`, `@vibecook/ice/desk`, `/desk/kit` and
