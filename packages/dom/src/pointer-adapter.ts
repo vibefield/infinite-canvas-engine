@@ -9,7 +9,12 @@
  * Details that matter:
  *  - stable pointer ids: `"mouse"` for the one mouse, `"touch:<pointerId>"` per
  *    contact, `"pen"` — ingest keys pointer entities off these (design-003 §2);
- *  - container-relative CSS px (the kernel screen space) via getBoundingClientRect;
+ *  - container-relative CSS px (the kernel screen space): the client point mapped
+ *    into the container's LAYOUT space by kernel `clientToScreen` (petition I39) —
+ *    its offset from the bounding rect's top-left divided by the scale a CSS
+ *    transform draws the container at (`rect.width / clientWidth`), so a press
+ *    lands on what the desk draws under it at any transform, in the space the
+ *    viewport is measured in (the layout size, desk-host.ts);
  *  - the button: every pointer fact carries PointerEvent `buttons`, and a down's
  *    mask IS the button that pressed (a second button joins a held press as a
  *    pointermove, never a down). Which press is a gesture is the stack's call,
@@ -72,6 +77,7 @@
  * pointer, not the widget under it.
  */
 import { NO_MODS, type InputEvent, type InputMods, type InputQueue } from "@ice/core";
+import { clientToScreen } from "@ice/kernel";
 import type { CanvasHost } from "./host";
 import { isEditableTarget, keyboardClaimOf, wheelCede } from "./input-ownership";
 
@@ -153,10 +159,8 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
   const sameMods = (a: InputMods, b: InputMods): boolean =>
     a.shift === b.shift && a.ctrl === b.ctrl && a.alt === b.alt && a.meta === b.meta && a.space === b.space;
 
-  const relative = (clientX: number, clientY: number): { x: number; y: number } => {
-    const rect = container.getBoundingClientRect();
-    return { x: clientX - rect.left, y: clientY - rect.top };
-  };
+  // the client point in the container's LAYOUT space (petition I39): a transform scales its bounding rect, never the space the desk draws in
+  const relative = (clientX: number, clientY: number): { x: number; y: number } => clientToScreen(clientX, clientY, container.getBoundingClientRect(), container);
 
   const pointerMods = (e: PointerEvent | WheelEvent): InputMods => ({
     shift: e.shiftKey,

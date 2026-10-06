@@ -29,6 +29,7 @@ import {
   type ReflectorDef,
   type World,
 } from "@ice/core";
+import { screenSizeOf } from "@ice/kernel";
 import { createCanvasHost, type CanvasHost } from "./host";
 import { startRafLoop } from "./loop";
 import { attachPointerAdapter } from "./pointer-adapter";
@@ -167,10 +168,13 @@ export function createDeskHost<H extends LayerHandle>(opts: DeskHostOptions<H>):
 
   const ratio = (): number => (typeof window !== "undefined" ? window.devicePixelRatio : 1);
   let synced = 0;
+  // THE VIEWPORT IS THE CONTAINER'S LAYOUT SIZE (petition I39): the box the canvas fills, which no CSS transform changes — never its
+  // bounding rect, which a transform on it or an ancestor scales and which re-syncs on nothing (no resize, no ratio): a desk mounted
+  // under VibeField's recede transform read 1158.85 × 734.60 for a 1180 × 748 container and drew ~2 % small until something resized
   const syncViewport = (): void => {
-    const rect = container.getBoundingClientRect();
+    const size = screenSizeOf(container.getBoundingClientRect(), container);
     synced = ratio();
-    writeRuntimeResource(world, Viewport, { w: rect.width, h: rect.height, dpr: synced });
+    writeRuntimeResource(world, Viewport, { w: size.width, h: size.height, dpr: synced });
   };
   syncViewport();
   let resizeObserver: ResizeObserver | undefined;

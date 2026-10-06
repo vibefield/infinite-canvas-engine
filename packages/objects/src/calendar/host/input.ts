@@ -26,6 +26,7 @@ import { dayBox, sheetOf } from "../sheet";
 import { type CalendarGeometry, type CalendarObjectLook, type CalendarPart, DRAFT_ID, partAt, sheetOnScreen } from "../kind";
 import type { CalendarDriver } from "../object";
 import { type TypingDocs, writable } from "@ice/desk";
+import { clientToScreen } from "@ice/kernel";
 import type { DeskEditor, EditorLease } from "@ice/desk/kit";
 
 /** The desk calendar's text part's name (K8a) — a day's line: what the editor's lease carries while the calendar holds it. */
@@ -324,9 +325,8 @@ export function createCalendarInput(opts: CalendarInputOptions): CalendarInput |
 
   // ---- where a client point lands
   const partAtClient = (clientX: number, clientY: number): { pad: Entity; part: CalendarPart } | null => {
-    const r = container.getBoundingClientRect();
-    const px = clientX - r.left;
-    const py = clientY - r.top;
+    // the point in the container's layout space — the pointer adapter's and the viewport's, under any transform (petition I39)
+    const { x: px, y: py } = clientToScreen(clientX, clientY, container.getBoundingClientRect(), container);
     const held = heldEntity(world);
     if (held !== undefined) {
       // in hand: through the pose the last frame drew — the pad in hand, or nothing (the desk behind is soft)

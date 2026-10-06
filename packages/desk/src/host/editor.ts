@@ -17,6 +17,7 @@
 // the browser's focus), on another lease, on `release`, and when its `live()` says its object is gone (a delete, a nav cut).
 
 import { Camera, type Entity, GestureSettings, Grab, type World } from "@ice/core";
+import { clientToScreen } from "@ice/kernel";
 import { tapHit } from "../compose/tap";
 import type { DeskEditor, EditorLease, TextPart } from "../kit/editor";
 import { PEN_FACES } from "../kit/text";
@@ -203,9 +204,10 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     if (Math.hypot(ev.clientX - d.x, ev.clientY - d.y) > slop) return;
     const cam = world.getResource(Camera);
     if (cam === undefined) return;
-    const r = container.getBoundingClientRect();
-    const wx = cam.x + (ev.clientX - r.left) / cam.zoom;
-    const wy = cam.y + (ev.clientY - r.top) / cam.zoom;
+    // the tap in the container's layout space — the pointer adapter's and the viewport's, under any transform (petition I39)
+    const at = clientToScreen(ev.clientX, ev.clientY, container.getBoundingClientRect(), container);
+    const wx = cam.x + at.x / cam.zoom;
+    const wy = cam.y + at.y / cam.zoom;
     const t = tapHit(world, d.type === "touch" ? `touch:${d.id}` : "mouse");
     // a carried object takes no text (the tap ends a carry); a part asked with the pointer gone looks for itself
     const hit: Entity | undefined = t.hit !== undefined && world.has(t.hit, Grab) ? undefined : t.hit;

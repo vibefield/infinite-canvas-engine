@@ -13,6 +13,9 @@
 //   the document   across the five remounts: no outbound commit, its snapshot byte for byte, the same objects
 //   the engine     outlives every remount: what each mount added to it — two tick systems (the flight pin's, the glyph feed's), the
 //                  devtools dock when open — taken back by its unmount
+//   the transform  (petition I39) a remount under `scale(0.98)` on the container's ancestor: the viewport is the container's LAYOUT size
+//                  under it and after it goes — every viewport the engine holds sampled each frame — and a pointer under it lands on
+//                  the layout point the desk draws there
 //   I24's paths    `rig.html?plugins&kindFaults`: a generation with two broken kinds of the LAYER's own — one refused at create, one
 //                  quarantined at three strikes —, unmounted: its ledger zero; the next, its kinds dropped from the host's options
 //                  (`__deskRig.layer`), mounts CLEAN — ready, no fault — and its own unmount reads zero too
@@ -154,6 +157,44 @@ try {
   const after = await A.q("({ docks: document.querySelectorAll('.ice-dock').length, old: window.__i25old.dock.isOpen(), sys: window.__i25sys })");
   check(docked.open && docked.dom === 1 && last.timeout !== true && after.docks === 0 && after.old === false && after.sys.added === 2 * (REMOUNTS + 1) && after.sys.added - after.sys.removed === 2,
     `what a mount adds to the engine goes with it: ${after.sys.added} systems added by ${REMOUNTS + 1} mounts, ${after.sys.removed} taken back by their unmounts (${after.sys.added - after.sys.removed} standing — the live generation's two); the dock open in generation ${REMOUNTS} (${docked.dom} in the page) closed with it (${after.docks} left)`);
+  // ── THE LAYOUT SIZE (petition I39): a desk mounted under a CSS transform on an ANCESTOR (VibeField's recede — `scale` on its scene)
+  //    measures its container's LAYOUT size, never the scaled bounding rect, and keeps it when the transform goes (a transform fires
+  //    no resize and moves no ratio: nothing would re-measure). Every viewport the engine holds from before the remount to after the
+  //    transform is gone is sampled each frame; a pointer under the transform lands where the desk draws it (its screen point, read
+  //    back off the world through the camera, is the layout's)
+  await A.q(`(() => {
+    const seen = (window.__i39seen = new Set()); window.__i39on = true;
+    const tick = () => { const v = window.__desk.viewport(); seen.add(v.w + "×" + v.h); if (window.__i39on) requestAnimationFrame(tick); };
+    tick();
+    const root = document.querySelector("[data-ice-canvas]").parentElement;
+    root.style.transform = "scale(0.98)";   // about its centre, as a recede is
+    return 0;
+  })()`);
+  const under = await A.q(REMOUNT, 90000);
+  await A.q("window.__desk.settle(8000)");
+  const BOXES = `(() => { const c = document.querySelector("[data-ice-canvas]"); const r = c.getBoundingClientRect(); const v = window.__desk.viewport();
+    return { rect: { left: r.left, top: r.top, width: r.width, height: r.height }, layout: { w: c.clientWidth, h: c.clientHeight }, viewport: { w: v.w, h: v.h } }; })()`;
+  const scaledBoxes = await A.q(BOXES);
+  // the mouse at 90 % across the SCALED box: the adapter's screen point is 90 % across the layout
+  const at90 = { x: scaledBoxes.rect.left + 0.9 * scaledBoxes.rect.width, y: scaledBoxes.rect.top + 0.9 * scaledBoxes.rect.height };
+  await A.tab.send("Page.bringToFront");
+  await A.tab.send("Input.dispatchMouseEvent", { type: "mouseMoved", x: at90.x, y: at90.y, button: "none" });
+  await A.q("window.__desk.settle(4000)");
+  const POINTER = "(() => { const p = window.__desk.pointer(); const c = window.__desk.camera(); return p === null ? null : { x: (p.x - c.x) * c.zoom, y: (p.y - c.y) * c.zoom }; })()";
+  const pointed = await A.q(POINTER);
+  await A.q(`(() => { document.querySelector("[data-ice-canvas]").parentElement.style.transform = ""; return 0; })()`);
+  await A.q("window.__desk.settle(8000)");
+  for (let i = 0; i < 10; i++) await A.q("new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)))");
+  const plainBoxes = await A.q(BOXES);
+  const seen = await A.q("(() => { window.__i39on = false; return [...window.__i39seen]; })()");
+  const L = scaledBoxes.layout;
+  const want90 = { x: 0.9 * L.w, y: 0.9 * L.h };
+  const transformed = Math.abs(scaledBoxes.rect.width - 0.98 * L.w) < 0.5 && Math.abs(scaledBoxes.rect.height - 0.98 * L.h) < 0.5;
+  check(under.timeout !== true && transformed && L.w === 1200 && L.h === 800 && scaledBoxes.viewport.w === L.w && scaledBoxes.viewport.h === L.h
+      && plainBoxes.viewport.w === L.w && plainBoxes.viewport.h === L.h && plainBoxes.layout.w === L.w && seen.length === 1 && seen[0] === `${L.w}×${L.h}`,
+    `I39 — the desk mounted under \`scale(0.98)\` on its container's ancestor (generation ${under.generation}): its rendered box ${scaledBoxes.rect.width.toFixed(2)} × ${scaledBoxes.rect.height.toFixed(2)}, its layout ${L.w} × ${L.h} — the viewport ${scaledBoxes.viewport.w} × ${scaledBoxes.viewport.h} under it, ${plainBoxes.viewport.w} × ${plainBoxes.viewport.h} once it is gone; every viewport the engine held, sampled each frame from before the mount to after: ${seen.join(", ")}`);
+  check(pointed !== null && Math.abs(pointed.x - want90.x) < 0.5 && Math.abs(pointed.y - want90.y) < 0.5,
+    `I39 — a pointer 90 % across the SCALED box (client ${at90.x.toFixed(2)}, ${at90.y.toFixed(2)}) is 90 % across the layout on screen: ${pointed === null ? "no pointer" : `${pointed.x.toFixed(2)}, ${pointed.y.toFixed(2)}`} (want ${want90.x}, ${want90.y}) — a press lands where the desk draws it`);
   const faultsA = await faultsOf(A.tab, "A");
   check(logsA.length === 0 && faultsA.length === 0, `no page errors or contained faults (${logsA.length + faultsA.length}${logsA.length + faultsA.length > 0 ? `: ${[...logsA, ...faultsA].slice(0, 4).join(" · ")}` : ""})`);
   await A.tab.close?.();

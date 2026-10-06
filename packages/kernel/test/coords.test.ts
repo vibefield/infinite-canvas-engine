@@ -1,6 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
+  clientToScreen,
   fitCamera,
+  screenSizeOf,
   screenToWorld,
   worldToScreen,
   zoomAtPoint,
@@ -52,5 +54,39 @@ describe("coords: zoomAtPoint", () => {
       expect(after.x).toBeCloseTo(before.x, 6);
       expect(after.y).toBeCloseTo(before.y, 6);
     }
+  });
+});
+
+// Petition I39: a container drawn under a CSS transform — its RENDERED box (`getBoundingClientRect`) scaled, its LAYOUT box
+// (`clientWidth`/`clientHeight`) not. Screen space is the layout's: the canvas fills it and every screen-space child is laid out in it.
+describe("coords: client → screen (petition I39)", () => {
+  const LAYOUT = { clientWidth: 1180, clientHeight: 748 };
+  /** The layout box at (left, top) drawn under `scale(sx, sy)` about its centre. */
+  const scaled = (sx: number, sy: number, left = 20, top = 30) => ({ left: left + (1180 * (1 - sx)) / 2, top: top + (748 * (1 - sy)) / 2, width: 1180 * sx, height: 748 * sy });
+
+  it("is the layout size under any transform; a node with no layout box to measure (0 × 0) is its rendered box", () => {
+    expect(screenSizeOf(scaled(0.98, 0.98), LAYOUT)).toEqual({ width: 1180, height: 748 });
+    expect(screenSizeOf(scaled(1, 1), LAYOUT)).toEqual({ width: 1180, height: 748 });
+    expect(screenSizeOf({ left: 5, top: 6, width: 800, height: 600 }, { clientWidth: 0, clientHeight: 0 })).toEqual({ width: 800, height: 600 });
+  });
+
+  it("maps the scaled box's corners and centre to the layout's — each axis by its own scale", () => {
+    for (const [sx, sy] of [[0.98, 0.98], [0.982, 0.982], [1.25, 0.5], [1, 1]] as const) {
+      const r = scaled(sx, sy);
+      const far = clientToScreen(r.left + r.width, r.top + r.height, r, LAYOUT);
+      const near = clientToScreen(r.left, r.top, r, LAYOUT);
+      const mid = clientToScreen(r.left + r.width / 2, r.top + r.height / 2, r, LAYOUT);
+      expect(far.x).toBeCloseTo(1180, 9);
+      expect(far.y).toBeCloseTo(748, 9);
+      expect(near).toEqual({ x: 0, y: 0 });
+      expect(mid.x).toBeCloseTo(590, 9);
+      expect(mid.y).toBeCloseTo(374, 9);
+    }
+  });
+
+  it("untransformed it is the offset alone — and so for a node with no layout box (the rendered box is all there is)", () => {
+    expect(clientToScreen(150, 120, { left: 50, top: 20, width: 1180, height: 748 }, LAYOUT)).toEqual({ x: 100, y: 100 });
+    expect(clientToScreen(150, 120, { left: 50, top: 20, width: 800, height: 600 }, { clientWidth: 0, clientHeight: 0 })).toEqual({ x: 100, y: 100 });
+    expect(clientToScreen(150, 120, { left: 50, top: 20, width: 0, height: 0 }, LAYOUT)).toEqual({ x: 100, y: 100 });   // nothing rendered: no scale to undo
   });
 });

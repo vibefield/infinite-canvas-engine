@@ -262,7 +262,10 @@ heldPose, transitions, catalog, readMarquee }` — `pickAt` the interaction stac
 screen point would touch, which the desk's `handle.pick` answers through, petition I27) → reflectors [ the layer's · cursor · remote cursors — none when the
 layer's handle says `cursors: false`, petition I26 ]
 → `attachPointerAdapter(host, queue)` → `attachWidgetFocus(host, lookup?)` → the viewport sync
-(one layout read, then a ResizeObserver) → `startRafLoop`; `DeskHost { engine, host, layer, focus,
+(one layout read, then a ResizeObserver) → `startRafLoop`. The viewport is the container's LAYOUT size (`clientWidth` ×
+`clientHeight`, petition I39) — the box the canvas fills, which no CSS transform on the container or an ancestor changes — and the
+adapter maps each client point into that space (kernel `clientToScreen`), so a desk mounted under a host's `scale` draws at its size
+and a press lands where it is drawn; `DeskHost { engine, host, layer, focus,
 dispose }` · `startRafLoop(engine)` (rAF + the freeze park) · input ownership (`isEditableTarget`,
 `keyboardClaimOf`, `wheelCede`, `KEYBOARD_CLAIM_ATTR`, `CLAIM_OWNS_ESCAPE`) · the focus driver
 (`attachWidgetFocus`, `FOCUS_PROXY_ATTR`) · `createCursorReflector(host, readCursor)` ·
@@ -585,7 +588,8 @@ stamping (+17–28% on write-heavy paths) — dev builds only.
 
 ## @ice/kernel
 
-Pure math, no ECS/DOM: `screenToWorld/worldToScreen/zoomAtPoint/fitCamera` ·
+Pure math, no ECS/DOM: `screenToWorld/worldToScreen/zoomAtPoint/fitCamera` · `clientToScreen/screenSizeOf` (a client point and a
+container's size in screen space — its layout box, whatever transform draws it; petition I39) ·
 `SpatialIndex` · `computeSnapGuides` · `portAnchor/wireCubic/distanceToCubic` · the easings · the
 design-006 flight maths · `layout` · the pegboard tray's lattice law (`PEG_LATTICE`, `TrayHang`, `hangError`, `layTray`, `TRAY_SPACING` — its first line 2 pitches down, under the drawer's header and its fade (design-018 R4) — `trayScrollMax` — design-017 §8, K5a; `specimenFit` — a specimen's scale and its object's rect in its hang, K5b) · `atlas-pack` (parked). The island helpers, `zoom-bands`,
 `eviction`, `surface-geometry` and `lift` left at design-015 D5b; `planeCssTransform` and

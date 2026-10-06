@@ -93,6 +93,50 @@ describe("createDeskHost · the device's ratio (ICE M21 K1)", () => {
   });
 });
 
+/** Dispatch a synthetic DOM event with assigned props (happy-dom has no PointerEvent ctor). */
+function fire(target: EventTarget, type: string, props: Record<string, unknown>): void {
+  const ev = new Event(type, { cancelable: true, bubbles: true });
+  Object.assign(ev, props);
+  target.dispatchEvent(ev);
+}
+
+describe("createDeskHost · the container's LAYOUT size (petition I39)", () => {
+  it("a container drawn under `transform: scale(0.98)` — its rendered box 1156.4 × 733.04, its layout 1180 × 748 — writes the LAYOUT size to the viewport, and a pointer at the scaled box's far corner maps to (1180, 748)", () => {
+    const engine = createCanvasEngine();
+    const container = document.createElement("div");
+    document.body.appendChild(container);
+    // the layout box no transform changes, and the box an ancestor's `scale(0.98)` draws it in (about its centre, the page at 20, 30)
+    Object.defineProperty(container, "clientWidth", { value: 1180, configurable: true });
+    Object.defineProperty(container, "clientHeight", { value: 748, configurable: true });
+    const S = 0.98;
+    const r = { left: 20 + (1180 * (1 - S)) / 2, top: 30 + (748 * (1 - S)) / 2, width: 1180 * S, height: 748 * S };
+    container.getBoundingClientRect = () => ({ ...r, x: r.left, y: r.top, right: r.left + r.width, bottom: r.top + r.height, toJSON: () => ({}) }) as DOMRect;
+    const layer = (): LayerHandle => ({ reflector: { name: "fake-desk", always: true, flush() {}, available: () => true }, dispose() {} });
+    const mount = createDeskHost({ container, engine, layer });
+    try {
+      const vp = engine.world.getResource(Viewport);
+      expect([vp?.w, vp?.h]).toEqual([1180, 748]);
+      // the pointer, through the host's own adapter: the scaled box's far corner, its top-left and its centre — the layout's
+      engine.stack.queue.drain();
+      fire(container, "pointermove", { pointerType: "mouse", pointerId: 1, clientX: r.left + r.width, clientY: r.top + r.height, buttons: 0 });
+      fire(container, "pointerdown", { pointerType: "mouse", pointerId: 1, clientX: r.left, clientY: r.top, buttons: 1 });
+      fire(container, "pointerup", { pointerType: "mouse", pointerId: 1, clientX: r.left + r.width / 2, clientY: r.top + r.height / 2, buttons: 0 });
+      const at = engine.stack.queue.drain().map((e) => [e.kind, (e as { screenX?: number }).screenX, (e as { screenY?: number }).screenY] as const);
+      expect(at.map((q) => q[0])).toEqual(["move", "down", "up"]);
+      const [far, near, mid] = at;
+      expect(far?.[1]).toBeCloseTo(1180, 9);
+      expect(far?.[2]).toBeCloseTo(748, 9);
+      expect([near?.[1], near?.[2]]).toEqual([0, 0]);
+      expect(mid?.[1]).toBeCloseTo(590, 9);
+      expect(mid?.[2]).toBeCloseTo(374, 9);
+    } finally {
+      mount.dispose();
+      engine.dispose();
+      container.remove();
+    }
+  });
+});
+
 describe("createDeskHost · the room's other people (petition I26)", () => {
   /** Two peers' hands in the world as core's presence derives them: a `CursorVisual "remote"` at a world point, `Follows` → the peer. */
   function twoPeers(world: World): void {
