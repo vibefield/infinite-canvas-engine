@@ -454,6 +454,10 @@ engine names a kind:
   `held.readout`, recomposed with it (every frame drawn while held), for a host's bar to print; none, "" or a non-string — no word; a
   throw is caught at the kind's boundary and said once. The notebook says its page ("Page 2"), the calendar its month ("September"), and
   the example's desk clock (`examples/desk-clock`) the time its hands show — a plugin's word, declared as a built-in's.
+- **The anchor's parts by name** (petition I36): `/desk` exports the selection's anchor (`SelectionAnchor`) and its parts as types —
+  the hand `HeldAnchor` (`tools`, `active`, `landing`, `settled`, `travelMs?`, `readout?`), each bar slot `HeldSlot` (`id`, `label`,
+  `kind?`, `hint?`, `glyph?`, `swatch?`) and a slot's `HeldGlyph` — so a host that draws the held bar itself types it by these names,
+  never by `NonNullable<SelectionAnchor["held"]>` (which a rename passes without a word); the desk clock's `dts:check` imports them.
 - **Menu acts**: `defineObject({ menu })` (core's `MenuActionDef`) — the anchor's `menu` carries a selection's shared acts
   (`withKindActs`), the React menu shows them first and runs `ops.runMenuAction`.
 - **Tray entries and their chips** (design-017 §8, design-018 §6): `defineObject({ tray: { label, hang, category?, … } })` hangs a
@@ -549,7 +553,7 @@ scene's `objects: [{ type, x, y, props, asset }]`). Its walls: `test/imports.tes
 the umbrella's BUILT `.d.ts` (`skipLibCheck: false`) and every name it imports is declared there; `rig:clock` witnesses it live. Its
 STILL (petition I30) is the first third-party still through the door: `test/still.ts` lays three dials through `createStill`, Dawn
 draws them (`pnpm still`, in gate:landing after the oracle — not in `test`: CI runs no Dawn) and `test/still.golden.json` holds them, by
-day and by night; `dts:check` compiles the still beside `src/`.
+day and by night; `dts:check` compiles the still beside `src/`, and `test/held.types.ts` — the anchor's parts a host names (I36).
 
 **`@ice/objects`** is `@vibecook/ice/desk/objects` (design-016 K4b: the six reference kinds' own package, built on the three desk
 entries alone, exactly as a plugin kind is): `Note`/`NOTE_TYPE`, `MiniMat`, `Notebook`, `Board`, `Calendar`, `Photo`,

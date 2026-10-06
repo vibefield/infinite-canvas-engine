@@ -38,7 +38,8 @@ clock's own, staged by `engine.ops.spawnWidget`, each dial's hands stood at the 
 holds each still to `test/still.golden.json` (its size and the sha-256 of its RGBA), counts each dial's face against the bare mat,
 and reads the device's memory ledger back at zero. `pnpm --filter @ice-examples/desk-clock still` runs it (each still lands in
 `results/<name>.png`); `STILL_BLESS=1` re-blesses — a deliberate event. It is not part of `test` (CI runs no Dawn): `gate:landing`
-runs it right after the oracle, and `dts:check` compiles `test/still.ts` against the umbrella's built declarations.
+runs it right after the oracle, and `dts:check` compiles `test/still.ts` against the umbrella's built declarations — beside
+`test/held.types.ts` (petition I36), the names a host reads off the selection anchor (`HeldAnchor`, `HeldSlot`, `HeldGlyph`).
 
 ## The fault fixture (petition I24)
 
