@@ -221,7 +221,8 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
     // which now narrow-phases wire entries against wireSync's cached cubics.
     // pressWheel beside it (D3t-a): a press holding a `WheelTurns` widget takes its pointer's wheel from both wheel consumers too.
     // trayInput right after the hand's (design-017 §4, K3): the pegboard drawer's wheel, its board and its inert desk, in the same vocabulary
-    engine.addSystems("react", createHeldInput(world, { pose: heldPose }), createTrayInput(world, { pose: trayPose }), createTrayLay(world, { pose: trayPose, placement: opts.placement }), createPressWheel(world), pick.spatialSync, wireSync, pick.picking),
+    // (its lay is derived from what it writes — at the head of derive, below)
+    engine.addSystems("react", createHeldInput(world, { pose: heldPose }), createTrayInput(world, { pose: trayPose }), createPressWheel(world), pick.spatialSync, wireSync, pick.picking),
     engine.addSystems("ctl:spawn", l2.cancelSweep, l2.recognizerSpawn, l2.wheelSpawn, l2.recognizerIntegrity),
     engine.addSystems(
       "ctl:recognize",
@@ -262,7 +263,12 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
     // in derive; ports must be indexed before chrome/next-frame picking read it),
     // selectionChrome BEFORE cursor (handles spawn at the derive flush so cursor
     // + next frame's spatialSync see them).
-    engine.addSystems("derive", ports, createSelectionChromeSystem(world), cursor),
+    // trayLay at the HEAD of derive (petition I34): it reads back the drawer's facts trayInput wrote in react this tick — its clamp
+    // judges this tick's band, a category move starts the board at its top over this tick's wheel — so it is ORDERED after the input
+    // by the phase, never attested (both wrote `Tray` in react, and strata's dev build warned on every engine). Its specimens are
+    // derived state, spawned at the derive flush for the renderer; the selection chrome, the other Position/Size writer here,
+    // writes rows disjoint from them, and both attest it.
+    engine.addSystems("derive", createTrayLay(world, { pose: trayPose, placement: opts.placement }), ports, createSelectionChromeSystem(world), cursor),
     // insertGhostReap AFTER recognizerReap: it reads terminal phase tags on
     // capturing recognizers pre-flush (deferred destroys land at the group
     // boundary), and its own despawns must not race the marker sweep.

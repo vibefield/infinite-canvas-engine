@@ -343,7 +343,8 @@ function presentOf(types: readonly WidgetType[]): [string, number][] {
  * props over the widget's defaults, spawned `Specimen` and already `WidgetEquipped` (nothing stamps it; the spatial index never
  * takes it). Laid once the renderer has said how wide the drawer is; re-laid when that width, the pitch or the entries change (a
  * kind registered), a specimen whose kind left destroyed; after a reset the new tray entity is laid afresh. `TrayContent` records
- * what was laid — the content's foot is the renderer's scroll range. A tick system: its spawns are the scheduler's, once a frame.
+ * what was laid — the content's foot is the renderer's scroll range. A tick system: its spawns are the scheduler's, once a frame —
+ * at the head of `derive` (petition I34): it reads back the facts `trayInput` wrote in `react` this tick, so the phase orders them.
  * K9 (S10, D-K9-c.2): when that range MOVES — a lay (the width, the kinds) or the drawer's face (the view's height) — a scroll past its
  * new end with nothing stretching is clamped to it in the same tick, so no frame draws blank board past the content and the next wheel
  * starts from the end; only on a move, so the rig's door (`scrollTray`) still takes any value until the range next moves.
@@ -426,6 +427,9 @@ export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot;
       laidCategory = category;
       clampToRange(ctx, tray, frame, layout.bottom);
     },
-    { name: "trayLay", access: { write: [Position, Size, TrayContent, Tray] } },
+    // Petition I34: in derive, after `trayInput` (react) by the phase — the lay reads back what the input wrote this tick, so the two
+    // `Tray` writers are ORDERED, never attested. `Position`/`Size` it writes on the tray's specimens alone, rows disjoint from the
+    // selection chrome's handle pool (its derive co-writer) — that, and only that, is attested.
+    { name: "trayLay", access: { write: [Position, Size, TrayContent, Tray], orderIndependent: [Position, Size] } },
   );
 }

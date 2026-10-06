@@ -224,7 +224,9 @@ export function createSelectionChromeSystem(world: World): TickSystem {
     },
     {
       name: "selectionChrome",
-      access: { write: [Position, Size] },
+      // orderIndependent (petition I34): its writes land on its OWN handle pool alone — rows disjoint from every other derive
+      // writer of Position/Size (the tray's lay writes the tray's specimens alone)
+      access: { write: [Position, Size], orderIndependent: [Position, Size] },
       // Run while there is a selection to mirror OR a pool still to reap.
       runIf: () => world.firstOf(selectedQ) !== undefined || handleEntities.length > 0,
     },
