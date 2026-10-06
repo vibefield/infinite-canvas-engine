@@ -1678,7 +1678,8 @@ VibeField's desk migration (track DK, `vibe-field/draft/thinking-desk-migration.
 DK-4, "Send to…" DK-14) files nine asks against the desk for 0.15.0 (I26 from the §8 canon review, I27 from DESIGN.md §8's
 right-click, I28 found by I27's builder, 3 Oct) — and a tenth, I29, a defect of I23's door the DK-4 builder found against
 `0.15.0-desk.1` (3 Oct), and an eleventh, I30, DK-7's plugin still, found by both its builders against `0.15.0-desk.2` (4 Oct), and
-three more, I31–I33, from DK-10's ten-minute bar and DK-10b's stillness investigation against `0.15.0-desk.3` (5 Oct);
+three more, I31–I33, from DK-10's ten-minute bar and DK-10b's stillness investigation against `0.15.0-desk.3` (5 Oct), and
+four more, I34, I36, I38 and I39, from DK-11, DK-12 and DK-13 against `0.15.0-desk.4` (6 Oct);
 each is built in a
 worktree off `main` behind the 0.14.0 cut and graded on the exact SHA (`pnpm run ci` + `gate:landing`: the Dawn oracle at 113
 stills, nineteen rigs, pack:audit, dts:check).
@@ -1905,6 +1906,25 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   down, an up, a cancel or a wheel starts the comparison afresh, a blur keeps it, and every move of a press lands as before (the
   adapter reads no world, and every time-driven gesture is the stack's own registered wake). Witnesses: dom/test/pointer-rest.test.ts
   (a real engine's stamp and wakes) and rig:idle's new row (the resting move re-sent, trusted and re-dispatched: 0 submits over 5 s).
+- **I34 — the tray's two `Tray` writers, ordered** (built 2026-10-06 on branch `i34-39-fixes`; found by I30's builder, named again by
+  DK-11 — strata's dev build warned at every engine): ORDERED, not attested — the lay reads back the input's write of this tick (its
+  clamp, a category move over a wheel) and their writes do not commute; `trayLay` runs at the head of `derive`, `selectionChrome` and
+  it attest `orderIndependent: [Position, Size]` (disjoint rows: its handle pool, the tray's specimens). No behaviour moves. Witness:
+  core/test/tray-order.test.ts (no access advisory; the phases; the order's proof — swapped, a wheel survives a category move).
+- **I36 — the selection anchor's parts by name** (built 2026-10-06 on branch `i34-39-fixes`; DK-12 — TYPE-ONLY): `HeldAnchor`,
+  `HeldSlot` and core's `HeldGlyph` export as types from `/desk` beside `SelectionAnchor`. Held by dts:check, which compiles the desk
+  clock's new `test/held.types.ts` (the names, each pinned by exact equality to its part of the anchor) against the built d.ts.
+- **I38 — the lay hangs only the mounted kinds** (built 2026-10-06 on branch `i34-39-fixes`; DK-13 — a DEFECT): core's
+  `TrayPoseSource.draws?(type)`, answered by the desk with the rule its tray draws by (the reflector's `drawsType`, the I25 kind
+  set); the lay hangs only what is drawn, so an unmounted kind has no specimen, press, count or chip, and a changed answer re-lays.
+  Witnesses: core/test/tray-specimens.test.ts (the seam) and desk/test/kind-set.test.ts (a real mount without the kind, then the
+  remount with it).
+- **I39 — the desk host measures its container's layout size** (built 2026-10-06 on branch `i34-39-fixes`; DK-13 — a DEFECT): the
+  viewport is `clientWidth` × `clientHeight`, which no CSS transform changes; the pointer adapter, the desk's note editor and the
+  calendar's input map client points into that space by the rendered scale — kernel's `screenSizeOf`/`clientToScreen`, the
+  coordinate seam's (a 0 × 0 layout answers the rendered box). Witnesses: dom/test/desk-host.test.ts, kernel/test/coords.test.ts,
+  and rig:remount's two rows (a remount under `scale(0.98)` on an ancestor, then removed: one viewport, 1200 × 800, sampled each
+  frame; the pointer on the layout point).
 
 ## Release cut & downstream
 

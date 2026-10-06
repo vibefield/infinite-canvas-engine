@@ -20,7 +20,11 @@ nothing of 0.14.0's surface moves. A tenth, I29, is a defect of I23's door, fixe
 plugin's still drawn on the caller's device through the published door (`### Added`). Three more, after `0.15.0-desk.3`, are DK-10's
 (the ten-minute bar) and DK-10b's (stillness): I31, the kit's WGSL says what it means (`### Added`, last — docs and their checks, no
 behaviour); I32, an unparsed colour answers the missing ink and never throws, and I33, a resting pointer keeps no desk awake (both
-`### Changed` — behaviour changes for INVALID and NO-OP input alone; every valid colour and every press as before).
+`### Changed` — behaviour changes for INVALID and NO-OP input alone; every valid colour and every press as before). Four more, after
+`0.15.0-desk.4`, are DK-11's, DK-12's and DK-13's: I36, the selection anchor's parts by name (`### Added`, last — types only); I34,
+the tray's two `Tray` writers ordered by the phase, so strata's dev build warns no more, and two defects, I38 (the lay hangs only the
+kinds the desk was mounted with) and I39 (the desk host measures its container's layout size, never a transformed rect) — all three
+`### Fixed`.
 
 ### Added
 
@@ -270,6 +274,16 @@ behaviour); I32, an unparsed colour answers the missing ink and never throws, an
   from dist/, hands its six modules byte for byte as their sources, every declaration said, and the built d.ts names every field of
   the shipped records). `docs/api-reference.md`: "The kit's WGSL" lists the pieces with one-line semantics.
 
+<!-- petition I36 — the selection anchor's parts by name (2026-10-06; DK-12, after `0.15.0-desk.4`) -->
+- **THE ANCHOR'S PARTS BY NAME — `HeldAnchor`, `HeldSlot` and `HeldGlyph` export as types from `/desk`** (petition I36 — DK-12's
+  tools-in-hand controller draws the held bar itself over `handle.selection` and re-derived these structurally,
+  `NonNullable<SelectionAnchor["held"]>`, which passes a field ICE renames without a word): beside `SelectionAnchor` and `MenuSlot`,
+  `@vibecook/ice/desk` names the hand (`HeldAnchor` — `tools`, `active`, `landing`, `settled`, `travelMs?`, `readout?`), each bar slot
+  (`HeldSlot` — `id`, `label`, `kind?`, `hint?`, `glyph?`, `swatch?`) and a slot's glyph (`HeldGlyph`, core's, re-exported beside
+  them). Type-only, no runtime. Held by the desk clock's `dts:check`, which now compiles `test/held.types.ts` beside its `src/` and its
+  still against the umbrella's BUILT declarations: the three names imported from `/desk`, each pinned by exact type equality to the part
+  of the anchor it names (red on a build without the export: each "resolves to NO declaration"). `docs/api-reference.md` lists them.
+
 ### Changed
 
 <!-- petition I28 — a secondary button never acts (2026-10-03; the last of the 0.15.0 asks) -->
@@ -367,6 +381,52 @@ behaviour); I32, an unparsed colour answers the missing ink and never throws, an
   all six 98.7–100 %; with the floor back the mini mats, the whiteboard and the print 0 % and the notes 5.4 % — the DK-4 still — while
   the old reference, a frame drawn at dpr 0.5, read maxΔ 0); and rig:capture's new row, which stages `capture-six-z0.5` from the world
   and counts the six in Chrome's quarter, each kind staged away in turn — the Node render's numbers to the pixel.
+
+<!-- petition I34 — the tray's two writers ordered (2026-10-06; found by I30's builder, named again by DK-11) -->
+- **STRATA'S DEV BUILD NO LONGER WARNS AT EVERY ENGINE — the tray's two `Tray` writers are ORDERED by the phase** (petition I34 —
+  every `createCanvasEngine` under strata's dev build, so every `createStill` in a plugin's test, printed that `trayInput` and
+  `trayLay` both write `Tray` in "react" with no ordering, and a real warning drowned in it): read whole, the lay reads back what the
+  input wrote THIS tick and writes over it — its clamp (D-K9-c.2) judges this tick's band and scroll, and a category move starts the
+  board at its top over this tick's wheel — so their writes do not commute and `orderIndependent` would be a false attestation. The lay
+  runs at the HEAD of `derive` now (design-002 §2: derived state, flushed for present and the reflectors), after the input by the
+  phase; nothing between reads its output, so every frame ends in the state it did — the specimens' spawn flush moves from react's
+  boundary to derive's, before the renderer. derive's other `Position`/`Size` writer, `selectionChrome`, writes its own handle pool
+  alone, rows disjoint from the lay's specimens: both attest `orderIndependent: [Position, Size]`, which is true of them. No API change.
+  Witness: `packages/core/test/tray-order.test.ts` — no strata `access:` advisory at all for the default engine; the lay's phase
+  derive, the input's react (telemetry); one tick that wheels the board and moves the category leaves it at scroll 0 (with the lay
+  swapped BEFORE the input it reads 30 — the proof it is an order, not an attestation).
+
+<!-- petition I38 — the lay hangs only the mounted kinds (2026-10-06; DK-13) -->
+- **THE TRAY HANGS ONLY THE KINDS THE DESK WAS MOUNTED WITH — a kind it cannot draw is not laid, offers no chip and takes no press**
+  (petition I38 — DK-13: with a plugin's kind absent from the mounted desk, core's lay still hung it — `laid` listed the clock while
+  `drawn` did not — `trayCategories()` still offered its category, and a press over the empty peg would take it; core's `hungTypes`
+  reads the engine's catalog while the tray draws by the desk's kind set, I25): core's `TrayPoseSource` gains an optional
+  `draws(type)` — the renderer's word on what it can draw on the board — and the lay hangs only the hung types it answers true of: a
+  refused type gets no specimen (no hover, no press, no take — `specimenAt` finds none), no count and no category in
+  `TrayContent.present` (so `trayCategories`/`trayEntryCount` omit it, and a host's stale chip falls back to all); a changed answer (a
+  remount on another kind set) re-lays. The desk answers it with the rule its tray draws by (the reflector's `drawsType` — the kind
+  set under the boundary). A seam without `draws` hangs every entry, as before. Witnesses: `packages/core/test/tray-specimens.test.ts`
+  (the rule on the seam: not laid, its chip left empty omitted, the count without it, a press at its would-be peg takes nothing; the
+  answer dropped, laid again at the same peg and the same press takes it) and `packages/desk/test/kind-set.test.ts` (the real mount —
+  the engine knows a kind the desk was mounted without: drawn = laid = the clock alone, one chip, the press takes nothing; the remount
+  that lists it lays, draws and offers both, and the press takes it).
+
+<!-- petition I39 — the desk host measures its container's layout size (2026-10-06; DK-13) -->
+- **A DESK MOUNTED UNDER A CSS TRANSFORM DREW ~2 % SMALL AND KEPT IT — the viewport is the container's LAYOUT size, and every client
+  point maps into it** (petition I39 — DK-13: the desk mounted while VibeField's scene wore a recede transform read 1158.85 × 734.60
+  for a 1180 × 748 container and kept it until something resized: `createDeskHost` measured `getBoundingClientRect()`, which a
+  transform on the container or an ancestor scales, and re-measured only on a ResizeObserver or a ratio change, neither of which a
+  transform fires; the pointer adapter mapped by the same rect): the viewport is the container's layout size (`clientWidth` ×
+  `clientHeight` — the box the canvas fills, which no transform changes), and the adapter maps each client point into that space by
+  dividing its offset by the rendered scale (`rect.width / clientWidth`), so a press lands on what is drawn under it at any scale. The
+  desk's note editor (a tap's caret) and the calendar's input map their client points the same way. Kernel's coordinate seam carries
+  both rules — `screenSizeOf(rendered, layout)` and `clientToScreen(x, y, rendered, layout)` (`LaidOutBox` takes the element itself; a
+  node with no layout box, 0 × 0, answers its rendered box, so a DOM without layout reads as before). Untransformed, nothing moves.
+  Witnesses: `packages/dom/test/desk-host.test.ts` (a container at layout 1180 × 748 whose rect is `scale(0.98)`'s: the viewport is
+  1180 × 748 and the scaled far corner maps to (1180, 748) through the host's own adapter — red before on each half),
+  `packages/kernel/test/coords.test.ts`, and rig:remount's two new rows (a remount under `scale(0.98)` on the container's ancestor,
+  the transform then removed: every viewport the engine held, sampled each frame, is 1200 × 800 — on the old host 1176 × 784, kept
+  after the transform went — and a mouse 90 % across the scaled box reads 1080, 720 on screen, not 1058.4, 705.6).
 
 ## [0.14.0] — 2026-10-02
 
