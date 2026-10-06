@@ -348,4 +348,54 @@ describe("the filter (design-018 §6)", () => {
     expect(trayCategory(r.world)).toBe("");   // it stays all: the fallback is the fact
     expect(Object.keys(r.byType()).sort()).toEqual(["plugin:swatch", "spec:pad"]);
   });
+
+  it("petition I38: hangs only what the renderer DRAWS — a type its `draws` refuses (a kind the desk was not mounted with) is not laid, offers no category left empty, takes no press at its would-be peg; a word that changes re-lays", () => {
+    const r = rig();
+    r.pose(true);
+    r.step(2);
+    // the control — the renderer says nothing of what it draws: every hung type is laid, each category offered
+    const swatch = r.byType()["plugin:swatch"] as number;
+    const peg = { ...r.world.read(swatch as never, Position), ...r.world.read(swatch as never, Size) };
+    expect(trayCategories(r.world).map((c) => c.id)).toEqual(["paper", "plugin"]);
+    // the renderer cannot draw the swatch's kind: not laid, its category (left empty) not offered, the count without it
+    const refuse = { frame: r.frame, draws: (type: string): boolean => type !== "plugin:swatch" };
+    r.ce.stack.trayPose.current = refuse;
+    r.step(2);
+    expect(Object.keys(r.byType())).toEqual(["spec:pad"]);
+    expect(r.world.isAlive(swatch as never)).toBe(false);
+    expect(trayCategories(r.world).map((c) => c.id)).toEqual(["paper"]);
+    expect(trayEntryCount(r.world)).toBe(1);
+    setTrayCategory(r.world, "plugin");   // a host's stale chip: the frame hangs none of it — all again
+    r.step(2);
+    expect([trayCategory(r.world), Object.keys(r.byType())]).toEqual(["", ["spec:pad"]]);
+    // a press at the would-be peg, out: no hover, no take — the board's press (a drag past the slop lifts nothing)
+    openTray(r.world);
+    r.step(2);
+    const x = 40 + peg.x + peg.w / 2;
+    const y = 348 + peg.y + peg.h / 2;
+    r.mouse(x, y);
+    expect(r.world.read(r.tray(), Tray).hover).toBe("");
+    r.ce.stack.queue.enqueue({ kind: "down", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: 1, mods: NO_MODS });
+    r.step();
+    r.ce.stack.queue.enqueue({ kind: "move", pointerId: "mouse", device: "mouse", screenX: x + 12, screenY: y + 12, buttons: 1, mods: NO_MODS });
+    r.step();
+    expect(r.world.read(r.tray(), Tray).take).toBe("");
+    r.ce.stack.queue.enqueue({ kind: "up", pointerId: "mouse", device: "mouse", screenX: x + 12, screenY: y + 12, buttons: 0, mods: NO_MODS });
+    r.step();
+    // the word changes (a remount that draws it): the lay hangs it again, where the law lays it
+    r.ce.stack.trayPose.current = { frame: r.frame };
+    r.step(2);
+    expect(Object.keys(r.byType()).sort()).toEqual(["plugin:swatch", "spec:pad"]);
+    const back = r.byType()["plugin:swatch"] as number;
+    expect({ ...r.world.read(back as never, Position), ...r.world.read(back as never, Size) }).toEqual(peg);
+    expect(trayCategories(r.world).map((c) => c.id)).toEqual(["paper", "plugin"]);
+    // …and the same press now takes it — the control that the press above was at its peg
+    r.mouse(x, y);
+    expect(r.world.read(r.tray(), Tray).hover).toBe("plugin:swatch");
+    r.ce.stack.queue.enqueue({ kind: "down", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: 1, mods: NO_MODS });
+    r.step();
+    r.ce.stack.queue.enqueue({ kind: "move", pointerId: "mouse", device: "mouse", screenX: x + 12, screenY: y + 12, buttons: 1, mods: NO_MODS });
+    r.step();
+    expect(r.world.read(r.tray(), Tray).take).toBe("plugin:swatch");
+  });
 });

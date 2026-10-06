@@ -987,8 +987,10 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     };
     const heldPose = ctx.heldPose;
     if (heldPose !== undefined) heldPose.current = poseSource;
-    // the tray pose seam (design-017 §4): the drawer as the last frame drew it — its rect mid-slide, the layout's scroll range
-    const traySource: TrayPoseSource = { frame: () => compose.tray.frame() };
+    // the tray pose seam (design-017 §4): the drawer as the last frame drew it — its rect mid-slide, the layout's scroll range — and
+    // (petition I38) what the tray can draw: core's lay hangs only the kinds this desk was mounted with, so a kind it cannot draw
+    // leaves no invisible hang to press, no count, no chip
+    const traySource: TrayPoseSource = { frame: () => compose.tray.frame(), draws: (type) => compose.drawsType(type) };
     const trayPose = ctx.trayPose;
     if (trayPose !== undefined) trayPose.current = traySource;
     // the ground plane's transition adapter: prepared the moment it is asked — the desk's second slot is built from the world (D2b)

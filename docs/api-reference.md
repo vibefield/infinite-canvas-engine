@@ -404,7 +404,9 @@ catalog's object types and `deskLayer({ objects })`, read once at the mount and 
 after the mount adds no kind. Under `createDeskHost`/`<Desk>` the catalog is the engine's, which `createCanvasEngine` builds once; a
 catalog a host hands a layer itself (the context's structural `catalog`) is read at the mount alone. An object of a type whose kind
 the desk was not mounted with wears the missing face (petition I24's, pickable by its box), the desk says so once a type on the
-console ("… remount to draw it"), and the tray hangs no specimen of it. A host that changes its kinds — a plugin enabled, updated or
+console ("… remount to draw it"), and the tray hangs no specimen of it — core's lay included (petition I38: the desk answers the
+pose seam's `draws(type)` by its kind set, so a kind it cannot draw is never laid — no invisible hang to press, no entry counted, no
+category chip left empty; a `TrayPoseSource` that says nothing hangs every entry). A host that changes its kinds — a plugin enabled, updated or
 removed — REMOUNTS the layer on a new generation (a new factory: `<Desk>` disposes the mount and mounts the new one; `createDeskHost`
 is disposed and made again), on a new engine when its catalog changes: the desk resolves an object's type through the engine's
 catalog, and on one engine a remount compiles that catalog's kinds again (VibeField's generation is both, its B4 remount; making

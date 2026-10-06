@@ -76,7 +76,15 @@ export interface TrayScreenFrame {
 }
 
 /** The pose seam: the renderer's word on where the drawer is — `undefined` before its first frame. */
-export interface TrayPoseSource { frame(): TrayScreenFrame | undefined }
+export interface TrayPoseSource {
+  frame(): TrayScreenFrame | undefined;
+  /**
+   * Petition I38 — the renderer's word on what it can DRAW on the board: a hung type it answers `false` of (a kind the desk was not
+   * mounted with — `@ice/desk` answers by the kind set it compiled) is not laid, so it hangs nothing, offers no category it would
+   * leave empty and takes no press. Absent, every hung type (as before).
+   */
+  draws?(type: string): boolean;
+}
 
 /** The stack's slot for the pose source — a mutable box, so the renderer can arrive after install (as `heldPose`). */
 export interface TrayPoseSlot { current: TrayPoseSource | null }
@@ -351,6 +359,8 @@ function presentOf(types: readonly WidgetType[]): [string, number][] {
  * K9 (S13, D-K9-c.4): it hangs what the CURRENT frame takes — inside an entered container its ingress, at the root its canvas's
  * placement, the authority a drop's commit asks (`placement`) — so no specimen offers a take the frame would refuse; entering or
  * leaving re-lays it (the drawer is shut then: the desk is inert while it is out). Without a policy, every hung type.
+ * Petition I38: and only what the renderer can DRAW (the pose seam's `draws`) — a kind the desk was not mounted with hangs nothing: no
+ * specimen (so no hover, no press, no take), no count, no category; a change of that word (a remount on another kind set) re-lays.
  * design-018 §6 (R2) — THE FILTER: of those it lays only the entries of the category the drawer shows (`Tray.category`, "" all); a
  * change of it re-lays, and the board starts again at its top — the scroll and the band zeroed. A category the frame hangs none of
  * (its last entry gone with the frame, or an id no entry names) falls back to all. What the frame could hang before the filter — its
@@ -376,15 +386,18 @@ export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot;
     (ctx) => {
       const tray: Entity | undefined = world.firstOf(trayQ);
       if (tray === undefined || !ctx.isAlive(tray)) return;
-      const frame = opts.pose.current?.frame();
-      if (frame === undefined || !(frame.w > 0) || !(frame.pitch > 0)) return;
+      const source = opts.pose.current;
+      const frame = source?.frame();
+      if (source === null || source === undefined || frame === undefined || !(frame.w > 0) || !(frame.pitch > 0)) return;
       const content = ctx.get(tray, TrayContent);
       const policy = opts.placement;
       const inside = policy === undefined ? undefined : currentNavFrame(world);
       const root = world.getResource(BoardRoot)?.root;
       const takes = (type: string): boolean =>
         policy === undefined ? true : inside !== undefined ? policy.canIngress(type, inside) : root === undefined || policy.canPlace === undefined || policy.canPlace(type, root);
-      const types = hungTypes(world).filter((t) => takes(t.type));
+      // …of the types the renderer can draw (I38): a kind the desk was not mounted with is not laid — every hung type when it says nothing
+      const draws = (type: string): boolean => source.draws === undefined || source.draws(type);
+      const types = hungTypes(world).filter((t) => takes(t.type) && draws(t.type));
       // THE FILTER (design-018 §6): the category asked, or all when the frame hangs none of it — written back, so the fact says
       // what is shown; a move of what is shown zeroes the scroll and the band (the board starts again at its top)
       const t = ctx.read(tray, Tray);

@@ -6,7 +6,8 @@
 // kind, its objects wear I24's missing face and the layer says so once, naming the type and the remount; the remount on the grown
 // catalog draws them by their own kind. And what a remount costs and keeps: the boot's milestones (`perf().boot`), the document
 // untouched, the memory ledger at zero after each unmount — a refused and a quarantined kind's generation included.
-import { type CanvasEngine, createCanvasEngine, type Entity, openTray, Viewport, type WidgetType } from "@ice/core";
+import { type CanvasEngine, createCanvasEngine, type Entity, NO_MODS, openTray, PrefabId, specimensOf, Tray, trayCategories, trayEntity, trayEntryCount, Viewport, type WidgetType } from "@ice/core";
+import { layTray, type TrayItem } from "@ice/kernel";
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import { BROKEN_WGSL_TOKEN, brokenClockKind, DeskClock, DeskClockBroken } from "../../../examples/desk-clock/src/index";
 import type { SlotObject } from "../src/ground";
@@ -24,6 +25,11 @@ const VIEW = { w: 1200, h: 800, dpr: 1 };
 const Late = defineObject({
   type: "test.late-clock", version: 1, props: {}, size: { w: 150, h: 150 }, kind: brokenClockKind({ name: "test-late" }),
   tray: { label: "Late", category: "things", order: 1, hang: { w: 110, h: 110, accessory: "hook", pegs: [[0, -0.5]] } },
+});
+/** A clock in a category of its OWN, laid after the clock's (petition I38): a plugin's kind the engine knows and the desk was not mounted with. */
+const Lone = defineObject({
+  type: "test.lone-clock", version: 1, props: {}, size: { w: 150, h: 150 }, kind: brokenClockKind({ name: "test-lone" }),
+  tray: { label: "Lone", category: "tools", order: 0, hang: { w: 110, h: 110, accessory: "hook", pegs: [[0, -0.5]] } },
 });
 /** A clock whose `record` throws from its third call: three strikes, and the desk QUARANTINES it (petition I24's other path). */
 const Faulty = defineObject({ type: "test.set-faulty-clock", version: 1, props: {}, size: { w: 150, h: 150 }, kind: brokenClockKind({ name: "test-set-faulty", recordFrom: 3 }) });
@@ -135,6 +141,54 @@ describe("the kind set (petition I25): fixed for a layer's life, a host remounts
       s.frame(); s.frame();
       expect(s.faults).toEqual([]);
       expect(hung(second)).toEqual([DeskClock.type, Late.type].sort());
+    } finally { second.unmount(); s.ce.dispose(); }
+  });
+
+  it("petition I38: core's lay hangs only the kinds the desk was MOUNTED with — a type the engine knows and the desk cannot draw is not laid, its category (left empty) is not offered, a press at its would-be peg takes nothing; the remount that draws it hangs it", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    const s = stage([DeskClock, Lone]);   // the engine knows both (VibeField: the plugin's widget registered, its plugin off)
+    const laid = (): string[] => { const t = trayEntity(s.ce.world); return t === undefined ? [] : specimensOf(s.ce.world, t).map((e) => String(s.ce.world.read(e, PrefabId).id)).sort(); };
+    const hung = (m: { handle: DeskLayerHandle }): string[] => m.handle.tray.state().specimens.map((q) => q.type).sort();
+    const take = (): string => s.ce.world.read(trayEntity(s.ce.world) as Entity, Tray).take ?? "";
+    const pointer = (kind: "move" | "down" | "up", x: number, y: number, buttons: number): void => { s.ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: NO_MODS }); s.frame(); };
+    const first = await mount(s.ce, hostCatalog([DeskClock]));
+    let peg: { x: number; y: number };
+    try {
+      openTray(s.ce.world);
+      first.handle.tray.pin({ p: 1 });
+      s.frame(); s.frame(); s.frame();
+      expect(s.faults).toEqual([]);
+      // what the desk draws and what core lays agree: the clock alone — the lone kind is no specimen, no count, no chip
+      expect(hung(first)).toEqual([DeskClock.type]);
+      expect(laid()).toEqual([DeskClock.type]);
+      expect(trayEntryCount(s.ce.world)).toBe(1);
+      expect(trayCategories(s.ce.world).map((c) => c.id)).toEqual(["things"]);
+      // where the law WOULD hang the lone clock beside it, on screen — a press there (down, past the slop) takes nothing
+      const f = first.handle.tray.state().frame;
+      if (f === undefined) throw new Error("no drawer drawn");
+      const item = (t: WidgetType): TrayItem => ({ type: t.type, hang: t.tray?.hang as NonNullable<WidgetType["tray"]>["hang"], ...(t.tray?.category !== undefined ? { category: t.tray.category } : {}), ...(t.tray?.order !== undefined ? { order: t.tray.order } : {}) });
+      const would = layTray([item(DeskClock), item(Lone)], f.w, f.pitch).placed.find((q) => q.type === Lone.type);
+      if (would === undefined) throw new Error("the law lays no lone clock");
+      peg = { x: f.x + would.x + would.w / 2, y: f.y + would.y + would.h / 2 - f.scroll };
+      pointer("move", peg.x, peg.y, 0);
+      pointer("down", peg.x, peg.y, 1);
+      pointer("move", peg.x + 12, peg.y + 12, 1);
+      expect(take()).toBe("");
+      pointer("up", peg.x + 12, peg.y + 12, 0);
+    } finally { first.unmount(); }
+    // THE REMOUNT on a catalog that lists it: core lays it beside the clock, its chip offered — and the same press takes it
+    const second = await mount(s.ce, hostCatalog([DeskClock, Lone]));
+    try {
+      second.handle.tray.pin({ p: 1 });
+      s.frame(); s.frame(); s.frame();
+      expect(hung(second)).toEqual([DeskClock.type, Lone.type].sort());
+      expect(laid()).toEqual([DeskClock.type, Lone.type].sort());
+      expect(trayCategories(s.ce.world).map((c) => c.id)).toEqual(["things", "tools"]);
+      pointer("move", peg.x, peg.y, 0);
+      pointer("down", peg.x, peg.y, 1);
+      pointer("move", peg.x + 12, peg.y + 12, 1);
+      expect(take()).toBe(Lone.type);
+      expect(s.faults).toEqual([]);
     } finally { second.unmount(); s.ce.dispose(); }
   });
 

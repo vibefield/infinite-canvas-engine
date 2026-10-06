@@ -147,6 +147,12 @@ export interface DeskReflector {
   /** The tray's specimens as the last frame drew them (K5a) — a rig's witness; empty while the drawer is shut or bare. */
   traySpecimens(): readonly TraySpecimenFrame[];
   /**
+   * Would the tray DRAW a specimen of `type` (petition I38)? Its widget an object whose kind passes the kind set (I25 — under the
+   * boundary, one this desk was mounted with): the rule the tray draws by, answered to core's lay through the pose seam (`draws`), so
+   * the lay hangs, counts and offers only what is drawn.
+   */
+  drawsType(type: string): boolean;
+  /**
    * Did the last frame's TRAY draw `e` — a specimen, a lifted copy's key, an insert ghost it presented (K5b over K6b)? The frame raster
    * queue's word on what shows is the builder's and this: an ask a specimen's writing made (its word, `tray.local`) is run, not let go.
    */
@@ -452,6 +458,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
     look: (kind) => looks.get(kind),
     tray,
     traySpecimens: () => drawnSpecimens,
+    drawsType: (type) => kindOn(objectKindOf(widgetTypeFor(world, type))) !== undefined,
     trayShows: (e) => trayDrawn.has(e as number),
     carry,
     trayCarried: () => drawnCarried,
