@@ -24,7 +24,9 @@ behaviour); I32, an unparsed colour answers the missing ink and never throws, an
 `0.15.0-desk.4`, are DK-11's, DK-12's and DK-13's: I36, the selection anchor's parts by name (`### Added`, last — types only); I34,
 the tray's two `Tray` writers ordered by the phase, so strata's dev build warns no more, and two defects, I38 (the lay hangs only the
 kinds the desk was mounted with) and I39 (the desk host measures its container's layout size, never a transformed rect) — all three
-`### Fixed`.
+`### Fixed`. Six more, after `0.15.0-desk.5`, are DK-11's, DK-13's, DK-14's, DK-15's and DK-16's: I41 (the frame gate announces the
+park), I40 (a capture without the selection's marks), I42 (presence's cursor says away and canvas), I37 (the tray's keyboard path) and
+I35 (`createStill({ services })`) — `### Added`, last, in that order — and I43 (an empty presence sweep wakes no lone desk), `### Fixed`.
 
 ### Added
 
@@ -284,6 +286,96 @@ kinds the desk was mounted with) and I39 (the desk host measures its container's
   still against the umbrella's BUILT declarations: the three names imported from `/desk`, each pinned by exact type equality to the part
   of the anchor it names (red on a build without the export: each "resolves to NO declaration"). `docs/api-reference.md` lists them.
 
+<!-- petition I41 — the frame gate announces the park (2026-10-07; DK-15, after `0.15.0-desk.5`) -->
+- **THE PARK ANNOUNCED — `engine.frame.onParked(fn: (parked: boolean) => void) → unsubscribe`** (petition I41 — VibeField's covers
+  and their smokes polled `isParked()` every page frame for up to ~2 s after a `freeze`): `true` ONCE when the loop has parked — at
+  the END of the settle walk's last step (the frame the park leaves standing is drawn; `isParked()` still turns true as that step is
+  handed out), or at the first claim the gate refuses where no step followed (the settle cap; a host that claims without stepping) —
+  and `false` once when the last thaw reopens a gate that announced its park, after `onChange` (the loop has restarted). Never per
+  frame; a freeze thawed before it parked announces nothing; a second freeze over a park changes nothing; not replayed on subscribe.
+  A listener that thaws AT the park gets the refusing claim granted on the reopened gate (no dead loop — the I14 class), and the
+  listeners not yet called hear only the reopening; each listener is contained (`console.error`). A separate door, not a payload on
+  `onChange`, which fires at the HOLD's transitions — a freeze's before its settle walk — and whose listeners (the loop's restart, the
+  facade's gesture cancel) would run a third time a cycle. `ce.frame` is `engine.frame`. Witnesses: `packages/core/test/frame-freeze.test.ts`
+  (seven rows: the settle step's end, a busy walk, the cap and a claim-without-step host, early thaw and a second freeze, a listener
+  that thaws at the park, a throwing listener, an unsubscribe) and `packages/dom/test/loop.test.ts` (the real rAF loop: once as the
+  settle frame ends, nothing at the parking frame, the reopening once with the loop's frame already queued). `docs/api-reference.md`:
+  a `ce.frame` bullet.
+
+<!-- petition I40 — the capture without the selection's marks (2026-10-07; DK-14, after `0.15.0-desk.5`) -->
+- **A STILL OF THE OBJECTS WITHOUT THE SELECTION'S MARKS — `handle.capture({ rect?, scale?, marks?: boolean })`** (petition I40 —
+  "Send to…" cleared the selection, captured and restored it, 144–160 ms: a blink a peer would see once presence shows selections):
+  `marks: false` draws THAT capture with the frame's marks less the selection's (marks/layout.ts `unselectedMarks`, beside
+  `NO_MARKS`): the brackets, knobs, member ticks and the fading lock-on, several's union, the vellum and its fold, the laser's guides
+  and gap pills, the rulers' extent and its labels leave; a taped object's tape stays (it is the object's state, worn selected or
+  not), and the tray's name tags ride the marks pass on their own and stay. The kinds draw no selection of their own (D4a), so a
+  selected object's still is the unselected object's. The presented inputs, the world, the selection and the swap chain are not
+  touched; a marks-off capture is its own picture (never shared with a marks-on one in flight); a `marks` that is not a boolean
+  throws at the call. Witnesses: the oracle's new `unmarked` check (ten stills flagged — `capture-desk-z1`, `capture-six-z0.5` and
+  eight marks scenes: captured with `marks: false`, each IS the still with nothing selected, one sha-256; the capture as presented
+  differs on 3,255–50,682 px; no scene added, no golden moved), `packages/desk/test/capture-marks.test.ts` (the layer: the marks pass
+  handed no objects, no union, no ruler and the same tape; the selection, `lastInputs()`, the redraws and the steps standing; what it
+  handed is the unselected desk's) and rig:capture's two rows (the product's handle in Chrome: maxΔ 0 on 3,840,000 px against the same
+  desk deselected and settled; across it the selection stood, 0 steps, 0 redraws).
+
+<!-- petition I42 — presence's cursor says away and canvas (2026-10-07; DK-16, after `0.15.0-desk.5`) -->
+- **WHERE A PEER IS — `PresenceCursor { x, y, device, away, canvas }`, `presence().setAway(reason)`, the pointer's `leave`**
+  (petition I42 — a receiver drew a peer who walked away at its last point, and a peer inside a mini mat at the container's local
+  x/y on its root; VibeField carries an interim `vibefield.PeerWhere` facet until this lands): the cursor facet gains `away` (default
+  false) and `canvas` (default "") — written change-only with x/y. `away` is true while the local mouse is OUT OF THE HOST — the dom
+  pointer adapter says, once and a task later (an enter answering it at once cancels it: Chromium's leave/enter pair at a resting
+  point stays the I33 no-op), when the mouse leaves the container with nowhere to go (no related target, no press of its own), as a new
+  `leave` input fact at the point it left; ingest tags the pointer `PointerOutside` until its next fact of any other kind (an enter
+  after a said leave is a move at its point) — or while the host holds a reason: `PresenceSession.setAway(reason: string | null)`,
+  `away()`, `onAway(fn)` (`docs.presence()?.setAway("cover")` — chrome that COVERS the desk; an installed session publishes it a
+  microtask after the call, never inside a step, so a peer hears it even under a parked freeze, in either order). `canvas` is the
+  entered container's durable key, "" at the root (`presenceCanvasOf(world, peerId, keyOf?)` — a keyless container is
+  `~<peerId>/<entity>`, never "", never another peer's). Core's remote cursors derive NO hand for a peer away or in another canvas than
+  the receiver's (`createRemoteCursorsSystem(world, { keyOf, peerId })`), so `@ice/dom`'s chips hide it; the peer entity and its facet
+  stay for a host that draws people itself. The wire is tolerant both ways: an older peer's blob (neither field) reads as present on
+  the root; an older receiver's canon walks its own fields and ignores these. A hand-written facet value (`eph.addComponent` /
+  `edit().set` take the full value) now names both. Witnesses: `packages/core/test/presence-where.test.ts` (two facade engines on one
+  document: a leave ⇒ away in ONE step and B's hand gone; back; `setAway` under a parked freeze ⇒ away with no step; a reason and the
+  pointer out ⇒ away until both are gone; change-only, one write per change; a folder's key ⇒ B on the root hides A, B inside shows
+  A; an older peer's raw blob and a blob with an unknown field ⇒ present on the root, a hand), `packages/dom/test/pointer-leave.test.ts`
+  (the real adapter: the leave a task later, the facet away in the step that ingests it, the enter back; nothing for a pair, a leave
+  onto the page, a descendant's, mid-press, pending at detach) and rig:collab's six rows (Chrome over the relay: B hides Alice while
+  her host says away, while her pointer is out of her window — a real pointerleave from a CDP move past her page's edge — and while she
+  is in a mini mat B is not in; shows her each time she is back). `docs/api-reference.md`: the presence row, `docs.presence()`'s
+  `setAway`, the adapter's leave.
+
+<!-- petition I37 — the tray's keyboard path (2026-10-07; DK-13, after `0.15.0-desk.5`) -->
+- **THE TRAY'S KEYBOARD PATH — `handle.tray.focus(next | prev | first | last | type)`, `anchor().focused`, `handle.tray.lay(id?, {
+  at?, space? })`** (petition I37 — VibeField's pegboard ringed the kernel's `specimenFit` itself and laid on ⏎ with its own
+  `spawnWidget` + `trayTakeProps`): the board's KEYBOARD FOCUS is a fact of the view (`Tray.focus`; core's `focusTray(world, to)`,
+  `trayFocus`, `trayHung` — the lay's order, recorded as `TrayContent.order`: row by row, across the categories when the drawer shows
+  all; the specimens' sibling order is not it), from none `next` the first and `prev` the last, the ends staying; when it moves to a
+  specimen the lay scrolls the least that shows it whole between the header and the foot (once), and lets a focus go whose type it lays
+  no more. `TrayAnchor.focused: { id, rect } | null` — the focused specimen's object as the last frame drew it (CSS px; null while the
+  drawer is not drawn); a focus move is a frame, so `subscribe` hears it; the desk draws no ring (the host rings `rect`). `lay` is
+  core's new `ops.layFromTray(type, at)` through the mount context's `ops` (`LayerContext.ops`, which `createDeskHost` hands): what a
+  drag-off's drop makes — the type at its natural size, its entry's `take` props, CENTRED on the point (CSS px of the view by default,
+  the view's centre when absent; or `space: "world"`), ONE undo step, selected — and the board folds as a handed take's does; only a
+  type the board hangs now, refused while an object is in hand; laid in the current frame (a drop's consume is the drag's).
+  Witnesses: `packages/core/test/tray-focus.test.ts` (the real stack: the walk, the lay's order after a category round-trip, the
+  scroll into view and back, the let-go; `layFromTray` against a REAL drag-off of the same type dropped on the same centre — the same
+  size, position, durable cells and selection, one undo step — and its refusals), `packages/desk/test/tray-keyboard.test.ts` (the
+  handle's doors and the anchor, a lay through the camera, a mount without ops) and rig:tray's three rows (the product's mount: the
+  focused rects as drawn, the last in the face, `lay()` at the view's centre, selected, folded, undone in one).
+
+<!-- petition I35 — a still that draws a kind's writing (2026-10-07; DK-11, after `0.15.0-desk.5`) -->
+- **A STILL THAT DRAWS A KIND'S WRITING — `createStill({ …, services })`** (petition I35 — the comment pad's Dawn goldens were blessed
+  wordless: a still lent no text raster, and a kind's writing is its desk state's): `services` takes the entries a desk layer lends
+  (`service(TEXT_RASTER, raster)`, a picture decoder, a plugin's keys); given, each kind is handed its DESK STATE as a layer hands it
+  — `kind.local(host)` over the still's root pass, `host.use` the caller's services and what each object's DOM half lends from them
+  (a name lent twice rejects) — ticked once at the still's clock before the frame and released with the still. Absent, as before: no
+  desk state (every existing still unchanged — the desk clock's lends none). ICE lends no text raster of its own in Node (the
+  browser's `inkRaster` is a Canvas 2D; a baked default would need a font rasterizer ICE does not have): the caller lends its own.
+  Witnesses: `packages/desk/test/still.test.ts` (a writing stub kind on the fake raster device: bare without services, its ink — 80
+  px exactly where its sheet's top-left is — with them; the desk state made, ticked and released once; an object's DOM half lending
+  over the caller's raster; a malformed `services` throws), a Dawn probe of the REAL note (7,177 px of ink inside its box with a fixed
+  raster lent, none without), and the desk clock's Dawn still unchanged. `docs/api-reference.md`: the Stills paragraph.
+
 ### Changed
 
 <!-- petition I28 — a secondary button never acts (2026-10-03; the last of the 0.15.0 asks) -->
@@ -427,6 +519,19 @@ kinds the desk was mounted with) and I39 (the desk host measures its container's
   `packages/kernel/test/coords.test.ts`, and rig:remount's two new rows (a remount under `scale(0.98)` on the container's ancestor,
   the transform then removed: every viewport the engine held, sampled each frame, is 1200 × 800 — on the old host 1176 × 784, kept
   after the transform went — and a mouse 90 % across the scaled box reads 1080, 720 on screen, not 1058.4, 705.6).
+
+<!-- petition I43 — the presence kit skips a store event that carries no keys (2026-10-07; DK-16, after `0.15.0-desk.5`) -->
+- **A LONE DESK WOKE EVERY 2.5 s FOR NO ONE — the presence kit fires `onRemote` only for a store event that carries keys**
+  (petition I43 — DK-16: a lone window counted `wakes.presence` 2 in 6.2 s at rest, every one drawing nothing): Loro's
+  `EphemeralStore` sweeps its timeouts every ttl/2 while the store holds a key — this peer's own keepalive keeps one there — and emits
+  `timeout` with `added`/`updated`/`removed` all empty when nothing aged out; the kit heard every non-local event as a peer's and the
+  facade woke the frame `"presence"` for it. Now `onRemote` fires for a non-local event whose arrays are not all empty — the arrays
+  strata's own adapter keys off; a sweep that REMOVED a peer's key still fires (a peer aging out is the next frame's), and an import
+  that changed nothing (a stale or repeated buffer) no longer does. No API change. Witnesses: `packages/core/test/presence.test.ts`
+  (a real `LoroEphemeralStore`: 0 fires over 900 ms of empty sweeps — a bare control store proving this Loro still emits them — one
+  import once, the same buffer again nothing, the peer aging out once; red before: 4 fires) and
+  `packages/core/test/frame-sleep.test.ts` (a lone engine at the default TTL, asleep, counts no `presence` wake over 6.2 s; red
+  before: 2 — DK-16's count).
 
 ## [0.14.0] — 2026-10-02
 

@@ -1679,7 +1679,8 @@ DK-4, "Send to…" DK-14) files nine asks against the desk for 0.15.0 (I26 from 
 right-click, I28 found by I27's builder, 3 Oct) — and a tenth, I29, a defect of I23's door the DK-4 builder found against
 `0.15.0-desk.1` (3 Oct), and an eleventh, I30, DK-7's plugin still, found by both its builders against `0.15.0-desk.2` (4 Oct), and
 three more, I31–I33, from DK-10's ten-minute bar and DK-10b's stillness investigation against `0.15.0-desk.3` (5 Oct), and
-four more, I34, I36, I38 and I39, from DK-11, DK-12 and DK-13 against `0.15.0-desk.4` (6 Oct);
+four more, I34, I36, I38 and I39, from DK-11, DK-12 and DK-13 against `0.15.0-desk.4` (6 Oct), and six more, I35, I37,
+I40, I41, I42 and I43, from DK-11, DK-13, DK-14, DK-15 and DK-16 against `0.15.0-desk.5` (7 Oct);
 each is built in a
 worktree off `main` behind the 0.14.0 cut and graded on the exact SHA (`pnpm run ci` + `gate:landing`: the Dawn oracle at 113
 stills, nineteen rigs, pack:audit, dts:check).
@@ -1925,6 +1926,35 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   coordinate seam's (a 0 × 0 layout answers the rendered box). Witnesses: dom/test/desk-host.test.ts, kernel/test/coords.test.ts,
   and rig:remount's two rows (a remount under `scale(0.98)` on an ancestor, then removed: one viewport, 1200 × 800, sampled each
   frame; the pointer on the layout point).
+- **I43 — an empty presence sweep wakes no lone desk** (built 2026-10-07 on branch `i35-43`; DK-16 — a FIX, no API change): the
+  presence kit's `onRemote` fires only for a store event whose `added`/`updated`/`removed` are not all empty — Loro's TTL sweep emits
+  every ttl/2 with nothing in it, and a lone desk counted `wakes.presence` 2 in 6.2 s at rest. Witnesses: core/test/presence.test.ts
+  (a real store: empty sweeps 0, an import 1, an age-out 1) and core/test/frame-sleep.test.ts (no `presence` wake over 6.2 s).
+- **I41 — the frame gate announces the park** (built 2026-10-07 on branch `i35-43`; DK-15): `engine.frame.onParked(fn(parked))` —
+  `true` once the settle walk's last step has ENDED (or at the first refused claim with no step after it: the cap), `false` once the
+  last thaw reopens it; never per frame; a listener thawing at the park leaves no dead loop. A separate door from `onChange` (the
+  hold's transitions, which the park's are not). Witnesses: core/test/frame-freeze.test.ts (seven rows) and dom/test/loop.test.ts
+  (the real rAF loop).
+- **I40 — a capture without the selection's marks** (built 2026-10-07 on branch `i35-43`; DK-14): `handle.capture({ marks: false })`
+  — that capture's marks less the selection's (`unselectedMarks`: the tape and the tray's tags kept), the selection and the presented
+  frame untouched. Witnesses: the oracle's `unmarked` check (ten stills: one sha-256 with the same still unselected; no golden moved),
+  desk/test/capture-marks.test.ts and rig:capture's two rows (maxΔ 0 in Chrome against the desk deselected).
+- **I42 — presence's cursor says away and canvas** (built 2026-10-07 on branch `i35-43`; DK-16): `PresenceCursor` gains `away` and
+  `canvas` (both defaulted — the wire tolerant both ways), written change-only; away = the dom adapter's new `leave` fact
+  (`PointerOutside`) or the host's `presence().setAway(reason)` (published between frames, so under a parked freeze too); canvas = the
+  entered container's durable key, "" at the root; core's remote cursors derive no hand for an away peer or one in another canvas.
+  Witnesses: core/test/presence-where.test.ts, dom/test/pointer-leave.test.ts and rig:collab's six rows (a real pointer leave in
+  Chrome among them).
+- **I37 — the tray's keyboard path** (built 2026-10-07 on branch `i35-43`; DK-13): `Tray.focus` walked by `focusTray` in the lay's
+  order (`TrayContent.order`), scrolled into the board's face by the lay; `handle.tray.focus`, `anchor().focused { id, rect }`, and
+  `handle.tray.lay(id?, { at, space })` through core's new `ops.layFromTray` (`LayerContext.ops`, handed by `createDeskHost`) — what a
+  drag-off makes, one undo step, the board folding. Witnesses: core/test/tray-focus.test.ts (against a real drag-off),
+  desk/test/tray-keyboard.test.ts and rig:tray's three rows.
+- **I35 — a still that draws a kind's writing** (built 2026-10-07 on branch `i35-43`; DK-11): `createStill({ services })` — the
+  entries a layer lends; given, each kind gets its desk state (`local(host)`) over the still's root pass, ticked once and released
+  with the still; absent, every still as before. ICE lends no Node text raster (a baked default needs a font rasterizer): the caller
+  lends its own. Witnesses: desk/test/still.test.ts (a writing stub on the fake raster), a Dawn probe of the real note, and the desk
+  clock's Dawn still unchanged.
 
 ## Release cut & downstream
 
