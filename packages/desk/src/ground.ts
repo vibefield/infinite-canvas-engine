@@ -57,7 +57,7 @@ import { DEFAULT_GRID, dressGrid, type GridConfig, type GridStats, gridStats, ty
 import { type SlotLight, STILL_MAT_FRAME } from "./mat/layout";
 import { CuttingMat } from "./mat/mat-pass";
 import type { MatShaders } from "./mat/shaders";
-import type { MarksInput } from "./marks/layout";
+import { type MarksInput, unselectedMarks } from "./marks/layout";
 import { MarksPass } from "./marks/pass";
 import type { MarksShaders } from "./marks/shaders";
 import { type TrayFrameInputs, TrayPass } from "./tray/pass";
@@ -1019,6 +1019,13 @@ export interface CaptureOptions {
   readonly rect?: CaptureRect;
   /** A multiplier on the view's dpr (1 — the still at device pixels; a thumbnail asks 0.25). */
   readonly scale?: number;
+  /**
+   * The selection's marks drawn (`true`, the default — the frame as presented) or not (`false`, petition I40 — "Send to…"'s still
+   * of the objects): `false` draws THIS capture with `unselectedMarks` (marks/layout.ts) — no brackets, knobs, union, vellum,
+   * guides or rulers' extent; a taped object's tape and the tray's tags stay — so a selected object's still is the unselected
+   * object's, byte for byte. The selection, the world and the presented frame are not touched.
+   */
+  readonly marks?: boolean;
 }
 
 /**
@@ -1039,9 +1046,10 @@ const captureNumber = (what: string, v: number, positive: boolean): number => {
   return v;
 };
 
-/** A malformed capture option is a THROW at the call (a programming error, never an honest undefined): the scale positive and finite, the rect's four numbers finite. */
+/** A malformed capture option is a THROW at the call (a programming error, never an honest undefined): the scale positive and finite, the rect's four numbers finite, `marks` a boolean. */
 export function checkCapture(opts: CaptureOptions): void {
   captureNumber("scale", opts.scale ?? 1, true);
+  if (opts.marks !== undefined && typeof opts.marks !== "boolean") throw new Error(`capture: marks must be a boolean (got ${String(opts.marks)})`);
   const r = opts.rect;
   if (r === undefined) return;
   captureNumber("rect.x", r.x, false);
@@ -1077,7 +1085,8 @@ export function scaledInputs(inputs: GroundFrameInputs, scale: number): GroundFr
  * `Ground.render` took them (the same camera, theme, marks, hand and tray) — drawn ONCE MORE, outside any frame, into a readable
  * texture at the view's size × its dpr × `scale`, through the same encoding the swap chain's frame went through (`encodeFrame`;
  * the held frame through `renderHeldFrame` — at the view's own size the standing desk copy is reused, the hand alone redrawn);
- * then `rect` (CSS px of the view; the whole view when absent), in device px of the still, copied to a buffer and MAPPED. The
+ * then `rect` (CSS px of the view; the whole view when absent), in device px of the still, copied to a buffer and MAPPED — with
+ * `marks: false` (petition I40) the frame's marks less the selection's (`unselectedMarks`), for this capture alone. The
  * slots are prepared for the `capture` target (D7, `RenderTarget`: a kind re-asks the residency the frame holds, as under the
  * hand — a thumbnail's coarser asks evict nothing). The per-frame path gains nothing: no copy of any frame is kept, the swap chain
  * is not touched, and the still and the readback buffer — `capture/still`, `capture/readback`, the ledger's own `capture` line
@@ -1086,7 +1095,9 @@ export function scaledInputs(inputs: GroundFrameInputs, scale: number): GroundFr
  */
 export async function captureFrame(device: GPUDevice, passes: FramePasses, format: GPUTextureFormat, inputs: GroundFrameInputs, cache: HeldCache, opts: CaptureOptions = {}): Promise<CaptureBytes | undefined> {
   checkCapture(opts);
-  const frame = scaledInputs(inputs, opts.scale ?? 1);
+  // `marks: false` (I40): this capture's inputs carry the frame's marks less the selection's — a copy; the presented inputs are not touched
+  const marked = opts.marks === false && inputs.marks !== undefined ? { ...inputs, marks: unselectedMarks(inputs.marks) } : inputs;
+  const frame = scaledInputs(marked, opts.scale ?? 1);
   const dpr = frame.view.dpr;
   // the still's size: the attachment a view of this dpr names (kit/layer.ts `attachmentOf` — `surface().fit`'s rule, the reflector's)
   const size = { w: Math.max(1, Math.round(frame.view.width * dpr)), h: Math.max(1, Math.round(frame.view.height * dpr)) };

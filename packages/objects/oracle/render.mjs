@@ -1270,6 +1270,45 @@ async function captureCheck(sc) {
 }
 
 /**
+ * THE CAPTURE WITHOUT THE SELECTION'S MARKS (petition I40 — `handle.capture({ marks: false })`; ground.ts `captureFrame` hands the
+ * marks pass marks/layout.ts `unselectedMarks`), as pixels: a still whose objects are SELECTED, captured with `marks: false`, IS the
+ * same still with nothing selected — captured as it is, its marks on — byte for byte (one sha-256): the brackets, the knobs, the
+ * member ticks and the union, the fold, the lock-on, the rulers' extent and its labels gone; a taped object's tape (by day and by
+ * night) kept. And the marks were there to leave: the still captured as presented differs, where the selection's marks drew.
+ */
+async function unmarkedCheck(sc) {
+  const s = sc.scene;
+  const shaOf = (b) => createHash("sha256").update(b).digest("hex");
+  const FIELDS = ["notes", "minimats", "boards", "prints", "books", "calendars", "things", "objects"];
+  const unselected = { ...s };
+  let selected = 0;
+  for (const f of FIELDS) {
+    if (s[f] === undefined) continue;
+    selected += s[f].filter((o) => o.selected === true).length;
+    unselected[f] = s[f].map((o) => (o.selected === true ? { ...o, selected: false } : o));
+  }
+  const marked = await scoped(`capture ${sc.name} as presented`, () => desk.captureOf(s));
+  const bare = await scoped(`capture ${sc.name} marks: false`, () => desk.captureOf(s, { marks: false }));
+  const plain = await scoped(`capture ${sc.name} unselected`, () => desk.captureOf(unselected));
+  const sized = (c) => c !== undefined && c.width === bare?.width && c.height === bare?.height;
+  let differ = 0;
+  let maxD = 0;
+  let drew = 0;
+  if (bare !== undefined && sized(plain) && sized(marked)) {
+    for (let o = 0; o < bare.bytes.length; o += 4) {
+      const d = Math.max(delta(bare.bytes, plain.bytes, o), Math.abs(bare.bytes[o + 3] - plain.bytes[o + 3]));
+      if (d > 0) differ++;
+      if (d > maxD) maxD = d;
+      if (delta(bare.bytes, marked.bytes, o) > 0) drew++;
+    }
+  }
+  const same = bare !== undefined && sized(plain) && shaOf(bare.bytes) === shaOf(plain.bytes);
+  const ok = selected > 0 && same && sized(marked) && drew > 0;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  unmarked   ${sc.name.padEnd(24)} ${selected} selected · capture({ marks: false }) ${bare ? `${bare.width}×${bare.height}` : "nothing"}, its sha ${same ? "=" : "≠"} the still unselected (${differ.toLocaleString()} px differ, maxΔ ${maxD}) · the selection's marks drew ${drew.toLocaleString()} px of the still as presented`);
+  return ok;
+}
+
+/**
  * THE KIND BOUNDARY as pixels (petition I24): a still with the fault fixture's broken clocks laid on it — their kind REFUSED at create
  * (its WGSL does not compile; the probe's creation scope stays clean: the compile error was the kind's own scope's) — is the same still
  * WITHOUT them, byte for byte, everywhere but in their boxes (each grown by two device px — the face's edge ramp): the rest of the desk
@@ -1406,6 +1445,7 @@ for (const sc of scenes) if (sc.printed) { if (!(await printCheck(sc))) failed +
 for (const sc of scenes) if (sc.held) { if (!(await heldCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.trayed) { if (!(await trayCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.capture) { if (!(await captureCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.unmarked) { if (!(await unmarkedCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.missing) { if (!(await missingCheck(sc))) failed += 1; }
 // THE GOLDEN's verdict: every scene drawn as committed — or, blessing, the drawn shas written (ORACLE_ONLY merges its scenes in)
 if (bless) {

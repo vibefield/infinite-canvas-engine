@@ -112,6 +112,15 @@ export interface MarksInput {
 /** A frame with nothing marked. */
 export const NO_MARKS = (view: MarksInput["view"], night = false): MarksInput => ({ view, night, tape: [], objects: [], union: null, marquee: null, guides: [], bars: [], strike: 0, ruler: null });
 
+/**
+ * A frame's marks WITHOUT THE SELECTION'S (petition I40 — `capture({ marks: false })`): what a selection or a gesture lays on the desk
+ * leaves — the brackets, member ticks and knobs (an object's fading lock-on with them), several's union, the vellum and its fold, the
+ * laser's guides and gap pills, your extent on the rulers and its labels — and what the desk's STATE wears stays: a taped object's
+ * tape (the tray's name tags ride the marks pass on their own and stay too). The kinds draw no selection of their own (D4a — the
+ * builder hands them ring 0), so a still of a selected object under these marks is the unselected object's, byte for byte.
+ */
+export const unselectedMarks = (m: MarksInput): MarksInput => ({ ...NO_MARKS(m.view, m.night), tape: m.tape });
+
 // ---------------------------------------------------------------- inks, parsed once (theme.ts is their one home)
 
 const I = MARKS.inks;

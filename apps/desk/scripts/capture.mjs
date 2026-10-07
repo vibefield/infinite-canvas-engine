@@ -12,6 +12,10 @@
 //   the oracle        the still `capture-desk-z1` staged FROM THE WORLD, frozen, captured: the bitmap's pixels are the Node (Dawn)
 //                     render's — oracle/results/oracle-capture-desk-z1.rgba — at maxΔ 0 on every channel (the petition's acceptance 1),
 //                     0 steps and 0 redraws across it
+//   without the marks (petition I40) the same staged still, parked: `capture({ marks: false })` — its note SELECTED — is the same desk
+//                     with its selection cleared and settled, parked and captured as presented, byte for byte (maxΔ 0); across the
+//                     marks-off capture the selection stands and the engine took 0 steps and the desk drew 0 frames; the capture as
+//                     presented, beside it, differs where the brackets are
 //   the six at a quarter   (petition I29) `capture-six-z0.5` — one of each reference kind on a desk calendar — staged FROM THE WORLD
 //                     and captured at 1× and 0.25×, then each kind staged away in turn and captured again: the quarter within the
 //                     oracle's tolerance of the 1× still downsampled 4 × 4, and EACH KIND COUNTED in it — a kind's pixels being where
@@ -165,6 +169,46 @@ try {
   })()`);
   check(cmp.error === undefined && cmp.maxD === 0 && cmp.n === 2400 * 1600, `${SCENE} staged from the world, frozen, captured: ${cmp.error ?? `${cmp.w}×${cmp.h} — maxΔ ${cmp.maxD} on ${cmp.differ?.toLocaleString()} of ${cmp.n?.toLocaleString()} px against the Node render`}`);
   check(cmp.parked === true && cmp.steps === 0 && cmp.redraws === 0, `…with the loop parked (${cmp.parked}): ${cmp.steps} engine steps and ${cmp.redraws} redraws across the capture`);
+
+  // ── WITHOUT THE SELECTION'S MARKS (petition I40): the staged still parked again — `capture({ marks: false })` and, beside it, the
+  //    capture as presented; then the selection CLEARED, the desk settled, parked and captured as presented: the marks-off bitmap is
+  //    that one byte for byte, and the selection and the frame stood across it
+  const off = await qa(`(async () => {
+    const d = window.__desk; const F = d.engine.engine.frame;
+    const p = await ${PARK("unmarked")};
+    const sel0 = d.selection(); const steps0 = F.sleepStats().steps; const redraws0 = d.handle.redraws();
+    const bare = await d.handle.capture({ marks: false });
+    const r = { parked: p.parked, selected: sel0.length, same: JSON.stringify(d.selection()) === JSON.stringify(sel0), steps: F.sleepStats().steps - steps0, redraws: d.handle.redraws() - redraws0 };
+    const shown = await d.handle.capture();
+    window.__thaw();
+    if (!bare || !shown) return { ...r, error: "no bitmap" };
+    const w = bare.width; const h = bare.height;
+    const a = ${PIXELS}(bare); const m = ${PIXELS}(shown);
+    bare.close(); shown.close();
+    let drew = 0; for (let o = 0; o < a.length; o += 4) if (${DELTA}(a, m, o) > 0) drew++;
+    window.__i40 = a;
+    return { ...r, w, h, drew };
+  })()`);
+  await q("window.__desk.engine.ops.clearSelection()");
+  await settle();
+  await sleep(150);
+  await settle();
+  const plain = await qa(`(async () => {
+    const d = window.__desk;
+    const p = await ${PARK("unselected")};
+    const bmp = await d.handle.capture();
+    const selected = d.selection().length;
+    window.__thaw();
+    if (!bmp) return { parked: p.parked, selected, error: "no bitmap" };
+    const b = ${PIXELS}(bmp); bmp.close();
+    const a = window.__i40; window.__i40 = undefined;
+    if (!a || a.length !== b.length) return { parked: p.parked, selected, error: "size " + (a?.length ?? 0) + " vs " + b.length };
+    let maxD = 0; let differ = 0;
+    for (let o = 0; o < a.length; o += 4) { const dd = Math.max(${DELTA}(a, b, o), Math.abs(a[o + 3] - b[o + 3])); if (dd > maxD) maxD = dd; if (dd > 0) differ++; }
+    return { parked: p.parked, selected, maxD, differ, n: a.length / 4 };
+  })()`);
+  check(off.error === undefined && plain.error === undefined && off.selected > 0 && plain.selected === 0 && plain.maxD === 0 && off.drew > 0, `capture({ marks: false }) of ${SCENE} with ${off.selected} object selected IS the same desk unselected, settled and captured: ${off.error ?? plain.error ?? `${off.w}×${off.h} — maxΔ ${plain.maxD} on ${plain.differ?.toLocaleString()} of ${plain.n?.toLocaleString()} px; the capture as presented differs on ${off.drew.toLocaleString()} px (the selection's marks)`}`);
+  check(off.parked === true && off.same === true && off.steps === 0 && off.redraws === 0, `…and across it the selection stood (${off.same ? "the same" : "CHANGED"}) and no frame was drawn: ${off.steps} engine steps, ${off.redraws} redraws (the loop parked: ${off.parked})`);
 
   // ── THE SIX AT A QUARTER (petition I29): one of each reference kind, staged from the world; then each staged away in turn — a kind's
   //    pixels counted in the 0.25 still against the 1× still downsampled, to the oracle's tolerance (scenes.mjs QUARTER_TOL)

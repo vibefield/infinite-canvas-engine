@@ -246,30 +246,33 @@ ORACLE_SCENES.push(...PRINT_SCENES);
 // extent on the rulers. `marks` runs the check (outside the marks' band nothing moved; the pencil's byte where a stroke is solid;
 // a knob's face, a pill's fill); `unlit` runs the night's. And (D3w) a notebook lying closed and a desk calendar, each selected:
 // the brackets go around their footprints on the mat (kinds `bookFrame`, `calendarFrame` — what the world's builder draws).
+// `unmarked` runs the capture door's `marks: false` check (petition I40): the still captured without the selection's marks IS the
+// still with nothing selected, byte for byte — the brackets, the knobs, the ticks and the union, the fold, the lock-on, the rulers'
+// extent gone; the tape (by day and by night) kept.
 const marksBase = { ...base, theme: "light", mat: matStill };
 const ROW = [{ x: 250, y: 300, seed: 5, text: "" }, { x: 550, y: 300, seed: 11, text: "", selected: true, held: true }, { x: 850, y: 300, seed: 7, text: "" }];
 export const MARKS_SCENES = [
   { name: "marks-note-z1", marks: true, scene: { ...marksBase, zoom: 1, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }, { x: 760, y: 360, seed: 11, text: "" }] } },
-  { name: "marks-lockon-t0.3-z1", marks: true, scene: { ...marksBase, zoom: 1, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }], marks: { t: 0.3 } } },
+  { name: "marks-lockon-t0.3-z1", marks: true, unmarked: true, scene: { ...marksBase, zoom: 1, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }], marks: { t: 0.3 } } },
   { name: "marks-minimat-z1", marks: true, scene: { ...marksBase, zoom: 1, minimats: [{ x: 520, y: 400, name: "INBOX", selected: true }], notes: [{ x: 960, y: 250, seed: 7, text: "" }] } },
   { name: "marks-board-z1", marks: true, scene: { ...boardBase, zoom: 1, boards: [{ x: 420, y: -120, selected: true }], notes: [BOARD_NOTE] } },   // no ink: the stamps' 1-LSB Dawn split (D-D3r-a.5) is board-selected-z1's
   { name: "marks-print-z1", marks: true, scene: { ...photoBase, zoom: 1, prints: [{ ...PRINT, selected: true }] } },
-  { name: "marks-several-z1", marks: true, scene: { ...marksBase, zoom: 1, notes: [{ x: 300, y: 280, seed: 5, text: "", selected: true }, { x: 620, y: 420, seed: 11, text: "", selected: true }, { x: 900, y: 260, seed: 7, text: "", selected: true }] } },
+  { name: "marks-several-z1", marks: true, unmarked: true, scene: { ...marksBase, zoom: 1, notes: [{ x: 300, y: 280, seed: 5, text: "", selected: true }, { x: 620, y: 420, seed: 11, text: "", selected: true }, { x: 900, y: 260, seed: 7, text: "", selected: true }] } },
   {
     name: "marks-vellum-z1", marks: true,
     scene: { ...marksBase, zoom: 1, notes: [{ x: 300, y: 300, seed: 5, text: "" }, { x: 560, y: 380, seed: 11, text: "" }, { x: 860, y: 300, seed: 7, text: "", locked: true }], marks: { marquee: { x0: 150, y0: 180, x1: 1000, y1: 560 } } },
   },
   {
-    name: "marks-fold-t0.5-z1", marks: true,
+    name: "marks-fold-t0.5-z1", marks: true, unmarked: true,
     scene: { ...marksBase, zoom: 1, notes: [{ x: 300, y: 300, seed: 5, text: "", selected: true }, { x: 560, y: 380, seed: 11, text: "", selected: true }], marks: { fold: { rect: { x0: 120, y0: 150, x1: 900, y1: 640 }, t: 0.5 } } },
   },
   { name: "marks-laser-z1", marks: true, scene: { ...marksBase, zoom: 1, notes: ROW, marks: { snap: true, strike: 0.5 } } },
-  { name: "marks-tape-z1", marks: true, scene: { ...marksBase, zoom: 1, minimats: [{ x: 360, y: 400, name: "PINNED", locked: true }], notes: [{ x: 880, y: 330, seed: 5, text: "", selected: true, locked: true }] } },
+  { name: "marks-tape-z1", marks: true, unmarked: true, scene: { ...marksBase, zoom: 1, minimats: [{ x: 360, y: 400, name: "PINNED", locked: true }], notes: [{ x: 880, y: 330, seed: 5, text: "", selected: true, locked: true }] } },
   { name: "marks-far-z0.1", marks: true, scene: { ...marksBase, camX: 400 - 600 / 0.1, camY: 330 - 400 / 0.1, zoom: 0.1, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }, { x: 900, y: 330, seed: 11, text: "" }] } },
-  { name: "marks-night-z1", marks: true, unlit: true, scene: { ...marksBase, theme: "dark", zoom: 1, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }, { x: 760, y: 360, seed: 11, text: "", locked: true }] } },
-  { name: "marks-ruler-z1", marks: true, scene: { ...marksBase, zoom: 1, ruler: {}, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }] } },
-  { name: "marks-book-z2.2", marks: true, scene: { ...deskBase, ...at(0, 0, 2.2), books: [nb({ angle: 0.04, selected: true })] } },
-  { name: "marks-pad-z0.42", marks: true, scene: { ...deskBase, ...at(0, 0, 0.42), calendars: [pad({ selected: true })] } },
+  { name: "marks-night-z1", marks: true, unlit: true, unmarked: true, scene: { ...marksBase, theme: "dark", zoom: 1, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }, { x: 760, y: 360, seed: 11, text: "", locked: true }] } },
+  { name: "marks-ruler-z1", marks: true, unmarked: true, scene: { ...marksBase, zoom: 1, ruler: {}, notes: [{ x: 400, y: 330, seed: 5, text: "", selected: true }] } },
+  { name: "marks-book-z2.2", marks: true, unmarked: true, scene: { ...deskBase, ...at(0, 0, 2.2), books: [nb({ angle: 0.04, selected: true })] } },
+  { name: "marks-pad-z0.42", marks: true, unmarked: true, scene: { ...deskBase, ...at(0, 0, 0.42), calendars: [pad({ selected: true })] } },
 ];
 ORACLE_SCENES.push(...MARKS_SCENES);
 
@@ -378,9 +381,10 @@ ORACLE_SCENES.push(...TRAY_SCENES);
 // print, a closed notebook — on the reference desk at 1:1. `capture` runs the check: the still captured at 1× is the golden frame byte
 // for byte; at 0.25× it is the 1× still downsampled within a stated tolerance, every kind's pixels counted (petition I29 — a frame
 // drawn at a quarter of the dpr shared the ratio's floor); a rect is the frame's crop. rig:capture stages the same still FROM THE
-// WORLD and holds the door's bitmap to this render. (QUARTER_SCENES, last, adds the calendar: the six kinds at a quarter.)
+// WORLD and holds the door's bitmap to this render. (QUARTER_SCENES, last, adds the calendar: the six kinds at a quarter.) `unmarked`
+// (petition I40): captured with `marks: false`, the still is the same still with the note unselected, byte for byte.
 export const CAPTURE_SCENES = [
-  { name: "capture-desk-z1", capture: true, scene: { ...mmBase, zoom: 1, minimats: [DESK[0], DESK[1]], notes: [note(700, 610, 23, { selected: true }), note(640, 80, 27, { greek: undefined })], boards: [{ x: 1000, y: 650 }], prints: [{ x: 980, y: 430, angle: 0.06 }], books: [nb({ x: 850, y: 480, angle: 0.05 })] } },
+  { name: "capture-desk-z1", capture: true, unmarked: true, scene: { ...mmBase, zoom: 1, minimats: [DESK[0], DESK[1]], notes: [note(700, 610, 23, { selected: true }), note(640, 80, 27, { greek: undefined })], boards: [{ x: 1000, y: 650 }], prints: [{ x: 980, y: 430, angle: 0.06 }], books: [nb({ x: 850, y: 480, angle: 0.05 })] } },
 ];
 ORACLE_SCENES.push(...CAPTURE_SCENES);
 
@@ -428,7 +432,7 @@ ORACLE_SCENES.push(...FAULT_SCENES);
 // nothing there). rig:capture stages it FROM THE WORLD and counts the six in Chrome. Last, so every scene above draws in the order it
 // always did.
 export const QUARTER_SCENES = [
-  { name: "capture-six-z0.5", capture: true, scene: { ...showcase, ...at(600, 400, 0.5), calendars: [pad({ x: 600, y: 400 })] } },
+  { name: "capture-six-z0.5", capture: true, unmarked: true, scene: { ...showcase, ...at(600, 400, 0.5), calendars: [pad({ x: 600, y: 400 })] } },
 ];
 ORACLE_SCENES.push(...QUARTER_SCENES);
 /** The kinds a capture still lays, by its scene's fields — each counted alone (I29): the field emptied is the still without that kind. */

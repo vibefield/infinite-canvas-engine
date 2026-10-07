@@ -398,7 +398,10 @@ export interface DeskLayerHandle {
    * THE CAPTURE DOOR (petition I23 — the covers' still, the thumbnails, "Send to…"): the desk as the LAST PRESENTED frame showed
    * it — the same camera, theme, selection marks, hand and tray (what to hide is the host's, by its own doors, before the call) —
    * as an `ImageBitmap` of `rect` (CSS px of the view; the whole view when absent) at the view's dpr × `scale` (1; a thumbnail
-   * asks 0.25). Inside: that frame's inputs drawn ONCE MORE into a readable texture at the asked size and read back
+   * asks 0.25). `marks: false` (petition I40 — "Send to…"'s still of the objects) draws THAT capture without the selection's marks
+   * (`unselectedMarks`: no brackets, knobs, union, vellum, guides or rulers' extent; a taped object's tape stays), so a selected
+   * object comes out as it looks unselected — the selection, the world and the presented frame untouched (no clear-and-restore,
+   * no blink a peer could see). Inside: that frame's inputs drawn ONCE MORE into a readable texture at the asked size and read back
    * (`Ground.capture`) — never a copy kept of every frame, never a frame: the swap chain is not touched, the loop is not woken, no
    * frame is counted (`redraws()`, `perf().frames`), and the memory ledger shows the still and its readback as a `capture` line of
    * its own while they live and nothing after. Taken while the frame gate holds (`engine.frame.freeze`), it is the parked frame;
@@ -1061,7 +1064,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // same picture as the one in flight — equal options, the same frame — shares its answer (two covers rising together, one bitmap).
     let capturing: { readonly key: string; readonly inputs: GroundFrameInputs | null; readonly promise: Promise<ImageBitmap | undefined> } | null = null;
     let captures: Promise<unknown> = Promise.resolve();
-    const captureKey = (o: CaptureOptions): string => JSON.stringify([o.scale ?? 1, o.rect === undefined ? null : [o.rect.x, o.rect.y, o.rect.width, o.rect.height]]);
+    const captureKey = (o: CaptureOptions): string => JSON.stringify([o.scale ?? 1, o.rect === undefined ? null : [o.rect.x, o.rect.y, o.rect.width, o.rect.height], o.marks !== false]);
     const capture = (opts: CaptureOptions = {}): Promise<ImageBitmap | undefined> => {
       checkCapture(opts);   // a malformed option throws HERE, at the call
       const key = captureKey(opts);

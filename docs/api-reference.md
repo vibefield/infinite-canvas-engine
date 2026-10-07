@@ -323,11 +323,15 @@ it draws and `onStatus(listener)` hears each move — a device lost after the bo
 `readonly { kind, reason }[]`, absent while none) names the KINDS the desk draws as MISSING, contained per kind — refused at create, or
 quarantined at three strikes; the state stays `ready`, each kind said once (Plugin parity, below, says what a kind's author can expect);
 `due(now).kinds[kind]` is `KIND_MISSING` (−1) for one; `setTheme(theme, palette?)` re-dresses the desk, and beside it
-`capture({ rect?, scale? }) → Promise<ImageBitmap | undefined>` is THE CAPTURE DOOR (petition I23): the desk as the LAST PRESENTED frame showed it — the same
+`capture({ rect?, scale?, marks? }) → Promise<ImageBitmap | undefined>` is THE CAPTURE DOOR (petition I23): the desk as the LAST PRESENTED frame showed it — the same
 camera, theme, marks, hand and tray — as a bitmap of `rect` (CSS px of the view; the whole view when absent) at the view's dpr × `scale` (1; a thumbnail asks
 0.25), drawn ONCE MORE from that frame's inputs into a readable still and read back (never a copy kept of every frame, never a frame: no redraw, no wake, the
 memory ledger's own `capture` line while the still lives); taken under `engine.frame.freeze` it is the parked frame, live the most recent; `undefined`, never
-a throw, while `status()` is `failed` or `degraded`, before the first frame or when the device is lost mid-copy; and `pick({ x, y }) → PickResult | null` is THE
+a throw, while `status()` is `failed` or `degraded`, before the first frame or when the device is lost mid-copy. `marks: false` (petition I40 — "Send to…"'s
+still of the objects) draws THAT capture without the selection's marks — no brackets, knobs, member ticks or union, no vellum or fold, no laser, no extent on
+the rulers; a taped object's tape and the tray's tags stay — so a selected object comes out as it looks unselected, byte for byte (the oracle's `unmarked`
+check over ten stills; rig:capture's row in Chrome), while the selection, the world and the presented frame are untouched: no clear-and-restore, no blink a
+peer could see. A marks-off capture is its own picture (never shared with a marks-on one in flight); a `marks` that is not a boolean throws at the call; and `pick({ x, y }) → PickResult | null` is THE
 DESK'S PICK (petition I27 — a host's right-click selects the object under the pointer first): the object at a point (CSS px of the view — a pointer event's
 client point less the container's rect) as the desk's own pick resolves it — the interaction stack's exact pick, the body a press's `TouchesExact` is written by
 (`createDeskHost` hands it to the layer as `LayerContext.pickAt`), so the answer is what a primary click there selects. `PickResult { entity, type, canvas,
