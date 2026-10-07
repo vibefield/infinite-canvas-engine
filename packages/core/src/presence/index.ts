@@ -8,9 +8,10 @@ export {
   type PresenceOpts,
   type PresenceSession,
 } from "./presence-kit";
-export { createPresencePublish, type PresencePublishOpts } from "./publish";
+export { createPresencePublish, presenceCanvasOf, type PresencePublishOpts } from "./publish";
 export {
   createRemoteCursorsSystem,
   installPresence,
   type InstallPresenceOpts,
+  type RemoteCursorsOpts,
 } from "./remote-cursors";

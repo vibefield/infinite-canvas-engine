@@ -81,6 +81,18 @@ export interface PresenceSession {
   readonly wire: EphemeralSource;
   /** Subscribe to the binding's OUTBOUND presence bytes (its two timers). Returns an unsubscribe. */
   onOutbound(fn: (bytes: Uint8Array) => void): () => void;
+  /**
+   * THE HOST'S AWAY (petition I42): `setAway(reason)` says this peer is away whatever its pointer does — a host whose own chrome
+   * COVERS the desk (VibeField's covers) — and `setAway(null)` that it is back. The cursor facet's `away` is true while a reason
+   * is held OR the local mouse is out of the host (`PointerOutside`); the publish writes it change-only, and an installed
+   * session's publish writes it between frames at once (`installPresence`), so a peer hears it even with the frame gate parked.
+   * The reason is the host's word (a name for "why", never on the wire); an unchanged one changes nothing.
+   */
+  setAway(reason: string | null): void;
+  /** The host's away reason, or null (the pointer's own leave is the world's — `PointerOutside` — not this). */
+  away(): string | null;
+  /** Told when `setAway` changes the reason (the publish's door — installPresence). Returns an unsubscribe. */
+  onAway(fn: (reason: string | null) => void): () => void;
   /** Leave (ship tombstones) then tear down the binding + destroy the owned Loro store. Idempotent. */
   detach(): void;
 }
@@ -154,6 +166,9 @@ export function attachPresence(world: World, opts: PresenceOpts): PresenceSessio
   let localPeer = spawnLocalPeer();
 
   let detached = false;
+  // the host's away (I42): its reason, and who hears it change
+  let awayReason: string | null = null;
+  const awayHeard = new Set<(reason: string | null) => void>();
   // world.reset() (doc close / joinDoc's internal re-bootstrap) kills every
   // projected presence entity AND our minted local peer, while the loro store,
   // wire, and outbound timers all survive — leaving the binding pointing at
@@ -200,6 +215,19 @@ export function attachPresence(world: World, opts: PresenceOpts): PresenceSessio
         outbound.delete(fn);
       };
     },
+    setAway(reason) {
+      if (reason !== null && typeof reason !== "string") throw new Error(`ice: presence setAway — the reason is a string or null (got ${String(reason)})`);
+      if (detached || reason === awayReason) return;
+      awayReason = reason;
+      for (const fn of [...awayHeard]) fn(reason);
+    },
+    away: () => awayReason,
+    onAway(fn) {
+      awayHeard.add(fn);
+      return () => {
+        awayHeard.delete(fn);
+      };
+    },
     detach() {
       if (detached) return;
       detached = true;
@@ -218,6 +246,7 @@ export function attachPresence(world: World, opts: PresenceOpts): PresenceSessio
       }
       attachment.detach();
       outbound.clear();
+      awayHeard.clear();
       stopRemote?.();
       loro.destroy(); // we own the Loro store — clear its wasm cleanup timer
     },

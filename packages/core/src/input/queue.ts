@@ -15,7 +15,11 @@
  * `"pen"` for a stylus. Ingest keys pointer entities off it (`Pointer.id`).
  */
 
-export type InputEventKind = "down" | "move" | "up" | "cancel" | "wheel" | "key";
+/**
+ * `leave` (petition I42): the pointer left the host with nowhere to go — out of the window, no press of its own live — at its last
+ * point; ingest tags it `PointerOutside` until its next fact of any other kind.
+ */
+export type InputEventKind = "down" | "move" | "up" | "cancel" | "wheel" | "key" | "leave";
 
 export interface InputMods {
   readonly shift: boolean;

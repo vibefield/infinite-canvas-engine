@@ -9,6 +9,12 @@
  *
  *  - `PresenceCursor` from the local MOUSE pointer's `PointerWorld` (design-003
  *    §2). No local mouse pointer ⇒ SKIP (the facet stays as last published).
+ *    With it (petition I42): `away` — the mouse is out of the host
+ *    (`PointerOutside`, a `leave` fact's) or the host said so
+ *    (`PresenceSession.setAway`) — and `canvas`, the canvas the coordinates
+ *    belong to (`presenceCanvasOf`: "" at the root, else the entered
+ *    container's durable key). The host's away and the canvas still move a
+ *    facet already published when there is no mouse to read.
  *  - `SelectionSummary` from the `Selected` set: count + union bbox + a JSON key
  *    list (durable keys via the injected `keyOf`, capped at 32 — design-001
  *    §5.6). Present ONLY while the selection is non-empty; the facet is REMOVED
@@ -21,8 +27,10 @@ import { defineQuery } from "@vibecook/strata-ecs";
 import type { Entity, World } from "@vibecook/strata-ecs";
 import type { PublishHook } from "../engine/engine";
 import {
+  BoardRoot,
   LocalPointer,
   Pointer,
+  PointerOutside,
   PointerWorld,
   Position,
   PresenceCursor,
@@ -30,6 +38,7 @@ import {
   SelectionSummary,
   Size,
 } from "../catalog";
+import { currentNavFrame } from "../nav/nested-canvas";
 import { selectedEntities } from "../ops/selection";
 import type { PresenceSession } from "./presence-kit";
 
@@ -51,6 +60,20 @@ interface CursorFacet {
   x: number;
   y: number;
   device: "mouse" | "touch" | "pen";
+  away: boolean;
+  canvas: string;
+}
+
+/**
+ * The canvas a peer's cursor coordinates belong to, as `PresenceCursor.canvas` names it (petition I42; design-001 §5.1 — the
+ * desk's coordinates are FRAME-LOCAL): "" at the root; the ENTERED container's durable key (`keyOf`, the doc session's
+ * `store.keyOf`); a container no document keys (never committed) `~<peerId>/<entity>` — never "", and never another peer's, so a
+ * receiver in it draws no one and no one draws its owner there. The publish writes it and a receiver compares its own to it.
+ */
+export function presenceCanvasOf(world: World, peerId: string, keyOf?: (e: Entity) => string | undefined): string {
+  const frame = currentNavFrame(world);
+  if (frame === undefined || frame === world.getResource(BoardRoot)?.root) return "";
+  return keyOf?.(frame) ?? `~${peerId}/${frame}`;
 }
 
 interface SummaryFacet {
@@ -102,25 +125,29 @@ export function createPresencePublish(
   function publishCursor(w: World): void {
     // The local mouse pointer is the presence cursor. Collect during the walk,
     // mutate after (structural eph.* is illegal mid-iteration).
-    let cursor: CursorFacet | undefined;
+    let mouse: { x: number; y: number; outside: boolean } | undefined;
     w.query(localMouseQ).each((b) => {
       for (const r of b) {
-        if (cursor !== undefined) break;
+        if (mouse !== undefined) break;
         const e = b.entity(r);
         if (w.read(e, Pointer).device !== "mouse") continue;
         const pw = w.read(e, PointerWorld);
-        cursor = { x: pw.x, y: pw.y, device: "mouse" };
+        mouse = { x: pw.x, y: pw.y, outside: w.hasTag(e, PointerOutside) };
       }
     });
 
-    if (cursor === undefined) return; // no local mouse ⇒ leave the facet as last published
-    if (
-      cursorPresent &&
-      lastCursor !== undefined &&
-      lastCursor.x === cursor.x &&
-      lastCursor.y === cursor.y &&
-      lastCursor.device === cursor.device
-    ) {
+    // no local mouse ⇒ the facet's point stays as last published (none published: nothing to say); the host's away and the
+    // canvas still move it (I42)
+    const at = mouse ?? (cursorPresent ? lastCursor : undefined);
+    if (at === undefined) return;
+    const cursor: CursorFacet = {
+      x: at.x,
+      y: at.y,
+      device: "mouse",
+      away: mouse?.outside === true || session.away() !== null,
+      canvas: presenceCanvasOf(w, session.peerId, keyOf),
+    };
+    if (cursorPresent && lastCursor !== undefined && cursorEquals(lastCursor, cursor)) {
       return; // unchanged ⇒ no write, no throttle traffic
     }
     if (cursorPresent) eph.edit(localPeer).set(PresenceCursor, cursor);
@@ -178,6 +205,10 @@ export function createPresencePublish(
     summaryPresent = true;
     lastSummary = summary;
   }
+}
+
+function cursorEquals(a: CursorFacet, b: CursorFacet): boolean {
+  return a.x === b.x && a.y === b.y && a.device === b.device && a.away === b.away && a.canvas === b.canvas;
 }
 
 function summaryEquals(a: SummaryFacet, b: SummaryFacet): boolean {

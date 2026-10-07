@@ -68,7 +68,10 @@ const ce = createCanvasEngine({ widgets?, tools?, canvasTypes?, rootCanvas?, beh
   subscriber: a throwing transport forfeits its own delivery and those peers
   fall back to TTL, observable via `PresenceOpts.onFault`; `close()`/dispose
   run the same teardown). Transport is the caller's: `presence().wire.apply`
-  inbound, `presence().onOutbound(send)` outbound.
+  inbound, `presence().onOutbound(send)` outbound. `presence()?.setAway(reason)`
+  (petition I42) says the peer is away whatever its pointer does — a host whose
+  chrome covers the desk — and `setAway(null)` that it is back (the Documents &
+  collab table below says what the cursor facet carries).
 - `ce.frame` — the frame gate (`engine.frame`; one gate): `freeze(name)` → an idempotent thaw (refcounted and named, for chrome
   that COVERS the canvas — the loop walks to quiet, takes one settled step, then parks; `stage` is for chrome that recedes it) ·
   `isFrozen` · `isParked` · `holds` · `settleWhile(name, busy)` · `onChange(fn)` (each freeze and thaw — the loop restarts there)
@@ -92,7 +95,7 @@ const ce = createCanvasEngine({ widgets?, tools?, canvasTypes?, rootCanvas?, beh
 | `joinDoc(world, channel, opts)` | §6.5 bootstrap: hello → buffer → snapshot-as-causal-base → drain; 800 ms silence ⇒ seeder. Reconnect = re-join. |
 | `broadcastChannelByteChannel(name)` / `webSocketByteChannel(ws)` | `ByteChannel` adapters; anything carrying `Uint8Array` works. |
 | `startAutosave` / `restoreAutosave` | Debounce 800 ms, 10 s max-wait, gesture-deferred, quarantine-on-incompatible. |
-| `attachPresence` / `installPresence` | Ephemeral peer facets: `PresenceInfo`, `PresenceCursor`, `SelectionSummary`; remote peers project as `Not(Local)`. `installPresence` registers the remote-cursor system in `present` (0.8.0) and its uninstall reaps the pooled cursor entities — detaching on a live document must not strand ghosts. Facade hosts should prefer `docs.attachPresence` (it feeds the behavior runtime's seam; a raw `attachPresence(world, …)` session is real but invisible to `docs.presence()`). |
+| `attachPresence` / `installPresence` | Ephemeral peer facets: `PresenceInfo`, `PresenceCursor`, `SelectionSummary`; remote peers project as `Not(Local)`. `installPresence` registers the remote-cursor system in `present` (0.8.0) and its uninstall reaps the pooled cursor entities — detaching on a live document must not strand ghosts. Facade hosts should prefer `docs.attachPresence` (it feeds the behavior runtime's seam; a raw `attachPresence(world, …)` session is real but invisible to `docs.presence()`). `onRemote` fires only for a store event that carries keys (petition I43): Loro's TTL sweep emits every ttl/2 with nothing in it, and a lone desk at rest no longer wakes for it. **Where a peer is** (petition I42): `PresenceCursor { x, y, device, away, canvas }` — `away` while the peer's mouse is out of their host (`PointerOutside`, the dom adapter's `leave`) or their host says so (`session.setAway(reason: string \| null)`, `session.away()`: chrome that COVERS the desk — an installed session publishes it between frames, so even under a parked freeze); `canvas` the entered container's durable key, "" at the root (`presenceCanvasOf(world, peerId, keyOf?)` — a keyless container is `~<peerId>/<entity>`, never "" and never another peer's), the coordinates being that canvas's (frame-local). Both written change-only, as x/y are. Core's remote cursors derive NO hand for a peer away or in another canvas than the receiver's (so `@ice/dom`'s chips hide it); the peer entity and its facet stay for a host that draws people itself. The wire is tolerant both ways: the fields default (`false`, `""`), so an older peer reads as present on the root, and an older receiver's `tryCanon` walks its own fields and ignores these. A hand-written facet value (`eph.addComponent`/`edit().set`, which take the full value) now names both. |
 | `guardedTransaction(store, world, fn, {undoable?})` | Eligibility-guarded tx — the primitive under `useCommit` and every op. |
 | `cascadeDestroy(tx, world, root)` | Containment recursion + wire cascade, one tx. |
 
@@ -293,8 +296,14 @@ pointer — so it enqueues nothing: no wake, no step, no `PointerVersion` bump, 
 resting pointer's move on a focus or visibility change, and other windows' input raises trusted moves with no motion). Every press
 is untouched — a down, an up, a cancel, and every move while a button is down or a press is live, a held drag's same-position moves
 included — and a transition or a wheel starts the comparison afresh, so the first move after one always lands; a
-`pointerleave`/`pointerenter` pair (never listened to) changes nothing. `rig:idle` re-sends the resting move, trusted and
-re-dispatched, and holds the desk at zero submits over 5 s.
+`pointerleave`/`pointerenter` pair at one point changes nothing (the leave below is answered by its enter and says nothing).
+`rig:idle` re-sends the resting move, trusted and re-dispatched, and holds the desk at zero submits over 5 s.
+**The pointer out of the host** (petition I42): the mouse leaving the container with nowhere to go — `pointerleave` on the
+container itself, no related target (out of the window), no press of its own live — is said once, a task later (an enter that
+answers it at once cancels it), as a `leave` input fact at the point it left: ingest tags the pointer `PointerOutside` until its
+next fact of any other kind, and presence publishes the peer `away`; an enter after a said leave is a move at its point.
+rig:collab's rows hide a peer whose pointer leaves (a real CDP move past the page's edge), whose host says away, and who is in
+another canvas.
 
 ## @ice/r3f — RETIRED (design-015 D5b, 2026-09-26)
 

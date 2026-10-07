@@ -13,7 +13,12 @@
 // page mounted with `deskLayer({ cursors: false })` (`&cursors=false` — the rigs' harness, as `?hold=`/`?trayFoot=` are). A draws
 // C's cursor; C's world holds both other people and the hands core derived for them, at their tabs' pointers; and C's page draws
 // NOTHING of anyone's — no chip, no `remoteCursors` reflector, and where Alice's chip would be on C's screen (the offset B draws it
-// at) C's pixel is the desk's. A and B's rows before it run as they always did. Exit 0 = passed.
+// at) C's pixel is the desk's. A and B's rows before it run as they always did.
+// PETITION I42 — WHERE A PEER IS: B draws Alice's cursor only while she is HERE — not while her host says she is away
+// (`docs.presence().setAway`, her mouse still over her desk), not while her pointer is out of her window (a real pointer leave,
+// through Chrome's own input), not while she is in a canvas B is not (she enters a mini mat: B on the root hides her; B entering
+// it too shows her again, at her point in its coordinates; she leaves it, and B inside hides her). B's world keeps her each time
+// (`room.peers()`: her `away`, her `canvas`, no hand). Exit 0 = passed.
 //
 //   pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:collab
 import { spawn } from "node:child_process";
@@ -148,6 +153,61 @@ try {
   await shows(A, B, BOB, "at rest");
   await A.q("window.__desk.setCamera({ x: -120, y: 90, zoom: 0.8 })");
   await shows(A, B, BOB, "after A pans and zooms");
+  for (const T of [A, B]) await T.q("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 })");
+
+  // ---- PETITION I42: where a peer is — B draws Alice only while she is here
+  const aliceIn = async (T) => (await T.q("window.__desk.room.peers()")).find((p) => p.name === ALICE.name) ?? null;
+  /** B shows no chip for Alice (polled, B in front), and B's world holds her as `want` says — her facet's away/canvas, no hand. */
+  const hides = async (want) => until(async () => { await front(B); const p = await aliceIn(B); return (await cursorOf(B, ALICE.name)) === null && p !== null && p.hand === null && p.away === want.away && p.canvas === want.canvas ? p : null; }, 8000);
+  await front(A);
+  await mouse(A, "mouseMoved", 820, 520);
+  await front(A);
+  await shows(B, A, ALICE, "— the control before she is away");
+  await A.q("window.__desk.engine.docs.presence().setAway('rig'); true");
+  const awayHost = await hides({ away: true, canvas: "" });
+  check(awayHost !== null, `B HIDES Alice while her HOST says she is away (docs.presence().setAway("rig") — her mouse still over her desk): no chip; B's world holds her, away ${(awayHost ?? (await aliceIn(B)))?.away}, no hand`);
+  await A.q("window.__desk.engine.docs.presence().setAway(null); true");
+  await shows(B, A, ALICE, "once her host says she is back (setAway(null))");
+  // the pointer out of her window: Chrome's own input past the page's right edge — the container's pointerleave, no related target
+  await front(A);
+  await A.q("window.__i42 = 0; document.addEventListener('pointerleave', (e) => { if (e.relatedTarget === null && e.target === window.__desk.handle.canvas.parentElement) window.__i42 += 1; }, true); true");
+  await mouse(A, "mouseMoved", 1260, 520);
+  await front(A);
+  const leaves = await A.q("window.__i42");
+  const awayOut = await hides({ away: true, canvas: "" });
+  check(leaves >= 1 && awayOut !== null, `B HIDES Alice while her POINTER is out of her window (a CDP move past her page's edge: ${leaves} pointerleave on her desk's container with no related target): no chip; B's world holds her, away ${(awayOut ?? (await aliceIn(B)))?.away}, no hand`);
+  await front(A);
+  await mouse(A, "mouseMoved", 820, 520);
+  await front(A);
+  await shows(B, A, ALICE, "once her pointer is back over her desk");
+  // the canvas: a mini mat Alice enters
+  await front(A);
+  const mm = await A.q("window.__desk.spawn('desk.minimat', { name: 'Inbox' }, { x: 600, y: 360 })");
+  const mmKey = await A.q(`window.__desk.room.key(${mm})`);
+  await front(A);
+  await front(B);
+  const mmB = await until(() => B.q(`window.__desk.room.resolve(${K(mmKey)})`), 8000);
+  await A.q(`window.__desk.engine.ops.enterContainer(${mm}, { transition: "none" }); true`);
+  await front(A);
+  await mouse(A, "mouseMoved", 640, 420);
+  await front(A);
+  const inMat = await hides({ away: false, canvas: mmKey });
+  check(mmB !== null && inMat !== null, `B (on the root) HIDES Alice while she is IN the mini mat ${mmKey}: no chip; B's world holds her, canvas ${JSON.stringify((inMat ?? (await aliceIn(B)))?.canvas)}, no hand`);
+  await B.q(`window.__desk.engine.ops.enterContainer(${mmB}, { transition: "none" }); true`);
+  await front(B);
+  await shows(B, A, ALICE, "with B in the same mini mat (her point in its coordinates, through B's camera there)");
+  await A.q("window.__desk.engine.ops.exitContainer({ transition: \"none\" }); true");
+  await front(A);
+  await mouse(A, "mouseMoved", 820, 520);
+  await front(A);
+  const onRoot = await hides({ away: false, canvas: "" });
+  check(onRoot !== null, `B (in the mini mat) HIDES Alice once she is back on the root: no chip; B's world holds her, canvas ${JSON.stringify((onRoot ?? (await aliceIn(B)))?.canvas)}, no hand`);
+  await B.q("window.__desk.engine.ops.exitContainer({ transition: \"none\" }); true");
+  await front(B);
+  await shows(B, A, ALICE, "with both on the root again");
+  await A.q(`window.__desk.engine.ops.setSelection([${mm}], "replace")`);
+  await front(A);
+  await key(A, "Backspace", "Backspace", 8);
   for (const T of [A, B]) await T.q("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 })");
 
   // ---- a DELETE in A leaves B

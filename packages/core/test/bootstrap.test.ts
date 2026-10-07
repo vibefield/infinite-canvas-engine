@@ -374,7 +374,7 @@ describe("bootstrap: read-only gate + presence (§6.5)", () => {
     const presWorldA = createWorld();
     const presA = attachPresence(presWorldA, { name: "A", color: "#f00", peerId: "peerA" });
     sessions.push(presA);
-    presA.eph.addComponent(presA.localPeer, PresenceCursor, { x: 7, y: 8, device: "mouse" });
+    presA.eph.addComponent(presA.localPeer, PresenceCursor, { x: 7, y: 8, device: "mouse", away: false, canvas: "" });
     const presBytes = must(presA.wire.encodeChanged(), "presence bytes"); // synchronous → deterministic
 
     const injector = bus.endpoint();

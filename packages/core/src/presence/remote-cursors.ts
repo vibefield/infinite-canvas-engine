@@ -11,6 +11,15 @@
  * drops its cursor facet. The pool is a derived cache keyed by the peer entity
  * handle — stable while the peer is alive, gone from the query when it despawns.
  *
+ * WHERE A PEER IS (petition I42): a peer whose cursor says `away`, or whose
+ * `canvas` is not this receiver's own (`presenceCanvasOf` — its coordinates are
+ * frame-local to a canvas this one is not in), has NO hand here: none is
+ * spawned, and one already pooled is reaped — so `@ice/dom`'s remote-cursor
+ * chips (drawn from these entities) hide it, and a host reading the hands sees
+ * the same. The peer entity and its facet stay (a host drawing people itself
+ * reads `away`/`canvas` there). A peer with neither field (an older peer) is
+ * present, on the root.
+ *
  * Selection summaries are intentionally NOT drawn here — M9 core keeps the
  * `SelectionSummary` facet queryable and leaves chrome rendering to the demo.
  *
@@ -23,7 +32,7 @@ import { Local } from "@vibecook/strata-ecs";
 import type { Entity, TickSystem, World } from "@vibecook/strata-ecs";
 import { CursorVisual, Follows, Position, PresenceCursor, PresencePeer } from "../catalog";
 import type { Engine } from "../engine/engine";
-import { createPresencePublish, type PresencePublishOpts } from "./publish";
+import { createPresencePublish, type PresencePublishOpts, presenceCanvasOf } from "./publish";
 import type { PresenceSession } from "./presence-kit";
 
 const remotePeerCursorsQ = defineQuery([PresenceCursor, PresencePeer, Not(Local)]);
@@ -48,18 +57,30 @@ interface RemoteCursorsRig {
   reap(): void;
 }
 
+/**
+ * Where this receiver is, for a remote cursor's `canvas` to be compared with (petition I42): its own peer id (a keyless container's
+ * name is per peer) and the doc session's `keyOf`. Absent: "" at the root and a keyless name inside — no remote peer is drawn in a
+ * container then.
+ */
+export interface RemoteCursorsOpts {
+  readonly keyOf?: (e: Entity) => string | undefined;
+  readonly peerId?: string;
+}
+
 /** The pool + system + reap triple `installPresence` owns (pool lifetime = install lifetime). */
-function createRemoteCursorsRig(world: World): RemoteCursorsRig {
+function createRemoteCursorsRig(world: World, opts: RemoteCursorsOpts = {}): RemoteCursorsRig {
   const pool = new Map<Entity, PoolEntry>();
 
   const system = defineTickSystem(
     (ctx) => {
       const live = new Set<Entity>();
+      const here = presenceCanvasOf(world, opts.peerId ?? "", opts.keyOf);
       ctx.query(remotePeerCursorsQ).each((b) => {
         for (const r of b) {
           const peer = b.entity(r);
-          live.add(peer);
           const pc = ctx.read(peer, PresenceCursor);
+          if (pc.away || (pc.canvas ?? "") !== here) continue;   // away, or in another canvas: no hand here (one pooled is reaped below)
+          live.add(peer);
           const entry = pool.get(peer);
           if (entry === undefined) {
             // Spawn with geometry on the payload — identity-only until the phase
@@ -80,7 +101,7 @@ function createRemoteCursorsRig(world: World): RemoteCursorsRig {
         }
       });
 
-      // Reap cursors whose peer despawned or dropped its PresenceCursor facet.
+      // Reap cursors whose peer despawned, dropped its PresenceCursor facet, went away or is in another canvas.
       for (const [peer, entry] of [...pool]) {
         if (!live.has(peer)) {
           ctx.destroy(entry.cursor);
@@ -119,8 +140,8 @@ function createRemoteCursorsRig(world: World): RemoteCursorsRig {
  * registers its own copy in `present`, and builds it through a rig so its
  * uninstall can reap the pool too).
  */
-export function createRemoteCursorsSystem(world: World): TickSystem {
-  return createRemoteCursorsRig(world).system;
+export function createRemoteCursorsSystem(world: World, opts: RemoteCursorsOpts = {}): TickSystem {
+  return createRemoteCursorsRig(world, opts).system;
 }
 
 export type InstallPresenceOpts = PresencePublishOpts;
@@ -132,14 +153,27 @@ export type InstallPresenceOpts = PresencePublishOpts;
  * entities — uninstalling on a live document must not leave ghost cursors
  * (a between-frames call, like every teardown here). Does NOT own the
  * session's lifecycle — call `session.detach()` separately.
+ *
+ * THE HOST'S AWAY BETWEEN FRAMES (petition I42): `session.setAway` runs the
+ * publish once more right after the call — a microtask, so never inside a step,
+ * change-only as ever — so the facet reaches the room even while the loop
+ * sleeps or the frame gate holds a park (a cover that freezes the desk and says
+ * the peer is away, in either order).
  */
 export function installPresence(
   engine: Engine,
   session: PresenceSession,
   opts: InstallPresenceOpts = {},
 ): () => void {
-  const removePublish = engine.onPublish(createPresencePublish(engine.world, session, opts));
-  const rig = createRemoteCursorsRig(engine.world);
+  const publish = createPresencePublish(engine.world, session, opts);
+  const removePublish = engine.onPublish(publish);
+  let installed = true;
+  const stopAway = session.onAway(() => {
+    queueMicrotask(() => {
+      if (installed && !engine.frame.stepping()) publish(engine.world);
+    });
+  });
+  const rig = createRemoteCursorsRig(engine.world, { peerId: session.peerId, ...(opts.keyOf !== undefined ? { keyOf: opts.keyOf } : {}) });
   // "present", not "derive" (2026-08-16, with I18): cursor visuals are
   // presentation derivation with NO in-tick consumers — only reflectors read
   // them, post-notify, which sees present-phase writes the same frame. In
@@ -151,6 +185,8 @@ export function installPresence(
   // neighbours to misread it.
   const removeSystem = engine.addSystems("present", rig.system);
   return () => {
+    installed = false;
+    stopAway();
     removePublish();
     removeSystem();
     rig.reap();

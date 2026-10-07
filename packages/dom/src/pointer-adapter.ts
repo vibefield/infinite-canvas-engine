@@ -53,8 +53,18 @@
  *    cancel, and every move while a button is down or a press of ours is live
  *    (a held drag's same-position moves included) are enqueued as before — and a
  *    transition or a wheel starts the comparison afresh, so the first move after
- *    one always lands. `pointerleave`/`pointerenter` are not listened to: a pair
- *    at one position is a no-op, and the move that follows it is the same move.
+ *    one always lands. A `pointerleave`/`pointerenter` pair at one position is a
+ *    no-op (the leave below is answered by its enter and says nothing), and the
+ *    move that follows it is the same move;
+ *  - the pointer OUT OF THE HOST (petition I42): the mouse leaving the container
+ *    with nowhere to go — `pointerleave` on the container itself, no related
+ *    target (out of the window), no press of ours live — is said once, as a
+ *    `leave` fact at the point it left (ingest tags the pointer
+ *    `PointerOutside`; presence publishes the peer `away`). It is deferred one
+ *    task, so a leave answered by an enter at once (Chromium's pair at a
+ *    resting point, above) enqueues nothing. Back, the pointer's next fact
+ *    clears it: an enter after a said leave is a move at its point, so a
+ *    pointer back at rest is never left away.
  *
  * Widget opt-out (the pinned widget-event contract, design-002 §8 / design-004 §4):
  * on `pointerdown` ONLY, if the event's target chain (up to the container) crosses
@@ -159,6 +169,16 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
   const sameMods = (a: InputMods, b: InputMods): boolean =>
     a.shift === b.shift && a.ctrl === b.ctrl && a.alt === b.alt && a.meta === b.meta && a.space === b.space;
 
+  // THE POINTER OUT OF THE HOST (petition I42): a leave waiting out its task (an enter answers it), and whether one was said
+  let leaving: ReturnType<typeof setTimeout> | undefined;
+  let left = false;
+  /** The mouse is over the host (any fact of its own): a leave waiting is no leave, and one said is answered by this fact. */
+  const mouseBack = (): void => {
+    if (leaving !== undefined) clearTimeout(leaving);
+    leaving = undefined;
+    left = false;
+  };
+
   // the client point in the container's LAYOUT space (petition I39): a transform scales its bounding rect, never the space the desk draws in
   const relative = (clientX: number, clientY: number): { x: number; y: number } => clientToScreen(clientX, clientY, container.getBoundingClientRect(), container);
 
@@ -179,6 +199,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     const native = crossesInteractive(e.target, container);
     live.set(id, { device, x, y, downX: x, downY: y, native, captured: false });
     atRest.delete(id);
+    if (id === "mouse") mouseBack();
     const surfaceHandled = native;
     queue.enqueue({
       kind: "down",
@@ -198,6 +219,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
 
   const onPointerMove = (e: PointerEvent): void => {
     const id = pointerIdOf(e);
+    if (id === "mouse") mouseBack();
     const device = deviceOf(e);
     const { x, y } = relative(e.clientX, e.clientY);
     const over = crossesInteractive(e.target, container);
@@ -284,6 +306,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
   const onWheel = (e: WheelEvent): void => {
     // a wheel moves the camera under the pointer: the next move is measured afresh (petition I33), never dropped as a repeat
     atRest.delete("mouse");
+    mouseBack();
     const { x, y } = relative(e.clientX, e.clientY);
     const scale = e.deltaMode === 1 ? WHEEL_LINE_PX : 1; // DOM_DELTA_LINE → px
     if (e.ctrlKey) {
@@ -395,11 +418,39 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     cancelAllInput();
   };
 
+  // THE POINTER OUT OF THE HOST (petition I42; module doc): said a task later, unless an enter answers it first
+  const onPointerLeave = (e: PointerEvent): void => {
+    if (e.target !== container || e.relatedTarget != null || pointerIdOf(e) !== "mouse" || live.has("mouse")) return;
+    const { x, y } = relative(e.clientX, e.clientY);
+    const mods = pointerMods(e);
+    if (leaving !== undefined) clearTimeout(leaving);
+    leaving = setTimeout(() => {
+      leaving = undefined;
+      left = true;
+      atRest.delete("mouse");   // the move that brings it back always lands (petition I33's comparison starts afresh)
+      queue.enqueue({ kind: "leave", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: 0, mods });
+    }, 0);
+  };
+  const onPointerEnter = (e: PointerEvent): void => {
+    if (e.target !== container || pointerIdOf(e) !== "mouse") return;
+    if (leaving !== undefined) {
+      mouseBack();   // the leave answered at once: none was said
+      return;
+    }
+    if (!left) return;
+    mouseBack();
+    const { x, y } = relative(e.clientX, e.clientY);
+    // back over the host — at rest or not, the pointer is here (no hover verdict: the enter's target is the container; the next move's is the truth)
+    queue.enqueue({ kind: "move", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e), tMs: e.timeStamp });
+  };
+
   container.addEventListener("pointerdown", onPointerDown);
   container.addEventListener("pointermove", onPointerMove);
   container.addEventListener("pointerup", onPointerUp);
   container.addEventListener("pointercancel", onPointerCancel);
   container.addEventListener("wheel", onWheel, { passive: false });
+  container.addEventListener("pointerleave", onPointerLeave);
+  container.addEventListener("pointerenter", onPointerEnter);
   view?.addEventListener("keydown", onKeyDown);
   view?.addEventListener("keyup", onKeyUp);
   view?.addEventListener("blur", onBlur);
@@ -409,11 +460,15 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     // blur; facts drain on the engine's next step. Then unwire the listeners.
     cancelAllInput();
     atRest.clear();
+    if (leaving !== undefined) clearTimeout(leaving);
+    leaving = undefined;
     container.removeEventListener("pointerdown", onPointerDown);
     container.removeEventListener("pointermove", onPointerMove);
     container.removeEventListener("pointerup", onPointerUp);
     container.removeEventListener("pointercancel", onPointerCancel);
     container.removeEventListener("wheel", onWheel);
+    container.removeEventListener("pointerleave", onPointerLeave);
+    container.removeEventListener("pointerenter", onPointerEnter);
     view?.removeEventListener("keydown", onKeyDown);
     view?.removeEventListener("keyup", onKeyUp);
     view?.removeEventListener("blur", onBlur);

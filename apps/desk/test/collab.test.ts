@@ -216,7 +216,7 @@ describe("desk collab: presence", () => {
     const peer = must(B.world.firstOf(remotePeersQ), "remote peer");
     expect(B.world.hasTag(peer, Local)).toBe(false); // a remote projection carries no Local
     expect(B.world.get(peer, PresenceInfo)).toEqual({ name: "Alice", color: "#e5484d" }); // whose hand, in whose colour
-    expect(B.world.get(peer, PresenceCursor)).toEqual({ x: 12, y: 34, device: "mouse" });
+    expect(B.world.get(peer, PresenceCursor)).toEqual({ x: 12, y: 34, device: "mouse", away: false, canvas: "" });
     const summary = must(B.world.get(peer, SelectionSummary), "selection summary");
     expect(summary.count).toBe(1);
     const keys = JSON.parse(summary.keys ?? "[]") as string[];

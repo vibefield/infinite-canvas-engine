@@ -119,6 +119,14 @@ export const WheelHandled = defineTag("WheelHandled");
  */
 export const OverInteractive = defineTag("OverInteractive");
 
+/**
+ * PERSISTENT (not one-tick): the pointer LEFT THE HOST with nowhere to go — out of the window, no press of its own live (petition
+ * I42): ingest sets it from an adapter's `leave` fact and clears it at the pointer's next fact of any other kind (a move, a press,
+ * a wheel — the pointer is back over the host), change-only. Its point stays where it left. Presence reads it on the local mouse:
+ * the peer is `away` (presence/publish.ts). Recognizers never read it.
+ */
+export const PointerOutside = defineTag("PointerOutside");
+
 /** Marks the local device's pointer(s) (vs. presence projections). */
 export const LocalPointer = defineTag("LocalPointer");
 

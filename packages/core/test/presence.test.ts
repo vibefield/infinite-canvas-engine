@@ -119,7 +119,7 @@ describe("presence round-trip (§15.3/§15.4)", () => {
 
     const peer = must(firstRemotePeer(B), "remote peer");
     expect(B.world.hasTag(peer, Local)).toBe(false); // remote projection carries no Local
-    expect(B.world.get(peer, PresenceCursor)).toEqual({ x: 10, y: 20, device: "mouse" });
+    expect(B.world.get(peer, PresenceCursor)).toEqual({ x: 10, y: 20, device: "mouse", away: false, canvas: "" });
     const summary = must(B.world.get(peer, SelectionSummary), "selection summary");
     expect(summary.count).toBe(2);
     expect(summary).toMatchObject({ x: 0, y: 0, w: 110, h: 10 }); // union bbox of the two widgets
@@ -200,7 +200,7 @@ describe("outbound fan-out fault isolation (0.8.0 review finding 1)", () => {
       });
       const got: Uint8Array[] = [];
       A.session.onOutbound((b) => got.push(b));
-      A.session.eph.addComponent(A.session.localPeer, PresenceCursor, { x: 1, y: 2, device: "mouse" });
+      A.session.eph.addComponent(A.session.localPeer, PresenceCursor, { x: 1, y: 2, device: "mouse", away: false, canvas: "" });
       const t0 = Date.now();
       while (got.length === 0 && Date.now() - t0 < 2000) await sleep(5);
       expect(got.length).toBeGreaterThan(0); // the subscriber AFTER the thrower still fed
@@ -224,7 +224,7 @@ describe("outbound fan-out fault isolation (0.8.0 review finding 1)", () => {
       session.onOutbound(() => {
         throw new Error("socket closed");
       });
-      session.eph.addComponent(session.localPeer, PresenceCursor, { x: 3, y: 4, device: "mouse" });
+      session.eph.addComponent(session.localPeer, PresenceCursor, { x: 3, y: 4, device: "mouse", away: false, canvas: "" });
       const t0 = Date.now();
       while (faults.length === 0 && Date.now() - t0 < 2000) await sleep(5);
       expect(faults).toContain("outbound");
@@ -243,7 +243,7 @@ describe("presence survives world.reset (doc close / internal re-bootstrap)", ()
     const b = makePeer("B", "#0f0");
 
     // Round-trip first: B sees A.
-    a.session.eph.addComponent(a.session.localPeer, PresenceCursor, { x: 1, y: 2, device: "mouse" });
+    a.session.eph.addComponent(a.session.localPeer, PresenceCursor, { x: 1, y: 2, device: "mouse", away: false, canvas: "" });
     await converge(a, b, () => firstRemotePeer(b) !== undefined);
     expect(firstRemotePeer(b)).toBeDefined();
     const oldLocal = b.session.localPeer;
@@ -261,12 +261,12 @@ describe("presence survives world.reset (doc close / internal re-bootstrap)", ()
 
     // Remotes re-project from A's ongoing traffic — the fresh binding has an
     // empty blob-diff cache, so even a same-value refresh recreates the entity.
-    a.session.eph.edit(a.session.localPeer).set(PresenceCursor, { x: 3, y: 4, device: "mouse" });
+    a.session.eph.edit(a.session.localPeer).set(PresenceCursor, { x: 3, y: 4, device: "mouse", away: false, canvas: "" });
     await converge(a, b, () => firstRemotePeer(b) !== undefined);
     expect(firstRemotePeer(b)).toBeDefined();
 
     // The local mutator still works post-heal (the publish path's writes).
-    b.session.eph.addComponent(b.session.localPeer, PresenceCursor, { x: 9, y: 9, device: "mouse" });
+    b.session.eph.addComponent(b.session.localPeer, PresenceCursor, { x: 9, y: 9, device: "mouse", away: false, canvas: "" });
     b.world.sync();
     expect(b.world.has(b.session.localPeer, PresenceCursor)).toBe(true);
   });

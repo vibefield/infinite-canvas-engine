@@ -47,6 +47,7 @@ import {
   Pointer,
   PointerButtons,
   PointerMods,
+  PointerOutside,
   PointerRadius,
   PointerScreen,
   PointerWheel,
@@ -85,6 +86,8 @@ interface Sample {
   handled: boolean;
   /** Last hover-bearing fact's verdict; undefined = no hover info this tick (tag holds). */
   overInteractive: boolean | undefined;
+  /** Left the host (the tick's last fact a `leave`, petition I42) or back over it (any other fact after one) — `PointerOutside`. */
+  outside: boolean;
   mods: { shift: boolean; ctrl: boolean; alt: boolean; meta: boolean };
   wheelDx: number;
   wheelDy: number;
@@ -181,6 +184,7 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
             wentCancelled: false,
             handled: false,
             overInteractive: undefined,
+            outside: false,
             mods: { shift: ev.mods.shift, ctrl: ev.mods.ctrl, alt: ev.mods.alt, meta: ev.mods.meta },
             wheelDx: 0,
             wheelDy: 0,
@@ -210,6 +214,8 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
           s.hasWheel = true;
           if (ev.wheelHandled === true) s.wheelHandled = true;
         }
+        // Out of the host (I42): a `leave` at its last point; any other fact of the pointer's is the pointer over the host again.
+        s.outside = ev.kind === "leave";
         if (ev.surfaceHandled === true) s.handled = true;
         // Hover truth: last stamped fact wins; unstamped facts (wheel, blur
         // cancel, test drivers that don't track hover) leave it undefined.
@@ -240,6 +246,7 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
           if (s.handled) ctx.addTag(spawned, HandledByWidget);
           if (s.wheelHandled) ctx.addTag(spawned, WheelHandled);
           if (s.overInteractive === true) ctx.addTag(spawned, OverInteractive);
+          if (s.outside) ctx.addTag(spawned, PointerOutside);
           byId.set(id, spawned);
           continue;
         }
@@ -271,6 +278,11 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
         if (s.overInteractive !== undefined && s.overInteractive !== ctx.hasTag(existing, OverInteractive)) {
           if (s.overInteractive) ctx.addTag(existing, OverInteractive);
           else ctx.removeTag(existing, OverInteractive);
+        }
+        // Persistent and change-only too (I42): every fact says whether the pointer is out of the host.
+        if (s.outside !== ctx.hasTag(existing, PointerOutside)) {
+          if (s.outside) ctx.addTag(existing, PointerOutside);
+          else ctx.removeTag(existing, PointerOutside);
         }
       }
 

@@ -436,7 +436,7 @@ describe("<Desk> — a host that draws its own peers (petition I26)", () => {
       cleanups.push(() => peer.detach());
       const bytes: Uint8Array[] = [];
       peer.onOutbound((b) => bytes.push(b));
-      peer.eph.addComponent(peer.localPeer, PresenceCursor, { x, y, device: "mouse" });
+      peer.eph.addComponent(peer.localPeer, PresenceCursor, { x, y, device: "mouse", away: false, canvas: "" });
       return bytes;
     });
     // the host's chrome reads the roster, as VibeField's faces do

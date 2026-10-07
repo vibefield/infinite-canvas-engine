@@ -9,7 +9,8 @@
  *
  * Defaults policy (see catalog/index.ts): presence identity strings (name/color/
  * device) stay bare — they must be real; numeric summary/cursor fields carry zero
- * defaults, and `keys` an empty JSON list.
+ * defaults, `keys` an empty JSON list, and the cursor's `away`/`canvas` (I42) the
+ * present peer on the root — what an older peer's blob, which has neither, reads as.
  */
 import { enumOf, field } from "@vibecook/strata-ecs";
 import { defineComponent, defineTag } from "../schema/meta";
@@ -63,11 +64,19 @@ export const PresencePeer = defineTag("PresencePeer");
 /** Peer display identity. */
 export const PresenceInfo = defineComponent("PresenceInfo", { name: "string", color: "string" });
 
-/** Peer cursor in world coords. */
+/**
+ * Peer cursor in world coords — FRAME-LOCAL (design-001 §5.1): `x`/`y` are the coordinates of the canvas the peer is in. `away`
+ * (petition I42): the peer's pointer left their host with nowhere to go, or their host said so (`PresenceSession.setAway` — chrome
+ * that covers the desk); a receiver hides an away peer. `canvas`: the durable key of the container the peer has ENTERED, "" at the
+ * root (a container with no durable key is `~<peerId>/<entity>` — never "", never another peer's); a receiver draws a peer only in
+ * its own canvas. Both default (an older peer's blob carries neither: it reads as present, on the root).
+ */
 export const PresenceCursor = defineComponent("PresenceCursor", {
   x: field("f64", { default: 0 }),
   y: field("f64", { default: 0 }),
   device: enumOf(["mouse", "touch", "pen"]),
+  away: field("bool", { default: false }),
+  canvas: field("string", { default: "" }),
 });
 
 /**

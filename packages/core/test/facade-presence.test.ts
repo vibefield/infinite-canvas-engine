@@ -261,7 +261,7 @@ describe("docs.attachPresence — derived residue on a still-open document", () 
     rawSessions.push(other);
     const buf: Uint8Array[] = [];
     other.onOutbound((bts) => buf.push(bts));
-    other.eph.addComponent(other.localPeer, PresenceCursor, { x: 5, y: 6, device: "mouse" });
+    other.eph.addComponent(other.localPeer, PresenceCursor, { x: 5, y: 6, device: "mouse", away: false, canvas: "" });
 
     const t0 = Date.now();
     let cursor: Entity | undefined;

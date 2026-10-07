@@ -524,10 +524,12 @@ export {
   createRemoteCursorsSystem,
   DEFAULT_PRESENCE_TTL_MS,
   installPresence,
+  presenceCanvasOf,
   type InstallPresenceOpts,
   type PresenceOpts,
   type PresencePublishOpts,
   type PresenceSession,
+  type RemoteCursorsOpts,
 } from "./presence";
 
 // --- M9 transport/bootstrap kit (design-005 §6.5): join protocol + byte channels ---
