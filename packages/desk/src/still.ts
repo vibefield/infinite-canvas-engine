@@ -18,20 +18,27 @@
 //    share — and reads it back.
 // A still is its facts and its pins: no desk state (a kind is handed no `local`, as the oracle draws a plugin's kind), no
 // chrome (no marks, no hand, no tray), the mat at rest (`STILL_MAT_FRAME`; no plate is uploaded — the gobo lights it whole).
+// Petition I35 — unless the caller lends SERVICES (`services`, the entries a desk layer lends — `service(TEXT_RASTER, raster)`):
+// then each kind is handed its desk state as a layer hands it (`kind.local(host)` over the still's root pass, the services and
+// what each object's DOM half lends from them), ticked once at the still's clock before the frame is made — so a kind's
+// WRITING shows in its still as the product draws it. ICE ships no text raster for Node (the browser's is a Canvas 2D,
+// `inkRaster`): the caller lends its own.
 // Everything made for it — the passes, the mat, the still, the readback, the engine and its document — is released before the
 // promise settles, whatever it settles with.
 
 import { Camera, type CanvasEngine, createCanvasEngine, type Entity, Viewport, type WidgetType, type World } from "@ice/core";
 import { blueNoise } from "./assets/blue-noise.gen";
 import { createDeskBuilder, type DeskBuilder } from "./compose/builder";
+import { worldChildren } from "./compose/children";
 import { looksOf } from "./compose/reflector";
 import { type CaptureBytes, captureFrame, createSlotSet, type GroundFrameInputs, type SlotSet, SlotPool } from "./ground";
 import type { KindProgram } from "./kind";
-import type { ObjectFlux, ObjectKind } from "./kinds/world";
+import type { KindLocal, ObjectFlux, ObjectKind } from "./kinds/world";
+import { createServices, type Lent } from "./kit/services";
 import { DEFAULT_GRID } from "./mat/grid";
 import { CuttingMat } from "./mat/mat-pass";
 import { MAT_SHADER_FILES, matShaders } from "./mat/shaders";
-import { objectKindOf } from "./object";
+import { hostOf, objectKindOf } from "./object";
 import { shaderText } from "./shaders";
 import { MARKS, MAT, type Palette, type ThemeName, themeFrom } from "./theme";
 
@@ -148,6 +155,16 @@ export interface StillOptions {
   readonly camera?: { readonly x: number; readonly y: number; readonly zoom: number };
   /** Lay the still's world (a stage may be async); the frame is made from what it leaves. */
   readonly stage: (stage: StillStage) => void | Promise<void>;
+  /**
+   * THE SERVICES the still lends its kinds (petition I35) — the entries a desk layer lends (`deskLayer({ services })`): the text
+   * raster `service(TEXT_RASTER, raster)`, a picture decoder `service(PICTURE_DECODER, …)`, a plugin's own key. Given (even empty),
+   * each kind is handed its DESK STATE as a layer hands it — `kind.local(host)` over the still's root pass, `host.use` these and
+   * what each object's DOM half lends from them (`defineObject({ host: { lend } })`, in the types' order; a name lent twice
+   * rejects) — ticked once at the still's clock before the frame is made, and released with the still: a kind's writing shows
+   * as the product draws it. Absent: no desk state (a kind draws its facts and its pins alone), as before. ICE lends no text raster
+   * of its own in Node — `inkRaster` is a browser's Canvas 2D; a Node caller lends its own (a native canvas, or its test's).
+   */
+  readonly services?: readonly Lent[];
 }
 
 /** One still: `width` × `height` device px, rows top-down and tightly packed, four bytes a pixel in RGBA order, alpha as drawn. */
@@ -208,7 +225,8 @@ function inTurn<T>(device: GPUDevice, run: () => Promise<T>): Promise<T> {
 
 /**
  * ONE STILL of a desk on the caller's device (petition I30) — `opts.stage` lays the world, the desk's builder makes the frame from
- * it under the still's camera, and the frame is drawn into a readable texture of `size × dpr` and read back as RGBA. A malformed
+ * it under the still's camera, and the frame is drawn into a readable texture of `size × dpr` and read back as RGBA; with
+ * `services` lent (petition I35), the kinds draw with their desk state — their writing — as on a layer. A malformed
  * option throws at the call; the promise rejects — with everything made for it released — when a kind is refused at create (its
  * reason, petition I24), a GPU error is raised while the kinds are made or the frame is drawn, the stage or a kind's world half
  * throws, or the device is lost before the bytes are read.
@@ -228,6 +246,9 @@ export function createStill(opts: StillOptions): Promise<Still> {
     ? { x: -width / 2, y: -height / 2, zoom: 1 }
     : { x: finite("camera.x", opts.camera.x), y: finite("camera.y", opts.camera.y), zoom: positive("camera.zoom", opts.camera.zoom) };
   if (typeof opts.stage !== "function") throw new Error("createStill: `stage` must be a function — it lays the still's world");
+  if (opts.services !== undefined && (!Array.isArray(opts.services) || !opts.services.every((s) => typeof s?.key?.name === "string"))) {
+    throw new Error("createStill: `services` must be a list of lent services — `service(key, value)` entries, as `deskLayer({ services })` takes");
+  }
   const plan: StillPlan = { width, height, dpr, kinds, theme, palette: opts.palette ?? STILL_PALETTE, cam };
   return inTurn(opts.device, () => drawStill(opts, plan));
 }
@@ -249,6 +270,7 @@ async function drawStill(opts: StillOptions, plan: StillPlan): Promise<Still> {
   const desk = await createStillDesk({ device, format, kinds: plan.kinds, onError: (e) => { unattributed ??= e; } });
   let engine: CanvasEngine | undefined;
   let builder: DeskBuilder | undefined;
+  const locals = new Map<string, KindLocal>();
   try {
     // a kind that could not be made draws nothing of its own: a still of it is no proof of it
     const refused = desk.root.faults?.[0];
@@ -263,14 +285,30 @@ async function drawStill(opts: StillOptions, plan: StillPlan): Promise<Still> {
     const world = engine.world;
     world.setResource(Viewport, { w: width, h: height, dpr });
     world.setResource(Camera, { x: cam.x, y: cam.y, zoom: cam.zoom, gesturing: false });
+    // THE DESK STATE (petition I35): with services lent, each kind's own state on this desk as a layer makes it (host/layer.ts) —
+    // over the still's root pass, the caller's services then what each object's DOM half lends from them — its writing
+    if (opts.services !== undefined) {
+      const services = createServices(opts.services, "the still's caller");
+      for (const t of opts.objects) {
+        const lend = hostOf(t)?.lend;
+        if (lend !== undefined) services.lend(lend({ use: services.use, wake: () => {} }), `the object "${t.type}"`);
+      }
+      const children = worldChildren(world);
+      for (const k of plan.kinds) {
+        const local = k.local?.({ pass: () => desk.root.kinds.get(k.name)?.pass, use: services.use, children, wake: () => {} });
+        if (local !== undefined) locals.set(k.name, local);
+      }
+    }
     // the builder first: a pin made by the stage is kept by entity, met or not
-    const b = createDeskBuilder(world, { objects: [...opts.objects] });
+    const b = createDeskBuilder(world, { objects: [...opts.objects], ...(locals.size > 0 ? { locals } : {}) });
     builder = b;
     await opts.stage({ engine, world, pinAsset: (e, asset) => b.pin(e, asset), pinFlux: (e, targets) => b.pinFlux(e, targets) });
     // two ticks: what the stage spawned is in the frame's membership and the change journal (a container's children with it)
     engine.step(16);
     engine.step(32);
     b.changed();
+    // the desk state's tick, once, at the still's clock — what a layer runs before each build (a kind may lay what it holds now)
+    for (const local of locals.values()) local.tick?.(0);
     const built = b.build(cam, { width, height, dpr }, 0, theme, DEFAULT_GRID, looks, { now: 0 });
     // the frame as the desk's reflector assembles it, less its chrome: the root desk, its live insides, a flight's departed desk
     const inputs: GroundFrameInputs = {
@@ -308,6 +346,7 @@ async function drawStill(opts: StillOptions, plan: StillPlan): Promise<Still> {
     }
     return { width: shot.width, height: shot.height, rgba, dispose() {} };
   } finally {
+    for (const local of locals.values()) local.dispose?.();
     builder?.dispose();
     engine?.dispose();
     desk.dispose();

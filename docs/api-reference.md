@@ -505,7 +505,7 @@ engine names a kind:
   back to All).
 - **Stills**: `handle.pinAsset(entity, asset)` — a kind's own asset (`ctx.asset`) in the shape the kind defines. And a kind
   author's PIXEL PROOF without a desk layer (petition I30): `createStill({ device, format, size, dpr, objects, theme?, palette?,
-  camera?, stage }) → Promise<Still { width, height, rgba, dispose() }>` draws ONE frame of a desk on YOUR device — Dawn in Node
+  camera?, stage, services? }) → Promise<Still { width, height, rgba, dispose() }>` draws ONE frame of a desk on YOUR device — Dawn in Node
   (`acquire({ gpu: create([]) })`, `acquire` from `/desk/engine`, `create` from the `webgpu` package) or a browser's — with no canvas.
   `format` is `rgba8unorm` or `bgra8unorm` (the bytes come back RGBA either way, rows top-down, tight, alpha as drawn); `size` is CSS
   px and the still `round(width × dpr) × round(height × dpr)`; `objects` are your object types (`defineObject`'s — each one's kind is
@@ -517,7 +517,13 @@ engine names a kind:
   units — a CSS px at zoom 1), `pinAsset(e, asset)` your kind's asset for the still (`ctx.asset` — pin anything time- or host-dependent:
   a still never reads a wall clock), `pinFlux(e, { lift })` a held lift. The desk's builder makes the frame from that world and it is
   read back. A still is its facts and its pins: your kind is handed no `local`, there are no marks, hand or tray, and the mat lies at
-  rest, lit whole. Everything made for it is released before the promise settles (the memory ledger at zero); a malformed option throws
+  rest, lit whole — unless you lend `services` (petition I35): the entries a desk layer lends (`service(TEXT_RASTER, raster)`, a
+  picture decoder, your plugin's own keys); given (even `[]`), each kind is handed its DESK STATE as a layer hands it —
+  `kind.local(host)` over the still's root pass, `host.use` your services and what each object's DOM half lends from them
+  (`defineObject({ host: { lend } })`; a name lent twice rejects) — ticked once at the still's clock before the frame and released
+  with the still, so your kind's WRITING shows as the product draws it. ICE lends no text raster of its own in Node (the browser's
+  `inkRaster` is a Canvas 2D): lend yours — a native canvas, or your test's fixed raster. The clock's still lends none and is
+  unchanged. Everything made for it is released before the promise settles (the memory ledger at zero); a malformed option throws
   at the call, and the promise rejects when your kind is refused at create (the compiler's line in the reason), a GPU error is raised,
   your stage or your world half throws, or the device is lost. Stills on one device are drawn in turn. Hold `rgba` to a golden of your
   own (a sha-256 is Dawn's bytes on the host that blessed it): `examples/desk-clock/test/still.ts` (the stage) and

@@ -8,12 +8,15 @@
 // path out: a kind refused at create, a stage that throws), a malformed option throws at the call, and two stills asked together on
 // one device are drawn in turn. A kind's own SHADING is Dawn's: the desk clock's still (examples/desk-clock, `pnpm still`).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { defineWidget } from "@ice/core";
+import { defineWidget, p } from "@ice/core";
 import { instrumentMemory } from "../src/gpu-memory";
-import { createStill, STILL_PALETTE, type StillOptions } from "../src/index";
+import { createStill, STILL_PALETTE, type StillOptions, type StillStage } from "../src/index";
 import type { KindPass } from "../src/kind";
-import type { ObjectKind, ObjectRect } from "../src/kinds/world";
+import type { KindLocal, ObjectKind, ObjectRect } from "../src/kinds/world";
 import { attachmentOf } from "../src/kit/layer";
+import { type InkBitmap, TEXT_RASTER, type TextRaster } from "../src/kit/raster";
+import { service, type ServiceKey, serviceKey } from "../src/kit/services";
+import type { HandLayout } from "../src/kit/text";
 import { defineObject } from "../src/object";
 import { installGpuFlags } from "./fake-gpu";
 import type { FakeDeviceOptions } from "./fake-gpu";
@@ -207,5 +210,171 @@ describe("createStill — one still of a desk on the caller's device (petition I
     const palette = { ...STILL_PALETTE, canvasBg: { token: "test", css: "#000000" } };
     await createStill({ device: gpu.device, format: "rgba8unorm", size: { width: 16, height: 16 }, dpr: 1, objects: [Looked], theme: "dark", palette, stage: () => {} });
     expect(seen).toEqual([[palette, "dark"]]);
+  });
+});
+
+// ---------------------------------------------------------------- petition I35: a still that can draw a kind's TEXT
+
+/** The writing stub's ink paint (≠ the sheet's, ≠ the mat's). */
+const INK: Paint = [250, 230, 20, 255];
+const WRITE_SHEET = "still-write/sheet";
+const WRITE_INK = "still-write/ink";
+/** A writing stub's record: its sheet on the attachment, and where its ink lies there — none when it has no writing. */
+interface WriteRecord { readonly sheet: StubRecord; readonly ink: StubRecord | null }
+
+/** A FAKE text raster (the `TEXT_RASTER` a caller lends): one texel column a character, full coverage — a string of n characters is n columns of ink. */
+const fakeRaster = (): TextRaster & { calls: number } => {
+  const r = {
+    calls: 0,
+    metrics: () => undefined,
+    version: () => 0,
+    raster(layout: HandLayout): InkBitmap {
+      r.calls += 1;
+      const n = (layout as unknown as { readonly text: string }).text.length;
+      return { bytes: new Uint8Array(new ArrayBuffer(Math.max(1, n) * 4)).fill(n > 0 ? 255 : 0), w: Math.max(1, n), h: 4 };
+    },
+  };
+  return r;
+};
+
+/** The writing stub's pass: the sheet under one pipeline, the ink under another — each record's two rects painted. */
+function writePass(device: GPUDevice): KindPass<WriteRecord> {
+  const sheet = device.createRenderPipeline({ label: WRITE_SHEET } as GPURenderPipelineDescriptor);
+  const ink = device.createRenderPipeline({ label: WRITE_INK } as GPURenderPipelineDescriptor);
+  let records: readonly WriteRecord[] = [];
+  let attach = { w: 0, h: 0 };
+  const paint = (pass: GPURenderPassEncoder, r: StubRecord): void => {
+    const x0 = Math.max(0, Math.round(r.x0));
+    const y0 = Math.max(0, Math.round(r.y0));
+    const x1 = Math.min(attach.w, Math.round(r.x1));
+    const y1 = Math.min(attach.h, Math.round(r.y1));
+    if (x1 <= x0 || y1 <= y0) return;
+    pass.setScissorRect(x0, y0, x1 - x0, y1 - y0);
+    pass.draw(6);
+  };
+  return {
+    spawn: () => writePass(device),
+    prepare: (_e, slot, rs) => { records = rs; attach = attachmentOf(slot.view); return rs.length; },
+    drawRange(pass, first, end) {
+      for (let i = first; i < end; i++) {
+        const r = records[i] as WriteRecord;
+        pass.setPipeline(sheet);
+        paint(pass, r.sheet);
+        if (r.ink !== null) { pass.setPipeline(ink); paint(pass, r.ink); }
+      }
+      pass.setScissorRect(0, 0, attach.w, attach.h);
+    },
+    dispose: () => {},
+  };
+}
+
+/** The writing stub's desk state: its text raster (the host's `TEXT_RASTER`, if lent), its ticks and its release counted. */
+interface WriteLocal extends KindLocal { readonly text: TextRaster | undefined; ticks: number; disposed: number }
+
+/**
+ * A kind that WRITES, as the note does (its `local` holds the host's text raster; its record lays the ink the raster gives for its
+ * `text` prop): the ink — one CSS px of the sheet a texel column — from the sheet's left edge, its top quarter.
+ */
+function writeKind(name: string, made: WriteLocal[]): ObjectKind<ObjectRect, WriteRecord> {
+  return {
+    name, stratum: "things", reach: 0,
+    create: async (device) => writePass(device),
+    local: (host) => { const l: WriteLocal = { text: host.use?.(TEXT_RASTER), ticks: 0, disposed: 0, tick: () => { l.ticks += 1; return false; }, due: () => Number.POSITIVE_INFINITY, dispose: () => { l.disposed += 1; } }; made.push(l); return l; },
+    resolve: (ctx) => ctx.rect,
+    record: (G, ctx) => {
+      const { camX, camY, zoom, dpr } = ctx.view;
+      const k = zoom * dpr;
+      const sheet = { x0: (G.cx - G.w / 2 - camX) * k, y0: (G.cy - G.h / 2 - camY) * k, x1: (G.cx + G.w / 2 - camX) * k, y1: (G.cy + G.h / 2 - camY) * k };
+      const text = typeof ctx.props.text === "string" ? ctx.props.text : "";
+      const ink = (ctx.local as WriteLocal | undefined)?.text?.raster({ text } as unknown as HandLayout, "test-face", { w: G.w, h: G.h }, 1, 0);
+      const cols = ink === undefined || ink.bytes.every((b) => b === 0) ? 0 : ink.w;
+      return { sheet, ink: cols === 0 ? null : { x0: sheet.x0, y0: sheet.y0, x1: sheet.x0 + cols * k, y1: sheet.y0 + (G.h / 4) * k } };
+    },
+    hit: () => "content",
+  };
+}
+
+/** Each pixel of a still counted by paint. */
+function paints(still: { readonly width: number; readonly height: number; readonly rgba: Uint8Array }): Map<string, number> {
+  const out = new Map<string, number>();
+  for (let i = 0; i < still.width * still.height; i++) {
+    const key = [...still.rgba.subarray(i * 4, i * 4 + 4)].join();
+    out.set(key, (out.get(key) ?? 0) + 1);
+  }
+  return out;
+}
+
+describe("createStill({ services }) — a still that draws a kind's writing (petition I35)", () => {
+  const undo: (() => void)[] = [];
+  beforeAll(() => { undo.push(installGpuFlags()); });
+  afterAll(() => { for (const u of undo.splice(0)) u(); });
+
+  /** A raster device that paints the writing stub's sheet and ink. */
+  const writeDevice = () => {
+    const gpu = rasterDevice();
+    gpu.paints.set("mat/mat", MAT);
+    gpu.paints.set(WRITE_SHEET, STUB);
+    gpu.paints.set(WRITE_INK, INK);
+    return { ...gpu, ledger: instrumentMemory(gpu.device) };
+  };
+  let n = 0;
+  const writer = (made: WriteLocal[], host?: Parameters<typeof defineObject>[0]["host"]) => {
+    n += 1;
+    return defineObject({ type: `test.still-writer-${n}`, version: 1, props: { text: p.string({ default: "" }) }, kind: writeKind(`still-writer-${n}`, made), ...(host !== undefined ? { host } : {}) });
+  };
+  const stage = (type: string) => ({ engine }: StillStage) => { engine.ops.spawnWidget(type, { x: -10, y: -8, w: 20, h: 16, props: { text: "hello" }, undoable: false }); };
+
+  it("with the text raster lent, the kind's desk state writes: its ink in the still where the product draws it — without, the sheet bare; the desk state ticked once, released with the still", async () => {
+    const made: WriteLocal[] = [];
+    const Writer = writer(made);
+    const raster = fakeRaster();
+    const gpu = writeDevice();
+    const base = { device: gpu.device, format: "rgba8unorm" as const, size: { width: 40, height: 32 }, dpr: 2, objects: [Writer], stage: stage(Writer.type) };
+    // without services: no desk state at all — the sheet, no ink (I30's still, unchanged)
+    const bare = await createStill(base);
+    expect(made).toEqual([]);
+    expect(paints(bare).get(INK.join())).toBeUndefined();
+    expect(paints(bare).get(STUB.join())).toBe(40 * 32);   // the sheet: 20 × 16 CSS px at dpr 2
+    // with the text raster lent: the kind's writing, "hello" — 5 columns of the sheet (CSS px), its top quarter (4 CSS px), at dpr 2
+    const written = await createStill({ ...base, services: [service(TEXT_RASTER, raster)] });
+    expect(raster.calls).toBeGreaterThan(0);
+    const counted = paints(written);
+    expect(counted.get(INK.join())).toBe(10 * 8);
+    expect(counted.get(STUB.join())).toBe(40 * 32 - 10 * 8);
+    // where: the sheet's top-left (the CSS rect [10, 30] × [8, 24], × dpr 2), the ink from its left edge
+    const at = (x: number, y: number) => [...written.rgba.subarray((y * written.width + x) * 4, (y * written.width + x) * 4 + 4)];
+    expect(at(20, 16)).toEqual([...INK]);
+    expect(at(29, 23)).toEqual([...INK]);
+    expect(at(30, 16)).toEqual([...STUB]);
+    expect(at(20, 24)).toEqual([...STUB]);
+    // the desk state: made once with the host's raster, ticked once before the frame, released before the promise settled
+    expect(made).toHaveLength(1);
+    expect(made[0]?.text).toBe(raster);
+    expect(made[0]?.ticks).toBe(1);
+    expect(made[0]?.disposed).toBe(1);
+    expect(gpu.ledger.read().total).toBe(0);
+  });
+
+  it("an object's DOM half lends from the caller's services, as on a layer — its service reaches the kinds; a name lent twice rejects", async () => {
+    const made: WriteLocal[] = [];
+    const INKS = serviceKey<TextRaster>("test.inks");
+    const raster = fakeRaster();
+    // the DOM half lends the caller's raster again under its own key; the kind reads THAT one (as the calendar's print raster is lent over the text raster)
+    const Lender = writer([], { lend: (h) => { const text = h.use(TEXT_RASTER); return text === undefined ? [] : [service(INKS, text)]; } });
+    const kind = writeKind(`still-writer-inks-${++n}`, made);
+    const Reader = defineObject({ type: `test.still-reader-${n}`, version: 1, props: { text: p.string({ default: "" }) }, kind: { ...kind, local: (host) => kind.local?.({ ...host, use: <T>(key: ServiceKey<T>) => (key.name === TEXT_RASTER.name ? host.use?.(INKS as unknown as ServiceKey<T>) : host.use?.(key)) }) as KindLocal } });
+    const gpu = writeDevice();
+    const still = await createStill({ device: gpu.device, format: "rgba8unorm", size: { width: 40, height: 32 }, dpr: 2, objects: [Lender, Reader], stage: stage(Reader.type), services: [service(TEXT_RASTER, raster)] });
+    expect(made[0]?.text).toBe(raster);
+    expect(paints(still).get(INK.join())).toBe(10 * 8);
+    await expect(createStill({ device: gpu.device, format: "rgba8unorm", size: { width: 8, height: 8 }, dpr: 1, objects: [Lender], stage: () => {}, services: [service(TEXT_RASTER, raster), service(INKS, raster)] }))
+      .rejects.toThrow(/"test.inks" is lent twice — by the still's caller and by the object/);
+    expect(gpu.ledger.read().total).toBe(0);
+  });
+
+  it("a malformed `services` throws at the call", () => {
+    const gpu = writeDevice();
+    const Writer = writer([]);
+    expect(() => createStill({ device: gpu.device, format: "rgba8unorm", size: { width: 8, height: 8 }, dpr: 1, objects: [Writer], stage: () => {}, services: [{ text: fakeRaster() }] as never })).toThrow("createStill: `services` must be a list of lent services");
   });
 });
