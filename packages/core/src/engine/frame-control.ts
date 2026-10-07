@@ -113,6 +113,20 @@ export interface FrameControl {
   claimStep(): boolean;
   /** Wake on any freeze/thaw transition (the host loop restarts here). */
   onChange(fn: () => void): () => void;
+  /**
+   * The park ANNOUNCED (petition I41) — for a host that must know the loop HAS parked (a cover's budget after it rises)
+   * without polling {@link isParked} every page frame. `fn(true)` once the loop has parked after a freeze: when the settle
+   * walk's last step ENDS (the frame the park leaves standing is drawn — `isParked()` turned true as that step was handed
+   * out), or at the first claim the gate refuses where no step followed (the settle cap; a host that claims without
+   * stepping). `fn(false)` once when the last thaw reopens a gate that announced its park — after `onChange`, so the loop
+   * has restarted. Once per transition, never per frame; a freeze thawed before it parked announces nothing, and a second
+   * freeze taken over a park changes nothing. Not replayed on subscribe (read `isParked()` for the state now). A throwing
+   * listener is reported and contained — the announcement runs inside the loop's own step and claim. A separate door, not
+   * a payload on `onChange`: that one fires at the HOLD's transitions, which the park's are not (a freeze's comes before
+   * its settle walk), and its listeners — the loop's restart, the facade's gesture cancel — must not run a third time a
+   * cycle. Returns an unsubscribe.
+   */
+  onParked(fn: (parked: boolean) => void): () => void;
 
   // ── the sleep (K7a) ────────────────────────────────────────────────────────
   /**
@@ -157,6 +171,12 @@ export function createFrameControl(world: World): FrameControl {
   const listeners = new Set<() => void>();
   let settleLeft = 0;
   let parked = false;
+  // the park announced (I41)
+  const parkListeners = new Set<(parked: boolean) => void>();
+  /** The park the listeners last heard — each transition announced once. */
+  let heardParked = false;
+  /** The claim that closed the gate handed out the settle walk's last step: that step's end announces the park. */
+  let parkOwed = false;
   // the sleep (K7a)
   const sources = new Map<symbol, { readonly name: string; readonly due: (now: number) => number }>();
   const wakeListeners = new Set<() => void>();
@@ -185,6 +205,52 @@ export function createFrameControl(world: World): FrameControl {
     for (const r of reporters.values()) if (r.busy()) names.push(r.name);
     return names;
   };
+  // Copied (a listener may unsubscribe mid-announce) and CONTAINED: the park is announced inside the loop's own step and claim,
+  // and a host's throw there must not take the loop down with it (petition I14, dom/loop.ts). A listener that thaws at the park
+  // announces the reopening from inside this walk — the listeners not yet called hear only that, the state now, never a park
+  // already over.
+  const announcePark = (on: boolean): void => {
+    if (heardParked === on) return;
+    heardParked = on;
+    for (const fn of [...parkListeners]) {
+      if (heardParked !== on) return;
+      try {
+        fn(on);
+      } catch (err) {
+        console.error("[ice] frame.onParked — a listener threw; the gate stands", err);
+      }
+    }
+  };
+
+  const claim = (): boolean => {
+    if (freezes.size === 0) return true;
+    if (!parked && settleLeft <= 0) {
+      // Cap reached with work still outstanding. Park anyway — a freeze that
+      // never lands is worse than one that lands on a stale pixel — but name
+      // the reporters, because this is always someone's bug.
+      parked = true;
+      if (devGuardsEnabled()) {
+        console.warn(
+          `ice: frame.freeze — settle cap (${SETTLE_CAP} frames) reached with reporters still busy: ${busyNames().join(", ")}. Parking on a possibly unsettled frame.`,
+        );
+      }
+    }
+    if (parked) {
+      if (heardParked) return false;
+      // A park no ended step has announced — the cap's, or a host that claims without stepping — is announced at its first
+      // refusal. A listener may thaw right there (or thaw and freeze again): then this claim is the reopened gate's.
+      parkOwed = false;
+      announcePark(true);
+      return parked ? false : claim();
+    }
+    settleLeft -= 1;
+    // Quiet: this is the LAST step, taken so the settled state reflects — its end announces the park (leaveStep).
+    if (busyNames().length === 0) {
+      parked = true;
+      parkOwed = true;
+    }
+    return true;
+  };
 
   return {
     freeze(name) {
@@ -204,12 +270,16 @@ export function createFrameControl(world: World): FrameControl {
         if (released) return; // idempotent — double-thaw must not eat another freeze
         released = true;
         freezes.delete(token);
-        if (freezes.size === 0) {
+        const open = freezes.size === 0;
+        if (open) {
           settleLeft = 0;
           parked = false;
+          parkOwed = false;
         }
         sync();
         announce();
+        // The gate reopened (the loop restarted in `announce`): a park the listeners heard is over.
+        if (open) announcePark(false);
       };
     },
 
@@ -230,31 +300,19 @@ export function createFrameControl(world: World): FrameControl {
 
     settling: () => busyNames(),
 
-    claimStep() {
-      if (freezes.size === 0) return true;
-      if (parked) return false;
-      if (settleLeft <= 0) {
-        // Cap reached with work still outstanding. Park anyway — a freeze that
-        // never lands is worse than one that lands on a stale pixel — but name
-        // the reporters, because this is always someone's bug.
-        parked = true;
-        if (devGuardsEnabled()) {
-          console.warn(
-            `ice: frame.freeze — settle cap (${SETTLE_CAP} frames) reached with reporters still busy: ${busyNames().join(", ")}. Parking on a possibly unsettled frame.`,
-          );
-        }
-        return false;
-      }
-      settleLeft -= 1;
-      // Quiet: this is the LAST step, taken so the settled state reflects.
-      if (busyNames().length === 0) parked = true;
-      return true;
-    },
+    claimStep: claim,
 
     onChange(fn) {
       listeners.add(fn);
       return () => {
         listeners.delete(fn);
+      };
+    },
+
+    onParked(fn) {
+      parkListeners.add(fn);
+      return () => {
+        parkListeners.delete(fn);
       };
     },
 
@@ -329,6 +387,11 @@ export function createFrameControl(world: World): FrameControl {
 
     leaveStep() {
       inStep = false;
+      // The settle walk's last step has ended: the park is real — announce it.
+      if (parkOwed) {
+        parkOwed = false;
+        announcePark(true);
+      }
     },
 
     stepping: () => inStep,

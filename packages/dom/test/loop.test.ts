@@ -141,6 +141,31 @@ describe("startRafLoop — the freeze gate", () => {
     expect(world.getResource(FrameInfo)?.dt).toBe(64); // CAMERA_DEFAULTS.dtClampMs
   });
 
+  it("announces the park ONCE as the settle frame ends, the reopening once at the thaw — never per frame (petition I41)", () => {
+    const world = createWorld();
+    const engine = createEngine(world);
+    const heard: Array<{ parked: boolean; tick: number; queued: number }> = [];
+    engine.frame.onParked((parked) =>
+      heard.push({ parked, tick: world.getResource(FrameInfo)?.tick ?? 0, queued: scheduled.length }),
+    );
+    startRafLoop(engine);
+
+    for (let t = 16; t <= 64; t += 16) scheduled.shift()?.(t);
+    expect(heard).toEqual([]);
+    const thaw = engine.frame.freeze("godview");
+    scheduled.shift()?.(80); // the settle frame: stepped, and the park announced as it ends
+    expect(heard).toEqual([{ parked: true, tick: 5, queued: 0 }]);
+    scheduled.shift()?.(96); // the parking frame: refused, nothing more said
+    expect(scheduled).toHaveLength(0);
+    expect(heard).toHaveLength(1);
+
+    thaw();
+    expect(heard.map((h) => h.parked)).toEqual([true, false]);
+    expect(heard[1]?.queued).toBe(1); // the loop had restarted when the reopening was heard
+    for (let t = 112; t <= 176; t += 16) scheduled.shift()?.(t);
+    expect(heard).toHaveLength(2);
+  });
+
   it("stop() unsubscribes: a thaw after teardown revives nothing", () => {
     const world = createWorld();
     const engine = createEngine(world);

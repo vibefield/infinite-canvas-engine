@@ -69,6 +69,15 @@ const ce = createCanvasEngine({ widgets?, tools?, canvasTypes?, rootCanvas?, beh
   fall back to TTL, observable via `PresenceOpts.onFault`; `close()`/dispose
   run the same teardown). Transport is the caller's: `presence().wire.apply`
   inbound, `presence().onOutbound(send)` outbound.
+- `ce.frame` — the frame gate (`engine.frame`; one gate): `freeze(name)` → an idempotent thaw (refcounted and named, for chrome
+  that COVERS the canvas — the loop walks to quiet, takes one settled step, then parks; `stage` is for chrome that recedes it) ·
+  `isFrozen` · `isParked` · `holds` · `settleWhile(name, busy)` · `onChange(fn)` (each freeze and thaw — the loop restarts there)
+  · **`onParked(fn: (parked: boolean) => void)`** (petition I41): `true` ONCE when the loop has parked — the settle walk's last
+  step has ENDED, so the frame the park leaves standing is drawn (`isParked()` turns true as that step is handed out), or the
+  first claim refused with no step after it (the settle cap) — and `false` once when the last thaw reopens it, after `onChange`
+  (the loop has restarted). Never per frame; a freeze thawed before it parked announces nothing; not replayed on subscribe (read
+  `isParked()`); a throwing listener is reported and contained. A host that polled `isParked()` after its freeze listens
+  instead. The sleep (K7a): `wake(reason)` · `wakeWhen(name, due)` · `sleepStats()` (the wakes counted by reason).
 - `settings` seeds live-tunable resources: `GestureSettings`,
   `PointerSettings`, `CameraLimits`, `SnapConfig` (resource first, reviewed
   constants as fallback).

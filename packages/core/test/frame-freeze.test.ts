@@ -15,6 +15,7 @@ import {
   createEngine,
   createWorld,
   defineWidget,
+  FrameInfo,
   FrameMode,
   NO_MODS,
   SETTLE_CAP,
@@ -217,5 +218,170 @@ describe("engine.frame — what a freeze must not strand", () => {
     ce.step(1016); // a headless host / trace driving frames by hand
     expect(ce.world.isAlive(e)).toBe(true);
     ce.dispose();
+  });
+});
+
+describe("engine.frame.onParked — the park ANNOUNCED (petition I41)", () => {
+  /** A host loop as dom/loop.ts drives one: a claim, then the step it granted. Returns whether a step ran. */
+  function hostOf(engine: ReturnType<typeof createEngine>) {
+    let now = 1000;
+    return {
+      frame(): boolean {
+        if (!engine.frame.claimStep()) return false;
+        now += 16;
+        engine.step(now);
+        return true;
+      },
+    };
+  }
+
+  it("announces once when the settle step ENDS — not at the freeze, not as the step is handed out — and never per frame", () => {
+    const world = createWorld();
+    const engine = createEngine(world);
+    const heard: Array<{ parked: boolean; tick: number }> = [];
+    engine.frame.onParked((parked) => heard.push({ parked, tick: world.getResource(FrameInfo)?.tick ?? 0 }));
+    const host = hostOf(engine);
+    for (let i = 0; i < 5; i++) expect(host.frame()).toBe(true);
+    expect(heard).toEqual([]); // a live loop announces nothing
+
+    const thaw = engine.frame.freeze("cover");
+    expect(heard).toEqual([]); // a freeze is not a park
+
+    // The settle step: the gate closes as it hands it out (isParked turns true) — the park is announced when it has ENDED.
+    expect(engine.frame.claimStep()).toBe(true);
+    expect(engine.frame.isParked()).toBe(true);
+    expect(heard).toEqual([]);
+    engine.step(2000);
+    expect(heard).toEqual([{ parked: true, tick: 6 }]); // heard after the sixth step — the frame the park leaves standing
+
+    for (let i = 0; i < 20; i++) expect(host.frame()).toBe(false); // the refused claims: nothing more
+    expect(heard).toHaveLength(1);
+
+    thaw();
+    expect(heard.map((h) => h.parked)).toEqual([true, false]); // the reopening, once
+    for (let i = 0; i < 5; i++) expect(host.frame()).toBe(true);
+    expect(heard).toHaveLength(2);
+  });
+
+  it("after a busy walk: one announcement, at the end of the settled step that follows it", () => {
+    const engine = createEngine(createWorld());
+    let owed = 3;
+    engine.frame.settleWhile("gl-paints", () => owed > 0);
+    const heard: boolean[] = [];
+    engine.frame.onParked((parked) => heard.push(parked));
+    const host = hostOf(engine);
+    engine.frame.freeze("cover");
+    for (let i = 0; i < 3; i++) {
+      expect(host.frame()).toBe(true);
+      owed -= 1;
+    }
+    expect(heard).toEqual([]); // walking, not parked
+    expect(host.frame()).toBe(true); // the settled step
+    expect(heard).toEqual([true]);
+    expect(host.frame()).toBe(false);
+    expect(heard).toEqual([true]);
+  });
+
+  it("the settle cap and a host that claims without stepping: announced at the first REFUSED claim", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const capped = createEngine(createWorld());
+      capped.frame.settleWhile("never-quiet", () => true);
+      const heardCap: boolean[] = [];
+      capped.frame.onParked((parked) => heardCap.push(parked));
+      capped.frame.freeze("cover");
+      for (let i = 0; i < SETTLE_CAP; i++) expect(capped.frame.claimStep()).toBe(true);
+      expect(heardCap).toEqual([]);
+      expect(capped.frame.claimStep()).toBe(false); // capped: no step follows this park
+      expect(heardCap).toEqual([true]);
+      expect(capped.frame.claimStep()).toBe(false);
+      expect(heardCap).toEqual([true]);
+    } finally {
+      warn.mockRestore();
+    }
+
+    const bare = createEngine(createWorld());
+    const heard: boolean[] = [];
+    bare.frame.onParked((parked) => heard.push(parked));
+    bare.frame.freeze("cover");
+    expect(bare.frame.claimStep()).toBe(true); // the settle step, never stepped
+    expect(heard).toEqual([]);
+    expect(bare.frame.claimStep()).toBe(false);
+    expect(heard).toEqual([true]);
+  });
+
+  it("a freeze thawed before it parks announces nothing; a second freeze over a park changes nothing; the LAST thaw reopens", () => {
+    const engine = createEngine(createWorld());
+    const heard: boolean[] = [];
+    engine.frame.onParked((parked) => heard.push(parked));
+    const host = hostOf(engine);
+
+    const early = engine.frame.freeze("flash");
+    early();
+    expect(heard).toEqual([]);
+    expect(host.frame()).toBe(true);
+    expect(heard).toEqual([]);
+
+    const a = engine.frame.freeze("godview");
+    host.frame(); // settle
+    expect(heard).toEqual([true]);
+    const b = engine.frame.freeze("window-hidden"); // over the park
+    a();
+    expect(heard).toEqual([true]); // still parked by the other holder
+    b();
+    expect(heard).toEqual([true, false]);
+  });
+
+  it("a listener that thaws AT the park gets the gate reopened — the claim it refused is granted, and the listeners after it hear only the reopening", () => {
+    const warn = vi.spyOn(console, "warn").mockImplementation(() => undefined);
+    try {
+      const engine = createEngine(createWorld());
+      engine.frame.settleWhile("never-quiet", () => true);
+      const thaw = engine.frame.freeze("blink");
+      const first: boolean[] = [];
+      const second: boolean[] = [];
+      engine.frame.onParked((parked) => {
+        first.push(parked);
+        if (parked) thaw();
+      });
+      engine.frame.onParked((parked) => second.push(parked));
+      for (let i = 0; i < SETTLE_CAP; i++) engine.frame.claimStep();
+      expect(engine.frame.claimStep()).toBe(true); // the cap parked it, the listener thawed it: the loop is not left dead
+      expect(engine.frame.isFrozen()).toBe(false);
+      expect(first).toEqual([true, false]);
+      expect(second).toEqual([false]); // never told of a park already over
+    } finally {
+      warn.mockRestore();
+    }
+  });
+
+  it("a throwing listener is contained: the others hear, and the gate stands", () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    try {
+      const engine = createEngine(createWorld());
+      const heard: boolean[] = [];
+      engine.frame.onParked(() => {
+        throw new Error("host bug");
+      });
+      engine.frame.onParked((parked) => heard.push(parked));
+      const host = hostOf(engine);
+      engine.frame.freeze("cover");
+      expect(() => host.frame()).not.toThrow();
+      expect(heard).toEqual([true]);
+      expect(engine.frame.isParked()).toBe(true);
+      expect(error).toHaveBeenCalledWith(expect.stringContaining("onParked"), expect.any(Error));
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it("an unsubscribed listener hears nothing", () => {
+    const engine = createEngine(createWorld());
+    const heard: boolean[] = [];
+    const off = engine.frame.onParked((parked) => heard.push(parked));
+    off();
+    engine.frame.freeze("cover");
+    hostOf(engine).frame();
+    expect(heard).toEqual([]);
   });
 });
