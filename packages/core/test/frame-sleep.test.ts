@@ -228,6 +228,18 @@ describe("the doors — what wakes a sleeping loop", () => {
     other.detach();
     expect(ce.frame.sleepStats().wakes.presence ?? 0).toBeGreaterThan(own);
   });
+
+  it("the room at rest: a lone engine's presence counts NO wake over 6.2 s — the TTL sweep's empty ticks are no one's (I43)", async () => {
+    // The default TTL (5 s): Loro sweeps every 2.5 s while the store holds this peer's own keys, and a sweep that removes
+    // nothing still emits — DK-16 counted `wakes.presence` 2 in 6.2 s at rest before the kit keyed off the event's arrays.
+    const ce = boot();
+    const loop = loopOf(ce.engine);
+    ce.docs.attachPresence({ name: "me", color: "#f00" });
+    loop.toSleep();
+    const before = ce.frame.sleepStats().wakes.presence ?? 0;
+    await new Promise((r) => setTimeout(r, 6200));
+    expect((ce.frame.sleepStats().wakes.presence ?? 0) - before).toBe(0);
+  }, 15_000);
 });
 
 describe("the registered wakes — due while their work is pending", () => {

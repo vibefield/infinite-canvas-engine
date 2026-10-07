@@ -11,6 +11,7 @@
  * derive system grows/reaps a CursorVisual "remote" entity following the peer.
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { EphemeralStore as LoroEphemeralStore } from "loro-crdt";
 import type { Entity } from "@vibecook/strata-ecs";
 import {
   CursorVisual,
@@ -268,5 +269,59 @@ describe("presence survives world.reset (doc close / internal re-bootstrap)", ()
     b.session.eph.addComponent(b.session.localPeer, PresenceCursor, { x: 9, y: 9, device: "mouse" });
     b.world.sync();
     expect(b.world.has(b.session.localPeer, PresenceCursor)).toBe(true);
+  });
+});
+
+// --- I43: onRemote fires only for an event that carries keys ------------------------------------------
+
+describe("onRemote — a store event that carries no keys is no one's (I43)", () => {
+  it("an empty TTL sweep fires nothing; one import fires once; the peer's key aging out fires once", async () => {
+    // TTL 400 ms: Loro sweeps every 200 ms while the store holds a key — A's own keepalive (≈ ttl/3) keeps one there.
+    const TTL = 400;
+    let remote = 0;
+    const a = attachPresence(createWorld(), { name: "a", color: "#f00", ttlMs: TTL, onRemote: () => { remote += 1; } });
+    sessions.push(a);
+    const b = attachPresence(createWorld(), { name: "b", color: "#00f", ttlMs: TTL });
+    sessions.push(b);
+    const fromB: Uint8Array[] = [];
+    b.onOutbound((bytes) => fromB.push(bytes));
+
+    // The control: a bare store at the same TTL, its one key refreshed as a keepalive would — at this loro version a sweep that
+    // removes nothing still EMITS (`timeout`, every array empty), so the silence asserted below is the fix's, not Loro's.
+    const control = new LoroEphemeralStore(TTL);
+    const sweeps: number[] = [];
+    const stopControl = control.subscribe((ev) => {
+      if (ev.by === "timeout" && ev.added.length + ev.updated.length + ev.removed.length === 0) sweeps.push(Date.now());
+    });
+    control.set("k", 1);
+    const refresh = setInterval(() => control.set("k", 1), TTL / 3);
+    try {
+      await sleep(900); // ≥ 4 sweeps of A's own store, every one empty
+      expect(sweeps.length).toBeGreaterThan(1);
+      expect(remote).toBe(0);
+    } finally {
+      clearInterval(refresh);
+      stopControl();
+      control.destroy();
+    }
+
+    // An import from a remote: ONE fresh buffer of B's (its keepalive; its peer's key added) — one fire. (A buffer older than
+    // the TTL imports nothing: Loro drops an expired key on arrival, every array empty.)
+    fromB.splice(0);
+    const t0 = Date.now();
+    while (fromB.length === 0 && Date.now() - t0 < 2000) await sleep(5);
+    const first = must(fromB[0], "B's next outbound buffer");
+    a.wire.apply(first);
+    expect(remote).toBe(1);
+    // The same buffer again changes nothing in A's store (every array empty) — no fire.
+    a.wire.apply(first);
+    expect(remote).toBe(1);
+
+    // B's bytes stop reaching A: past the TTL a sweep REMOVES B's key — one fire — and the empty sweeps after it fire nothing.
+    const t1 = Date.now();
+    while (remote < 2 && Date.now() - t1 < 3000) await sleep(10);
+    expect(remote).toBe(2);
+    await sleep(500);
+    expect(remote).toBe(2);
   });
 });

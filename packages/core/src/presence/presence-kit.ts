@@ -60,6 +60,8 @@ export interface PresenceOpts {
   /**
    * A peer's presence ARRIVED or AGED OUT (the Loro store's imports and its TTL sweep — never this peer's own sets): it is
    * projected at the next `world.sync()`, so the host's next frame must come — the facade wakes a sleeping loop here (K7a).
+   * Only for an event that carries keys (I43): the sweep's empty tick, every ttl/2 at rest, and an import that changed nothing
+   * are no one's arrival.
    */
   readonly onRemote?: () => void;
 }
@@ -107,7 +109,16 @@ export function attachPresence(world: World, opts: PresenceOpts): PresenceSessio
   const loro = new LoroEphemeralStore(ttlMs);
   const source = new LoroEphemeralSnapshot(loro);
   const onRemote = opts.onRemote;
-  const stopRemote = onRemote === undefined ? undefined : loro.subscribe((ev) => { if (ev.by !== "local") onRemote(); });
+  // Only an event that CARRIES KEYS is a peer's (I43): Loro's TTL sweep runs every ttl/2 while the store holds a key — our own
+  // keepalive keeps one there — and emits `timeout` with all three arrays empty when nothing aged out (strata's adapter keys off
+  // the same arrays, loro-ephemeral-snapshot.ts finding 4); a stale or repeated import is empty too. A sweep that REMOVED a
+  // peer's key still fires: a peer aging out is the next frame's.
+  const stopRemote =
+    onRemote === undefined
+      ? undefined
+      : loro.subscribe((ev) => {
+          if (ev.by !== "local" && (ev.added.length > 0 || ev.updated.length > 0 || ev.removed.length > 0)) onRemote();
+        });
 
   // The binding's timers call `send`; fan it out to `onOutbound` subscribers so
   // a transport can bind AFTER attach (the doc-kit precedent — transport-free core).
