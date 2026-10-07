@@ -1953,8 +1953,8 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
 - **I35 — a still that draws a kind's writing** (built 2026-10-07 on branch `i35-43`; DK-11): `createStill({ services })` — the
   entries a layer lends; given, each kind gets its desk state (`local(host)`) over the still's root pass, ticked once and released
   with the still; absent, every still as before. ICE lends no Node text raster (a baked default needs a font rasterizer): the caller
-  lends its own. Witnesses: desk/test/still.test.ts (a writing stub on the fake raster), a Dawn probe of the real note, and the desk
-  clock's Dawn still unchanged.
+  lends its own. Witnesses: desk/test/still.test.ts (a writing stub on the fake raster) and the desk clock's Dawn still unchanged
+  (once at the build, a throwaway Dawn probe of the real note: ink with a fixed raster lent, none without — not kept).
 
 ## Release cut & downstream
 

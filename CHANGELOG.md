@@ -373,8 +373,9 @@ I35 (`createStill({ services })`) — `### Added`, last, in that order — and I
   browser's `inkRaster` is a Canvas 2D; a baked default would need a font rasterizer ICE does not have): the caller lends its own.
   Witnesses: `packages/desk/test/still.test.ts` (a writing stub kind on the fake raster device: bare without services, its ink — 80
   px exactly where its sheet's top-left is — with them; the desk state made, ticked and released once; an object's DOM half lending
-  over the caller's raster; a malformed `services` throws), a Dawn probe of the REAL note (7,177 px of ink inside its box with a fixed
-  raster lent, none without), and the desk clock's Dawn still unchanged. `docs/api-reference.md`: the Stills paragraph.
+  over the caller's raster; a malformed `services` throws) and the desk clock's Dawn still unchanged — and, once at the build, a
+  throwaway Dawn probe of the REAL note (7,177 px of ink inside its box with a fixed raster lent, none without; not kept).
+  `docs/api-reference.md`: the Stills paragraph.
 
 ### Changed
 
