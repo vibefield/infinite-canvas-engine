@@ -215,6 +215,13 @@ export const Tray = defineComponent("Tray", {
    * scroll and the band when it moves, and falls back to all ("") when the frame hangs none of it.
    */
   category: field("string", { default: "" }),
+  /**
+   * Petition I37 — THE KEYBOARD FOCUS on the board: the type of the specimen it is on ("" — none), a fact of the view like `hover`.
+   * Its writer is the op `focusTray` (next/prev/first/last along the lay's order, or a type by its id); `trayLay` scrolls the
+   * specimen it moves to into the board's face, and lets it go when what it was on is laid no more (a category, a frame). The
+   * renderer draws no ring for it: a host does, from the desk handle's `TrayAnchor.focused`.
+   */
+  focus: field("string", { default: "" }),
 });
 
 /**
@@ -247,13 +254,16 @@ export const TrayIntent = defineResource(
  * width it laid for (CSS px, the renderer's word through the pose seam), the content's foot (board px — the scroll's range is that
  * plus a pitch less the face, the renderer's to say) and how many lays so far (a renderer re-reads the specimens when it moves).
  * design-018 §6 (R2): `present`, what the frame could hang before the category's filter — its entries' categories in the lay's
- * order with their counts, JSON `[id, count][]` ("" for an entry that names none); `trayCategories` reads it.
+ * order with their counts, JSON `[id, count][]` ("" for an entry that names none); `trayCategories` reads it. Petition I37:
+ * `order`, the types laid, in the lay's order (row by row) — JSON `string[]`; what the keyboard focus walks (`focusTray`). The
+ * specimens' sibling order is not it: a re-lay keeps a specimen where it hangs and appends the new ones.
  */
 export const TrayContent = defineComponent("TrayContent", {
   width: field("f64", { default: 0 }),
   bottom: field("f64", { default: 0 }),
   laid: field("u32", { default: 0 }),
   present: field("string", { default: "[]" }),
+  order: field("string", { default: "[]" }),
 });
 
 /**

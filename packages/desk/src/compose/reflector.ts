@@ -227,6 +227,8 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   const faced = new Map<number, KindLocal>();
   /** When the drawer last showed (frame clock, ms): its specimens' desk state is let go once it has been shut `LAYER_IDLE_MS`. */
   let trayShownAt = Number.NEGATIVE_INFINITY;
+  /** The board's keyboard focus as last seen (petition I37). */
+  let trayFocusSeen = "";
   /** When the specimens' desk state is let go (K7a — a registered time: the loop may sleep since the drawer shut); ∞ — none held. */
   let facedAt = Number.POSITIVE_INFINITY;
   let builderWakes = builder.wakes();
@@ -281,6 +283,10 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       const tf = te === undefined ? undefined : w.get(te, Tray);
       const tc = te === undefined ? undefined : w.get(te, TrayContent);
       if (tray.read(tf === undefined ? undefined : { ...tf, hover: tf.hover ?? "", bottom: tc?.bottom ?? 0, laid: tc?.laid ?? 0 })) { dirty = true; wakes.tray += 1; }
+      // the board's keyboard focus (petition I37): nothing of it is drawn, but the tray's anchor says where it is — a move of it is a
+      // frame, so the anchor publishes after it, with the scroll the lay gave it this tick
+      const focus = tf?.focus ?? "";
+      if (focus !== trayFocusSeen) { trayFocusSeen = focus; dirty = true; wakes.tray += 1; }
       // the specimens drawn with their kinds' desk state let go of it once the drawer has been shut a while, as the tray's layers do (K5b;
       // D-K6a.3 — a pad's print keeps the desk's tiles while it has a pad): no frame is asked for; the next open makes it again
       const pinned = tray.pinned();

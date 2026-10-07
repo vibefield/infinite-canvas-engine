@@ -118,6 +118,7 @@ import { arrangeWidgets, type ArrangeOpts } from "../ops/arrange";
 import { insertByDrag, type InsertByDragOpts } from "../ops/insert";
 import { cascadeDestroy } from "../ops/cascade";
 import { clearSelection, selectedEntities, setSelection } from "../ops/selection";
+import { closeTray, trayHung } from "../ops/tray";
 import { installWidgetRuntime, type WidgetRuntime } from "../widget/mount-store";
 import { spawnWidget, type SpawnWidgetOpts } from "../widget/spawn";
 import { setWidgetProps } from "../widget/set-props";
@@ -260,6 +261,16 @@ export interface CanvasOps {
    * `stopPropagation()` (the down must not double-land via the adapter).
    */
   insertByDrag(type: string, opts: InsertByDragOpts): Entity;
+  /**
+   * THE TRAY'S OWN TAKE, LAID (petition I37 — a host's keyboard path through the pegboard: its arrows move `focusTray`, its ⏎ lays):
+   * what a specimen dragged off the board makes, with no drag — the type at its natural size, made with what its entry says one taken
+   * carries (`trayTakeProps`), CENTRED on `at` (a world point of the current frame), in ONE transaction (one undo step), selected;
+   * and the board folds as a handed take's does (`closeTray`). Only a type the board hangs now (`trayHung` — the frame takes it, the
+   * renderer draws it, the drawer shows its category); refused (undefined) for any other and while an object is in hand. Throws as
+   * `spawnWidget` does (no document, a read-only one). Laid in the current frame, never consumed by a container under the point —
+   * a drop's consume is the drag's.
+   */
+  layFromTray(type: string, at: { readonly x: number; readonly y: number }): Entity | undefined;
   /** Validated prop update: Standard-Schema-checked, json serialized, ONE tx (2026-07-13 review). */
   setWidgetProps(entity: Entity, props: Readonly<Record<string, unknown>>): void;
   deleteSelection(): void;
@@ -1586,6 +1597,22 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
         world.addTag(spawned, Active);
       }
       return spawned;
+    },
+    layFromTray(type, at) {
+      if (typeof at?.x !== "number" || typeof at.y !== "number" || !Number.isFinite(at.x) || !Number.isFinite(at.y)) {
+        throw new Error(`ice: ops.layFromTray — the point is ${JSON.stringify(at) ?? String(at)}: { x, y }, a world point of the current frame, two finite numbers.`);
+      }
+      if (heldNow() !== undefined || !trayHung(world).includes(type)) return undefined;
+      const widget = catalog.widget(type);
+      const entry = widget?.tray;
+      if (widget === undefined || entry === undefined) return undefined;
+      // what the drag-off's create carries (l3-behave's promote of the insert ghost): the type, its natural size, the take's props
+      const { w, h } = widget.defaultSize;
+      const props = trayTakeProps(entry);
+      const laid = ops.spawnWidget(type, { x: at.x - w / 2, y: at.y - h / 2, w, h, ...(props !== undefined ? { props } : {}) });
+      ops.setSelection([laid]);
+      closeTray(world);
+      return laid;
     },
     insertByDrag(type, o) {
       // Writable-session gate UP FRONT: the ghost drag would otherwise run

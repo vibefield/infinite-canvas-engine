@@ -18,6 +18,9 @@
 // open, All lays them all — and the plugin's category is its own chip. (R4) — THE HEADER: under the edge a clear band where nothing
 // hangs and no hole opens, then the ramp (rows (a), (e)); the chips lie in it as label tape, found by their DOM rects, the pill holding
 // none; at rest nothing laid is faded and the chips lie on bare board. Every other row reads the canvas alone (the bar hidden).
+// Petition I37 — THE KEYBOARD PATH, through the product's mount (`createDeskHost` hands the layer the engine's ops): the board's focus,
+// the anchor's rect where the focused specimen is DRAWN, `last` scrolled into the face, and `lay()` laying the focused take at the
+// view's centre — selected, one undo step, the drawer folded.
 // Exit 0 = every row passed.
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
@@ -1243,6 +1246,33 @@ try {
     check(through.rows >= 10 && through.worst < 3,
       `no hole shows through what hangs in the ramp: the note laid across it, ${through.rows} device rows read inside it — over a punched hole and over the face one colour a row (worst |Δ| ${through.worst.toFixed(1)} of luminance)`);
   }
+  // ── PETITION I37 — THE KEYBOARD PATH (the handle's `tray.focus` / `tray.lay`, `anchor().focused`)
+  await q("window.__desk.tray.open()"); await settle();
+  const kb = await qa(`(async () => {
+    const d = window.__desk; const T = d.handle.tray;
+    const frames = async (n) => { for (let i = 0; i < n; i++) await new Promise((r) => requestAnimationFrame(r)); };
+    const drawn = (type) => T.state().specimens.find((s) => s.type === type)?.object ?? null;
+    T.scroll(0); await frames(3);
+    const first = T.focus("first"); await frames(3);
+    const f1 = T.anchor().focused; const o1 = drawn(first);
+    const last = T.focus("last"); await frames(6);
+    const f2 = T.anchor().focused; const o2 = drawn(last);
+    const a = T.anchor(); const vp = d.viewport(); const scroll = T.scroll();
+    const id = T.lay(); await frames(4);
+    const e = id === undefined ? null : d.entity(id);
+    const cam = d.camera();
+    const want = { x: vp.w / 2 / cam.zoom + cam.x, y: vp.h / 2 / cam.zoom + cam.y };
+    const out = { first, last, f1, o1, f2, o2, scroll, header: a.drawer === null ? null : a.drawer.header.y + a.drawer.header.h, vh: vp.h, e, want, open: T.isOpen() };
+    if (id !== undefined) { d.engine.docs.undo(); await frames(3); out.undone = d.entity(id) === null; }
+    return out;
+  })()`);
+  const same = (a, b) => a !== null && b !== null && a !== undefined && b !== undefined && ["x0", "y0", "x1", "y1"].every((k) => Math.abs(a[k] - b[k]) < 1e-9);
+  check(kb.first !== "" && kb.f1?.id === kb.first && same(kb.f1?.rect, kb.o1) && kb.f2?.id === kb.last && same(kb.f2?.rect, kb.o2),
+    `the board's keyboard focus: focus("first") → ${kb.first}, focus("last") → ${kb.last}; anchor().focused is each one's object as drawn (${kb.f2?.rect === null || kb.f2 === undefined ? "none" : `${kb.f2.rect.x0.toFixed(1)}, ${kb.f2.rect.y0.toFixed(1)} → ${kb.f2.rect.x1.toFixed(1)}, ${kb.f2.rect.y1.toFixed(1)}`})`);
+  check(kb.f2?.rect !== null && kb.f2?.rect !== undefined && kb.header !== null && kb.f2.rect.y0 >= kb.header - 1e-6 && kb.f2.rect.y1 <= kb.vh + 1e-6,
+    `…the last in the board's face (scrolled into it from the top: the board at ${kb.scroll?.toFixed(1)} px), its object ${kb.f2?.rect?.y0.toFixed(1)} → ${kb.f2?.rect?.y1.toFixed(1)} between the header's foot (${kb.header?.toFixed(1)}) and the view's (${kb.vh})`);
+  check(kb.e !== null && kb.e.type === kb.last && Math.abs(kb.e.cx - kb.want.x) < 1e-6 && Math.abs(kb.e.cy - kb.want.y) < 1e-6 && kb.e.selected === true && kb.open === false && kb.undone === true,
+    `tray.lay() laid the focused ${kb.last} centred on the view's centre (world ${kb.want.x.toFixed(1)}, ${kb.want.y.toFixed(1)}: its centre ${kb.e?.cx?.toFixed(1)}, ${kb.e?.cy?.toFixed(1)}) — selected ${kb.e?.selected}, the drawer folded (open ${kb.open}); one undo takes it back (gone: ${kb.undone})`);
   await q("window.__desk.tray.close()"); await settle();
   const restAfter = await idle(240);
   check(restAfter === 0, `at rest after all of it, the drawer shut: ${restAfter} submits over 240 frames`);

@@ -46,7 +46,11 @@ const ce = createCanvasEngine({ widgets?, tools?, canvasTypes?, rootCanvas?, beh
 - `ce.ops` — `setTool · spawnWidget · deleteSelection · duplicateSelection ·
   setSelection/clearSelection/selectAll · reorder(ids, "top"|"bottom") ·
   zoomToFit/zoomTo/panTo · enterContainer/exitContainer · cancelActiveGestures ·
-  open/putDown/useHeldTool · runMenuAction(id)`. `runMenuAction` (design-016 K8a) runs a SELECTION
+  open/putDown/useHeldTool · runMenuAction(id) · layFromTray(type, at)`. `layFromTray` (petition I37) LAYS the tray's own take
+  with no drag — what a specimen dragged off the board makes: the type at its natural size, its entry's `take` props, CENTRED on
+  `at` (a world point of the current frame), ONE transaction (one undo step), selected, and the board folds as a handed take's
+  does; only a type the board hangs now (`trayHung`), refused (undefined) otherwise and while an object is in hand; laid in the
+  current frame (a drop's consume into a container is the drag's). `runMenuAction` (design-016 K8a) runs a SELECTION
   MENU act: each selected object's type that declares `id` (`defineWidget({ menu })`) runs its op
   over its own selected objects; false when none declares it.
   Every op is one engine-owned write path (one tx / one resource write).
@@ -55,6 +59,12 @@ const ce = createCanvasEngine({ widgets?, tools?, canvasTypes?, rootCanvas?, beh
   `setTrayCategory(world, id)` — the drawer lays only that category's entries ("" all), the board starts again at its top, and a
   category the frame hangs none of falls back to all — and the reads `trayOpen` · `trayCategory` · `trayCategories` →
   `{ id, label, count }[]` (what the CURRENT frame hangs, in the lay's order; the label is the id capitalized) · `trayEntryCount`.
+  The board's KEYBOARD FOCUS (petition I37): `focusTray(world, "next" | "prev" | "first" | "last" | type)` → the focused type
+  ("" — nothing hung) walks the specimens in the LAY'S order (`trayHung(world)`, the lay's record `TrayContent.order` — row by row,
+  across the categories when the drawer shows all; from none `next` is the first and `prev` the last; the ends stay; an id the board
+  does not hang changes nothing), `trayFocus(world)` reads it (`Tray.focus`); the lay scrolls the specimen it moves to into the
+  board's face — once, the least that shows it whole between the header and the foot — and lets a focus go when its type is laid no
+  more. Nothing draws it: a host rings it (the desk handle's `tray.anchor().focused`).
   A shut drawer takes no pointer (design-018 §5 retired the lip's handle): a host opens it by a key or its DOM bar (`<TrayBar>`). An
   open one picks no specimen within its header (design-018 R4 — the renderer's word, the pose frame's `head`): a press there is the board's.
 - `ce.docs` — `create() · open(bytes) · join(channel, {presence?, seed?}) ·
@@ -281,7 +291,8 @@ and a press lands where it is drawn; `DeskHost { engine, host, layer, focus,
 dispose }` · `startRafLoop(engine)` (rAF + the freeze park) · input ownership (`isEditableTarget`,
 `keyboardClaimOf`, `wheelCede`, `KEYBOARD_CLAIM_ATTR`, `CLAIM_OWNS_ESCAPE`) · the focus driver
 (`attachWidgetFocus`, `FOCUS_PROXY_ATTR`) · `createCursorReflector(host, readCursor)` ·
-`createRemoteCursorsReflector(host, world)` (a room's other people). The world-space half — the
+`createRemoteCursorsReflector(host, world)` (a room's other people). `LayerContext.ops` (petition I37): the engine's ops a layer
+runs on its host's word — `ops.layFromTray`, behind the desk handle's `tray.lay`. The world-space half — the
 content and lifted planes, the plane-transform reflector, the DOM widget hosts and writeback, the L1
 source canvas, the Widget Surface contract, measurement, the graybox and chrome reflectors, the GL
 route — left at D5b. `<Desk>` wires all of this; direct use is for shells without React.
@@ -352,7 +363,7 @@ wake, no write — it never selects (the host does, `ops.setSelection([entity])`
 (a resize handle), while an object is in hand or the pegboard drawer is out (the desk inert to the pointer), before the first frame, and while `status()` is
 `pending` or `failed` (`degraded` picks: the desk still draws, a click still selects); a point that is not two finite numbers throws.
 `packages/desk/test/pick.test.ts` and rig:interact's pick row (ten points of a showcase, a right-click's point against a primary click's selection) hold it;
-`handle.tray` is the pegboard drawer's door — `open`/`close`/`toggle`/`isOpen`/`scroll`/`state`/`pin`, and since design-018 §5–§6 `category(id?)`, `categories()`, `anchor()` (`TrayAnchor`: the drawer as the last frame drew it — its `header`, the clear band under its edge, included — the view, the theme's `night`, the hand, the entries, the chips) and `subscribe(listener)`, told after each frame that moved what `anchor()` says and never at rest), the text raster `inkRaster`/`penFaces`, `decodePicture`,
+`handle.tray` is the pegboard drawer's door — `open`/`close`/`toggle`/`isOpen`/`scroll`/`state`/`pin`, and since design-018 §5–§6 `category(id?)`, `categories()`, `anchor()` (`TrayAnchor`: the drawer as the last frame drew it — its `header`, the clear band under its edge, included — the view, the theme's `night`, the hand, the entries, the chips) and `subscribe(listener)`, told after each frame that moved what `anchor()` says and never at rest; and the KEYBOARD PATH (petition I37): `focus(next | prev | first | last | type)` (core's `focusTray` — the lay's order; returns the focused type) with `anchor().focused: { id, rect } | null` — the focused specimen's object as the last frame drew it (CSS px `{ x0, y0, x1, y1 }`, the fit a press grabs; `rect` null while the drawer is not drawn), scrolled into the board's face; a focus move is a frame, so `subscribe` hears it; the desk draws no ring — the host rings `rect` — and `lay(id?, { at?, space? })` (core's `ops.layFromTray` through the mount context's `ops`, which `createDeskHost` hands): the focused specimen (or `id`) laid CENTRED on `at` — CSS px of the view (`space: "screen"`, the default; the view's centre when `at` is absent) or a world point (`space: "world"`) — what a drag-off makes, selected, one undo step, the board folding; undefined when refused (nothing focused, a type not hung now, an object in hand); throws with no `ops` in the context or on a malformed point), the text raster `inkRaster`/`penFaces`, `decodePicture`,
 the kind CONTRACT — `defineObject`/`objectKindOf`/`driversOf`/`hostOf`, `ObjectKind`, `KindProgram`, `KindHost`,
 `ObjectHost` (a kind's DOM half, declared: `lend` · `text` · `mount` — design-016 K4b, K8a) —, the builder/pick/ambient/reflector
 of `compose`, `instrumentSubmits`, the GPU profiler (design-016 K2: `createGpuProfiler` — the layer's `handle.profiler()`, unarmed until

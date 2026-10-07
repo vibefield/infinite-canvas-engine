@@ -86,6 +86,11 @@ export interface LayerContext {
    * progress is a registered time's alone (`settled` — then it ticks only what is due).
    */
   readonly frame?: Pick<CanvasEngine["engine"]["frame"], "wake" | "wakeWhen" | "settled">;
+  /**
+   * The engine's ops a layer runs on its host's word (petition I37): the tray's keyboard lay — `ops.layFromTray`, behind the desk
+   * handle's `tray.lay`. Absent (a bare host), that door throws.
+   */
+  readonly ops?: Pick<CanvasEngine["ops"], "layFromTray">;
 }
 
 export type LayerFactory<H extends LayerHandle = LayerHandle> = (ctx: LayerContext) => H;
@@ -139,6 +144,7 @@ export function createDeskHost<H extends LayerHandle>(opts: DeskHostOptions<H>):
       spatial: stack.index,
       ...(engine.compositorDevice !== undefined ? { gpu: engine.compositorDevice } : {}),
       frame: core.frame,
+      ops: engine.ops,
     });
   } catch (err) {
     host.dispose();

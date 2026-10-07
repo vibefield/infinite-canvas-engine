@@ -365,6 +365,9 @@ function presentOf(types: readonly WidgetType[]): [string, number][] {
  * change of it re-lays, and the board starts again at its top — the scroll and the band zeroed. A category the frame hangs none of
  * (its last entry gone with the frame, or an id no entry names) falls back to all. What the frame could hang before the filter — its
  * categories in the lay's order and their counts — is recorded in `TrayContent.present` (the ops' `trayCategories`: a host's chips).
+ * Petition I37 — THE KEYBOARD FOCUS (`Tray.focus`, the op `focusTray`): when it moves to a specimen, the board scrolls the least that
+ * shows that specimen whole between the header and the foot (once — a wheel may then take it out of view again); a focus on a type
+ * the board no longer lays is let go.
  */
 export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot; readonly placement?: DropPlacementPolicy | undefined }): TickSystem {
   let laidKey = "";
@@ -372,6 +375,9 @@ export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot;
   // the category the last lay showed, and on which tray entity (R2): a move of it starts the board again at its top
   let laidTray: Entity | undefined;
   let laidCategory = "";
+  // the focus the board last scrolled to (I37): a move of it scrolls once; and the types the last lay laid, in its order
+  let focusedFor = "";
+  let laidTypes: readonly string[] = [];
   const clampToRange = (ctx: SystemCtx, tray: Entity, frame: TrayScreenFrame, bottom: number): void => {
     if (frame.face === undefined) return;
     const range = trayScrollMax(bottom, frame.face - (frame.foot ?? 0), frame.pitch);
@@ -381,6 +387,33 @@ export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot;
     if (t.stretch !== 0) return;   // the band's pull (a wheel's, a finger's) is its own: judged once it lets go
     rangeKey = key;
     if (t.scroll > range) ctx.edit(tray).set(Tray, { ...t, scroll: range });
+  };
+  // THE KEYBOARD FOCUS (I37): moved to a specimen, the least scroll that shows it whole between the header and the foot; on a type the
+  // board lays no more (this tick's lay removed it), let go. Specimens spawned this tick are not readable yet: a focus on one waits a tick.
+  const focusInView = (ctx: SystemCtx, tray: Entity, frame: TrayScreenFrame, bottom: number): void => {
+    const t = ctx.read(tray, Tray);
+    const focus = t.focus ?? "";
+    if (focus !== "" && !laidTypes.includes(focus)) {
+      focusedFor = "";
+      ctx.edit(tray).set(Tray, { ...t, focus: "" });
+      return;
+    }
+    if (focus === focusedFor) return;
+    if (focus === "") { focusedFor = ""; return; }
+    const hung = specimensOf(world, tray).find((e) => world.get(e, PrefabId)?.id === focus);
+    if (hung === undefined) return;
+    const at = ctx.get(hung, Position);
+    const size = ctx.get(hung, Size);
+    if (at === undefined || size === undefined) return;
+    focusedFor = focus;
+    if (frame.face === undefined) return;
+    const top = frame.head ?? 0;
+    const showing = frame.face - (frame.foot ?? 0) - top;
+    let scroll = t.scroll;
+    if (at.y < scroll + top || size.h > showing) scroll = at.y - top;
+    else if (at.y + size.h > scroll + top + showing) scroll = at.y + size.h - top - showing;
+    scroll = Math.min(Math.max(scroll, 0), trayScrollMax(bottom, frame.face - (frame.foot ?? 0), frame.pitch));
+    if (scroll !== t.scroll || t.stretch !== 0) ctx.edit(tray).set(Tray, { ...t, scroll, stretch: 0 });
   };
   return defineTickSystem(
     (ctx) => {
@@ -406,7 +439,7 @@ export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot;
       const moved = laidTray === tray && category !== laidCategory;
       if (category !== asked || (moved && (t.scroll !== 0 || t.stretch !== 0))) ctx.edit(tray).set(Tray, { ...t, category, ...(moved ? { scroll: 0, stretch: 0 } : {}) });
       const key = `${tray}|${content?.laid ?? 0}|${frame.w}|${frame.pitch}|${types.map((q) => q.type).join(",")}|${category}`;
-      if (key === laidKey) { clampToRange(ctx, tray, frame, content?.bottom ?? 0); return; }
+      if (key === laidKey) { clampToRange(ctx, tray, frame, content?.bottom ?? 0); focusInView(ctx, tray, frame, content?.bottom ?? 0); return; }
       const shown = category === "" ? types : types.filter((q) => categoryOf(q) === category);
       const items: TrayItem[] = shown.map(itemOf);
       const layout = layTray(items, frame.w, frame.pitch);
@@ -432,13 +465,15 @@ export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot;
         ctx.setRelation(spawned, ChildOf, tray, "last");
       }
       for (const e of have.values()) ctx.destroy(e);
-      const next = { width: frame.w, bottom: layout.bottom, laid: (content?.laid ?? 0) + 1, present: JSON.stringify(presentOf(types)) };
+      const next = { width: frame.w, bottom: layout.bottom, laid: (content?.laid ?? 0) + 1, present: JSON.stringify(presentOf(types)), order: JSON.stringify(layout.placed.map((q) => q.type)) };
       if (content === undefined) ctx.addComponent(tray, TrayContent, next);
       else ctx.edit(tray).set(TrayContent, next);
       laidKey = `${tray}|${next.laid}|${frame.w}|${frame.pitch}|${types.map((q) => q.type).join(",")}|${category}`;
       laidTray = tray;
       laidCategory = category;
+      laidTypes = layout.placed.map((q) => q.type);
       clampToRange(ctx, tray, frame, layout.bottom);
+      focusInView(ctx, tray, frame, layout.bottom);
     },
     // Petition I34: in derive, after `trayInput` (react) by the phase — the lay reads back what the input wrote this tick, so the two
     // `Tray` writers are ORDERED, never attested. `Position`/`Size` it writes on the tray's specimens alone, rows disjoint from the

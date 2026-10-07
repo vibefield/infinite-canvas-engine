@@ -34,7 +34,8 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, closeTray, type Entity, frameParent, heldEntity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type MenuActionDef, type NavFace, type NavGeometrySlot, NavTransition, NO_ENTITY, openTray, type PointPick, PrefabId, type PresentationTransitionAdapter, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, closeTray, type Entity, focusTray, frameParent, heldEntity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type MenuActionDef, type NavFace, type NavGeometrySlot, NavTransition, NO_ENTITY, openTray, type PointPick, PrefabId, type PresentationTransitionAdapter, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayFocus, type TrayFocusMove, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
+import { screenToWorld } from "@ice/kernel";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
 import { createDeskBuilder, type DeskBuilder, type HeldBuild, type HoldPin, type SpatialSource } from "../compose/builder";
@@ -226,6 +227,8 @@ export interface DeskLayerContext {
     wakeWhen(name: string, due: (now: number) => number): () => void;
     settled(): boolean;
   };
+  /** The engine's ops the layer runs on its host's word (petition I37): the tray's keyboard lay. Absent (a bare host), `tray.lay` throws. */
+  readonly ops?: { layFromTray(type: string, at: { readonly x: number; readonly y: number }): Entity | undefined };
 }
 
 /** The selection menu's source (D4a): the marks' anchor as of the last frame, and a subscription that fires when it changes. */
@@ -338,6 +341,12 @@ export interface TrayAnchor {
   /** The category the drawer shows ("" all) and the categories its frame hangs, in the lay's order (design-018 §6). */
   readonly category: string;
   readonly categories: readonly TrayCategory[];
+  /**
+   * Petition I37 — the board's KEYBOARD FOCUS: the focused specimen's type (`id`) and its object as the last frame drew it (`rect`,
+   * CSS px — the fit inside its hang, what a press there grabs; null while the drawer is not drawn), scrolled into the board's face
+   * when the focus moved to it; null with nothing focused. The desk draws no ring: the host does, from `rect`.
+   */
+  readonly focused: { readonly id: string; readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null } | null;
 }
 
 export interface DeskTrayDoor {
@@ -364,9 +373,25 @@ export interface DeskTrayDoor {
   anchor(): TrayAnchor;
   /**
    * design-018 §5 — tell `listener` after each frame that moved what `anchor()` says: the drawer as drawn (its slide, frame by frame),
-   * open or shut, the category or the categories, the hand, the entries, the view. Never at rest: no frame, no call.
+   * open or shut, the category or the categories, the hand, the entries, the view, the focus (I37). Never at rest: no frame, no call.
    */
   subscribe(listener: () => void): () => void;
+  /**
+   * Petition I37 — THE BOARD'S KEYBOARD FOCUS (core's `focusTray`): `next`/`prev` along the specimens the lay hangs, in its order (row
+   * by row, across the categories when the drawer shows all; from none `next` is the first and `prev` the last; the ends stay),
+   * `first`/`last`, or a type by its id (one the board does not hang changes nothing). Returns the focused type ("" — nothing hung).
+   * The board scrolls the specimen into its face by the next frame, and `anchor().focused` then says where it is drawn.
+   */
+  focus(to: TrayFocusMove | string): string;
+  /**
+   * Petition I37 — LAY the tray's own take (`ops.layFromTray`): `id` — the focused specimen when absent — CENTRED on `at`: CSS px of
+   * the view (`space: "screen"`, the default — the space `pick` and `capture` take; the view's centre when `at` is absent) or a world
+   * point of the current frame (`space: "world"`). What a drag-off's drop makes — the type at its natural size, the entry's take
+   * props, ONE undo step, selected — and the board folds as a handed take's does. Undefined when refused: nothing focused, a type the
+   * board does not hang now, an object in hand. Throws without the engine's ops in the mount context (`createDeskHost` hands them),
+   * on a malformed point, and as `ops.spawnWidget` does (a read-only document).
+   */
+  lay(id?: string, opts?: { readonly at?: { readonly x: number; readonly y: number }; readonly space?: "screen" | "world" }): Entity | undefined;
 }
 
 export interface DeskLayerHandle {
@@ -762,6 +787,13 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     };
     // the tray bar's source (design-018 §5): the drawer as the last frame drew it, and what its chips show — published after each frame
     // that moved it, as the menu's anchor is (the slide is drawn frame by frame, so the bar rides it exactly; at rest nothing is drawn)
+    // the board's keyboard focus (I37): the focused specimen's object as the last frame drew it (none drawn: the drawer shut, or no frame)
+    const focusedOf = (): TrayAnchor["focused"] => {
+      const id = trayFocus(world);
+      if (id === "") return null;
+      const seen = compose.traySpecimens().find((f) => f.type === id);
+      return { id, rect: seen === undefined ? null : { x0: seen.object.x0, y0: seen.object.y0, x1: seen.object.x1, y1: seen.object.y1 } };
+    };
     const trayAnchorOf = (): TrayAnchor => {
       const f = compose.tray.frame();
       const vp = world.getResource(Viewport);
@@ -775,6 +807,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         entries: trayEntryCount(world),
         category: trayCategory(world),
         categories: trayCategories(world),
+        focused: focusedOf(),
       };
     };
     const trayListeners = new Set<() => void>();
@@ -1253,6 +1286,22 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         categories: () => trayCategories(world),
         anchor: () => trayAnchorOf(),
         subscribe(listener) { trayListeners.add(listener); return () => { trayListeners.delete(listener); }; },
+        focus: (to) => focusTray(world, to),
+        lay(id, o = {}) {
+          const ops = ctx.ops;
+          if (ops === undefined) throw new Error("[ice] desk: tray.lay — the mount context has no engine ops (`createDeskHost` hands them: `LayerContext.ops`)");
+          const space = o.space ?? "screen";
+          if (space !== "screen" && space !== "world") throw new Error(`[ice] desk: tray.lay — space is "screen" or "world" (got ${String(space)})`);
+          const vp = world.getResource(Viewport);
+          const point = o.at ?? { x: (vp?.w ?? 0) / 2, y: (vp?.h ?? 0) / 2 };
+          if (typeof point?.x !== "number" || typeof point.y !== "number" || !Number.isFinite(point.x) || !Number.isFinite(point.y)) {
+            throw new Error(`[ice] desk: tray.lay — the point is ${JSON.stringify(point) ?? String(point)}: { x, y }, two finite numbers`);
+          }
+          const type = id ?? trayFocus(world);
+          if (type === "") return undefined;
+          const cam = world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1 };
+          return ops.layFromTray(type, space === "world" ? point : screenToWorld(point.x, point.y, cam));
+        },
       },
       dispose() {
         disposed = true;

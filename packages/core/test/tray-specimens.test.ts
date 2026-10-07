@@ -101,7 +101,8 @@ describe("the tray's specimens", () => {
       expect(r.world.hasTag(e as never, Specimen)).toBe(true);
     }
     const c = r.world.read(r.tray(), TrayContent);
-    expect(c).toEqual({ width: 720, bottom: laid.bottom, laid: 1, present: JSON.stringify([["paper", 1], ["plugin", 1]]) });   // design-018 §6: what it could hang
+    // design-018 §6: what it could hang; petition I37: what it laid, in its order (what the keyboard focus walks)
+    expect(c).toEqual({ width: 720, bottom: laid.bottom, laid: 1, present: JSON.stringify([["paper", 1], ["plugin", 1]]), order: JSON.stringify(laid.placed.map((q) => q.type)) });
     // the entry's props over the widget's defaults
     const group = PAD.groups[0]?.component;
     if (group === undefined) throw new Error("the pad has no group");
