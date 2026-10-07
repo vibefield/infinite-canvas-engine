@@ -6,13 +6,16 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
-> **`0.15.0-desk.5` on the `next` dist-tag (cut 2026-10-07)** — a prerelease carrying everything below for VibeField's desk
+> **`0.15.0-desk.6` on the `next` dist-tag (cut 2026-10-07)** — a prerelease carrying everything below for VibeField's desk
 > migration to pin exactly while its landing branch is open (its DK-D12): `desk.1` (3 Oct) the nine 0.15.0 asks I20–I28; `desk.2`
 > (3 Oct) I29's fix; `desk.3` (5 Oct) I30 (`createStill`); `desk.4` (5 Oct) I31 (the kit's WGSL documented), I32 (an unparsed
-> colour answers the missing ink) and I33 (a resting pointer keeps no desk awake); `desk.5` adds I34 (the tray's two writers ordered),
-> I36 (the held anchor's types exported), I38 (the lay hangs only the kinds the desk was mounted with) and I39 (the desk host measures
-> its container's layout size — a desk under a CSS transform no longer draws small). The section stays `[Unreleased]` until 0.15.0
-> is cut. Nothing of 0.14.0's API surface moves.
+> colour answers the missing ink) and I33 (a resting pointer keeps no desk awake); `desk.5` (7 Oct) I34 (the tray's two writers
+> ordered), I36 (the held anchor's types exported), I38 (the lay hangs only the kinds the desk was mounted with) and I39 (the desk
+> host measures its container's layout size — a desk under a CSS transform no longer draws small); `desk.6` adds I43 (an empty
+> presence sweep wakes no lone desk), I41 (the frame gate announces the park), I40 (a capture without the selection's marks), I42
+> (presence's cursor says away and canvas), I37 (the tray's keyboard path) and I35 (`createStill({ services })`) — the last asks
+> before 0.15.0. The section stays `[Unreleased]` until 0.15.0 is cut. Nothing of 0.14.0's API surface moves; one type widens —
+> `PresenceCursor` gains two defaulted fields (I42), so a cursor value written by hand names `away` and `canvas`.
 
 **The 0.15.0 asks (M23) — VibeField's desk migration (track DK) files nine against the desk, petitions I20–I28; each lands as
 its own block here as it is built.** Additive, every one but I28 — a behaviour change by the product's law, with no API change:
