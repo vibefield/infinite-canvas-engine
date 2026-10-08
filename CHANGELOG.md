@@ -371,9 +371,13 @@ I35 (`createStill({ services })`) — `### Added`, last, in that order — and I
   wordless: a still lent no text raster, and a kind's writing is its desk state's): `services` takes the entries a desk layer lends
   (`service(TEXT_RASTER, raster)`, a picture decoder, a plugin's keys); given, each kind is handed its DESK STATE as a layer hands it
   — `kind.local(host)` over the still's root pass, `host.use` the caller's services and what each object's DOM half lends from them
-  (a name lent twice rejects) — ticked once at the still's clock before the frame and released with the still. Absent, as before: no
-  desk state (every existing still unchanged — the desk clock's lends none). ICE lends no text raster of its own in Node (the
-  browser's `inkRaster` is a Canvas 2D; a baked default would need a font rasterizer ICE does not have): the caller lends its own.
+  (a name lent twice rejects) — ticked once at the still's clock before the frame and released with the still. A kind whose desk
+  state reads the WALL clock (the desk clock's `createClockLocal(() => Date.now())`) then draws the hour the still is drawn at, so a
+  still that must hold still pins its asset (`stage.pinAsset` — the desk clock's `{ at }`), as the oracle does (VibeField's
+  `pnpm still` met it after `0.15.0-desk.6`: services lent to every still put 5:57 pm on the desk clock's golden, and a new sha every
+  minute). Absent, as before: no desk state (every existing still unchanged — the desk clock's lends none). ICE lends no text
+  raster of its own in Node (the browser's `inkRaster` is a Canvas 2D; a baked default would need a font rasterizer ICE does not
+  have): the caller lends its own.
   Witnesses: `packages/desk/test/still.test.ts` (a writing stub kind on the fake raster device: bare without services, its ink — 80
   px exactly where its sheet's top-left is — with them; the desk state made, ticked and released once; an object's DOM half lending
   over the caller's raster; a malformed `services` throws) and the desk clock's Dawn still unchanged — and, once at the build, a

@@ -161,8 +161,11 @@ export interface StillOptions {
    * each kind is handed its DESK STATE as a layer hands it — `kind.local(host)` over the still's root pass, `host.use` these and
    * what each object's DOM half lends from them (`defineObject({ host: { lend } })`, in the types' order; a name lent twice
    * rejects) — ticked once at the still's clock before the frame is made, and released with the still: a kind's writing shows
-   * as the product draws it. Absent: no desk state (a kind draws its facts and its pins alone), as before. ICE lends no text raster
-   * of its own in Node — `inkRaster` is a browser's Canvas 2D; a Node caller lends its own (a native canvas, or its test's).
+   * as the product draws it. A kind whose desk state reads the WALL clock (the desk clock's `createClockLocal(() => Date.now())`)
+   * then draws the hour the still is drawn at, so a still that must hold still pins its asset (`stage.pinAsset` — the desk
+   * clock's `{ at }`), as the oracle does. Absent: no desk state (a kind draws its facts and its pins alone), as before. ICE lends
+   * no text raster of its own in Node — `inkRaster` is a browser's Canvas 2D; a Node caller lends its own (a native canvas, or
+   * its test's).
    */
   readonly services?: readonly Lent[];
 }

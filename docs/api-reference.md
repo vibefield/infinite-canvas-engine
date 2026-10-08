@@ -521,7 +521,9 @@ engine names a kind:
   picture decoder, your plugin's own keys); given (even `[]`), each kind is handed its DESK STATE as a layer hands it —
   `kind.local(host)` over the still's root pass, `host.use` your services and what each object's DOM half lends from them
   (`defineObject({ host: { lend } })`; a name lent twice rejects) — ticked once at the still's clock before the frame and released
-  with the still, so your kind's WRITING shows as the product draws it. ICE lends no text raster of its own in Node (the browser's
+  with the still, so your kind's WRITING shows as the product draws it. A kind whose desk state reads the WALL clock (the desk
+  clock's `createClockLocal(() => Date.now())`) then draws the hour the still is drawn at, so a still that must hold still pins its
+  asset (`stage.pinAsset` — the desk clock's `{ at }`), as the oracle does. ICE lends no text raster of its own in Node (the browser's
   `inkRaster` is a Canvas 2D): lend yours — a native canvas, or your test's fixed raster. The clock's still lends none and is
   unchanged. Everything made for it is released before the promise settles (the memory ledger at zero); a malformed option throws
   at the call, and the promise rejects when your kind is refused at create (the compiler's line in the reason), a GPU error is raised,
