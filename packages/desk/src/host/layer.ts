@@ -344,7 +344,9 @@ export interface TrayAnchor {
   /**
    * Petition I37 — the board's KEYBOARD FOCUS: the focused specimen's type (`id`) and its object as the last frame drew it (`rect`,
    * CSS px — the fit inside its hang, what a press there grabs; null while the drawer is not drawn), scrolled into the board's face
-   * when the focus moved to it; null with nothing focused. The desk draws no ring: the host does, from `rect`.
+   * when the focus moved to it; null with nothing focused — so null too until the board is first laid (the step after the desk's
+   * first drawn frame: `focus` has no order to walk before it, and a host asks again after it). The desk draws no ring: the host
+   * does, from `rect`.
    */
   readonly focused: { readonly id: string; readonly rect: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | null } | null;
 }
@@ -380,7 +382,10 @@ export interface DeskTrayDoor {
    * Petition I37 — THE BOARD'S KEYBOARD FOCUS (core's `focusTray`): `next`/`prev` along the specimens the lay hangs, in its order (row
    * by row, across the categories when the drawer shows all; from none `next` is the first and `prev` the last; the ends stay),
    * `first`/`last`, or a type by its id (one the board does not hang changes nothing). Returns the focused type ("" — nothing hung).
-   * The board scrolls the specimen into its face by the next frame, and `anchor().focused` then says where it is drawn.
+   * The board scrolls the specimen into its face by the next frame, and `anchor().focused` then says where it is drawn. The order
+   * is the lay's record (`TrayContent.order`): until the board is first laid — the step after the desk's first drawn frame, the
+   * drawer shut or out — there is none, so `focus` answers "" and moves nothing; a host asks again after it (`subscribe` is told
+   * when the board is laid: `anchor().entries` turns non-zero).
    */
   focus(to: TrayFocusMove | string): string;
   /**
