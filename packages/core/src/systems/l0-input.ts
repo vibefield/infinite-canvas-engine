@@ -228,6 +228,9 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
       for (const [id, s] of samples) {
         const existing = resolve(id);
         if (existing === undefined) {
+          // Its world point is its own from the spawn (petition I45): what `pointerWorldSync` writes from the next frame — the sync
+          // cannot see a pointer spawned in this phase, and the cell's (0, 0) for that frame was the first cursor presence published.
+          const cam = ctx.getResource(Camera);
           const spawned = ctx.spawn({
             components: [
               [Pointer, { id, device: s.device, owner: "" }],
@@ -236,7 +239,7 @@ export function createL0Systems(world: World, queue: InputQueue): L0Systems {
               [PointerMods, s.mods],
               [PointerWheel, { dx: s.wheelDx, dy: s.wheelDy, pinch: s.wheelPinch }],
               [PointerRadius, { r: radiusFor(s.device, pointerSettings) }],
-              [PointerWorld, { x: 0, y: 0 }],
+              [PointerWorld, cam === undefined ? { x: 0, y: 0 } : screenToWorld(s.x, s.y, cam)],
             ],
             tags: [LocalPointer],
           });

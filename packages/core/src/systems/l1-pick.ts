@@ -29,10 +29,13 @@
  * `picking` runs the dual pick (design-003 §3), gated by a version guard over
  * `PointerVersion ∨ SpatialVersion`. `CameraVersion` does not exist — camera
  * motion alone does not re-pick, an accepted staleness (design-002 §2). Pointer
- * world position is derived from PointerScreen × Camera rather than the
- * PointerWorld cell: PointerWorld lags a frame on the pointer's spawn (the
- * pointerWorldSync writer cannot see a pointer spawned in the same input phase),
- * which would mis-capture on the down frame — screen×camera is exact here.
+ * world position is derived from PointerScreen × Camera rather than read from
+ * the PointerWorld cell. The cell no longer lags on the pointer's spawn: ingest
+ * spawns it at screen×camera, what the pointerWorldSync writer (which cannot see
+ * a pointer spawned in the same input phase) writes from the next frame
+ * (petition I45 — before, (0, 0) for that frame, which would have mis-captured
+ * on the down frame). The pick keeps its own derivation: screen×camera, at the
+ * camera it reads, is exact here whoever wrote the cell.
  *   - `Targets`      = radiused disc-vs-box pick with a screen-px release
  *                      dead-band (hover is forgiving; hold the current target
  *                      while the pointer stays within its expanded bounds).

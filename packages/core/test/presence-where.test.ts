@@ -9,6 +9,10 @@
  * not know is ignored (strata's `tryCanon` walks the RECEIVER's fields — how an older ICE reads this one's).
  *
  * Timers are real (Loro's TTL/throttle live in the wasm wall clock — the presence.test.ts rule): deadline-polling `converge`.
+ *
+ * Petition I45 — the first cursor a peer publishes after its mouse pointer spawns is the pointer's own point: ingest spawns it at
+ * screen × camera (before, `PointerWorld` held (0, 0) for that frame — the world-point sync cannot see a pointer spawned in its
+ * phase — and the first publish read the world's origin).
  */
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { EphemeralStore as LoroEphemeralStore } from "loro-crdt";
@@ -132,7 +136,7 @@ async function pair() {
   b.step(2);
   const folderB = must(b.ce.docs.current()?.store.resolve(key as never), "B's folder");
   a.input("move", 400, 300);
-  a.step(2); // the pointer's world point lands the tick after it spawns
+  a.step(2); // the pointer spawned at its world point (petition I45), and a tick after
   expect(await converge(a, b, () => remoteOf(b).hand !== null)).toBe(true);
   return { a, b, folder, folderB, key };
 }
@@ -263,5 +267,19 @@ describe("the wire, tolerant both ways (petition I42)", () => {
     });
     expect(seen["5"]).toEqual({ cursor: { x: 5, y: 6, device: "mouse", away: false, canvas: "" }, hand: true });
     expect(seen["7"]).toEqual({ cursor: { x: 7, y: 8, device: "mouse", away: false, canvas: "" }, hand: true });
+  });
+});
+
+describe("a spawned pointer's first world point (petition I45)", () => {
+  it("the mouse's FIRST fact, then ONE step: the local cursor reads that fact's world point — never the world's origin", () => {
+    const a = rig("a");
+    a.ce.world.setResource(Camera, { x: -300, y: 120, zoom: 2, gesturing: false });
+    a.step(2);
+    expect(a.facet()).toBeUndefined(); // no mouse yet: nothing published
+    a.input("move", 400, 300);
+    a.step(); // ONE step: ingest spawns the pointer (the world-point sync cannot see it this frame), the same step's publish writes
+    expect(a.facet()).toEqual({ x: -100, y: 270, device: "mouse", away: false, canvas: "" }); // 400 / 2 − 300, 300 / 2 + 120
+    a.step();
+    expect(a.facet()).toEqual({ x: -100, y: 270, device: "mouse", away: false, canvas: "" }); // the sync's own write, a frame later: the same
   });
 });
