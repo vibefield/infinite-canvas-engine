@@ -30,6 +30,8 @@ kinds the desk was mounted with) and I39 (the desk host measures its container's
 `### Fixed`. Six more, after `0.15.0-desk.5`, are DK-11's, DK-13's, DK-14's, DK-15's and DK-16's: I41 (the frame gate announces the
 park), I40 (a capture without the selection's marks), I42 (presence's cursor says away and canvas), I37 (the tray's keyboard path) and
 I35 (`createStill({ services })`) — `### Added`, last, in that order — and I43 (an empty presence sweep wakes no lone desk), `### Fixed`.
+Two more, after `0.15.0-desk.6`, are DK-17b's: I44, a defect of I42's leave (the pointer out of the window from beside the desk), and
+I45, a spawned pointer's first world point (pre-existing) — both `### Fixed`.
 
 ### Added
 
@@ -540,6 +542,41 @@ I35 (`createStill({ services })`) — `### Added`, last, in that order — and I
   import once, the same buffer again nothing, the peer aging out once; red before: 4 fires) and
   `packages/core/test/frame-sleep.test.ts` (a lone engine at the default TTL, asleep, counts no `presence` wake over 6.2 s; red
   before: 2 — DK-16's count).
+
+<!-- petition I44 — the window exit heard from anywhere in the host's document (2026-10-08; a defect of I42's leave, after `0.15.0-desk.6`) -->
+- **OUT OF THE WINDOW FROM BESIDE THE DESK WAS NO LEAVE — the window exit is heard now wherever the pointer is in the host's
+  document** (petition I44 — a defect of I42's leave; DK-17b, adopting `0.15.0-desk.6`: VibeField's head and line stand BESIDE
+  `<Desk>`, and its most common exits, up through the head and down through the line, left the cursor present): I42's leave hung on
+  the container's own `pointerleave` alone. The pointer crossed from the desk onto the chrome — the container's leave names it,
+  somewhere to go, so rightly no leave — then left the window from the chrome, and the container heard nothing: the facet still
+  published `away: false` 2.5 s after the window's leave, and the peer drew the pointer at its last desk point until its own idle
+  rule hid it, 7.4 s after the leave. Now the dom pointer adapter also listens on the container's `ownerDocument`, in the capture
+  phase: a mouse `pointerout` with no related target, no press of its own live, is the pointer out of the WINDOW wherever it was —
+  said as I42's leave is (once, a task later; answered at once by the document's `pointerover` with no related target, Chromium's
+  resting pair at the document) at the pointer's LAST POINT over the host: off the container the point it left, as before; off the
+  chrome the point of the last fact the adapter enqueued for the mouse — the desk never saw it over the chrome (no such fact:
+  nothing is said). Once said, only the pointer back over the HOST clears it (the container's enter, or any fact of its own): back in
+  the window over the chrome, it stays away. An exit off the container is heard twice (its pointerout at the document, then its
+  pointerleave) and says one leave, as before; detach unwires both. Touch and pen untouched. No API change. Witnesses:
+  `packages/dom/test/pointer-leave.test.ts` (six rows, events dispatched on a sibling of the container and on the document: one leave
+  a task later at the last point over the host, away in the step that ingests it; a resting pair says nothing; back over the sibling
+  still away, back over the container not; off the container exactly one leave, in either order; nothing with a press live; detach
+  unwires both — each red-proven, I42's rows unchanged) and rig:collab's two new rows (Chrome over the relay: Alice's pointer onto a
+  line outside her desk's container, then past her page's foot — one pointerout off the line with no related target, none on her
+  container — and B hides her, red with desk.6's adapter built in; back over her desk, B shows her).
+
+<!-- petition I45 — a spawned pointer's first world point (2026-10-08; pre-existing, after `0.15.0-desk.6`) -->
+- **A PEER'S FIRST CURSOR SAID (0, 0) — a spawned pointer's first world point is its own** (petition I45 — pre-existing; DK-17b saw
+  it in a probe): `pointerIngest` spawned a pointer with `PointerWorld { x: 0, y: 0 }`, and `pointerWorldSync` cannot see a pointer
+  spawned in the same input phase, so the cell held the world's origin for that frame; presence's `publishCursor` reads it, so the
+  FIRST cursor a peer published after its mouse pointer spawned said (0, 0) — a receiver could draw the peer at the origin for one
+  publish, wherever the origin was on its screen — and the next publish corrected it. Ingest now spawns the pointer at
+  `screenToWorld(PointerScreen, Camera)` when the camera is there: what `pointerWorldSync`, right after it in the same phase, would
+  have written had it seen the pointer, and writes from the next frame. Picking keeps its own screen × camera derivation (l1-pick's
+  comment says why). Every spawned pointer's cell is its own from the spawn — a touch's and a pen's too. No API change. Witness:
+  `packages/core/test/presence-where.test.ts` (the mouse's first fact under a camera at (−300, 120) × 2, then ONE step: the local
+  `PresenceCursor` reads (−100, 270), and the sync's write a frame later the same — red against the old spawn: (0, 0)); every oracle
+  golden and rig unchanged.
 
 ## [0.14.0] — 2026-10-02
 

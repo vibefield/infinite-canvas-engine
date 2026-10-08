@@ -1680,7 +1680,8 @@ right-click, I28 found by I27's builder, 3 Oct) — and a tenth, I29, a defect o
 `0.15.0-desk.1` (3 Oct), and an eleventh, I30, DK-7's plugin still, found by both its builders against `0.15.0-desk.2` (4 Oct), and
 three more, I31–I33, from DK-10's ten-minute bar and DK-10b's stillness investigation against `0.15.0-desk.3` (5 Oct), and
 four more, I34, I36, I38 and I39, from DK-11, DK-12 and DK-13 against `0.15.0-desk.4` (6 Oct), and six more, I35, I37,
-I40, I41, I42 and I43, from DK-11, DK-13, DK-14, DK-15 and DK-16 against `0.15.0-desk.5` (7 Oct);
+I40, I41, I42 and I43, from DK-11, DK-13, DK-14, DK-15 and DK-16 against `0.15.0-desk.5` (7 Oct), and two more, I44 and I45,
+from DK-17b against `0.15.0-desk.6` (8 Oct);
 each is built in a
 worktree off `main` behind the 0.14.0 cut and graded on the exact SHA (`pnpm run ci` + `gate:landing`: the Dawn oracle at 113
 stills, nineteen rigs, pack:audit, dts:check).
@@ -1945,6 +1946,20 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   entered container's durable key, "" at the root; core's remote cursors derive no hand for an away peer or one in another canvas.
   Witnesses: core/test/presence-where.test.ts, dom/test/pointer-leave.test.ts and rig:collab's six rows (a real pointer leave in
   Chrome among them).
+- **I44 — the window exit heard from anywhere in the host's document** (built 2026-10-08 on branch `i44`; DK-17b — a DEFECT of
+  I42's leave, no API change): a host whose chrome stands BESIDE the desk lost every exit made through it (the container heard
+  none). The dom adapter also listens on the container's `ownerDocument`, in the capture phase: a mouse `pointerout` with no related
+  target, no press live, is the pointer out of the window wherever it was — said as I42's leave (once, a task later, answered at
+  once by the document's `pointerover` with no related target) at the last point over the host (off the chrome, the point of the
+  last fact the adapter enqueued for the mouse; none, nothing); once said, cleared only by the pointer back over the host. The
+  container's own leave kept, deduplicated: an exit off it is heard twice and says one leave. Witnesses: dom/test/pointer-leave.test.ts
+  (six rows, each red-proven; I42's two unchanged) and rig:collab's two rows (a real exit off a line beside the desk in Chrome, red
+  with desk.6's adapter; back over the desk).
+- **I45 — a spawned pointer's first world point** (built 2026-10-08 on branch `i44`; DK-17b — pre-existing, no API change): ingest
+  spawns a pointer at screen × camera — what `pointerWorldSync`, right after it in the same phase, would have written had it seen
+  it — instead of (0, 0), so presence's first cursor is the pointer's own point; l1-pick keeps its own derivation (its comment
+  amended). Witness: core/test/presence-where.test.ts (one step after the mouse's first fact, the local cursor at that fact's world
+  point; red against the old spawn); no golden, rig or existing test moved (graded before its commit).
 - **I37 — the tray's keyboard path** (built 2026-10-07 on branch `i35-43`; DK-13): `Tray.focus` walked by `focusTray` in the lay's
   order (`TrayContent.order`), scrolled into the board's face by the lay; `handle.tray.focus`, `anchor().focused { id, rect }`, and
   `handle.tray.lay(id?, { at, space })` through core's new `ops.layFromTray` (`LayerContext.ops`, handed by `createDeskHost`) — what a
