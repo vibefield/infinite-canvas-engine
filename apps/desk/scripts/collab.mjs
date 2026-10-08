@@ -18,7 +18,9 @@
 // (`docs.presence().setAway`, her mouse still over her desk), not while her pointer is out of her window (a real pointer leave,
 // through Chrome's own input), not while she is in a canvas B is not (she enters a mini mat: B on the root hides her; B entering
 // it too shows her again, at her point in its coordinates; she leaves it, and B inside hides her). B's world keeps her each time
-// (`room.peers()`: her `away`, her `canvas`, no hand). Exit 0 = passed.
+// (`room.peers()`: her `away`, her `canvas`, no hand). PETITION I44 — and not while her pointer is out of her window off a host's
+// chrome BESIDE her desk (a line at her page's foot, outside her desk's container: her container hears no exit, only her document
+// does). Exit 0 = passed.
 //
 //   pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:collab
 import { spawn } from "node:child_process";
@@ -180,6 +182,30 @@ try {
   await mouse(A, "mouseMoved", 820, 520);
   await front(A);
   await shows(B, A, ALICE, "once her pointer is back over her desk");
+  // PETITION I44 — out of her window off a line BESIDE her desk (VibeField's line: a sibling of the desk, outside its container):
+  // onto the line her container's pointerleave names it (somewhere to go), and off it only her document hears the exit
+  await front(A);
+  await A.q(`(() => {
+    const desk = window.__desk.handle.canvas.parentElement;
+    const line = document.createElement('div');
+    line.id = 'i44-line';
+    line.style.cssText = 'position: fixed; left: 0; right: 0; bottom: 0; height: 40px; z-index: 8';
+    document.body.appendChild(line);
+    window.__i44 = { out: 0, desk: 0 };
+    document.addEventListener('pointerout', (e) => { if (e.relatedTarget === null && e.target === line) window.__i44.out += 1; }, true);
+    desk.addEventListener('pointerleave', (e) => { if (e.relatedTarget === null) window.__i44.desk += 1; });
+    return !desk.contains(line); })()`);
+  await mouse(A, "mouseMoved", 820, 780);   // onto the line
+  await mouse(A, "mouseMoved", 820, 860);   // out of her window off it, past her page's foot
+  await front(A);
+  const i44 = await A.q("window.__i44");
+  const awayLine = await hides({ away: true, canvas: "" });
+  check(i44.out >= 1 && i44.desk === 0 && awayLine !== null, `B HIDES Alice while her POINTER is out of her window off a LINE BESIDE her desk (petition I44 — a CDP move onto a line outside her desk's container, then past her page's foot: ${i44.out} pointerout off the line with no related target, ${i44.desk} pointerleave on her container with none): no chip; B's world holds her, away ${(awayLine ?? (await aliceIn(B)))?.away}, no hand`);
+  await A.q("document.getElementById('i44-line').remove(); true");
+  await front(A);
+  await mouse(A, "mouseMoved", 820, 520);
+  await front(A);
+  await shows(B, A, ALICE, "once her pointer is back over her desk from beside it");
   // the canvas: a mini mat Alice enters
   await front(A);
   const mm = await A.q("window.__desk.spawn('desk.minimat', { name: 'Inbox' }, { x: 600, y: 360 })");

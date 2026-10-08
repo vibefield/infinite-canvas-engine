@@ -56,15 +56,24 @@
  *    one always lands. A `pointerleave`/`pointerenter` pair at one position is a
  *    no-op (the leave below is answered by its enter and says nothing), and the
  *    move that follows it is the same move;
- *  - the pointer OUT OF THE HOST (petition I42): the mouse leaving the container
- *    with nowhere to go — `pointerleave` on the container itself, no related
- *    target (out of the window), no press of ours live — is said once, as a
- *    `leave` fact at the point it left (ingest tags the pointer
- *    `PointerOutside`; presence publishes the peer `away`). It is deferred one
- *    task, so a leave answered by an enter at once (Chromium's pair at a
- *    resting point, above) enqueues nothing. Back, the pointer's next fact
- *    clears it: an enter after a said leave is a move at its point, so a
- *    pointer back at rest is never left away.
+ *  - the pointer OUT OF THE HOST (petitions I42, I44): the mouse leaving the
+ *    WINDOW, no press of ours live, wherever it is in the host's document — off
+ *    the container itself (its `pointerleave`, no related target), or off a
+ *    host's chrome BESIDE it (a `pointerout` with no related target, heard on the
+ *    document in the capture phase: a page's handler cannot stop it) — is said
+ *    once, as a `leave` fact at the pointer's LAST POINT over the host: off the
+ *    container, the point it left; off the chrome, the point of the last fact
+ *    this adapter enqueued for the mouse — the desk never saw it over the chrome
+ *    (no such fact: nothing is said). Ingest tags the pointer `PointerOutside`;
+ *    presence publishes the peer `away`. An exit off the container is heard
+ *    twice (its pointerout reaches the document, then its pointerleave): one
+ *    leave, never two. It is deferred one task, so a leave answered at once —
+ *    by the container's enter, or the document's `pointerover` with no related
+ *    target (Chromium's pair at a resting point, above, at either) — enqueues
+ *    nothing. Once said, only the pointer back over the HOST clears it: an
+ *    enter after a said leave is a move at its point, and any fact of its own
+ *    clears it too, so a pointer back at rest is never left away; back in the
+ *    window over the chrome the adapter hears no fact, and it stays away.
  *
  * Widget opt-out (the pinned widget-event contract, design-002 §8 / design-004 §4):
  * on `pointerdown` ONLY, if the event's target chain (up to the container) crosses
@@ -125,7 +134,8 @@ function deviceOf(e: PointerEvent): InputEvent["device"] {
 
 export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () => void {
   const { container } = host;
-  const view = container.ownerDocument.defaultView;
+  const doc = container.ownerDocument;
+  const view = doc.defaultView;
 
   let spaceHeld = false;
   // Pointers currently down — blur-cancel sweep + DEFERRED-CAPTURE state.
@@ -169,14 +179,21 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
   const sameMods = (a: InputMods, b: InputMods): boolean =>
     a.shift === b.shift && a.ctrl === b.ctrl && a.alt === b.alt && a.meta === b.meta && a.space === b.space;
 
-  // THE POINTER OUT OF THE HOST (petition I42): a leave waiting out its task (an enter answers it), and whether one was said
+  // THE POINTER OUT OF THE HOST (petitions I42, I44): a leave waiting out its task (an answer cancels it), whether one was said, and
+  // the mouse's point in the last fact enqueued for it — where a leave off the host's chrome is said (the desk never saw it there)
   let leaving: ReturnType<typeof setTimeout> | undefined;
   let left = false;
+  let lastMouse: { x: number; y: number } | undefined;
   /** The mouse is over the host (any fact of its own): a leave waiting is no leave, and one said is answered by this fact. */
   const mouseBack = (): void => {
     if (leaving !== undefined) clearTimeout(leaving);
     leaving = undefined;
     left = false;
+  };
+  /** Every fact this adapter says is enqueued here; the mouse's keeps its point (petition I44 — a leave off the chrome is said at it). */
+  const enqueue = (ev: InputEvent): void => {
+    if (ev.pointerId === "mouse") lastMouse = { x: ev.screenX, y: ev.screenY };
+    queue.enqueue(ev);
   };
 
   // the client point in the container's LAYOUT space (petition I39): a transform scales its bounding rect, never the space the desk draws in
@@ -201,7 +218,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     atRest.delete(id);
     if (id === "mouse") mouseBack();
     const surfaceHandled = native;
-    queue.enqueue({
+    enqueue({
       kind: "down",
       pointerId: id,
       device,
@@ -259,7 +276,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
       if (last !== undefined && last.x === x && last.y === y && last.target === e.target && last.over === over && sameMods(last.mods, mods)) return;
       atRest.set(id, { x, y, target: e.target, over, mods });
     } else atRest.delete(id);
-    queue.enqueue({
+    enqueue({
       kind: "move",
       pointerId: id,
       device,
@@ -288,7 +305,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
           // release is best-effort (capture may already be gone).
         }
       }
-      queue.enqueue({
+      enqueue({
         kind,
         pointerId: id,
         device,
@@ -313,7 +330,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
       // Pinch/ctrl-wheel: ALWAYS the canvas's zoom (design-007 F4) — the
       // browser's page pinch-zoom must never fire, claimed content or not.
       e.preventDefault();
-      queue.enqueue({ kind: "wheel", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e), wheel: { dx: 0, dy: 0, pinch: e.deltaY } });
+      enqueue({ kind: "wheel", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e), wheel: { dx: 0, dy: 0, pinch: e.deltaY } });
       return;
     }
     const wheel = { dx: e.deltaX * scale, dy: e.deltaY * scale, pinch: 0 };
@@ -323,11 +340,11 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
       // flagged so recognizers treat the tick as wheel silence. The room-check
       // in wheelCede means an at-bounds scroller falls through to the branch
       // below — and scroll-chaining can never escape to the page.
-      queue.enqueue({ kind: "wheel", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e), wheel, wheelHandled: true });
+      enqueue({ kind: "wheel", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e), wheel, wheelHandled: true });
       return;
     }
     e.preventDefault(); // own zoom/pan — never let the page scroll
-    queue.enqueue({ kind: "wheel", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e), wheel });
+    enqueue({ kind: "wheel", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e), wheel });
   };
 
   /** Emit a `key` fact iff the modifier tuple changed (design-003 §2 minimal keyboard). */
@@ -343,7 +360,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
       return;
     }
     lastMods = { ...mods };
-    queue.enqueue({ kind: "key", pointerId: "", device: "mouse", screenX: 0, screenY: 0, buttons: 0, mods });
+    enqueue({ kind: "key", pointerId: "", device: "mouse", screenX: 0, screenY: 0, buttons: 0, mods });
   };
 
   const isSpace = (e: KeyboardEvent): boolean => e.key === " " || e.code === "Space";
@@ -392,7 +409,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     // The browser will not deliver pointerups once we lose focus — cancel every
     // still-down pointer so no gesture is stranded Active (design-003 §8).
     for (const [id, s] of live) {
-      queue.enqueue({ kind: "cancel", pointerId: id, device: s.device, screenX: s.x, screenY: s.y, buttons: 0, mods: { ...NO_MODS, space: spaceHeld } });
+      enqueue({ kind: "cancel", pointerId: id, device: s.device, screenX: s.x, screenY: s.y, buttons: 0, mods: { ...NO_MODS, space: spaceHeld } });
     }
     live.clear();
     // Modifier keyups are also lost on blur — ENQUEUE the clearing fact, or
@@ -402,7 +419,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     spaceHeld = false;
     if (lastMods.space || lastMods.shift || lastMods.ctrl || lastMods.alt || lastMods.meta) {
       lastMods = { ...NO_MODS };
-      queue.enqueue({
+      enqueue({
         kind: "key",
         pointerId: "",
         device: "mouse",
@@ -418,18 +435,35 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     cancelAllInput();
   };
 
-  // THE POINTER OUT OF THE HOST (petition I42; module doc): said a task later, unless an enter answers it first
-  const onPointerLeave = (e: PointerEvent): void => {
-    if (e.target !== container || e.relatedTarget != null || pointerIdOf(e) !== "mouse" || live.has("mouse")) return;
-    const { x, y } = relative(e.clientX, e.clientY);
-    const mods = pointerMods(e);
-    if (leaving !== undefined) clearTimeout(leaving);
+  // THE POINTER OUT OF THE HOST (petitions I42, I44; module doc): said a task later at (x, y), unless an answer comes first — and
+  // once: a leave waiting or said is not said again (an exit off the container is heard twice, its pointerout and its pointerleave)
+  const leaveAt = (x: number, y: number, mods: InputMods): void => {
+    if (leaving !== undefined || left) return;
     leaving = setTimeout(() => {
       leaving = undefined;
       left = true;
       atRest.delete("mouse");   // the move that brings it back always lands (petition I33's comparison starts afresh)
-      queue.enqueue({ kind: "leave", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: 0, mods });
+      enqueue({ kind: "leave", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: 0, mods });
     }, 0);
+  };
+  const onPointerLeave = (e: PointerEvent): void => {
+    if (e.target !== container || e.relatedTarget != null || pointerIdOf(e) !== "mouse" || live.has("mouse")) return;
+    const { x, y } = relative(e.clientX, e.clientY);
+    leaveAt(x, y, pointerMods(e));
+  };
+  // …out of the WINDOW from anywhere in the document (I44): off the container at the point it left, off the chrome beside it at the
+  // last point said for the mouse (none said: nothing to say)
+  const onWindowOut = (e: PointerEvent): void => {
+    if (e.relatedTarget != null || pointerIdOf(e) !== "mouse" || live.has("mouse")) return;
+    const at = e.target instanceof Node && container.contains(e.target) ? relative(e.clientX, e.clientY) : lastMouse;
+    if (at !== undefined) leaveAt(at.x, at.y, pointerMods(e));
+  };
+  // …back in the window: an answer to a leave WAITING (the resting pair, at the document), never to one said — over the chrome the
+  // desk hears nothing, so the pointer stays away until it is back over the host
+  const onWindowOver = (e: PointerEvent): void => {
+    if (e.relatedTarget != null || pointerIdOf(e) !== "mouse" || leaving === undefined) return;
+    clearTimeout(leaving);
+    leaving = undefined;
   };
   const onPointerEnter = (e: PointerEvent): void => {
     if (e.target !== container || pointerIdOf(e) !== "mouse") return;
@@ -441,7 +475,7 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     mouseBack();
     const { x, y } = relative(e.clientX, e.clientY);
     // back over the host — at rest or not, the pointer is here (no hover verdict: the enter's target is the container; the next move's is the truth)
-    queue.enqueue({ kind: "move", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e), tMs: e.timeStamp });
+    enqueue({ kind: "move", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e), tMs: e.timeStamp });
   };
 
   container.addEventListener("pointerdown", onPointerDown);
@@ -451,6 +485,9 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
   container.addEventListener("wheel", onWheel, { passive: false });
   container.addEventListener("pointerleave", onPointerLeave);
   container.addEventListener("pointerenter", onPointerEnter);
+  // Capture phase (I44): the window's exit and return are the document's facts — no page handler's stopPropagation can hide them.
+  doc.addEventListener("pointerout", onWindowOut, true);
+  doc.addEventListener("pointerover", onWindowOver, true);
   view?.addEventListener("keydown", onKeyDown);
   view?.addEventListener("keyup", onKeyUp);
   view?.addEventListener("blur", onBlur);
@@ -469,6 +506,8 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     container.removeEventListener("wheel", onWheel);
     container.removeEventListener("pointerleave", onPointerLeave);
     container.removeEventListener("pointerenter", onPointerEnter);
+    doc.removeEventListener("pointerout", onWindowOut, true);
+    doc.removeEventListener("pointerover", onWindowOver, true);
     view?.removeEventListener("keydown", onKeyDown);
     view?.removeEventListener("keyup", onKeyUp);
     view?.removeEventListener("blur", onBlur);

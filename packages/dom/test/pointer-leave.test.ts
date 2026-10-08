@@ -5,9 +5,15 @@
  * a leave answered by an enter at once (Chromium's pair at a resting point — petition I33's) says nothing and wakes nothing; back,
  * the enter after a said leave is a move at its point. Driven through a real engine with presence attached (the facet is the
  * engine's own eph write — read off the local peer, no room needed).
+ *
+ * Petition I44 — the same leave when the mouse leaves the WINDOW off a host's chrome BESIDE the desk (a sibling of the container:
+ * VibeField's head and line), which the container never hears: the document's `pointerout` with no related target, heard wherever
+ * the pointer is. Said at the LAST point over the host (the desk never saw it over the chrome), answered at once by the document's
+ * `pointerover` with no related target, and once said cleared only by the pointer back over the HOST. An exit off the container
+ * itself is heard twice (its pointerout reaches the document, then its pointerleave) and says one leave.
  */
 import { createCanvasEngine, PointerOutside, PresenceCursor, defineQuery } from "@ice/core";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { createCanvasHost } from "../src/host";
 import { attachPointerAdapter } from "../src/pointer-adapter";
 
@@ -109,5 +115,167 @@ describe("the pointer out of the host (petition I42)", () => {
       expect(d.queued()).toBe(0);
       expect(d.outside()).toBe(false);
     } finally { d.dispose(); }
+  });
+});
+
+describe("the pointer out of the window from beside the host (petition I44)", () => {
+  /** A host's chrome beside the desk — a SIBLING of the container (VibeField's head and line stand beside `[data-desk]`). */
+  const beside = (): HTMLElement => {
+    const line = document.createElement("div");
+    document.body.appendChild(line);
+    return line;
+  };
+
+  it("out of the window off a sibling: ONE leave a task later, at the last point over the host — the facet away within the step that ingests it", async () => {
+    const d = setup();
+    const line = beside();
+    try {
+      fire(d.container, "pointermove", d.at(450, 320));
+      d.step(2);
+      expect(d.facet()).toMatchObject({ x: 400, y: 300, away: false });
+      // onto the line (Chromium's boundary events): the pointer has somewhere to go, and the line's own moves are not the desk's
+      fire(d.container, "pointerout", { ...d.at(450, 619), relatedTarget: line });
+      fire(d.container, "pointerleave", { ...d.at(450, 619), relatedTarget: line }, false);
+      fire(line, "pointerover", { ...d.at(450, 630), relatedTarget: d.container });
+      fire(line, "pointermove", d.at(450, 630));
+      await task();
+      expect(d.queued()).toBe(0);
+      // out of the window off the line: a pointerout with no related target, which only the document hears
+      fire(line, "pointerout", { ...d.at(450, 640), relatedTarget: null });
+      expect(d.queued()).toBe(0); // deferred: the pointer's return may still answer it
+      await task();
+      expect(d.queued()).toBe(1); // the leave, once
+      d.step();
+      expect(d.outside()).toBe(true);
+      expect(d.facet()).toMatchObject({ x: 400, y: 300, away: true }); // the last point over the host — never the line's (400, 620)
+    } finally { line.remove(); d.dispose(); }
+  });
+
+  it("a resting pointerout/pointerover pair at the document says nothing — off a sibling, or at the document itself", async () => {
+    const d = setup();
+    const line = beside();
+    try {
+      fire(d.container, "pointermove", d.at(450, 320));
+      d.step(2);
+      const wakes = d.engine.engine.frame.sleepStats().wakes.input ?? 0;
+      // Chromium's pair at a resting point (petition I33's), at the document level: nothing, now or a task later
+      fire(line, "pointerout", { ...d.at(450, 640), relatedTarget: null });
+      fire(line, "pointerover", { ...d.at(450, 640), relatedTarget: null });
+      await task();
+      expect(d.queued()).toBe(0);
+      fire(document, "pointerout", { ...d.at(450, 640), relatedTarget: null });
+      fire(document, "pointerover", { ...d.at(450, 640), relatedTarget: null });
+      await task();
+      expect(d.queued()).toBe(0);
+      expect(d.engine.engine.frame.sleepStats().wakes.input ?? 0).toBe(wakes);
+      d.step();
+      expect(d.outside()).toBe(false);
+      expect(d.facet()).toMatchObject({ x: 400, y: 300, away: false });
+    } finally { line.remove(); d.dispose(); }
+  });
+
+  it("once said, only the host clears it: back in the window over the sibling it stays away (an exit again says nothing more); back over the container, not away", async () => {
+    const d = setup();
+    const line = beside();
+    try {
+      fire(d.container, "pointermove", d.at(450, 320));
+      d.step(2);
+      fire(line, "pointerout", { ...d.at(450, 640), relatedTarget: null });
+      await task();
+      d.step();
+      expect(d.facet()).toMatchObject({ away: true });
+      // back in the window over the line: the document's pointerover, no related target — the desk hears no fact of its own
+      fire(line, "pointerover", { ...d.at(450, 640), relatedTarget: null });
+      fire(line, "pointermove", d.at(450, 630));
+      await task();
+      expect(d.queued()).toBe(0);
+      d.step();
+      expect(d.outside()).toBe(true);
+      expect(d.facet()).toMatchObject({ x: 400, y: 300, away: true });
+      // out again off the line, still away: nothing more
+      fire(line, "pointerout", { ...d.at(450, 640), relatedTarget: null });
+      await task();
+      expect(d.queued()).toBe(0);
+      // in again over the line, then onto the container: its enter is a move at its point
+      fire(line, "pointerover", { ...d.at(450, 640), relatedTarget: null });
+      fire(line, "pointerout", { ...d.at(450, 615), relatedTarget: d.container });
+      fire(d.container, "pointerover", { ...d.at(450, 615), relatedTarget: line });
+      fire(d.container, "pointerenter", { ...d.at(450, 615), relatedTarget: line }, false);
+      expect(d.queued()).toBe(1);
+      d.step();
+      expect(d.outside()).toBe(false);
+      expect(d.facet()).toMatchObject({ x: 400, y: 595, away: false });
+    } finally { line.remove(); d.dispose(); }
+  });
+
+  it("out of the window off the container says exactly ONE leave — heard at the document and on the container, in either order", async () => {
+    const d = setup();
+    const canvas = document.createElement("canvas"); // what the desk draws in: the element under the pointer
+    d.container.appendChild(canvas);
+    try {
+      fire(d.container, "pointermove", d.at(450, 320));
+      d.step(2);
+      // Chromium's order: the pointerout off the element under the pointer reaches the document first, then the container's pointerleave
+      fire(canvas, "pointerout", { ...d.at(845, 320), relatedTarget: null });
+      fire(d.container, "pointerleave", { ...d.at(845, 320), relatedTarget: null }, false);
+      await task();
+      expect(d.queued()).toBe(1);
+      d.step();
+      expect(d.facet()).toMatchObject({ x: 795, y: 300, away: true }); // the point it left, as I42 says it
+      // back, and out again with the two heard the other way round: one leave again
+      fire(d.container, "pointerenter", { ...d.at(845, 320), relatedTarget: null }, false);
+      d.step();
+      expect(d.facet()).toMatchObject({ away: false });
+      fire(d.container, "pointerleave", { ...d.at(845, 330), relatedTarget: null }, false);
+      fire(canvas, "pointerout", { ...d.at(845, 330), relatedTarget: null });
+      await task();
+      expect(d.queued()).toBe(1);
+      d.step();
+      expect(d.facet()).toMatchObject({ x: 795, y: 310, away: true });
+    } finally { d.dispose(); }
+  });
+
+  it("says nothing with a press of ours live — off a sibling, or at the document", async () => {
+    const d = setup();
+    const line = beside();
+    try {
+      fire(d.container, "pointermove", d.at(450, 320));
+      d.step(2);
+      fire(d.container, "pointerdown", { ...d.at(450, 320), buttons: 1 });
+      d.step();
+      fire(line, "pointerout", { ...d.at(450, 640), buttons: 1, relatedTarget: null });
+      fire(document, "pointerout", { ...d.at(450, 640), buttons: 1, relatedTarget: null });
+      await task();
+      expect(d.engine.stack.queue.drain().map((e) => e.kind)).toEqual([]);
+      fire(d.container, "pointerup", { ...d.at(450, 320), buttons: 0 });
+      d.step();
+      expect(d.outside()).toBe(false);
+    } finally { line.remove(); d.dispose(); }
+  });
+
+  it("detach unwires the document: every listener it added is removed, a leave waiting is never said, and a late exit enqueues nothing", async () => {
+    const added = vi.spyOn(document, "addEventListener");
+    const removed = vi.spyOn(document, "removeEventListener");
+    const d = setup();
+    const line = beside();
+    const ours = (calls: unknown[][]): unknown[][] => calls.filter(([type]) => type === "pointerout" || type === "pointerover");
+    try {
+      expect(ours(added.mock.calls)).toHaveLength(2);
+      fire(d.container, "pointermove", d.at(450, 320));
+      d.step(2);
+      // a leave waiting at detach is never said
+      fire(line, "pointerout", { ...d.at(450, 640), relatedTarget: null });
+      d.detach();
+      expect(ours(removed.mock.calls)).toEqual(ours(added.mock.calls));
+      d.engine.stack.queue.drain();
+      await task();
+      expect(d.queued()).toBe(0);
+      // a late exit, off the sibling or at the document: nothing hears it
+      fire(line, "pointerout", { ...d.at(450, 640), relatedTarget: null });
+      fire(document, "pointerout", { ...d.at(450, 640), relatedTarget: null });
+      await task();
+      expect(d.queued()).toBe(0);
+      expect(d.outside()).toBe(false);
+    } finally { added.mockRestore(); removed.mockRestore(); line.remove(); d.dispose(); }
   });
 });
