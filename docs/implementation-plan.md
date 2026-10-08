@@ -1672,7 +1672,7 @@ glyph and the chips' ids. (D-R1.7, the row of holes peeking under the edge at re
 `OverInteractive`); an accessory's shadow darkens the holes it falls on; rig:tray takes ≈ 137 s; a lamp push configured to
 0 would make `normalize(shadow.zw)` NaN.
 
-## M23 — The 0.15.0 asks (petitions I20–I28) — **LANDED 2026-10-03: all nine on main `6709989`** (one linear chain of branches, each graded by the orchestrator's own `ci` + `gate:landing`; 0.14.0 published 17:07Z; cut as `0.15.0-desk.1` on `next` the same day)
+## M23 — The 0.15.0 asks (petitions I20–I28) — **LANDED 2026-10-03: all nine on main `6709989`** (one linear chain of branches, each graded by the orchestrator's own `ci` + `gate:landing`; 0.14.0 published 17:07Z; cut as `0.15.0-desk.1` on `next` the same day) · **RELEASED 2026-10-08 as `0.15.0` on `latest`** — every ask I20–I45 across seven prereleases (`desk.1` … `desk.7`); the release is `desk.7`'s code, unchanged
 
 VibeField's desk migration (track DK, `vibe-field/draft/thinking-desk-migration.md` §8 A4 — the covers DK-15, the thumbnails
 DK-4, "Send to…" DK-14) files nine asks against the desk for 0.15.0 (I26 from the §8 canon review, I27 from DESIGN.md §8's
