@@ -6,11 +6,14 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
-> **`0.16.0-portals.1` on the `next` dist-tag (cut 2026-10-09)** — a prerelease carrying everything below for VibeField's PORTALS
-> program (live surfaces back on the desk as object kinds) to pin exactly while its landing branch is open: M24 LT1, the live face
-> (design-019) — `createLiveTexture` and the `LIVE` source a host lends, the sight, `KindHost.redraw`/`keyOf`/`frames`,
-> `mipsInto`, `stillLive`, the kit's `mat` name. The section stays `[Unreleased]` until 0.16.0 is cut. Nothing of 0.15.0's API
-> surface moves; `KindHost` gains three optional fields and `KitWgslName` one name.
+> **`0.16.0-portals.2` on the `next` dist-tag (cut 2026-10-09)** — a prerelease carrying everything below for VibeField's PORTALS
+> program (live surfaces back on the desk as object kinds) to pin exactly while its landing branch is open: `portals.1` (9 Oct, cut,
+> never published) M24 LT1, the live face (design-019) — `createLiveTexture` and the `LIVE` source a host lends, the sight,
+> `KindHost.redraw`/`keyOf`/`frames`, `mipsInto`, `stillLive`, the kit's `mat` name; `portals.2` adds LT2, the hand's input to a
+> kind in hand — `KindLocal.held` and `HeldEvent` (a press, its moves, its click count, the kind's wheel), `OpenBinding.wheel`/
+> `cursor`/`escape`, the editor lease's `compose`/`commit`, `LiveTexture.logical`. The section stays `[Unreleased]` until 0.16.0 is
+> cut. **One removal breaks a declaration:** `interaction.keyboard`/`keyboardEscape` (and the `KeyboardExclusive` tag — inert since
+> D5b) are gone, and declaring either now throws at definition, naming the editor lease and `open.escape` as their replacements.
 
 **M24 — the live face (design-019, PROPOSAL rev 1 — VibeField's PORTALS seam).** A kind's face may show a surface that lives outside
 the world — a web page, a captured window, a simulator's screen — as a texture on the desk's device that the HOST fills and the kind
