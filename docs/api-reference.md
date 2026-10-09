@@ -14,7 +14,8 @@ unsupported and wall-checked.
 
 **What a landing must pass** (design-013 C4, D-C4.11; design-015 D1): `pnpm run ci` (typecheck ·
 lint · tests · the import walls · `gen:check`) and **`pnpm run gate:landing`** — the desk's Dawn
-oracle, the `apps/desk` build, its twenty rigs (`rig:parity` first: Chrome against the oracle's
+oracle, the desk's own Dawn units (`pnpm --filter ./packages/desk dawn` — M24's live texture and a live
+kind's still), the `apps/desk` build, its twenty-one rigs (`rig:parity` first: Chrome against the oracle's
 bytes, maxΔ 0 asserted per scene), `pack:audit` and the desk clock's `dts:check`.
 The landing gate is separate from `ci` because the oracle needs Dawn, which the
 CI runner has not been probed for. A RELEASE adds the audit again from the other
@@ -476,9 +477,19 @@ engine names a kind:
   an object's DOM half lends what only a browser makes (`defineObject({ host: { lend: (h) => [service(KEY, value)] } })` — the
   calendar's `PRINT_RASTER`), handed a `LendHost` (`use` + `wake`: a service whose work lands later wakes the sleeping loop, K7a);
   any kind's world half `use`s one (`KindHost.use?.(KEY)`), a DOM half too (`ObjectDomHost.use`). Keys match by NAME; a name lent
-  twice is a mount error. The desk's own doors (`pass`, `children`, `drawn`, `budget`, `rasters`, `remake`, `wake`) stay
-  `KindHost` fields — never lent. Every seam wakes the sleeping loop where it changes something visible: the editor's lease
+  twice is a mount error. The desk's own doors (`pass`, `children`, `drawn`, `budget`, `rasters`, `remake`, `wake`, `redraw`,
+  `keyOf`, `frames`) stay `KindHost` fields — never lent. Every seam wakes the sleeping loop where it changes something visible: the editor's lease
   (`compose.wake`), a lent service's landing (`LendHost.wake`), a menu act's writes (the document's outside door).
+- **Live faces** (M24, design-019 — PROPOSAL rev 1): a kind's face fed by a HOST's source, the texture on the desk's device. The host
+  lends `LIVE` (`@ice/desk/kit`: `LiveSources.open(key, spec, arrived) → LiveFace`) and makes each face's texture with
+  `createLiveTexture(device, { label, … }) → LiveWriter` (one copy into level 0 per present; a `VideoFrame` closed by the writer). The
+  kind opens a face per object by its DURABLE key (`KindHost.keyOf(e)` — strata's document key: the same on every peer and across a
+  reload), takes once at the open and then on each arrival (`arrived` → `KindHost.wake()`; its tick `take()`s; a face that landed asks
+  `KindHost.redraw()` — the frame drawn again, NO record remade — and the tick answers false), draws `face.texture()` (`LiveTexture`:
+  `view()`, `revision`, `epoch`; `prepare(encoder, liveDepth(face, px))` makes its mips into the frame's encoder as deep as they are
+  read), and tells the host what it sees: `createSight(host.frames)` folds its prepares' `saw` into `Seen` per entity per frame (the
+  desk copy behind the hand and a capture never count — a face behind the hand reads unseen), and its law hands `face.demand(d)` a
+  `LiveDemand` change-only. A still draws one from committed bytes: `createStill({ services: [service(LIVE, stillLive(device, …))] })`.
 - **Text input**: the ONE focused editor is the DESK's (`handle.editor(): DeskEditor`, `ObjectDomHost.editor`), made whatever kinds
   are registered; a kind declares its TEXT PARTS (`host: { text: (h) => TextPart[] }`) — a part with `tap` the desk routes every
   tap to (`TextTap`: the world point, the stack's exact hit), answering an `EditorLease` (`part`, `label`, `value`, `input`,

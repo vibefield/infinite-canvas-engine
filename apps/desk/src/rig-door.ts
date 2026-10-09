@@ -37,10 +37,16 @@ export interface DeskRig {
    * what it says then (petition I25 — a host changes its kinds by a remount).
    */
   layer?: RigLayer;
+  /**
+   * THE RIG'S LIVE SOURCE (M24 LT1 — `?live`; src/rig/live-source.ts `RigLive`): what the harness lends the rig's live kind under `LIVE`
+   * (the layer's `services`, its writers made on the layer's device through `onDevice`) — `rig:live` ticks it, holds it still and reads
+   * what it was asked, in the page. Typed by its shape nowhere here: the product reaches this module, and nothing of src/rig/.
+   */
+  readonly live?: unknown;
 }
 
-/** The layer options a rig's page may mount with (the product page mounts with none of them). */
-export type RigLayer = Pick<DeskLayerOptions, "hold" | "tray" | "objects" | "cursors">;
+/** The layer options a rig's page may mount with (the product page mounts with none of them; `services` and `onDevice`: `?live`'s source). */
+export type RigLayer = Pick<DeskLayerOptions, "hold" | "tray" | "objects" | "cursors" | "services" | "onDevice">;
 
 declare global {
   interface Window {

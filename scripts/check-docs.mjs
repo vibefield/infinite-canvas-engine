@@ -37,7 +37,9 @@ const ROWS = [
   ["the ground's device doc says no three adopts it", ["packages/desk/src/ground.ts"], /three adopts/, true],
   ["the plugin-parity list names the wakes a kind declares and what a missing one costs (K9)", ["docs/api-reference.md"], /`KindLocal\.due\(now\)`[\s\S]*desk never sleeps[\s\S]*`KindHost\.wake\(\)`[\s\S]*`KindPass\.idleAt\(ms\)`/, false],
   ...RIG_COUNTED.map((f) => [`${f} counts the landing gate's ${gateRigs} rigs (package.json's gate:landing, K9)`, [f], new RegExp(`\\b${gateRigs} rigs\\b`), false]),
-  [`no doc counts the landing gate's rigs as other than ${gateRigs} (K9)`, RIG_COUNTED, new RegExp(`\\b(?!${gateRigs} )(${NUMBERS.join("|")}) rigs\\b`), true],
+  // (a count starts at no word's middle — `(?<![\w-])`, never `\b`: at twenty-one rigs, "one rigs" inside the true count is no stale
+  // one; M24 LT1 found it, the first hyphenated count)
+  [`no doc counts the landing gate's rigs as other than ${gateRigs} (K9)`, RIG_COUNTED, new RegExp(`(?<![\\w-])(?!${gateRigs} )(${NUMBERS.join("|")}) rigs\\b`), true],
   ["the desk's editor is the desk's, not one an object's DOM half made (K8a; K9)", ["docs/api-reference.md"], /the one focused editor an object's DOM half made/, true],
   ["the CHANGELOG's K8a renames name NoteEditorOptions beside NoteEditor and createNoteEditor (K9)", ["CHANGELOG.md"], /`NoteEditorOptions` → split in two/, false],
 ];
