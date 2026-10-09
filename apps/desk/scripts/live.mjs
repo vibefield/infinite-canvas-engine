@@ -452,7 +452,10 @@ try {
     await fq("window.__desk.setCamera({ x: 2, y: 0, zoom: 1 })");
     await fsettle();
     const later = await look();
-    const putDown = call === "held" ? (await fhand()) === null || (await fhand())?.landing === true : true;
+    // put down in the WORLD, not only undrawn (a missing kind's object in hand builds no hand to draw): the desk answers a pick again
+    // — over the board — which it never does while anything is held
+    const picked = call === "held" ? await fq("window.__desk.handle.pick({ x: 918, y: 320 })?.entity ?? null") : null;
+    const putDown = call === "held" ? picked === bd && (await fhand()) === null : true;
     const reason = after.status.faults?.[0]?.reason ?? "";
     const unexpected = flogs.filter((l) => !l.includes(`"${KIND}"`));
     // (the state READY: the kind's `prepare` and `drawRange` throw with a pass, a debug group or a viewport of their own left open — WebGPU
@@ -461,7 +464,7 @@ try {
       && later.missing && later.board && (later.kinds.board ?? 0) === 1 && later.redraws > after.redraws && after.redraws > before.redraws && after.faults.length === 0 && later.faults.length === 0
       && unexpected.length === 0 && flogs.filter((l) => l.includes("is MISSING")).length === 1
       && (call !== "held" || (putDown && after.inputs === before.inputs)),
-      `THE FAULT DOOR — the "${KIND}" kind's \`${call}\` throws${call === "prepare" ? " mid-pass (its own pass and a debug group left open)" : call === "drawRange" ? " mid-run (a viewport and a debug group of its own left in the desk's pass)" : " in hand"}: MISSING after three frames (${JSON.stringify(after.status.faults?.[0] ?? null)}), said once, the layer ${later.status.state} (never degraded: no frame refused); its object in the missing face (${later.missing}), the board drawn (${later.kinds.board ?? 0}), the frames ${before.redraws} → ${after.redraws} → ${later.redraws} — none lost (contained reflector faults ${after.faults.length + later.faults.length}), no other page error (${unexpected.length})${call === "held" ? `; the hand put down (${putDown}), the face sent ${after.inputs - before.inputs} inputs after the door armed — its \`up\` told to no one` : ""}`);
+      `THE FAULT DOOR — the "${KIND}" kind's \`${call}\` throws${call === "prepare" ? " mid-pass (its own pass and a debug group left open)" : call === "drawRange" ? " mid-run (a viewport and a debug group of its own left in the desk's pass)" : " in hand"}: MISSING after three frames (${JSON.stringify(after.status.faults?.[0] ?? null)}), said once, the layer ${later.status.state} (never degraded: no frame refused); its object in the missing face (${later.missing}), the board drawn (${later.kinds.board ?? 0}), the frames ${before.redraws} → ${after.redraws} → ${later.redraws} — none lost (contained reflector faults ${after.faults.length + later.faults.length}), no other page error (${unexpected.length})${call === "held" ? `; the hand put down (${putDown}: a pick over the board answers #${picked}), the face sent ${after.inputs - before.inputs} inputs after the door armed — its \`up\` told to no one` : ""}`);
     try { await fetch(`http://127.0.0.1:${chrome.port}/json/close/${ft.target.id}`); } catch {}
     ft.close();
   }
