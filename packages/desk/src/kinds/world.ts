@@ -90,6 +90,40 @@ export interface HeldReadoutContext extends Pick<HeldToolApi, "world" | "entity"
   readonly local: unknown;
 }
 
+/** What a kind's `open.cursor` reads (design-019 §5, M24 LT2): the object in hand, the NAMED part under the mouse, the kind's state on this desk. */
+export interface HeldCursorContext {
+  readonly entity: Entity;
+  readonly part: string;
+  readonly local: unknown;
+}
+
+/**
+ * One thing the HAND did with the object in hand, TOLD to its kind (design-019 §5, M24 LT2 — `KindLocal.held`), in the held extent's
+ * own units, centred (as core's `HeldPointer` is: the open extent, through the pose the renderer drew). A kind reaches the desk through
+ * `/desk`, `/desk/kit` and `/desk/engine` alone, so it is TOLD its input — it never reads core's pointer components.
+ * - `pointer`: the `down`, each frame's `move` (one sample a frame — the ingest folds a frame's moves) and the `up` of a press ON the
+ *   object — on one of the kind's named parts (the kind's own: never a tap that puts it down), on its `content` or `frame` (two instant
+ *   taps there still put it down — the hand's rule), with a mode in hand on its surface — and the pointer's moves between presses, over
+ *   the object or off it. `part`: the kind's own `hit` under it (null over nothing); `button` the one pressed or released (0 — a press in
+ *   hand is the primary's, petition I28; −1 on a move); `buttons` the mask held (a primary press's never empty); `count` the press's
+ *   click count (core's `HeldPress.count`: 1, 2, 3… within the desk's multi-tap window and slop; 0 on a move). A press the HAND takes —
+ *   a pan (the middle button, Space), a press on the soft desk — is never told, nor its moves; a press of the kind's still down when the
+ *   hand lets go is told its `up` where the pointer was last.
+ * - `wheel`: a plain wheel over the object while its kind takes the wheel (`OpenBinding.wheel: "kind"`): the frame's deltas, CSS px of the hand.
+ */
+export type HeldEvent =
+  | {
+      readonly type: "pointer";
+      readonly phase: "down" | "move" | "up";
+      readonly x: number;
+      readonly y: number;
+      readonly part: ObjectHit | null;
+      readonly button: number;
+      readonly buttons: number;
+      readonly count: number;
+    }
+  | { readonly type: "wheel"; readonly x: number; readonly y: number; readonly dx: number; readonly dy: number };
+
 /**
  * The kind's OPENING (design-015 §8; D4b) — what "pick it up" means for this kind. `extent`: the OPEN rect in the object's
  * own desk units, centred as its rect is and UNTURNED (the builder turns it with the object): a notebook's spread (twice the
@@ -122,6 +156,26 @@ export interface OpenBinding {
    * word draws nothing of the desk).
    */
   readonly readout?: string | ((ctx: HeldReadoutContext) => string | undefined);
+  /**
+   * The WHEEL in hand (design-019 §5, M24 LT2): `"hand"` (the default — a plain wheel moves the object once brought close) or `"kind"`
+   * — a plain wheel over it is the kind's, told as a `HeldEvent` "wheel" (a page scrolls); ⌘-wheel and the pinch still zoom the hand,
+   * and past 0.72× still put it down. Carried onto the widget type (`heldWheel`) by `defineObject`, where core's held input reads it.
+   */
+  readonly wheel?: "hand" | "kind";
+  /**
+   * The CURSOR in hand (design-019 §5, M24 LT2): asked while the object is held and the mouse is over one of the kind's NAMED parts
+   * (any but `content` and `frame`) — a link's `pointer`, a text field's `text`, from what its source says (`LiveInfo.cursor`); the
+   * desk shows it above its own (core's L4), written to the container only when it changes. `undefined` or "": the desk's own. One
+   * that throws is a strike against the kind (petition I24) and the desk's own is shown.
+   */
+  cursor?(ctx: HeldCursorContext): string | undefined;
+  /**
+   * ESCAPE in hand (design-019 §5, M24 LT2): `"desk"` (the default — Esc puts the object down, in one press even while its kind leases
+   * the editor) or `"kind"` — Esc is the kind's (a source that owns it: a terminal; its lease takes the key): the keymap never puts the
+   * object down for it nor blurs the editor, and the hand is put down by Done, a click off it, or the pinch. Carried onto the widget
+   * type (`heldEscape`) by `defineObject`, where the keymap reads it.
+   */
+  readonly escape?: "desk" | "kind";
 }
 
 /**
@@ -295,6 +349,13 @@ export interface KindLocal {
   veils?(): ReadonlySet<Entity>;
   /** The kind's word on a raster it charged to the budget (D6): true = on screen this frame, never evicted now. */
   keeps?(key: string): boolean;
+  /**
+   * The HAND's input while `e` is IN HAND (design-019 §5, M24 LT2 — `HeldEvent`): called once a frame something happened, after the
+   * drivers and before the kinds' ticks, with the frame's events in order. The desk derives them from what core writes (`HeldPointer`,
+   * `HeldPress`, `HeldWheel`) — never a second input path — so a kind's DOM half and its world half see one hand. A kind that keeps a
+   * driver of its own (the calendar's hand) may read core's facts instead. One that throws is a strike against the kind (petition I24).
+   */
+  held?(e: Entity, events: readonly HeldEvent[]): void;
   dispose?(): void;
 }
 

@@ -43,6 +43,7 @@ import { type BudgetStats, createRasterBudget } from "../engine/budget";
 import { createRasterQueue, type RasterQueueStats } from "../engine/rasters";
 import type { RecordStoreStats } from "../engine/records";
 import { HOLD, type HoldOptions, type HoldReserves } from "../hold/pose";
+import { createHeldFold } from "../hold/told";
 import { HOLD_SHADER_FILES, holdShaders } from "../hold/shaders";
 import { heldSlots, type SelectionAnchor, withKindActs } from "../compose/marks";
 import { createPickSource } from "../compose/pick";
@@ -911,6 +912,8 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // the kinds whose own state moved (D6): their records are remade this build; the rest stand — told every tick, an empty set
     // included (no word at all would make the builder ask every object whether a kind lifts it). ONE set, cleared a tick (K7a)
     const restless = new Set<string>();
+    /** The hand's input, folded once a frame for the object in hand's kind (M24 LT2). */
+    const told = createHeldFold(world);
     const inner = compose.reflector;
     const reflector: ReflectorDef & { available(): boolean } = {
       ...inner,
@@ -927,6 +930,14 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
             perf.driverAsks += 1;
             if (d.idle?.() !== true) { following = true; d.follow(now); }
           }
+        }
+        // THE HAND'S INPUT, TOLD (design-019 §5, M24 LT2 — hold/told.ts): what the hand did with the object in hand this frame, folded
+        // from core's facts and told to its kind before its tick — never a second input path. A `held` that throws is a strike
+        for (const { entity, events } of told.step()) {
+          const k = builder.kindOf(entity);
+          const local = k === undefined ? undefined : locals.get(k.name);
+          if (k === undefined || local?.held === undefined || faults.missing(k.name)) continue;
+          try { local.held(entity, events); } catch (err) { faults.strike(k.name, "held", err, entity); }
         }
         let want = false;
         restless.clear();
@@ -1035,6 +1046,13 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       frame: (e) => { const h = builder.hand(); return h !== undefined && h.entity === e && !h.landing ? h.frame : undefined; },
       // …and which of the kind's parts is under a point of it (D3t-a): its `hit` on the geometry drawn in hand
       part: (e, x, y) => builder.heldPart(e, x, y),
+      // …and (design-019 §5, M24 LT2) the kind's cursor over one of its named parts — its `open.cursor`, through the kind's boundary
+      cursor: (e, part) => {
+        const k = builder.kindOf(e);
+        const open = k?.open;
+        if (k === undefined || open?.cursor === undefined || faults.missing(k.name)) return undefined;
+        try { return open.cursor({ entity: e, part, local: locals.get(k.name) }); } catch (err) { faults.strike(k.name, "cursor", err, e); return undefined; }
+      },
     };
     const heldPose = ctx.heldPose;
     if (heldPose !== undefined) heldPose.current = poseSource;

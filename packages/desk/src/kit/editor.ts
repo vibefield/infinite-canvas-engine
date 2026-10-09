@@ -45,8 +45,16 @@ export interface EditorLease {
    * (a peer's, an undo) reaches the platform's field; `null`: keep the field's own (a session is open — the field is the truth).
    */
   value(): string | null;
-  /** The platform's value after an input event. */
+  /** The platform's value after an input event (while a composition runs, only for a lease that declares no `compose`). */
   input(value: string): void;
+  /**
+   * The IME's COMPOSITION as it runs (design-019 §5, M24 LT2 — the preedit a remote page's IME is driven by): told once as it starts
+   * (`""`, 0) and after each update the platform applies — the composition's text and the caret within it. A lease that declares it is
+   * told the composition INSTEAD of `input` values while one runs; absent, it sees the field's values as ever (the preedit inside them).
+   */
+  compose?(text: string, caret: number): void;
+  /** The composition COMMITTED (`compositionend`'s data, M24 LT2) — the text it ended with ("" when it was cancelled). */
+  commit?(text: string): void;
   /** A key the lease takes: true — handled (the editor prevents its default, so the keymap stands down). */
   keydown(ev: KeyboardEvent): boolean;
   /** The caret moved (a selection change, a tap, a value the world moved): its index. */

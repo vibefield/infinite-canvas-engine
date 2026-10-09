@@ -223,6 +223,39 @@ describe("the ONE editor is the desk's, and a plugin kind LEASES it through the 
     expect(ed.lease()).toBeUndefined();
   });
 
+  it("a lease that takes the COMPOSITION (M24 LT2) is told it as it runs — its start (\"\", 0), each update once the platform applied it (its text, the caret within it), its commit — and no field values meanwhile; a lease without one sees the values as ever", () => {
+    const told: Told = { calls: [], value: "", alive: true };
+    const plain: Told = { calls: [], value: "", alive: true };
+    let dom: ObjectDomHost | undefined;
+    const Pad = defineObject({ type: "test.ime-pad", version: 1, props: {}, kind: labelKind("ime-pad"), host: { text: () => [{ part: "ime.line" }], mount: (h) => { dom = h; } } });
+    const { handle } = mountDesk([Pad]);
+    const el = handle.editor().element;
+    /** A composition event with its data (happy-dom's `CompositionEvent` drops the init's `data`). */
+    const comp = (type: string, data: string): Event => Object.defineProperty(new Event(type), "data", { value: data });
+    /** Chrome's order for an IME (probed headless under CDP `Input.imeSetComposition` + `Input.insertText`): the update, then the field, then its input. */
+    const ime = (calls: string[]): string[] => {
+      calls.length = 0;
+      el.value = "ab";
+      el.setSelectionRange(2, 2);
+      el.dispatchEvent(comp("compositionstart", ""));
+      for (const [text, caret] of [["に", 1], ["にほ", 1], ["日本", 2]] as const) {
+        el.dispatchEvent(comp("compositionupdate", text));
+        el.value = `ab${text}`;
+        el.setSelectionRange(2 + caret, 2 + caret);
+        el.dispatchEvent(new InputEvent("input", { data: text, isComposing: true, inputType: "insertCompositionText" }));
+      }
+      el.dispatchEvent(comp("compositionend", "日本"));
+      el.value = "ab日本x";
+      el.setSelectionRange(5, 5);
+      el.dispatchEvent(new InputEvent("input", { data: "x", inputType: "insertText" }));
+      return calls.filter((c) => !c.startsWith("caret"));
+    };
+    dom?.editor.lend({ ...lineLease("ime.line", told), compose(text, caret) { told.calls.push(`compose ${text} ${caret}`); }, commit(text) { told.calls.push(`commit ${text}`); } });
+    expect(ime(told.calls)).toEqual(["compose  0", "compose に 1", "compose にほ 1", "compose 日本 2", "commit 日本", "input ab日本x"]);
+    dom?.editor.lend(lineLease("ime.line", plain));
+    expect(ime(plain.calls)).toEqual(["input abに", "input abにほ", "input ab日本", "input ab日本x"]);
+  });
+
   it("each frame the editor follows its lease: a value the world moved reaches the field, and a lease whose object is gone lets go", async () => {
     const told: Told = { calls: [], value: "abc", alive: true };
     let dom: ObjectDomHost | undefined;

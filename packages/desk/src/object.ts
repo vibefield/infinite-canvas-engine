@@ -28,7 +28,7 @@ export const PINNABLE = "desk.pinnable";
 export type DriverFactory = (host: KindDriverHost) => KindDriver | undefined;
 
 /** What an object declares: a widget definition without a view, plus its KIND. */
-export interface ObjectDef extends Omit<WidgetDef, "object" | "stratum" | "openable" | "defaultSize" | "container" | "heldTools" | "heldTool"> {
+export interface ObjectDef extends Omit<WidgetDef, "object" | "stratum" | "openable" | "defaultSize" | "container" | "heldTools" | "heldTool" | "heldWheel" | "heldEscape"> {
   /** The kind: its program (the ground registers it) and its world half (the builder and the pick source drive it). */
   readonly kind: ObjectKind;
   /** The size a new one spawns at, world units (`defaultSize`). */
@@ -68,6 +68,9 @@ export function defineObject(def: ObjectDef): WidgetType {
     // …and its held bar's tools ride the widget type (D3t-a), so the keymap and the bar reach them through the engine
     ...(kind.open?.tools !== undefined ? { heldTools: kind.open.tools } : {}),
     ...(kind.open?.tool !== undefined ? { heldTool: kind.open.tool } : {}),
+    // …and who owns the wheel and Escape in hand (design-019 §5, M24 LT2): core's held input and the keymap read them off the type
+    ...(kind.open?.wheel !== undefined ? { heldWheel: kind.open.wheel } : {}),
+    ...(kind.open?.escape !== undefined ? { heldEscape: kind.open.escape } : {}),
     ...(size !== undefined ? { defaultSize: size } : {}),
     ...(container !== undefined ? { container } : {}),
   });

@@ -15,6 +15,10 @@
 // `tap` is asked in registration order and the first lease is lent, the caret where the part put it. The editor carries
 // design-007's claim marker, so every keymap entry cedes while it has focus. A lease ends on a blur (a press anywhere else moves
 // the browser's focus), on another lease, on `release`, and when its `live()` says its object is gone (a delete, a nav cut).
+//
+// THE COMPOSITION (design-019 §5, M24 LT2): a lease that declares `compose` is told the IME's preedit as it runs — at its start, and
+// after each update the platform applied (the caret within it is known only then: `compositionupdate` comes before the field moves)
+// — and its `commit` at the end, instead of the field's values meanwhile: a remote page's IME is driven so (a held live face).
 
 import { Camera, type Entity, GestureSettings, Grab, type World } from "@ice/core";
 import { clientToScreen } from "@ice/kernel";
@@ -81,6 +85,9 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
   let lent: EditorLease | undefined;
   let idle: ReturnType<typeof setTimeout> | undefined;
   let composing = false;
+  /** The running composition (M24 LT2): where in the field it began, and its text as the last update said it. */
+  let compStart = 0;
+  let compText = "";
   let down: { id: number; type: string; x: number; y: number } | null = null;
   let lastTransform = "";
   let lastBox = "";
@@ -165,6 +172,14 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
   const onInput = (): void => {
     const l = lent;
     if (l === undefined) return;
+    // a composition's update, applied (M24 LT2): a lease that takes the composition is told its text and the caret within it — the
+    // field's selection is the preedit's only now (`compositionupdate` comes before the platform moves it) — never the field's value
+    if (composing && l.compose !== undefined) {
+      l.compose(compText, Math.min(Math.max(el.selectionEnd - compStart, 0), compText.length));
+      arm();
+      opts.wake();
+      return;
+    }
     l.input(el.value);
     arm();
     opts.wake();
@@ -178,8 +193,19 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     else if (ev.key === "Tab") ev.preventDefault();
   };
   const onBlur = (): void => { end(); };   // a press anywhere else: the lease ends (its holder keeps what it wrote)
-  const onCompositionStart = (): void => { composing = true; };
-  const onCompositionEnd = (): void => { composing = false; arm(); };
+  const onCompositionStart = (): void => {
+    composing = true;
+    compStart = el.selectionStart;   // the composition replaces the selection: it begins where the selection did
+    compText = "";
+    lent?.compose?.("", 0);
+  };
+  const onCompositionUpdate = (ev: CompositionEvent): void => { compText = ev.data ?? ""; };
+  const onCompositionEnd = (ev: CompositionEvent): void => {
+    composing = false;
+    lent?.commit?.(ev.data ?? "");
+    arm();
+    opts.wake();
+  };
   const onSelection = (): void => {
     if (doc.activeElement !== el || lent === undefined) return;
     lent.caret(el.selectionStart);
@@ -189,6 +215,7 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
   el.addEventListener("keydown", onKeyDown);
   el.addEventListener("blur", onBlur);
   el.addEventListener("compositionstart", onCompositionStart);
+  el.addEventListener("compositionupdate", onCompositionUpdate);
   el.addEventListener("compositionend", onCompositionEnd);
   doc.addEventListener("selectionchange", onSelection);
 
@@ -249,6 +276,7 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
       el.removeEventListener("keydown", onKeyDown);
       el.removeEventListener("blur", onBlur);
       el.removeEventListener("compositionstart", onCompositionStart);
+      el.removeEventListener("compositionupdate", onCompositionUpdate);
       el.removeEventListener("compositionend", onCompositionEnd);
       doc.removeEventListener("selectionchange", onSelection);
       container.removeEventListener("pointerdown", onDown, { capture: true });
