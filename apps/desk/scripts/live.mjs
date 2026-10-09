@@ -332,6 +332,7 @@ try {
   await key("Escape", "Escape", 27);
   const escDown = await landed();
   const escSent = (await src(pg, from)).inputs.filter((i) => i.kind === "key").length;
+  if (!escDown) { await q("window.__desk.putDown()"); await landed(); }   // (a red row still lets the next rows run)
   await q(`window.__desk.open(${tm})`);
   const termHeld = await settledInHand(tm);
   const termLent = await until(() => q("document.activeElement?.hasAttribute('data-desk-editor') === true"), 2000);
@@ -340,11 +341,16 @@ try {
   await frames(6);
   const termStill = (await hand())?.entity === tm;
   const termKeys = (await src(tm, tFrom)).inputs.filter((i) => i.kind === "key").map(fmtIn);
+  // …and with its lease gone (a blur — the face's half lends it again next frame), an Esc on the bare page is still never the desk's
+  await q("(() => { document.activeElement?.blur?.(); document.body.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true, cancelable: true })); })()");
+  await frames(6);
+  const bareStill = await hand();
+  const termBare = bareStill?.entity === tm && bareStill.landing === false;
   const termTip = await q("document.querySelector('[data-ice-selection-menu] [data-act=\"done\"]')?.getAttribute('title') ?? null");
   await q("document.querySelector('[data-ice-selection-menu] [data-act=\"done\"]')?.click()");
   const doneDown = await landed();
-  check(escDown && escSent === 0 && doneTip === "Done (Esc)" && termHeld && termLent === true && termStill && JSON.stringify(termKeys) === JSON.stringify(["key ↓Escape", "key ↑Escape"]) && termTip === "Done" && doneDown,
-    `ESC puts the page down in ONE press (put down ${escDown}, the face sent ${escSent} keys; Done's tip "${doneTip}"); the TERMINAL's Esc is its face's (open.escape "kind": ${termKeys.join(" · ")}, still in hand ${termStill}; Done's tip "${termTip}") — and Done puts it down (${doneDown})`);
+  check(escDown && escSent === 0 && doneTip === "Done (Esc)" && termHeld && termLent === true && termStill && JSON.stringify(termKeys) === JSON.stringify(["key ↓Escape", "key ↑Escape"]) && termBare && termTip === "Done" && doneDown,
+    `ESC puts the page down in ONE press (put down ${escDown}, the face sent ${escSent} keys; Done's tip "${doneTip}"); the TERMINAL's Esc is its face's (open.escape "kind": ${termKeys.join(" · ")}, still in hand ${termStill}; with its lease blurred away, an Esc on the bare page leaves it in hand ${termBare}; Done's tip "${termTip}") — and Done puts it down (${doneDown})`);
   // 7g. THE COST of a held face playing at 60: the hand slot and its composites — the desk copy behind stands (never remade), one frame
   //     a take; the hand's frame timed drained (holdCost's `hand`: the hand over the standing copy, drawn in full), the loop's main thread
   await q(`window.__desk.open(${pg})`);

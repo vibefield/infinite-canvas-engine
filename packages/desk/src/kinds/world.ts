@@ -109,7 +109,8 @@ export interface HeldCursorContext {
  *   click count (core's `HeldPress.count`: 1, 2, 3… within the desk's multi-tap window and slop; 0 on a move). A press the HAND takes —
  *   a pan (the middle button, Space), a press on the soft desk — is never told, nor its moves; a press of the kind's still down when the
  *   hand lets go is told its `up` where the pointer was last.
- * - `wheel`: a plain wheel over the object while its kind takes the wheel (`OpenBinding.wheel: "kind"`): the frame's deltas, CSS px of the hand.
+ * - `wheel`: a plain wheel while the object is in hand and its kind takes the wheel (`OpenBinding.wheel: "kind"`) — the frame's deltas, CSS
+ *   px of the hand, at the pointer's point over the object or off it (the kind decides what lands on it).
  */
 export type HeldEvent =
   | {
@@ -158,8 +159,9 @@ export interface OpenBinding {
   readonly readout?: string | ((ctx: HeldReadoutContext) => string | undefined);
   /**
    * The WHEEL in hand (design-019 §5, M24 LT2): `"hand"` (the default — a plain wheel moves the object once brought close) or `"kind"`
-   * — a plain wheel over it is the kind's, told as a `HeldEvent` "wheel" (a page scrolls); ⌘-wheel and the pinch still zoom the hand,
-   * and past 0.72× still put it down. Carried onto the widget type (`heldWheel`) by `defineObject`, where core's held input reads it.
+   * — a plain wheel while it is held is the kind's, told as a `HeldEvent` "wheel" with its point (a page scrolls); the hand never pans
+   * for it. ⌘-wheel and the pinch still zoom the hand, and past 0.72× still put it down. Carried onto the widget type (`heldWheel`) by
+   * `defineObject`, where core's held input reads it.
    */
   readonly wheel?: "hand" | "kind";
   /**
