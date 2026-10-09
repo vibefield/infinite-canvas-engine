@@ -154,6 +154,8 @@ describe("the render half and the rest of a kind's calls under the ladder (desig
         if (n < 3) expect(d.handle.status().faults).toBeUndefined();
       }
       expect(d.handle.status().faults).toEqual([{ kind: "faulty", reason: "its `prepare` threw (strike 3 of 3): faulty: its prepare throws on purpose" }]);
+      // …struck AFTER the frame it broke: the third frame's draws were all made — the sound kind's among them — before its pass was let go
+      expect(asked.lastIndexOf("sound drawRange")).toBeLessThan(asked.indexOf("faulty pass disposed"));
       expect(said(errors, "faulty").filter((m) => m.includes("is MISSING"))).toHaveLength(1);
       expect(asked).toContain("faulty pass disposed");
       expect(asked).toContain("faulty local disposed");

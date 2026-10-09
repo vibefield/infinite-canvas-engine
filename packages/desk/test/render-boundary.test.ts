@@ -40,7 +40,7 @@ interface Faults {
 }
 
 /** A kind that draws nothing but logs each range it draws (a debug group per range, by its slot's label), its pass's calls faulted on demand. */
-function probeKind(name: string, faults: Faults, device: () => GPUDevice): ObjectKind {
+function probeKind(name: string, faults: Faults, device: () => GPUDevice, composite = false): ObjectKind {
   const hits = (where: Faults["prepare"], spawned: boolean): boolean => where === "all" || (where === "root" && !spawned) || (where === "spawned" && spawned);
   const pass = (label: string, spawned: boolean): KindPass => ({
     spawn: () => { if (faults.spawn === true) throw new Error(`${name}: its spawn throws on purpose`); return pass(`${label}+`, true); },
@@ -61,7 +61,7 @@ function probeKind(name: string, faults: Faults, device: () => GPUDevice): Objec
     dispose: () => {},
   });
   return {
-    name, stratum: "things", reach: 0,
+    name, stratum: "things", reach: 0, ...(composite ? { composite: true } : {}),
     create: async () => pass(name, false),
     resolve: (ctx: ObjectContext) => ctx,
     record: (_g, ctx) => ({ e: ctx.entity }),
@@ -70,7 +70,7 @@ function probeKind(name: string, faults: Faults, device: () => GPUDevice): Objec
 }
 
 /** A ground of the probe and the plain kind on the fake device, the boundary's words recorded; `watch` its GPU scopes. */
-async function groundOf(faults: Faults, opts: { readonly boundary?: boolean; readonly watch?: boolean } = {}) {
+async function groundOf(faults: Faults, opts: { readonly boundary?: boolean; readonly watch?: boolean; readonly composite?: boolean } = {}) {
   const log: string[] = [];
   const fake = fakeDevice(log, { refuse: (code) => (code === BROKEN ? "unresolved value 'nothing_declares_this'" : undefined) });
   const threw: string[] = [];
@@ -81,7 +81,7 @@ async function groundOf(faults: Faults, opts: { readonly boundary?: boolean; rea
     device: fake.device,
     gpu: (kind, error) => { gpu.push(`${kind}: ${error.message}`); },
   };
-  const probe = probeKind("probe", faults, () => fake.device);
+  const probe = probeKind("probe", faults, () => fake.device, opts.composite === true);
   const plain = probeKind("plain", {}, () => fake.device);
   const ground = await Ground.create({
     device: fake.device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [probe, plain],
@@ -152,6 +152,18 @@ describe("the kind boundary in the render half (design-019 §8, M24 LT3)", () =>
     s.ground.dispose();
   });
 
+  it("a COMPOSITE kind (one run over all its records, after the stratum's) whose prepare throws: that run never drawn, the rest of the stratum drawn", async () => {
+    const g = await groundOf({ prepare: "root" }, { composite: true });
+    g.ground.render(rest);
+    expect(g.threw).toEqual(["probe prepare: probe: its prepare throws on purpose (probe)"]);
+    expect(g.drew()).toEqual(["kind plain 0-2"]);   // never "kind probe 0-2" — the composite's one run
+    g.faults.prepare = undefined;
+    g.log.length = 0;
+    g.ground.render(rest);
+    expect(g.drew()).toEqual(["kind plain 0-2", "kind probe 0-2"]);   // the control: its run, after the stratum's
+    g.ground.dispose();
+  });
+
   it("an inside lying on an object of a kind the slot skips is still drawn where it lies — its own kinds prepared afresh — and the skipped kind's drawOver never asked", async () => {
     const g = await groundOf({ prepare: "root" });
     g.ground.render({ ...rest, portals: [{ ...inside, at: 0 }] });
@@ -204,10 +216,18 @@ describe("the kind boundary in the render half (design-019 §8, M24 LT3)", () =>
     const g = await groundOf({ prepare: "spawned", idle: true, idleAt: true });
     const env = { view: { width: 1200, height: 800, dpr: 2 }, theme: THEME, grid: DEFAULT_GRID, looks: new Map(), lift: () => 0 };
     const shelf = { natural: { w: 400, h: 200 }, rect: { x: 100, y: 80, w: 160, h: 80 }, props: {}, accessory: "hook" as const, pegs: [[-1, -0.5], [1, -0.5]] as [number, number][], label: "Probe" };
-    const frames = specimenFrames([
-      { key: 7, type: "t:probe", kind: g.probe, ...shelf },
-      { key: 8, type: "t:plain", kind: g.plain, ...shelf, rect: { x: 400, y: 80, w: 160, h: 80 } },
+    const specimens = (k: { probe: ObjectKind; plain: ObjectKind }) => specimenFrames([
+      { key: 7, type: "t:probe", kind: k.probe, ...shelf },
+      { key: 8, type: "t:plain", kind: k.plain, ...shelf, rect: { x: 400, y: 80, w: 160, h: 80 } },
     ], { rect: drawerRect(1200, 800, 1), scroll: 0 }, env);
+    const frames = specimens(g);
+    // a specimen's slot whose spawn throws: the kind's strike, and the specimen drawn in the missing face
+    const sp = await groundOf({ spawn: true });
+    sp.ground.render({ view: VIEW, theme: THEME, tray: { p: 1, scroll: 0, specimens: specimens(sp) } });
+    expect(sp.threw).toEqual(["probe spawn: probe: its spawn throws on purpose"]);
+    expect(sp.log).toContain("pipeline desk/missing");
+    expect(sp.drew()).toEqual(["kind plain+ 0-1"]);
+    sp.ground.dispose();
     g.ground.render({ view: VIEW, theme: THEME, tray: { p: 1, scroll: 0, specimens: frames } });
     expect(g.threw).toEqual(["probe prepare: probe: its prepare throws on purpose (probe+)"]);
     expect(g.drew()).toEqual(["kind plain+ 0-1"]);   // the plain specimen drawn, the probe's not
