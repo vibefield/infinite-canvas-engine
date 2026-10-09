@@ -9,7 +9,8 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Ground, type GroundFrameInputs, type PortalInputs, type RenderBoundary } from "../src/ground";
 import { HOLD_SHADER_FILES, holdShaders } from "../src/hold/shaders";
-import type { KindPass, SlotContext } from "../src/kind";
+import type { ComposeOptions } from "../src/engine/shader";
+import type { CardMaterial, KindPass, KindProgram, SlotContext } from "../src/kind";
 import type { ObjectContext, ObjectKind } from "../src/kinds/world";
 import { DEFAULT_GRID } from "../src/mat/grid";
 import { MAT_SHADER_FILES, matShaders } from "../src/mat/shaders";
@@ -151,6 +152,14 @@ describe("the kind boundary in the render half (design-019 §8, M24 LT3)", () =>
     s.ground.dispose();
   });
 
+  it("an inside lying on an object of a kind the slot skips is still drawn where it lies — its own kinds prepared afresh — and the skipped kind's drawOver never asked", async () => {
+    const g = await groundOf({ prepare: "root" });
+    g.ground.render({ ...rest, portals: [{ ...inside, at: 0 }] });
+    expect(g.threw).toEqual(["probe prepare: probe: its prepare throws on purpose (probe)"]);
+    expect(g.drew()).toEqual(["kind probe+ 0-1", "kind plain+ 0-1", "kind plain 0-2"]);
+    g.ground.dispose();
+  });
+
   it("a DEPARTED desk (a flight's outgoing slot) and a drawOver after an inside: each a throw of the kind's, the frame drawn", async () => {
     const g = await groundOf({ prepare: "spawned" });
     g.ground.render({ ...rest, outgoing: { grid: DEFAULT_GRID, order: "under", view: VIEW, objects: [{ kind: "probe", record: { id: "out-p" }, key: 21 }, { kind: "plain", record: { id: "out-a" }, key: 22 }] } });
@@ -233,5 +242,49 @@ describe("the kind boundary in the render half (design-019 §8, M24 LT3)", () =>
     const d = await groundOf({ drawRange: "root" }, { boundary: false });
     expect(() => d.ground.render(rest)).toThrow(/its drawRange throws on purpose/);
     d.ground.dispose();
+  });
+
+  describe("a kind the FLAT CARD composes (K7b)", () => {
+    /** A card material over a uniform, a record array and a texture array (card.test.ts's), its functions named after the kind. */
+    const material = (name: string): CardMaterial => ({
+      shaders: (): ComposeOptions => ({ modules: [], entry: { label: `${name}/card.wgsl`, text: `fn ${name}_quad(slot: u32, vid: u32) -> vec4f { return vec4f(0.0); }\nfn ${name}_frag(slot: u32, clip: vec4f) -> vec4f { return vec4f(1.0); }` } }),
+      bindings: [
+        { wgsl: `var<uniform> ${name}_k: vec4f`, entry: { stages: ["fragment"], buffer: "uniform" } },
+        { wgsl: `var<storage, read> ${name}s: array<vec4f>`, entry: { stages: ["vertex", "fragment"], buffer: "read-only-storage" } },
+        { wgsl: `var ${name}_tex: texture_2d_array<f32>`, entry: { stages: ["fragment"], texture: "float", dimension: "2d-array" } },
+      ],
+      quad: `${name}_quad`,
+      frag: `${name}_frag`,
+    });
+    const program = (name: string, f: { prepare?: boolean; cardSlot?: boolean }): KindProgram => {
+      const pass = (): KindPass => ({
+        spawn: pass,
+        prepare: (_e, _s, records) => { if (f.prepare === true) throw new Error(`${name}: its prepare throws on purpose`); return records.length; },
+        drawRange: (p, first, end) => { p.pushDebugGroup(`kind ${name} ${first}-${end}`); p.popDebugGroup(); },
+        cardResources: () => ({ version: 1, resources: [{ label: `${name}/k` }, { label: `${name}/records`, getMappedRange: () => new ArrayBuffer(0) }, { label: `${name}/tex` }] as unknown as GPUBuffer[] }),
+        cardSlot: (i) => { if (f.cardSlot === true) throw new Error(`${name}: its cardSlot throws on purpose`); return i * 10; },
+        dispose: () => {},
+      });
+      return { name, stratum: "things", card: material(name), create: async () => pass() };
+    };
+    const cards = [{ kind: "note", record: {} }, { kind: "print", record: {} }, { kind: "note", record: {} }, { kind: "print", record: {} }];
+
+    it("its prepare, or its cardSlot, that throws: none of its objects routed to the card — the other material's cards ONE draw, the frame drawn", async () => {
+      for (const f of [{ prepare: true }, { cardSlot: true }]) {
+        const log: string[] = [];
+        const threw: string[] = [];
+        const fake = fakeDevice(log);
+        const ground = await Ground.create({
+          device: fake.device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [program("note", {}), program("print", f)],
+          boundary: { threw: (kind, call) => { threw.push(`${kind} ${call}`); }, watch: false, device: fake.device, gpu: () => {} },
+        });
+        ground.render({ view: VIEW, theme: THEME, objects: cards });
+        expect(threw).toEqual([f.prepare === true ? "print prepare" : "print cardSlot"]);
+        const frame = log.slice(log.indexOf("pass ground"));
+        // the two notes' cards one run — [0, 2) — the prints nowhere: not as cards, not by their own pass
+        expect(frame.filter((l) => l.startsWith("draw 6") || l.startsWith("debug kind "))).toEqual(["draw 6,2,0,0"]);
+        ground.dispose();
+      }
+    });
   });
 });
