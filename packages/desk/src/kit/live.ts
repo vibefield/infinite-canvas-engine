@@ -64,6 +64,12 @@ export interface LiveTexture {
   prepare(encoder: GPUCommandEncoder, upTo: number): void;
   /** Bytes held on the device, every level counted (the kit's `chainBytes`) — what a kind charges its budget. */
   readonly bytes: number;
+  /**
+   * The LOGICAL size of the frame last presented (design-019 §5, M24 LT2 — a page's CSS viewport, as its host said with the present):
+   * `[width, height]`, the texel size when the present gave none (and after a resize, before the next). Texels are not a source's
+   * coordinates: a kind maps the hand's point into the frame it DISPLAYED through this, and the host stamps that frame's geometry.
+   */
+  readonly logical: readonly [number, number];
 }
 
 /**
@@ -73,12 +79,15 @@ export interface LiveTexture {
  */
 export interface LiveWriter {
   readonly face: LiveTexture;
-  /** One copy from a browser source (`copyExternalImageToTexture`), from `rect` when given; a `VideoFrame` is closed after the copy. */
-  present(source: LiveImage, rect?: LiveRect): void;
-  /** Raw RGBA8 rows, row-major, no header, `width` × `height` (`writeTexture`) — Node, Dawn, tests and stills. */
-  presentBytes(bytes: Uint8Array, width: number, height: number): void;
-  /** A texture already on this device (`copyTextureToTexture`, in a submit of its own), from `rect` when given; its format the face's or its `-srgb` twin. */
-  presentTexture(texture: GPUTexture, rect?: LiveRect): void;
+  /**
+   * One copy from a browser source (`copyExternalImageToTexture`), from `rect` when given; a `VideoFrame` is closed after the copy.
+   * `logical`: the frame's LOGICAL size (`LiveTexture.logical` — a page's CSS viewport), each side finite and > 0; absent, its texels.
+   */
+  present(source: LiveImage, rect?: LiveRect, logical?: readonly [number, number]): void;
+  /** Raw RGBA8 rows, row-major, no header, `width` × `height` (`writeTexture`) — Node, Dawn, tests and stills; `logical` as `present`'s. */
+  presentBytes(bytes: Uint8Array, width: number, height: number, logical?: readonly [number, number]): void;
+  /** A texture already on this device (`copyTextureToTexture`, in a submit of its own), from `rect` when given; its format the face's or its `-srgb` twin; `logical` as `present`'s. */
+  presentTexture(texture: GPUTexture, rect?: LiveRect, logical?: readonly [number, number]): void;
   /** A new texture of `width` × `height` — `epoch` moves, the old one is destroyed, the content is gone until the next present. The same size: nothing. */
   resize(width: number, height: number): void;
   destroy(): void;
@@ -100,6 +109,14 @@ export interface LiveTextureOptions {
 function extent(what: string, v: number): number {
   if (typeof v !== "number" || !Number.isFinite(v) || v < 1) throw new Error(`createLiveTexture: ${what} must be a finite number ≥ 1 (got ${String(v)})`);
   return Math.floor(v);
+}
+
+/** A frame's logical size as a present gives it: absent stays absent (the texels); each side finite and > 0, never rounded (CSS px may be fractional). */
+function logicalOf(l: readonly [number, number] | undefined): readonly [number, number] | null {
+  if (l === undefined) return null;
+  const ok = (v: unknown): boolean => typeof v === "number" && Number.isFinite(v) && v > 0;
+  if (!Array.isArray(l) || !ok(l[0]) || !ok(l[1])) throw new Error(`LiveWriter: a logical size is [width, height], each finite and > 0 (got ${JSON.stringify(l)})`);
+  return [l[0], l[1]];
 }
 
 /** A `VideoFrame`, by its shape (Node and a still have no `VideoFrame` class to ask). */
@@ -135,9 +152,12 @@ export function createLiveTexture(device: GPUDevice, o: LiveTextureOptions): Liv
   let epoch = 0;
   /** The mips made: for which texture and content, and how deep. */
   let mipped = { epoch: -1, revision: -1, depth: 0 };
+  /** The logical size the last present gave (null: its texels — none given, or nothing presented since the texture was made). */
+  let logical: readonly [number, number] | null = null;
   let gone = false;
   const sized = (w: number, h: number): void => {
     if (w === width && h === height) return;
+    logical = null;
     texture.destroy();
     width = w;
     height = h;
@@ -164,41 +184,48 @@ export function createLiveTexture(device: GPUDevice, o: LiveTextureOptions): Liv
       mipped.depth = to;
     },
     get bytes() { return chainBytes(width, height, texture.mipLevelCount); },
+    get logical() { return logical ?? [width, height]; },
   };
   return {
     face,
-    present(source, rect) {
+    present(source, rect, size) {
       try {
         if (gone) return;
         const r = rect ?? wholeOf(source);
         const w = extent("the source's width", r.width);
         const h = extent("the source's height", r.height);
+        const l = logicalOf(size);
         sized(w, h);
         device.queue.copyExternalImageToTexture({ source, origin: [r.x, r.y] }, { texture, premultipliedAlpha: false }, [w, h]);
+        logical = l;
         revision += 1;
       } finally {
         // the frame is the PRODUCER's budget: closed as soon as its copy is asked for, whatever became of it (B6, LSF-D7)
         if (isVideoFrame(source)) source.close();
       }
     },
-    presentBytes(bytes, w0, h0) {
+    presentBytes(bytes, w0, h0, size) {
       if (gone) return;
       const w = extent("width", w0);
       const h = extent("height", h0);
       if (bytes.byteLength < w * h * 4) throw new Error(`LiveWriter.presentBytes: ${bytes.byteLength} bytes for ${w} × ${h} RGBA8 rows (${w * h * 4} wanted)`);
+      const l = logicalOf(size);
       sized(w, h);
       device.queue.writeTexture({ texture }, bytes as Uint8Array<ArrayBuffer>, { bytesPerRow: w * 4, rowsPerImage: h }, [w, h]);
+      logical = l;
       revision += 1;
     },
-    presentTexture(src, rect) {
+    presentTexture(src, rect, size) {
       if (gone) return;
       const r = rect ?? { x: 0, y: 0, width: src.width, height: src.height };
       const w = extent("the source's width", r.width);
       const h = extent("the source's height", r.height);
+      const l = logicalOf(size);
       sized(w, h);
       const encoder = device.createCommandEncoder({ label: `${o.label} present` });
       encoder.copyTextureToTexture({ texture: src, origin: [r.x, r.y] }, { texture }, [w, h]);
       device.queue.submit([encoder.finish()]);
+      logical = l;
       revision += 1;
     },
     resize(w, h) {
@@ -264,10 +291,11 @@ export interface LiveDemand {
 }
 
 /**
- * Input to a face, in the FACE's OWN coordinates (design-019 §5 — routed by M24 LT2; declared here with the contract): a pointer
- * (`button` the one pressed or released, `buttons` the mask held, `count` the platform's click count), a wheel (CSS px), a key (`mods`
- * Chrome DevTools' modifier mask — Alt 1, Ctrl 2, Meta 4, Shift 8), committed text, an IME composition (its text and caret). It carries
- * no geometry revision: the host stamps the frame it displayed.
+ * Input to a face, in the coordinates of the frame it DISPLAYED — its LOGICAL size (`LiveTexture.logical`, design-019 §5; M24 LT2): a
+ * pointer (`button` the one pressed or released — −1 on a move, `buttons` the mask held, `count` the click count the hand told the kind:
+ * 1, 2, 3… — `HeldEvent`'s), a wheel (CSS px of the hand), a key (`mods` Chrome DevTools' modifier mask — Alt 1, Ctrl 2, Meta 4,
+ * Shift 8), committed text, an IME composition (its text and its caret within it — `EditorLease.compose`). A kind maps what the hand
+ * told it (`KindLocal.held`, the editor's lease) and sends it; it carries no geometry revision: the host stamps the frame it displayed.
  */
 export type LiveInput =
   | { readonly kind: "pointer"; readonly x: number; readonly y: number; readonly button: number; readonly buttons: number; readonly count: number; readonly phase: "down" | "move" | "up" }
@@ -294,7 +322,7 @@ export interface LiveFace {
   info(): LiveInfo;
   /** What the desk sees of the face, in the kind's law — change-only; the host maps it to its producer. */
   demand(d: LiveDemand): void;
-  /** Input in the face's own coordinates (§5, routed by LT2). Absent: a view-only source (a captured window, a simulator without a control lane). */
+  /** Input in the displayed frame's logical coordinates (§5 — a kind sends what the hand told it, M24 LT2). Absent: a view-only source (a captured window, a simulator without a control lane). */
   readonly input?: ((e: LiveInput) => void) | undefined;
   close(): void;
 }
@@ -420,11 +448,13 @@ export function createSight(frames?: () => number): Sight {
 
 // ---------------------------------------------------------------- a still's source
 
-/** A face's committed STILL (`stillLive`): RGBA8 rows, row-major, no header — `presentBytes`' shape — and the words the face says. */
+/** A face's committed STILL (`stillLive`): RGBA8 rows, row-major, no header — `presentBytes`' shape — its logical size, and the words the face says. */
 export interface LiveStill {
   readonly width: number;
   readonly height: number;
   readonly bytes: Uint8Array;
+  /** The frame's LOGICAL size (`LiveTexture.logical` — a page's CSS viewport); absent, its texels. */
+  readonly logical?: readonly [number, number];
   readonly info?: LiveInfo;
 }
 
@@ -455,7 +485,7 @@ export function stillLive(device: GPUDevice, frames: Readonly<Record<string, Liv
           if (taken || closed || still === undefined) return false;
           taken = true;
           writer = createLiveTexture(device, { label: `live/still ${key}`, width: still.width, height: still.height });
-          writer.presentBytes(still.bytes, still.width, still.height);
+          writer.presentBytes(still.bytes, still.width, still.height, still.logical);
           return true;
         },
         state: () => (closed ? { is: "closed" } : still === undefined ? { is: "starting" } : { is: "live" }),

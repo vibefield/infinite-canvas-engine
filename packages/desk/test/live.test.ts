@@ -144,6 +144,33 @@ describe("the live texture (design-019 §3.1)", () => {
     expect(live.face.epoch).toBe(2);
   });
 
+  it("each present records the frame's LOGICAL size (M24 LT2) — present, presentBytes, presentTexture alike; none given: its texels; a new size forgets it until the next present; a malformed one throws before the copy", () => {
+    const { device, calls } = recordingDevice();
+    const live = createLiveTexture(device, { label: "k/live l", width: 4, height: 2 });
+    expect(live.face.logical).toEqual([4, 2]);   // nothing presented: the texels
+    live.present(canvasLike("page", 4, 2), undefined, [2, 1]);
+    expect([live.face.logical, live.face.revision]).toEqual([[2, 1], 1]);
+    live.present(canvasLike("page", 4, 2));
+    expect(live.face.logical).toEqual([4, 2]);   // a frame that gave none: its texels, never the last one's
+    live.presentBytes(new Uint8Array(32), 4, 2, [1280.5, 640.25]);
+    expect(live.face.logical).toEqual([1280.5, 640.25]);   // CSS px, never rounded
+    live.presentTexture({ label: "producer", width: 4, height: 2 } as unknown as GPUTexture, undefined, [8, 4]);
+    expect(live.face.logical).toEqual([8, 4]);
+    live.resize(6, 3);
+    expect(live.face.logical).toEqual([6, 3]);   // a new texture holds no frame: its texels until the next present
+    live.presentBytes(new Uint8Array(72), 6, 3, [3, 1.5]);
+    expect(live.face.logical).toEqual([3, 1.5]);
+    const before = calls.length;
+    for (const bad of [[0, 1], [1, Number.NaN], [-2, 4], [Number.POSITIVE_INFINITY, 1]] as const) {
+      expect(() => live.presentBytes(new Uint8Array(72), 6, 3, bad as unknown as [number, number])).toThrow(/a logical size is \[width, height\], each finite and > 0/);
+    }
+    const frame = frameLike("frame", 6, 3);
+    expect(() => live.present(frame, undefined, [0, 0])).toThrow(/a logical size/);
+    expect(frame.closed).toBe(1);   // the producer's frame is closed whatever became of its copy
+    expect(calls.length).toBe(before);   // no copy made, the revision unmoved, the last frame's logical kept
+    expect([live.face.revision, live.face.logical]).toEqual([5, [3, 1.5]]);
+  });
+
   it("prepare makes the mips INTO the frame's encoder, as deep as asked, once per revision — a deeper ask only the missing levels; nothing before a present, past the chain or without one", () => {
     const { device, calls } = recordingDevice();
     const live = createLiveTexture(device, { label: "k/live m", width: 64, height: 64 });   // 7 levels: 0 … 6
@@ -249,6 +276,16 @@ describe("stillLive — a still's source of committed bytes (design-019 §9)", (
     expect(calls.at(-1)).toBe("destroy 1");
     expect(face.texture()).toBeUndefined();
     expect(face.state()).toEqual({ is: "closed" });
+  });
+
+  it("a still's logical size is its frame's (M24 LT2): presentBytes is handed it, and the face's texture reads it", () => {
+    const { device } = recordingDevice();
+    const face = stillLive(device, { "p-2": { ...still, logical: [2, 1] } }).open("p-2", {}, () => {});
+    expect(face.take()).toBe(true);
+    expect(face.texture()?.logical).toEqual([2, 1]);
+    const plain = stillLive(device, { "p-3": still }).open("p-3", {}, () => {});
+    plain.take();
+    expect(plain.texture()?.logical).toEqual([4, 2]);
   });
 
   it("frames are read when a face OPENS — a record a stage fills after the source is made, or a function of the key and the host's spec; a key with none is starting and takes nothing", () => {
