@@ -88,9 +88,10 @@ export interface LayerContext {
   readonly frame?: Pick<CanvasEngine["engine"]["frame"], "wake" | "wakeWhen" | "settled">;
   /**
    * The engine's ops a layer runs on its host's word (petition I37): the tray's keyboard lay — `ops.layFromTray`, behind the desk
-   * handle's `tray.lay`. Absent (a bare host), that door throws.
+   * handle's `tray.lay` — and (M24 LT3) `ops.putDown`, the hand let go when its object's kind goes missing. Absent (a bare host), the
+   * lay throws and such an object stays in hand.
    */
-  readonly ops?: Pick<CanvasEngine["ops"], "layFromTray">;
+  readonly ops?: Pick<CanvasEngine["ops"], "layFromTray" | "putDown">;
 }
 
 export type LayerFactory<H extends LayerHandle = LayerHandle> = (ctx: LayerContext) => H;

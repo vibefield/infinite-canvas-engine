@@ -542,8 +542,16 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
   const rungCtx: { -readonly [K in keyof RungContext]: RungContext[K] } = { entity: NO_ENTITY, rect: { cx: 0, cy: 0, w: 0, h: 0 }, props: {}, zoom: 1, dpr: 1, local: undefined, px: 0 };
   const locals = opts.locals;
   const faults = opts.faults;
-  /** The entity is gone from this desk for good: its kind's own state lets go of it (D2c). */
-  const forget = (kind: ObjectKind, e: Entity): void => { locals?.get(kind.name)?.forget?.(e); };
+  /**
+   * The entity is gone from this desk for good: its kind's own state lets go of it (D2c) — inside the kind boundary (M24 LT3): a `forget`
+   * that throws is a strike against the kind, and the desk lets go of the rest.
+   */
+  const forget = (kind: ObjectKind, e: Entity): void => {
+    const local = locals?.get(kind.name);
+    if (local?.forget === undefined) return;
+    if (faults === undefined) { local.forget(e); return; }
+    try { local.forget(e); } catch (err) { faults.strike(kind.name, "forget", err, e); }
+  };
   /**
    * What DRAWS an object of `kind` (petition I24): the kind — or, the kind missing (refused at create, quarantined) or none at all, the
    * missing face. One size test while nothing is missing.

@@ -50,7 +50,7 @@ import { createPickSource } from "../compose/pick";
 import { createDeskReflector, type DeskReflector, type DeskReflectorStats, type DeskWakes, looksOf } from "../compose/reflector";
 import { acquire, adopt, type Gpu, type GpuOptions } from "../engine/device";
 import { createKindFaults, KIND_MISSING, type KindFault } from "../faults";
-import { type CaptureBytes, type CaptureOptions, checkCapture, Ground, type GroundFrameInputs } from "../ground";
+import { type CaptureBytes, type CaptureOptions, checkCapture, Ground, type GroundFrameInputs, type RenderBoundary } from "../ground";
 import type { KindProgram } from "../kind";
 import type { ObjectFlux, ObjectKind } from "../kinds/world";
 import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
@@ -228,8 +228,11 @@ export interface DeskLayerContext {
     wakeWhen(name: string, due: (now: number) => number): () => void;
     settled(): boolean;
   };
-  /** The engine's ops the layer runs on its host's word (petition I37): the tray's keyboard lay. Absent (a bare host), `tray.lay` throws. */
-  readonly ops?: { layFromTray(type: string, at: { readonly x: number; readonly y: number }): Entity | undefined };
+  /**
+   * The engine's ops the layer runs on its host's word (petition I37): the tray's keyboard lay — and (M24 LT3) the hand put down when its
+   * object's kind goes missing. Absent (a bare host), `tray.lay` throws and such an object stays in hand, wearing the missing face.
+   */
+  readonly ops?: { layFromTray(type: string, at: { readonly x: number; readonly y: number }): Entity | undefined; putDown?(): void };
 }
 
 /** The selection menu's source (D4a): the marks' anchor as of the last frame, and a subscription that fires when it changes. */
@@ -676,6 +679,15 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const statusHeard = new Set<(status: DeskLayerStatus) => void>();
     /** THE KIND BOUNDARY (petition I24, faults.ts): every kind's faults on this desk — the builder, the pick, the tray and the ticks report to it. */
     const faults = createKindFaults();
+    /**
+     * …and the RENDER HALF's (design-019 §8, M24 LT3 — ground.ts `RenderBoundary`): a kind's pass that throws in a frame (or a capture's), a
+     * GPU error raised in its `prepare`, a `keeps` asked while the budget trims — each waits here and is struck once the work it broke is
+     * done (a quarantine swaps the passes a frame is drawn with, and forgets the budget's charges a trim is walking): at the next flush's
+     * head and at the end of the flush that raised it.
+     */
+    const unstruck: { readonly kind: string; readonly call: string; readonly err: unknown }[] = [];
+    const strikeLater = (kind: string, call: string, err: unknown): void => { unstruck.push({ kind, call, err }); };
+    const strikeNow = (): void => { for (const u of unstruck.splice(0)) faults.strike(u.kind, u.call, u.err); };
     /** Every move of the status goes through here, and `onStatus`'s listeners hear it (K9) — carrying the missing kinds once any is (I24). */
     const setStatus = (next: DeskLayerStatus): void => {
       const { faults: _was, ...rest } = next;
@@ -743,7 +755,13 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       locals.set(k.name, local);
       if (local.tick !== undefined && local.due === undefined) tellAwake(k.name);
     }
-    const keeps = (owner: string, key: string): boolean => locals.get(owner)?.keeps?.(key) ?? false;
+    /** The kinds whose `keeps` threw in the trim being walked (M24 LT3): asked no more in it — their keys are not kept — and struck once, after it. */
+    const keepsThrew = new Set<string>();
+    const keeps = (owner: string, key: string): boolean => {
+      const local = locals.get(owner);
+      if (local?.keeps === undefined || keepsThrew.has(owner)) return false;
+      try { return local.keeps(key); } catch (err) { keepsThrew.add(owner); strikeLater(owner, "keeps", err); return false; }
+    };
     const readMarquee = ctx.readMarquee;
     const builder = createDeskBuilder(world, { objects: [...types], locals, faults, ...(opts.springs !== undefined ? { springs: opts.springs } : {}), ...(readMarquee !== undefined ? { marquee: readMarquee } : {}), ...(ctx.spatial !== undefined ? { spatial: ctx.spatial } : {}), ...(hold.reserves !== undefined ? { hold: hold.reserves } : {}) });
     // the object types by name (K8a): what an object provides and what acts its type declares are read off its PrefabId
@@ -924,11 +942,17 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         // run) asks no driver (they follow input, and none came) and ticks only the kinds due now or woken; any other step asks
         // every part, as before. A desk at rest takes no step at all — the loop sleeps (dom/loop.ts).
         const timeAlone = frame?.settled() === true && woken.size === 0 && !compose.dirty();
+        // what the last frame's kinds broke, struck now — before anything of theirs is asked again (M24 LT3)
+        strikeNow();
         if (!timeAlone) {
           following = false;
-          for (const d of drivers.values()) {
+          for (const [type, d] of drivers) {
             perf.driverAsks += 1;
-            if (d.idle?.() !== true) { following = true; d.follow(now); }
+            // THE KIND'S BOUNDARY (M24 LT3): a driver's `idle` or `follow` that throws is a strike against its kind, the others follow
+            let call = "idle";
+            try {
+              if (d.idle?.() !== true) { following = true; call = "follow"; d.follow(now); }
+            } catch (err) { faults.strike(driverKinds.get(type) ?? type, call, err); }
           }
         }
         // THE HAND'S INPUT, TOLD (design-019 §5, M24 LT2 — hold/told.ts): what the hand did with the object in hand this frame, folded
@@ -962,7 +986,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         moving = want;   // D3w: a kind's own motion (a print in the air) keeps the desk from reading quiet between its frames
         inner.flush(w);
         editor.follow();
+        keepsThrew.clear();
         budget.trim(keeps);   // over the cap: the least recently used off-screen rasters go (O(1) when under it)
+        strikeNow();   // what this frame's kinds broke in their passes, and a `keeps` the trim asked (M24 LT3)
         const drew = compose.redraws() !== drawn;
         // a frame drawn: what is drawn moved, and a raster no longer drawn may be evicted — the asks held for room try again (K6b)
         if (drew) rasters.wake();
@@ -1024,6 +1050,10 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       try { local?.dispose?.(); } catch (err) { console.error(`[ice] desk: the missing kind "${name}"'s desk state threw in its dispose`, err); }
       ground?.quarantine(name);
       compose.wake("ink");
+      // its object IN HAND is put down (M24 LT3): nothing of the kind is asked again — its `held` told nothing, its `up` to no one — and
+      // the hand lets go cleanly, once the step that struck it is done (an op writes the world; a reflector never does)
+      const h = heldEntity(world);
+      if (h !== undefined && builder.kindOf(h)?.name === name) queueMicrotask(() => { if (heldEntity(world) === h) ctx.ops?.putDown?.(); });
     };
     // said ONCE (petition I24): the status moves with the kind named (a kind refused at the boot rides the boot's own `ready`)
     faults.subscribe((f) => {
@@ -1104,7 +1134,17 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           opts.onDevice?.(g.device);
           // each kind's pass in its own error scope (petition I24): a kind refused there is MISSING — the rest boot; a GPU error the
           // kinds' window caught that no kind raises alone is the device's, as it would have been
-          const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)), tray: trayShaders(shaderText), ...(events.onError !== undefined ? { onError: events.onError } : {}) });
+          // …and the render half's kind boundary (M24 LT3): its throws and its kinds' GPU errors struck after the frame, the loop woken for them
+          const boundary: RenderBoundary = {
+            threw: strikeLater,
+            watch: true,
+            device: g.device,
+            gpu: (kind, error) => {
+              strikeLater(kind, "prepare", new Error(`a GPU error in its own scope — ${error.constructor?.name ?? "GPUError"}: ${error.message}`));
+              frame?.wake("desk:gpu");   // struck at the next flush's head: a sleeping desk takes one
+            },
+          };
+          const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)), tray: trayShaders(shaderText), boundary, ...(events.onError !== undefined ? { onError: events.onError } : {}) });
           if (disposed || ended) { made.dispose(); return; }
           boot.compiled = performance.now() - mountedAt;
           made.mat.setNoise(blueNoise());   // the desk's own noise; the plates are the app's (`setPlate`)

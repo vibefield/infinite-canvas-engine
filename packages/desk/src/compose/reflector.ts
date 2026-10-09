@@ -223,8 +223,14 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   let drawnCarried: readonly TrayCarriedFrame[] = [];
   /** The keys the tray drew in the last frame (specimens, carried copies and ghosts) — the raster queue's `shows` beside the builder's. */
   let trayDrawn: ReadonlySet<number> = new Set();
-  /** The keys drawn with a kind's desk state from the tray (K5b — a specimen's entity, a copy's key): let go of as each goes. */
-  const faced = new Map<number, KindLocal>();
+  /** The keys drawn with a kind's desk state from the tray (K5b — a specimen's entity, a copy's key) and that state's kind: let go of as each goes. */
+  const faced = new Map<number, { readonly kind: string; readonly local: KindLocal }>();
+  /** A kind's desk state lets go of `key` — inside the kind boundary (M24 LT3): a `forget` that throws is a strike against the kind, the rest let go as ever. */
+  const letGo = (key: number, f: { readonly kind: string; readonly local: KindLocal }): void => {
+    if (f.local.forget === undefined) return;
+    if (faults === undefined) { f.local.forget(key as Entity); return; }
+    try { f.local.forget(key as Entity); } catch (err) { faults.strike(f.kind, "forget", err, key > 0 ? (key as Entity) : undefined); }
+  };
   /** When the drawer last showed (frame clock, ms): its specimens' desk state is let go once it has been shut `LAYER_IDLE_MS`. */
   let trayShownAt = Number.NEGATIVE_INFINITY;
   /** The board's keyboard focus as last seen (petition I37). */
@@ -293,7 +299,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       const showing = pinned !== null ? pinned.hidden !== true && (pinned.p ?? 1) > 0 : tf?.open === true || (tray.frame()?.p ?? 0) > 0;
       if (showing) trayShownAt = now;
       else if (faced.size > 0 && now - trayShownAt > LAYER_IDLE_MS) {
-        for (const [key, local] of faced) if (key > 0) { local.forget?.(key as Entity); faced.delete(key); }
+        for (const [key, f] of faced) if (key > 0) { letGo(key, f); faced.delete(key); }
       }
       // …at a registered TIME (K7a): with the drawer shut the loop sleeps and no tick comes to poll it — the desk is due when it lets go
       facedAt = Number.POSITIVE_INFINITY;
@@ -326,7 +332,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
         const specimens = readSpecimens(w, te, opts.locals, kindOn);
         if (specimens.length > 0) {
           ground.warmTray(specimens.map((q) => [q.type, q.kind.name] as const), trayLanded);
-          for (const q of specimens) if (q.local !== undefined) faced.set(q.key, q.local as KindLocal);
+          for (const q of specimens) if (q.local !== undefined) faced.set(q.key, { kind: q.kind.name, local: q.local as KindLocal });
           drawnSpecimens = specimenFrames(specimens, { rect: drawerRect(vp.w, vp.h, trayed.p), scroll: trayed.scroll, ...(trayed.foot !== undefined ? { foot: trayed.foot } : {}) }, { view: { width: vp.w, height: vp.h, dpr }, theme, grid, looks, lift: (t) => tray.lift(t), ...(faults !== undefined ? { faults } : {}) });
           trayed = { ...trayed, specimens: drawnSpecimens };
         }
@@ -381,7 +387,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
           const cx = cam.x + pose.px / cam.zoom - (pose.u - 0.5) * n.w;
           const cy = cam.y + pose.py / cam.zoom - (pose.v - 0.5) * n.h;
           const key = -(0x40000000 + pose.id);
-          if (copyLocal !== undefined) faced.set(key, copyLocal as KindLocal);
+          if (copyLocal !== undefined) faced.set(key, { kind: kind.name, local: copyLocal as KindLocal });
           const frame = carriedFrame(pose, { kind, rect: { x: -n.w / 2, y: -n.h / 2, w: n.w, h: n.h }, props: takenProps(widget), key, lamp: { x: L.x - cx, y: L.y - cy, h: L.h }, ...(copyLocal !== undefined ? { local: copyLocal } : {}) }, env);
           if (frame !== undefined) made.push(frame);
         }
@@ -392,9 +398,9 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
       }
       trayDrawn = new Set([...drawnSpecimens.map((f) => f.key), ...drawnCarried.map((f) => f.key)]);
       // what was drawn with a kind's desk state and is gone — a specimen re-laid away, a copy put back or handed — its records let go
-      for (const [key, local] of faced) {
+      for (const [key, f] of faced) {
         const gone = key < 0 ? !poses.some((q) => q.ghost === undefined && -(0x40000000 + q.id) === key) : !w.isAlive(key as Entity);
-        if (gone) { local.forget?.(key as Entity); faced.delete(key); }
+        if (gone) { letGo(key, f); faced.delete(key); }
       }
       // the frame: the current desk (the root's grid, or the entered mini mat's), its live insides, and while a flight is on the
       // departed desk beside it — exactly the inputs the prototype's lab hands `ground.render()` (D2b)

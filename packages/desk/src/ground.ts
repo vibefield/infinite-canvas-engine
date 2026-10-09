@@ -46,11 +46,11 @@ import { CardPass, type CardShared, createCardShared } from "./card/card";
 import { faultText, type KindFault } from "./faults";
 import { MISSING_KIND } from "./missing/object";
 import { type MissingFaces, missingFaces } from "./missing/pass";
-import { swapToMissing } from "./missing/slots";
+import { spawnInside, swapToMissing } from "./missing/slots";
 import { beginPass, Target } from "./engine/target";
 import { HoldPass } from "./hold/focus";
 import type { HoldShaders } from "./hold/shaders";
-import { type KindPass, type KindProgram, type RenderTarget, type SlotContext, STRATA, type StratumName } from "./kind";
+import { type KindExtra, type KindPass, type KindProgram, type RenderTarget, type SlotContext, STRATA, type StratumName } from "./kind";
 import { boxOf, type View } from "./lattice/lod";
 import type { MatLight } from "./mat/night";
 import { DEFAULT_GRID, dressGrid, type GridConfig, type GridStats, gridStats, type SlotFrame } from "./mat/grid";
@@ -116,6 +116,37 @@ export interface GroundOptions {
    * here as the device would have told its uncaptured-error handler (the layer's `onError`: `degraded`). Absent: it is said on the console.
    */
   readonly onError?: (error: GPUError) => void;
+  /**
+   * THE KIND BOUNDARY IN THE RENDER HALF (design-019 §8, M24 LT3 — `RenderBoundary`): a kind's pass that throws in a frame is handed
+   * here and the frame goes on without it. Absent (a unit's ground): a throw leaves the frame, as before.
+   */
+  readonly boundary?: RenderBoundary;
+}
+
+/**
+ * THE KIND BOUNDARY IN THE RENDER HALF (design-019 §8, M24 LT3 — petition I24's strikes, extended past the world half): what a kind's
+ * PASS is asked in a frame — `spawn` (a slot's own), `tune`, `prepare`, `dropped`, `cardSlot`, `drawRange`, `drawOver`, `endHold`, the
+ * tray's `idle` and `idleAt` — is asked inside it, in every slot alike (the root, a mini mat's inside, a departed desk, the hand, a
+ * capture, a tray specimen): a throw is handed to `threw` and that SLOT draws nothing more of the kind this frame (a `prepare` that
+ * threw left its buffers half-written; a `drawRange` that threw may have drawn part of its run), while every other kind draws. The
+ * render pass stays usable: a JS throw between two commands records nothing, every run sets its own pipeline and bind groups, and the
+ * slot's scissor is set again (a kind may have narrowed it). The HOST counts each throw as a strike against the kind AFTER the frame —
+ * the third quarantines it, and a quarantine swaps the very passes a frame is encoded with (`Ground.quarantine`), so it may not happen
+ * inside one. `watch`: each kind's `prepare` also runs in a GPU `validation` error scope of its own on `device`, and an error raised
+ * there — a write past a buffer, a resource the kind made wrong — is the kind's (`gpu`), never the device's uncaptured handler's.
+ * What a kind records into the frame's encoder or draws into its pass is validated later, at the pass's end or the submit, and stays
+ * unattributed (the layer's `degraded`). The desk's own passes (the mat, the marks, the hand's composite, the card, the missing face)
+ * are not a kind's: a throw from them leaves the frame, as before.
+ */
+export interface RenderBoundary {
+  /** `kind`'s pass threw `err` in `call` (this frame, or a capture's): the host strikes it once the frame is done. */
+  threw(kind: string, call: string, err: unknown): void;
+  /** Watch each kind's `prepare` in a GPU error scope of its own — a few µs a kind a slot a frame (rig:live states it); false: unwatched. */
+  watch: boolean;
+  /** The device the scopes are pushed on (the ground's). */
+  readonly device: GPUDevice;
+  /** A GPU error raised inside `kind`'s `prepare` (its scope; told later, when the device answers): the host strikes it. */
+  gpu(kind: string, error: GPUError): void;
 }
 
 /** A layer a host rendered first, laid on the mat inside the ground's pass (it sets its own scissor; the ground restores the slot's). */
@@ -252,6 +283,8 @@ export interface SlotSet {
   readonly missing?: MissingFaces;
   /** The kinds REFUSED at create (the root's alone; petition I24): each its name and why — their entries draw the missing face from the start. */
   readonly faults?: readonly KindFault[];
+  /** The kind boundary in the render half (the root's alone; M24 LT3 — `RenderBoundary`): absent, a kind's throw leaves the frame. */
+  readonly boundary?: RenderBoundary;
 }
 
 /** One slot's passes for `drawFrame` — the ground's own, or the oracle's. A parent carries its nested slots. */
@@ -275,6 +308,18 @@ export interface DrawSlot {
   readonly children?: readonly { readonly at: number; readonly slot: DrawSlot }[] | undefined;
   /** What the slot's grid did this frame. */
   readonly stats: GridStats;
+  /** The kind boundary (M24 LT3 — the root's `RenderBoundary`, handed down): absent, a kind's throw leaves the frame. */
+  readonly boundary?: RenderBoundary | undefined;
+  /** The kinds this slot draws nothing more of this frame (M24 LT3): their `prepare` threw, or a `drawRange` did — the draw adds to it. */
+  readonly skip?: Set<string> | undefined;
+}
+
+/** What draws a run: a kind's pass, or the card's. */
+type RunPass = { drawRange(pass: GPURenderPassEncoder, first: number, end: number): void };
+
+/** A kind's GPU error scope closed (M24 LT3 — `RenderBoundary.watch`): an error raised inside it is `kind`'s, told when the device answers. */
+function closeScope(b: RenderBoundary, kind: string): void {
+  b.device.popErrorScope().then((e) => { if (e !== null) b.gpu(kind, e); }, () => {});
 }
 
 /** A slot at opacity 0 draws nothing: "source over" with alpha 0 leaves every pixel as it was. */
@@ -419,7 +464,7 @@ export class SlotPool {
     if (this.used === this.slots.length) {
       const mat = this.root.mat.spawn();
       const kinds = new Map<string, SlotKind>();
-      for (const k of this.root.kinds.values()) kinds.set(k.name, { name: k.name, stratum: k.stratum, pass: k.pass.spawn(mat), ...(k.composite ? { composite: true } : {}) });
+      for (const k of this.root.kinds.values()) kinds.set(k.name, { name: k.name, stratum: k.stratum, pass: spawnInside(this.root, k, mat), ...(k.composite ? { composite: true } : {}) });
       const card = this.root.card?.spawn(mat, kinds);
       if (card !== undefined && !this.cardOn) card.on = false;
       this.slots.push(card === undefined ? { mat, kinds } : { mat, kinds, card });
@@ -455,6 +500,19 @@ export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number;
   const insides = new Map<number, DrawSlot[]>();
   for (const c of slot.children ?? []) { const listed = insides.get(c.at); if (listed) listed.push(c.slot); else insides.set(c.at, [c.slot]); }
   const inside = (child: DrawSlot) => { if (drawSlot(pass, size, dpr, child)) pass.setScissorRect(x, y, w, h); };
+  // THE KIND BOUNDARY (M24 LT3 — `RenderBoundary`): a run of a kind's records — the card's runs and the missing face's are the desk's —
+  // drawn inside it; a throw is the kind's, the slot draws nothing more of it this frame, and the slot's scissor is set again
+  const boundary = slot.boundary;
+  const skip = slot.skip;
+  const draw = (p: RunPass, kind: string | undefined, first: number, end: number): void => {
+    if (boundary === undefined || skip === undefined || kind === undefined || kind === MISSING_KIND) { p.drawRange(pass, first, end); return; }
+    try { p.drawRange(pass, first, end); } catch (err) { boundary.threw(kind, "drawRange", err); skip.add(kind); pass.setScissorRect(x, y, w, h); }
+  };
+  const over = (k: SlotKind, index: number): void => {
+    if (k.pass.drawOver === undefined || skip?.has(k.name) === true) return;
+    if (boundary === undefined || skip === undefined || k.name === MISSING_KIND) { k.pass.drawOver(pass, index); return; }
+    try { k.pass.drawOver(pass, index); } catch (err) { boundary.threw(k.name, "drawOver", err); skip.add(k.name); pass.setScissorRect(x, y, w, h); }
+  };
   // the objects, stratum by stratum; within one, in paint order, a run of one kind at a time — cut after an object with a live
   // inside: the run through it, its inside over its face, then its marks over that (the mini mat's chips while the inside's
   // objects fade in — MINIMAT.md §5) — before the objects above it
@@ -462,7 +520,9 @@ export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number;
   // K7b: an object the card draws runs with the CARDS — one run however the kinds interleave — at its index in the card's list
   const card = slot.card;
   for (const stratum of STRATA) {
-    let run: { drawRange(pass: GPURenderPassEncoder, first: number, end: number): void } | undefined;
+    let run: RunPass | undefined;
+    /** The run's kind — undefined for the card's (the desk's own pass). */
+    let runKind: string | undefined;
     let first = 0;
     let end = 0;
     for (let i = 0; i < objects.length; i++) {
@@ -471,24 +531,34 @@ export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number;
       const index = next.get(k.name) ?? 0;
       next.set(k.name, index + 1);
       if (k.composite) continue;   // laid once, after the stratum's runs (below)
+      if (skip?.has(k.name) === true) {
+        // a kind this slot draws nothing more of this frame (M24 LT3): its object left out — an inside it holds still drawn where it lies
+        const children = insides.get(i);
+        if (!children) continue;
+        if (run !== undefined) draw(run, runKind, first, end);
+        run = undefined;
+        for (const child of children) inside(child);
+        insides.delete(i);
+        continue;
+      }
       const c = card === undefined ? -1 : (card.route[i] as number);
       const p = c >= 0 ? (card as { readonly pass: CardPass }).pass : k.pass;
       const at = c >= 0 ? c : index;
-      if (p !== run) { run?.drawRange(pass, first, end); run = p; first = at; }
+      if (p !== run) { if (run !== undefined) draw(run, runKind, first, end); run = p; runKind = c >= 0 ? undefined : k.name; first = at; }
       end = at + 1;
       const children = insides.get(i);
       if (!children) continue;
-      p.drawRange(pass, first, end);
+      draw(p, runKind, first, end);
       run = undefined;
-      for (const child of children) { inside(child); k.pass.drawOver?.(pass, index); }
+      for (const child of children) { inside(child); over(k, index); }
       insides.delete(i);
     }
-    run?.drawRange(pass, first, end);
+    if (run !== undefined) draw(run, runKind, first, end);
     // a kind that lays a composite of its own target (the notebook, the calendar): ONE run over all its records, after every other
     // run of the stratum — one draw lays every one of its objects, so they cannot interleave with another kind's (KindProgram.composite)
     for (const k of slot.kinds.values()) {
-      const count = k.composite && k.stratum === stratum ? (next.get(k.name) ?? 0) : 0;
-      if (count > 0) k.pass.drawRange(pass, 0, count);
+      const count = k.composite && k.stratum === stratum && skip?.has(k.name) !== true ? (next.get(k.name) ?? 0) : 0;
+      if (count > 0) draw(k.pass, k.name, 0, count);
     }
   }
   // an inside whose `at` names no object this slot draws has nothing to lie in: it draws over them all
@@ -628,18 +698,32 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
     // block is the mat's, written above, so no kind has a copy to keep fresh, and no run of it is drawn (`drawSlot` walks the objects)
     const slot: SlotContext = { view: inp.view, fadeIn: g.fadeIn, cfg: g.mat, frame: inp.mat, present: objectsOf(inp.present), light: theme.matLight, lit, select: theme.select, theme, ...(target !== undefined ? { target } : {}) };
     const drawn: [string, number][] = [];
+    /** One kind's prepare in this slot: the root's laws taken, its records uploaded — and what its cap turned away said, never silent (D7). */
+    const ask = (k: SlotKind, list: readonly unknown[], extra: KindExtra): number => {
+      const own = root.kinds.get(k.name);
+      if (own && k.pass !== own.pass) k.pass.tune?.(own.pass);
+      const n = k.pass.prepare(encoder, slot, list, extra);
+      const turned = k.pass.dropped?.() ?? 0;
+      if (turned > 0) dropped[k.name] = (dropped[k.name] ?? 0) + turned;
+      return n;
+    };
+    // THE KIND BOUNDARY (M24 LT3 — `RenderBoundary`): a kind whose prepare throws is drawn by nothing in this slot this frame — the kinds
+    // after it prepare as ever — and, watched, each kind's prepare is a GPU error scope of its own (the desk's missing face is no kind's)
+    const boundary = root.boundary;
+    const skip = new Set<string>();
     for (const k of s.kinds.values()) {
       const list = records.get(k.name) ?? [];
       // (the missing face's own entry is no registered kind: it is counted where it drew, never as a 0 — petition I24)
       if (list.length === 0) { if (k.name !== MISSING_KIND) drawn.push([k.name, 0]); continue; }
-      const own = root.kinds.get(k.name);
-      if (own && k.pass !== own.pass) k.pass.tune?.(own.pass);
       const told = live.get(k.name);
       const ks = keys.get(k.name);
-      drawn.push([k.name, k.pass.prepare(encoder, slot, list, { live: (i) => told?.get(i) ?? -1, ...(ks !== null && ks !== undefined ? { keys: ks } : {}) })]);
-      // what its cap turned away is said, never silent (D7)
-      const turned = k.pass.dropped?.() ?? 0;
-      if (turned > 0) dropped[k.name] = (dropped[k.name] ?? 0) + turned;
+      const extra: KindExtra = { live: (i) => told?.get(i) ?? -1, ...(ks !== null && ks !== undefined ? { keys: ks } : {}) };
+      if (boundary === undefined || k.name === MISSING_KIND) { drawn.push([k.name, ask(k, list, extra)]); continue; }
+      const scoped = boundary.watch && watched(boundary.device);
+      if (scoped) boundary.device.pushErrorScope("validation");
+      try { drawn.push([k.name, ask(k, list, extra)]); }
+      catch (err) { boundary.threw(k.name, "prepare", err); skip.add(k.name); drawn.push([k.name, 0]); }
+      finally { if (scoped) closeScope(boundary, k.name); }
     }
     if (s === root) rootDrawn = drawn;
     // THE CARDS (K7b, card/card.ts): every object of a material kind whose pass lets it go (`cardSlot`) — never one with a live
@@ -656,8 +740,10 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
           const m = s.card.materialOf(o.kind);
           if (m === undefined) continue;
           const at = indexOf[i] as number;
-          if (live.get(o.kind)?.has(at) === true) continue;
-          const cs = k.pass.cardSlot?.(at) ?? -1;
+          if (live.get(o.kind)?.has(at) === true || skip.has(o.kind)) continue;
+          let cs = -1;
+          if (boundary === undefined) cs = k.pass.cardSlot?.(at) ?? -1;
+          else try { cs = k.pass.cardSlot?.(at) ?? -1; } catch (err) { boundary.threw(o.kind, "cardSlot", err); skip.add(o.kind); continue; }
           if (cs >= 0) route[i] = s.card.push(m, cs);
         }
       }
@@ -665,6 +751,7 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
     }
     return {
       mat: s.mat, present: inp.present, stats: gridStats(inp.view, wind), kinds: s.kinds,
+      ...(boundary !== undefined ? { boundary, skip } : {}),
       ...(card !== undefined ? { card } : {}),
       ...(inp.underlays?.length ? { underlays: inp.underlays } : {}),
       ...(objects.length ? { objects } : {}),
@@ -860,7 +947,8 @@ export class Ground {
       opts.hold === undefined ? null : HoldPass.create(opts.device, surf.format, opts.hold),
       opts.tray === undefined ? null : TrayPass.create(opts.device, surf.format, opts.tray, mat),
     ]);
-    return new Ground(opts.device, surf, slotSetOf(opts.device, mat, opts.kinds, made, missingFaces(opts.device, surf.format, mat), cards), marks, hold, tray, opts.kinds);
+    const root = slotSetOf(opts.device, mat, opts.kinds, made, missingFaces(opts.device, surf.format, mat), cards);
+    return new Ground(opts.device, surf, opts.boundary !== undefined ? { ...root, boundary: opts.boundary } : root, marks, hold, tray, opts.kinds);
   }
 
   /**
@@ -911,7 +999,11 @@ export class Ground {
     // the hold is over: the passes give the desk copy's own state back, once — the next pick-up makes its copy afresh (D7)
     if (this.heldCache.stamp !== null) {
       this.heldCache.stamp = null;
-      for (const k of this.root.kinds.values()) k.pass.endHold?.();
+      const b = this.root.boundary;
+      for (const k of this.root.kinds.values()) {
+        if (b === undefined) { k.pass.endHold?.(); continue; }
+        try { k.pass.endHold?.(); } catch (err) { b.threw(k.name, "endHold", err); }   // the kind's (M24 LT3): the frame goes on
+      }
     }
     const encoder = this.device.createCommandEncoder({ label: "ground" });
     const { stats } = encodeFrame(encoder, this, inputs, this.surface);

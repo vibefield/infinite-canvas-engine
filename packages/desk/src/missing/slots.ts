@@ -2,7 +2,9 @@
 // tray's, so a quarantine reaches every slot that holds the kind's pass.
 
 import type { KindPass } from "../kind";
+import type { CuttingMat } from "../mat/mat-pass";
 import type { SlotKind, SlotSet } from "../ground";
+import { MISSING_KIND } from "./object";
 import type { MissingFaces } from "./pass";
 
 /**
@@ -14,4 +16,16 @@ export function swapToMissing(s: SlotSet, name: string, faces: MissingFaces | un
   if (k === undefined || faces === undefined) return undefined;
   (s.kinds as Map<string, SlotKind>).set(name, { name, stratum: k.stratum, pass: faces.spawn(s.mat) });
   return k.pass;
+}
+
+/**
+ * `k`'s pass for a new slot on `mat` — a mini mat's inside, a departed desk, a tray specimen — its own `spawn`, inside the kind boundary
+ * (M24 LT3, `RenderBoundary`): one that throws is the kind's (a strike once the frame is done), and the slot draws its objects in the
+ * desk's missing face (`root.missing`); a slot is reused frame after frame, so its spawn is not asked again. With no boundary, or no
+ * faces to draw instead, the throw is the caller's, as before.
+ */
+export function spawnInside(root: SlotSet, k: SlotKind, mat: CuttingMat): KindPass {
+  const b = root.boundary;
+  if (b === undefined || root.missing === undefined || k.name === MISSING_KIND) return k.pass.spawn(mat);
+  try { return k.pass.spawn(mat); } catch (err) { b.threw(k.name, "spawn", err); return root.missing.spawn(mat); }
 }

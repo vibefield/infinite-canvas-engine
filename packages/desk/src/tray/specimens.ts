@@ -17,7 +17,7 @@ import { LAYER_IDLE_MS } from "../kit/layer";
 import type { ObjectContext, ObjectKind } from "../kinds/world";
 import { missingFace } from "../missing/layout";
 import type { MissingFaces } from "../missing/pass";
-import { swapToMissing } from "../missing/slots";
+import { spawnInside, swapToMissing } from "../missing/slots";
 import type { View } from "../lattice/lod";
 import type { PortalClip, Presentation } from "../nav/portal";
 import type { GroundTheme } from "../theme";
@@ -326,7 +326,7 @@ export class TraySlots {
     const own = this.root.kinds.get(kind);
     if (own === undefined || own.composite === true) return undefined;
     const mat = this.root.mat.spawn();
-    const slot: SlotSet = { mat, kinds: new Map<string, SlotKind>([[kind, { ...own, pass: own.pass.spawn(mat) }]]) };
+    const slot: SlotSet = { mat, kinds: new Map<string, SlotKind>([[kind, { ...own, pass: spawnInside(this.root, own, mat) }]]) };
     this.slots.set(type, slot);
     return slot;
   }
@@ -366,13 +366,25 @@ export class TraySlots {
    * — the notebook's and the calendar's layers, a few seconds after the drawer shuts); asked every tick, drawing or not.
    */
   idle(ms: number = LAYER_IDLE_MS): void {
-    for (const s of this.slots.values()) for (const k of s.kinds.values()) k.pass.idle?.(ms);
+    const b = this.root.boundary;
+    for (const s of this.slots.values()) {
+      for (const k of s.kinds.values()) {
+        if (b === undefined) { k.pass.idle?.(ms); continue; }
+        try { k.pass.idle?.(ms); } catch (err) { b.threw(k.name, "idle", err); }   // the kind's (M24 LT3): the others let go as ever
+      }
+    }
   }
 
   /** When `idle` next lets a layer go — the soonest slot's (K7a: the host's registered time wake); ∞ — nothing to let go. */
   idleAt(ms: number = LAYER_IDLE_MS): number {
+    const b = this.root.boundary;
     let t = Number.POSITIVE_INFINITY;
-    for (const s of this.slots.values()) for (const k of s.kinds.values()) t = Math.min(t, k.pass.idleAt?.(ms) ?? Number.POSITIVE_INFINITY);
+    for (const s of this.slots.values()) {
+      for (const k of s.kinds.values()) {
+        if (b === undefined) { t = Math.min(t, k.pass.idleAt?.(ms) ?? Number.POSITIVE_INFINITY); continue; }
+        try { t = Math.min(t, k.pass.idleAt?.(ms) ?? Number.POSITIVE_INFINITY); } catch (err) { b.threw(k.name, "idleAt", err); }
+      }
+    }
     return t;
   }
 
