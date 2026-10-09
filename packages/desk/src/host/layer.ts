@@ -689,7 +689,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const faults = createKindFaults();
     /**
      * …and the RENDER HALF's (design-019 §8, M24 LT3 — ground.ts `RenderBoundary`): a kind's pass that throws in a frame (or a capture's), a
-     * GPU error raised in its `prepare`, a `keeps` asked while the budget trims — each waits here and is struck once the work it broke is
+     * GPU error raised in its `prepare`, a `keeps` or an eviction asked while the budget trims — each waits here and is struck once the work it broke is
      * done (a quarantine swaps the passes a frame is drawn with, and forgets the budget's charges a trim is walking): at the next flush's
      * head and at the end of the flush that raised it.
      */
@@ -768,6 +768,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     }
     /** The kinds whose `keeps` threw in the trim being walked (M24 LT3): asked no more in it — their keys are not kept — and struck once, after it. */
     const keepsThrew = new Set<string>();
+    /** …and whose eviction threw in it: the trim goes on, the kind struck once, after it. */
+    const evictThrew = new Set<string>();
+    const evicted = (owner: string, err: unknown): void => { if (evictThrew.has(owner)) return; evictThrew.add(owner); strikeLater(owner, "evict", err); };
     const keeps = (owner: string, key: string): boolean => {
       const local = locals.get(owner);
       if (local?.keeps === undefined || keepsThrew.has(owner)) return false;
@@ -1000,7 +1003,8 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         inner.flush(w);
         editor.follow();
         keepsThrew.clear();
-        budget.trim(keeps);   // over the cap: the least recently used off-screen rasters go (O(1) when under it)
+        evictThrew.clear();
+        budget.trim(keeps, evicted);   // over the cap: the least recently used off-screen rasters go (O(1) when under it)
         strikeNow();   // what this frame's kinds broke in their passes, and a `keeps` the trim asked (M24 LT3)
         const drew = compose.redraws() !== drawn;
         // a frame drawn: what is drawn moved, and a raster no longer drawn may be evicted — the asks held for room try again (K6b)

@@ -48,9 +48,11 @@ export interface RasterBudget {
   forget(owner: string): number;
   /**
    * Evict least-recently-used caches until they are within their room — never one `keep` says to hold (an owner's word on
-   * what is on screen this frame; absent, every cache may go), never a resident charge. Returns the bytes freed.
+   * what is on screen this frame; absent, every cache may go), never a resident charge. Returns the bytes freed. `threw` (the desk's
+   * kind boundary, M24 LT3): an owner's eviction that throws is handed there and the trim goes on (the entry is gone all the same);
+   * absent, the throw is the caller's.
    */
-  trim(keep?: (owner: string, key: string) => boolean): number;
+  trim(keep?: (owner: string, key: string) => boolean, threw?: (owner: string, err: unknown) => void): number;
   stats(): BudgetStats;
 }
 
@@ -102,7 +104,7 @@ export function createRasterBudget(cap: number, floor: number = Math.floor(cap *
       for (const [k, ent] of [...entries]) if (ent.owner === owner) { drop(k, ent); bytes += ent.bytes; }
       return bytes;
     },
-    trim(keep) {
+    trim(keep, threw) {
       const limit = room();
       if (cached <= limit) return 0;
       // the candidates, least recently used first
@@ -113,7 +115,8 @@ export function createRasterBudget(cap: number, floor: number = Math.floor(cap *
         drop(k, ent);
         freed += ent.bytes;
         evictions += 1;
-        ent.evict();
+        if (threw === undefined) ent.evict();
+        else try { ent.evict(); } catch (err) { threw(ent.owner, err); }
       }
       return freed;
     },

@@ -349,12 +349,15 @@ describe("the kind boundary in the render half (design-019 §8, M24 LT3)", () =>
       quad: `${name}_quad`,
       frag: `${name}_frag`,
     });
-    const program = (name: string, f: { prepare?: boolean; cardSlot?: boolean }): KindProgram => {
+    const program = (name: string, f: { prepare?: boolean; cardSlot?: boolean; cardResources?: boolean }): KindProgram => {
       const pass = (): KindPass => ({
         spawn: pass,
         prepare: (_e, _s, records) => { if (f.prepare === true) throw new Error(`${name}: its prepare throws on purpose`); return records.length; },
         drawRange: (p, first, end) => { p.pushDebugGroup(`kind ${name} ${first}-${end}`); p.popDebugGroup(); },
-        cardResources: () => ({ version: 1, resources: [{ label: `${name}/k` }, { label: `${name}/records`, getMappedRange: () => new ArrayBuffer(0) }, { label: `${name}/tex` }] as unknown as GPUBuffer[] }),
+        cardResources: () => {
+          if (f.cardResources === true) throw new Error(`${name}: its cardResources throws on purpose`);
+          return { version: 1, resources: [{ label: `${name}/k` }, { label: `${name}/records`, getMappedRange: () => new ArrayBuffer(0) }, { label: `${name}/tex` }] as unknown as GPUBuffer[] };
+        },
         cardSlot: (i) => { if (f.cardSlot === true) throw new Error(`${name}: its cardSlot throws on purpose`); return i * 10; },
         dispose: () => {},
       });
@@ -378,6 +381,21 @@ describe("the kind boundary in the render half (design-019 §8, M24 LT3)", () =>
         expect(frame.filter((l) => l.startsWith("draw 6") || l.startsWith("debug kind "))).toEqual(["draw 6,2,0,0"]);
         ground.dispose();
       }
+    });
+
+    it("its cardResources that throws (the card's group made over every material's): the card draws nothing in the slot this frame — the other material's objects drawn by their own kind, as with the card off — and the kind no more of the slot", async () => {
+      const log: string[] = [];
+      const threw: string[] = [];
+      const fake = fakeDevice(log);
+      const ground = await Ground.create({
+        device: fake.device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [program("note", {}), program("print", { cardResources: true })],
+        boundary: { threw: (kind, call) => { threw.push(`${kind} ${call}`); }, scopes: "off", device: fake.device, gpu: () => {}, gpuIn: () => {} },
+      });
+      ground.render({ view: VIEW, theme: THEME, objects: cards });
+      expect(threw).toEqual(["print cardResources"]);
+      const frame = log.slice(log.indexOf("pass ground"));
+      expect(frame.filter((l) => l.startsWith("draw 6") || l.startsWith("debug kind "))).toEqual(["debug kind note 0-2"]);
+      ground.dispose();
     });
   });
 });

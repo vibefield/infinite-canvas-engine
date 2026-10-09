@@ -31,6 +31,7 @@ interface Fault {
   follow?: boolean;
   forget?: boolean;
   keeps?: boolean;
+  evict?: boolean;
   held?: boolean;
 }
 const fault: Fault = {};
@@ -67,8 +68,13 @@ function faultyKind(name: string, own: Fault | null): ObjectKind<ObjectRect> {
       return {
         tick: () => {
           // two rasters charged a tick, over the test's small budget: the trim asks `keeps` of each
-          host.budget?.charge(name, `${name}:a`, 600, () => { evicted.push("a"); });
-          host.budget?.charge(name, `${name}:b`, 600, () => { evicted.push("b"); });
+          const evict = (key: string) => () => {
+            evicted.push(key);
+            asked.push(`${name} evict ${key}`);
+            if (f("evict")) throw new Error(`${name}: its eviction throws on purpose`);
+          };
+          host.budget?.charge(name, `${name}:a`, 600, evict("a"));
+          host.budget?.charge(name, `${name}:b`, 600, evict("b"));
           return false;
         },
         due: () => Number.POSITIVE_INFINITY,
@@ -264,6 +270,28 @@ describe("the render half and the rest of a kind's calls under the ladder (desig
       expect(forgot.sort()).toEqual(["calm forget N", "trayed forget N"]);
       expect(said(warns, "trayed").filter((m) => m.includes("forget"))).toHaveLength(1);   // one strike, said
       expect(d.handle.status().faults).toBeUndefined();
+      expect(d.frameFaults).toEqual([]);
+    } finally { d.dispose(); }
+  });
+
+  it("an EVICTION that throws while the budget trims: the trim goes on — the other kind's rasters evicted in it — and the kind is struck ONCE a trim, after it: three trims, and it is missing (`evict`)", async () => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const d = await mountDesk();
+    try {
+      d.at(FAULTY.type, 100, 100);
+      d.at(SOUND.type, 500, 100);
+      await d.frame();
+      fault.evict = true;
+      asked.length = 0;
+      await d.frame();
+      const evictions = asked.filter((x) => x.includes(" evict "));
+      expect(evictions.filter((x) => x.startsWith("faulty")).length).toBeGreaterThan(1);   // both its rasters let go in the one trim
+      expect(evictions.filter((x) => x.startsWith("sound")).length).toBeGreaterThan(0);    // …and the other kind's, after its throw
+      await d.frame();
+      expect(d.handle.status().faults).toBeUndefined();   // two trims, two strikes — never one an eviction
+      await d.frame();
+      expect(d.handle.status().faults?.[0]).toEqual({ kind: "faulty", reason: "its `evict` threw (strike 3 of 3): faulty: its eviction throws on purpose" });
       expect(d.frameFaults).toEqual([]);
     } finally { d.dispose(); }
   });

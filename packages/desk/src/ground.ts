@@ -126,8 +126,8 @@ export interface GroundOptions {
 
 /**
  * THE KIND BOUNDARY IN THE RENDER HALF (design-019 §8, M24 LT3 — petition I24's strikes, extended past the world half): what a kind's
- * PASS is asked in a frame — `spawn` (a slot's own), `tune`, `prepare`, `dropped`, `cardSlot`, `drawRange`, `drawOver`, `endHold`, the
- * tray's `idle` and `idleAt` — is asked inside it, in every slot alike (the root, a mini mat's inside, a departed desk, the hand, a
+ * PASS is asked in a frame — `spawn` (a slot's own), `tune`, `prepare`, `dropped`, `cardSlot`, `cardResources`, `drawRange`, `drawOver`,
+ * `endHold`, the tray's `idle` and `idleAt` — is asked inside it, in every slot alike (the root, a mini mat's inside, a departed desk, the hand, a
  * capture, a tray specimen): a throw is handed to `threw` and that SLOT draws nothing more of the kind this frame (a `prepare` that
  * threw left its buffers half-written; a `drawRange` that threw may have drawn part of its run), while every other kind draws. The
  * ENCODER and the render pass stay usable: a JS throw between two commands records nothing, and what the kind left open is closed
@@ -789,7 +789,10 @@ export function prepareFrame(encoder: GPUCommandEncoder, root: SlotSet, pool: Sl
           if (cs >= 0) route[i] = s.card.push(m, cs);
         }
       }
-      if (s.card.prepare(slot) > 0) card = { pass: s.card, route };
+      // (a material kind's `cardResources` that throws is the kind's — M24 LT3: the card draws nothing in this slot this frame, every object
+      // its own kind's as with the card off, the kind no more of this slot)
+      const cards = boundary === undefined ? s.card.prepare(slot) : s.card.prepare(slot, (kind, err) => { boundary.threw(kind, "cardResources", err); skip.add(kind); });
+      if (cards > 0) card = { pass: s.card, route };
     }
     return {
       mat: s.mat, present: inp.present, stats: gridStats(inp.view, wind), kinds: s.kinds,

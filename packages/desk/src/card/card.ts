@@ -322,8 +322,12 @@ export class CardPass {
     return this.n++;
   }
 
-  /** The list uploaded when it changed, the group made again when anything under it moved, the pipeline for the slot's light. */
-  prepare(slot: SlotContext): number {
+  /**
+   * The list uploaded when it changed, the group made again when anything under it moved, the pipeline for the slot's light. `threw`
+   * (the ground's kind boundary, M24 LT3): a material kind's `cardResources` that throws is handed there by name, and the card draws
+   * nothing this frame (0 — every object is its own kind's, as with the card off); absent, the throw is the caller's.
+   */
+  prepare(slot: SlotContext, threw?: (kind: string, err: unknown) => void): number {
     const n = this.n;
     if (n > 0) {
       if (this.buffer.size < n * 4) {
@@ -340,28 +344,40 @@ export class CardPass {
         this.sent.set(this.list.subarray(0, n));
         this.sentN = n;
       }
-      this.rebind();
+      if (!this.rebind(threw)) { this.group = null; return 0; }
     }
     this.litElsewhere = !litByOwn(slot.view, slot.lit);
     return n;
   }
 
-  private rebind(): void {
+  /** The group made again when anything under it moved — false when a kind's `cardResources` threw (handed to `threw`). */
+  private rebind(threw: ((kind: string, err: unknown) => void) | undefined): boolean {
+    const resourcesOf = (name: string, pass: KindPass): ReturnType<NonNullable<KindPass["cardResources"]>> | undefined | null => {
+      if (threw === undefined) return pass.cardResources?.();
+      try { return pass.cardResources?.(); } catch (err) { threw(name, err); return null; }
+    };
     const over = this.boundOver;
     let stale = this.group === null || over[0] !== this.mat.assetVersion || over[1] !== this.bufferVersion;
     let i = 2;
-    for (const pass of this.kinds.values()) { const v = pass.cardResources?.().version ?? -1; if (over[i] !== v) stale = true; i++; }
-    if (!stale) return;
+    for (const [name, pass] of this.kinds) {
+      const r = resourcesOf(name, pass);
+      if (r === null) return false;
+      if (over[i] !== (r?.version ?? -1)) stale = true;
+      i++;
+    }
+    if (!stale) return true;
     const resources: (GPUBuffer | GPUTextureView | GPUSampler)[] = [this.mat.view, this.mat.silhouette, this.mat.noiseTexture.createView(), this.buffer];
     const versions = [this.mat.assetVersion, this.bufferVersion];
     for (const [name, pass] of this.kinds) {
-      const r = pass.cardResources?.();
+      const r = resourcesOf(name, pass);
+      if (r === null) return false;
       if (r === undefined) throw new Error(`card: kind "${name}" declares a card material but its pass hands no resources`);
       resources.push(...r.resources);
       versions.push(r.version);
     }
     this.group = bindGroup(this.device, this.shared.layout, resources, "card/flat");
     this.boundOver = versions;
+    return true;
   }
 
   /** Cards [first, end) of this frame's list — interleaved objects of every material kind — as ONE instanced draw. */

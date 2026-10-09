@@ -3,8 +3,8 @@
 // pipeline failed validation (ground.ts `createKindPasses`, each kind's create in its own error scope) — or one whose calls threw
 // three times — its world half's `resolve`, `record`, `chip`, `hit`, its desk state's `tick` and `due`; in hand its `held` and its
 // `cursor` (M24 LT2); its RENDER half and the rest (M24 LT3, ground.ts `RenderBoundary`): its pass's `spawn`, `prepare`, `drawRange`,
-// `drawOver`, `cardSlot`, `endHold`, the tray's `idle`/`idleAt`, a GPU error its `prepare` raised, a driver's `follow`, its desk
-// state's `forget` and `keeps` — is MISSING: nothing of it is called
+// `drawOver`, `cardSlot`, `cardResources`, `endHold`, the tray's `idle`/`idleAt`, a GPU error its `prepare` raised, a driver's
+// `follow`, its desk state's `forget` and `keeps`, a raster's eviction it charged — is MISSING: nothing of it is called
 // again, its passes are disposed, its desk state is let go, and its objects wear the desk's own missing face (missing/ — a faint
 // hatched card the size of the object's box, pickable; the face an object whose type has no kind wears too). The ladder is
 // design-009 §16's (I17's words): a throw is a STRIKE, counted per kind; the third QUARANTINES it. Said ONCE: a `console.error`
