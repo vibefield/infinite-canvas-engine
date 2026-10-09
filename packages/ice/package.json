@@ -1,6 +1,6 @@
 {
   "name": "@vibecook/ice",
-  "version": "0.15.0",
+  "version": "0.16.0-portals.1",
   "description": "ICE — infinite canvas engine. The desk: every object under the camera drawn by one WebGPU renderer from a CRDT-synced ECS world, the DOM in screen space. defineObject turns a GPU kind into a canvas citizen — selectable, movable, nested in mini mats, undoable per gesture, collaborative.",
   "license": "MIT",
   "author": "James Yong <me@jamesyong42.com>",
