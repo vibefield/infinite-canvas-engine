@@ -56,7 +56,9 @@ with no root identity adopting the engine's `rootCanvas` at the 2→3 step, plus
 migration at open (design-005 §6.4's deferral) — VibeField drops its pre-desk documents instead of converting them. Three
 follow-on seams are named, not filed, each wanting its own ICE design first: a live-texture / render-target source for a kind
 (VibeField's PORTALS — the terminal, the browser, the screen-capture kit and the iOS simulator as proper object kinds), ports +
-a wires pass (STRING), and `canvas.read`/`canvas.render` (the AGENT'S EYES, design-015 §10).
+a wires pass (STRING), and `canvas.read`/`canvas.render` (the AGENT'S EYES, design-015 §10). The first has its design since
+2026-10-09: design-019, the live face (M24) — a texture the host fills, the source it lends, the sight; LT1 cut as
+`0.16.0-portals.1`.
 
 ## The behavior framework (M13) — no new petitions
 
