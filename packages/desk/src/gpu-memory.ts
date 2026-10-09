@@ -2,8 +2,12 @@
 // resource's `destroy` — the desk names every resource `<kind>/<what>`, so the kinds' memory falls out of the names, as their
 // uploads do (submit-instrument.ts). A resource the garbage collector takes without a `destroy()` leaves the ledger then
 // (`collected`); the ledger holds no resource alive. What it cannot see: the swap chain (the canvas's, not made through
-// `createTexture`) and anything made before it was installed — WebGPU has no enumeration, so a ledger armed late would
-// lie. It is therefore the ONE instrument installed with the device, and only where the host asks (`deskLayer({
+// `createTexture`), anything made before it was installed — WebGPU has no enumeration, so a ledger armed late would
+// lie — and a live face's SOURCE (M24, kit/live.ts): a `VideoFrame` a host hands its writer is the browser's memory or the
+// producer's shared texture, never made through this device's `createTexture`, and a producer's own buffers (its offscreen
+// surface, a capture's IOSurface slots, its process) are not on this device at all — the face's own texture is seen, under the
+// label its host gave it (`<kind>/live <key>`), and nothing upstream of it. It is therefore the ONE instrument installed with
+// the device, and only where the host asks (`deskLayer({
 // gpuLedger: true })`, D-K2.2): its cost is a map entry and a closure per resource MADE — at boot, a resize, a raster's
 // birth — and nothing per frame.
 //

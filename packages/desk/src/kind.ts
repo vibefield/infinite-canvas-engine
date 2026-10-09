@@ -11,6 +11,18 @@
 // records. A sheet that holds a desk (the mini mat) splits its run where its live inside
 // goes: the inside draws right after it, then the sheet's marks over the inside
 // (`drawOver` — the mini mat's chips while the inside's objects come in).
+//
+// THE LIGHT PASS (M24 LT1; VibeField's PORTALS map p1 §5): inside `drawRange` the kind owns
+// the pass encoder, so its run may draw more than one pipeline — its objects, and a LIGHT
+// pipeline whose blend MULTIPLIES the target (the kind declares the blend itself, the
+// destination as a factor — dst·(1 + L) — through `renderPipeline({ fragment, blend })`; no
+// engine constant names it). A light multiplies whatever lies BELOW its run: the mat and every
+// object of any kind drawn before it in the slot's paint order (a note under a pane catches the
+// pane's spill — physically right) and nothing drawn after it (a composite kind's one run comes
+// after every other run of its stratum, so a notebook lies over the light). In the HAND target
+// (`RenderTarget` "hand": cleared to 0 and premultiplied, hold/focus.ts) dst·(1 + L) is 0 — a
+// kind's light lights NOTHING there: no caustic or spill round an object in hand. The copy and
+// capture targets hold the desk under the run, so a light lands in them as in the frame.
 
 import type { BindKind } from "./engine/pipeline";
 import type { RecordStoreStats } from "./engine/records";
@@ -105,7 +117,11 @@ export interface KindPass<R = unknown> {
    * its own before the frame's, as the whiteboard's stamps and drying do). Returns the count that will draw.
    */
   prepare(encoder: GPUCommandEncoder, slot: SlotContext, records: readonly R[], extra?: KindExtra): number;
-  /** Draw records [first, end) — indices into this frame's `records` — in their order, into the open pass. */
+  /**
+   * Draw records [first, end) — indices into this frame's `records` — in their order, into the open pass: with as many of the kind's
+   * own pipelines as it draws them with (a LIGHT pipeline multiplies what lies below the run, and nothing in the hand target — the
+   * header's light pass).
+   */
   drawRange(pass: GPURenderPassEncoder, first: number, end: number): void;
   /**
    * The kind's persistent record store's counters (design-015 §4.3; D6) — records packed and uploaded, draw lists rewritten — a

@@ -38,8 +38,11 @@ export { type ShaderText, shaderText } from "../shaders";
  */
 export type KitWgslPiece = "view" | "portal" | "sdf" | "light" | "ruler" | "book";
 
-/** A name of the kit's WGSL: a piece, or another name for one (`lamp`, `gobo`, `night` and `noise` are `light`). */
-export type KitWgslName = KitWgslPiece | "lamp" | "gobo" | "night" | "noise";
+/**
+ * A name of the kit's WGSL: a piece, or another name for one (`lamp`, `gobo`, `night`, `noise` and `mat` are `light` — `mat` since
+ * M24 LT1: the mat's module IS the light piece, and a port that names the mat's module by its own name composes).
+ */
+export type KitWgslName = KitWgslPiece | "lamp" | "gobo" | "night" | "noise" | "mat";
 
 /** A piece of the kit's WGSL: generated structs, a pure module (a .wgsl file by the host's text), or both. */
 interface KitPiece {
@@ -55,7 +58,7 @@ interface KitPiece {
  * - `sdf` — the card's primitives: rounded boxes, their shadows and rims (primitives.wgsl);
  * - `light` — the mat's light as an object reads it: the desk point under a lamp, the gobo's dapple (`sample_gobo`,
  *   `lit_gobo`), the night's appearance, the value noise and the colour chain (mat/mat.wgsl; its functions call each
- *   other, so `lamp`, `gobo`, `night` and `noise` are the same piece by other names);
+ *   other, so `lamp`, `gobo`, `night`, `noise` and `mat` are the same piece by other names);
  * - `ruler` — the rulers' glyph lattice (mat/ruler.wgsl: a face that prints the mat's numerals);
  * - `book` — the 3D kit (kit/book.wgsl and its records `NbUniforms`, `NbBook` — kit/book.ts): the desk eye's projection,
  *   the PCSS shadow on an object's own shadow map, the materials of paper and cloth (after `light`, whose chain it grades by).
@@ -70,7 +73,7 @@ const PIECES = {
 } as const satisfies Record<KitWgslPiece, KitPiece>;
 
 /** The names a piece also answers to. */
-const ALIASES: Readonly<Record<Exclude<KitWgslName, KitWgslPiece>, KitWgslPiece>> = { lamp: "light", gobo: "light", night: "light", noise: "light" };
+const ALIASES: Readonly<Record<Exclude<KitWgslName, KitWgslPiece>, KitWgslPiece>> = { lamp: "light", gobo: "light", night: "light", noise: "light", mat: "light" };
 
 /**
  * The .wgsl file behind each of the kit's module pieces — what a host's `ShaderText` is asked for. `shaderText(KIT_WGSL_FILES)`

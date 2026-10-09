@@ -726,8 +726,18 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // ask is run, not let go, and its raster's landing wakes the frame that shows it (the builder holds no specimen to remake)
     const rasters = createRasterQueue({ ...(opts.rasterMs !== undefined ? { budgetMs: opts.rasterMs } : {}), shows: (e) => builder.shows(e) || compose.trayShows(e) });
     const remake = (e: Entity): void => { builder.remake(e); if (compose.trayShows(e)) compose.wake("ink"); };
+    // M24 LT1 (design-019 §3.3–§3.5): a frame drawn again with no record remade — the reflector dirtied as a driver's and a DOM half's
+    // `wake` dirty it, a sleeping loop woken; the object's durable key, the document's (strata's `DurableStore.keyOf` through the
+    // session the host lends); and the frames drawn, the reflector's count — a kind's sight's frame boundary. `compose` is made just
+    // below, after the locals: a kind that asks either while its `local()` runs finds no frame yet (0) and nothing to draw
+    let composed = false;
+    const redraw = (): void => { if (composed) compose.wake("ink"); };
+    // the document a driver writes into and a key is read from (D7 #1; the drivers below take it too)
+    const docs: TypingDocs = opts.docs ?? NO_DOCS;
+    const keyOf = (e: Entity): string | undefined => docs.current()?.store.keyOf(e);
+    const frames = (): number => (composed ? compose.redraws() : 0);
     for (const k of objectKinds) {
-      const local = k.local?.({ pass: () => ground?.pass(k.name), use: services.use, children, drawn, budget, rasters, remake, wake: () => wakeKind(k.name) });
+      const local = k.local?.({ pass: () => ground?.pass(k.name), use: services.use, children, drawn, budget, rasters, remake, wake: () => wakeKind(k.name), redraw, keyOf, frames });
       if (local === undefined) continue;
       locals.set(k.name, local);
       if (local.tick !== undefined && local.due === undefined) tellAwake(k.name);
@@ -845,12 +855,12 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       // a frame asked for outside the flush — a pin, an ink landing, the ground arriving, a theme: a sleeping loop wakes (K7a)
       onWake: (reason) => frame?.wake(`desk:${reason}`),
     });
+    composed = true;   // the kinds' `redraw` and `frames` reach it from here (M24 LT1)
     motionQuery?.addEventListener("change", syncMotion);   // armed once `compose` exists (D7: never a listener over a binding in its TDZ)
 
     // THE KINDS' DRIVERS (D7 #5, D-D7-A.3): each object declared its own in `defineObject` — a pen, a carry, a leaf, the calendar's
     // writing and hand, the note's typing — and the host makes them here from what it lends, never naming a kind; a third-party
     // openable kind with held tools gets its driver the same way. Ticked before the kinds' clocks; idle ones skipped (D7 #14)
-    const docs: TypingDocs = opts.docs ?? NO_DOCS;
     const drivers = new Map<string, KindDriver>();
     /** Each driver's kind, by object type — a MISSING kind's drivers are parked (petition I24: they follow nothing; disposed with the layer). */
     const driverKinds = new Map<string, string>();

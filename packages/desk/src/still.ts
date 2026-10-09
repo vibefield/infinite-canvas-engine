@@ -165,7 +165,9 @@ export interface StillOptions {
    * then draws the hour the still is drawn at, so a still that must hold still pins its asset (`stage.pinAsset` — the desk
    * clock's `{ at }`), as the oracle does. Absent: no desk state (a kind draws its facts and its pins alone), as before. ICE lends
    * no text raster of its own in Node — `inkRaster` is a browser's Canvas 2D; a Node caller lends its own (a native canvas, or
-   * its test's).
+   * its test's). A LIVE kind (design-019 §9, M24) is lent committed bytes for its faces — `service(LIVE, stillLive(device, …))`:
+   * its desk state opens each face by the object's durable key (`KindHost.keyOf` — the still's own document mints them) and its
+   * first take presents the bytes through the product's path.
    */
   readonly services?: readonly Lent[];
 }
@@ -297,8 +299,12 @@ async function drawStill(opts: StillOptions, plan: StillPlan): Promise<Still> {
         if (lend !== undefined) services.lend(lend({ use: services.use, wake: () => {} }), `the object "${t.type}"`);
       }
       const children = worldChildren(world);
+      // (M24 LT1: an object's durable key is the still's own document's — what a live kind opens its face by; a redraw asks nothing,
+      // the still's one frame follows its one tick)
+      const docs = engine.docs;
+      const keyOf = (e: Entity): string | undefined => docs.current()?.store.keyOf(e);
       for (const k of plan.kinds) {
-        const local = k.local?.({ pass: () => desk.root.kinds.get(k.name)?.pass, use: services.use, children, wake: () => {} });
+        const local = k.local?.({ pass: () => desk.root.kinds.get(k.name)?.pass, use: services.use, children, wake: () => {}, redraw: () => {}, keyOf });
         if (local !== undefined) locals.set(k.name, local);
       }
     }

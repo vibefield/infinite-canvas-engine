@@ -184,8 +184,9 @@ export interface KindHost {
    * decoder `PICTURE_DECODER`, the app's byte store `BLOB_STORE`, anything in `deskLayer({ services })`) and what any object's DOM
    * half lends (`ObjectHost.lend` — the desk calendar's `PRINT_RASTER`): `use(key)` answers it, or undefined when nothing on this
    * desk lends it (in Node the oracle pins committed rasters and tiles). Absent: a bare host (a test) — no services at all.
-   * D-K8a.1: the desk's OWN doors stay fields of this host — `pass`, `children`, `drawn`, `budget`, `rasters`, `remake`, `wake`: the
-   * builder's word, its budget, its queue and its loop, made by the desk for each kind and never lent, replaced or taken by a kind.
+   * D-K8a.1: the desk's OWN doors stay fields of this host — `pass`, `children`, `drawn`, `budget`, `rasters`, `remake`, `wake`,
+   * `redraw`, `keyOf`, `frames`: the builder's word, its budget, its queue, its loop and the document's keys, made by the desk for each
+   * kind and never lent, replaced or taken by a kind.
    */
   use?<T>(key: ServiceKey<T>): T | undefined;
   /** An object's DATA children (D3w, design-015 §5.1 — a board's strokes, a pad's events and pins); absent = none (a test, the oracle). */
@@ -216,6 +217,31 @@ export interface KindHost {
    * kind never polls for what an arrival can tell it. Absent (a bare host, the oracle): its tick is asked every frame.
    */
   readonly wake?: (() => void) | undefined;
+  /**
+   * DRAW AGAIN, REMAKE NOTHING (design-019 §3.3, M24 LT1): the next frame is encoded again and no record is remade — what a kind
+   * asks when something its pass reads changed under records that stand (a live face's texture took a frame: `LiveFace.take`
+   * answered true). Called in the kind's tick (whose answer is then FALSE — true would remake every record of the kind) or from
+   * outside a frame; either way the frame is drawn and a sleeping loop wakes for it — the reflector dirtied as a driver's and a DOM
+   * half's `wake` dirty it. Absent (a bare host): nothing to draw; a still's (`createStill`) does nothing — its one frame follows.
+   */
+  readonly redraw?: (() => void) | undefined;
+  /**
+   * THE OBJECT'S DURABLE KEY (design-019 §3.5, M24 LT1): strata's durable entity key (`DurableStore.keyOf`, strata §14.3) — minted
+   * ONCE for the entity by the peer whose transaction made it (`<peer>-<n>`: a peer's counter resumes past its own keys, so a key
+   * is never minted twice) and carried in the document as the entity's own key, so every peer projects the entity under it and a
+   * reload binds it to its new runtime handle: the same on every peer and across reloads, where the `Entity` is neither. A host
+   * names an outside surface by it (a page re-attached on reload, not restarted). Undefined for a runtime-only entity (a tray's
+   * insert ghost, a specimen) and with no document. Absent (a bare host): none known.
+   */
+  readonly keyOf?: ((e: Entity) => string | undefined) | undefined;
+  /**
+   * THE DESK'S FRAMES (design-019 §3.4, M24 LT1): how many frames this desk has drawn — the reflector's count
+   * (`DeskLayerHandle.redraws()`), moving once per frame drawn and never for a capture. A kind with no records in a slot is never
+   * prepared, and a kind is ticked on steps that draw nothing (an input step), so "my pass was not asked" means "not drawn" only when
+   * a frame WAS drawn: what a kind that folds its prepares per frame reads for that boundary (`createSight(host.frames)`). Absent (a
+   * bare host, a still): every step is taken as a frame.
+   */
+  readonly frames?: (() => number) | undefined;
 }
 
 /**

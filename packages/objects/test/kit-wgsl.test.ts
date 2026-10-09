@@ -35,6 +35,9 @@ describe("the kit's WGSL by name (K4a)", () => {
   it("composes in the kit's one order whatever the order asked, each piece once whatever its names", () => {
     expect(labels(["light", "sdf", "portal"])).toEqual(["portal.wgsl", "primitives.wgsl", "mat/mat.wgsl", "own.wgsl"]);
     expect(labels(["gobo", "night", "lamp", "noise", "light"])).toEqual(["mat/mat.wgsl", "own.wgsl"]);
+    // M24 LT1 (p1 row 5): `mat` is the light piece too — the mat's module by its own name composes, once
+    expect(labels(["mat"])).toEqual(["mat/mat.wgsl", "own.wgsl"]);
+    expect(labels(["view", "portal", "sdf", "light", "mat"])).toEqual(["portal.wgsl", "primitives.wgsl", "mat/mat.wgsl", "own.wgsl"]);
     expect(labels(["ruler", "light"])).toEqual(["mat/mat.wgsl", "mat/ruler.wgsl", "own.wgsl"]);
     expect(kitWgsl([], own, disk).structs).toEqual([Own]);
   });
