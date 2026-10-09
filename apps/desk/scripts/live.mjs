@@ -14,15 +14,21 @@
 //      seen inside a mini mat's portal, unseen when the face is too far for the inside;
 //   5. THE LEDGER (`gpuLedger: true`): `rig/live <key>` lines under `rig`, their bytes the faces' own;
 //   6. THE DEMAND reaches the source CHANGE-ONLY: no two in a row alike, one per change the sight saw, none per frame;
-//   7. no page errors, no contained faults.
+//   7. THE HAND'S INPUT (ICE M24 LT2, design-019 §5): the kind TOLD its held input, sending its face what lands on its `live` part in the
+//      DISPLAYED frame's logical coordinates — a press, a move and a release, a double-click counted 1 then 2 that leaves the object in
+//      hand (the edge's double-click still puts it down: the hand's rule); a plain wheel the face's and the hand never pans for it, ⌘
+//      zooms the hand; the page's cursor over its link the container's; keys, committed text and an IME composition through the editor
+//      its DOM half leases; Esc puts it down in one press — the terminal's (`open.escape: "kind"`) is its face's, and Done puts it
+//      down; and the COST of a held face playing at 60 (the hand slot and its composites; the desk copy behind never remade);
+//   8. no page errors, no contained faults.
 // THE EXIT CODE IS THE VERDICT: the number of failed rows; 1 for a throw; 2 for the watchdog.
 //
 //   pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:live
 import { spawn } from "node:child_process";
 import { resolve } from "node:path";
-import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
+import { faultsOf, launchChrome, openTab, until, watchPage } from "./cdp.mjs";
 import { decodePng } from "./png.mjs";
-import { hostLoad, watchdog } from "./timing.mjs";
+import { dblClick, hostLoad, median, minOf, watchdog } from "./timing.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -40,6 +46,11 @@ const check = (ok, msg) => { console.log(`  ${ok ? "PASS" : "FAIL"}  ${msg}`); o
 
 const LIVE = "rig.live";
 const KIND = "rig-live";
+/** The rig's terminal face (LT2): Esc in hand is its face's. */
+const TERM = "rig.live-term";
+/** The face's logical size and its edge (src/rig/live-source.ts `RIG_LIVE_LOGICAL`, live-kind.ts `RIG_LIVE_EDGE`); the sheet is 320 × 200. */
+const LOGICAL = [256, 160];
+const SHEET = [320, 200];
 /** The rig source's frame colour (src/rig/live-source.ts `rigFrameColour`, sRGB). */
 const frameColour = (n) => [(40 + n * 67) % 256, (90 + n * 131) % 256, (160 + n * 29) % 256];
 const near = (a, b, tol) => a.every((v, i) => Math.abs(v - b[i]) <= tol);
@@ -205,7 +216,164 @@ try {
   check(twice === 0 && dem.length >= 6 && dem.length <= 12 && fin.counts.moved > 2 * fin.counts.demands && dem[0]?.mode === "live" && dem.some((d) => d.mode === "paused") && dem.some((d) => d.interactive && d.fps === 60) && a1.counts.demands === a0.counts.demands && p1.counts.demands === p0.counts.demands,
     `THE DEMAND reaches the source CHANGE-ONLY: ${dem.length} demands to the first face (${twice} twice in a row) — ${modes.join(" → ")}; the kind's sight moved ${fin.counts.moved} times over the rig (both faces) and its law sent ${fin.counts.demands} demands; none sent by an arrival (${a1.counts.demands - a0.counts.demands}) or while it played (${p1.counts.demands - p0.counts.demands} over ${p1.redraws - p0.redraws} frames)`);
 
-  // ---- 7. no page errors
+  // ---- 7. THE HAND'S INPUT (LT2): a fresh page and a terminal in view, the camera home (a block of its own: its names are its own)
+  {
+  await q("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 })");
+  const pg = await q(`window.__desk.spawn(${JSON.stringify(LIVE)}, {}, { x: 600, y: 420 })`);
+  const tm = await q(`window.__desk.spawn(${JSON.stringify(TERM)}, {}, { x: 600, y: 160 })`);
+  await settle();
+  /** A page's frame: a rAF or `n` (the desk takes an input a frame). */
+  const frames = (n = 2) => q(`new Promise((r) => { let k = 0; const f = () => (++k >= ${n} ? r(k) : requestAnimationFrame(f)); requestAnimationFrame(f); })`);
+  const mouse = async (type, x, y, extra = {}) => { await front(); await tab.send("Input.dispatchMouseEvent", { type, x, y, button: type === "mouseMoved" || type === "mouseWheel" ? "none" : "left", ...extra }); await frames(2); };
+  const key = async (k, code, vk, extra = {}) => { await front(); await tab.send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: k, code, windowsVirtualKeyCode: vk, ...extra }); await tab.send("Input.dispatchKeyEvent", { type: "keyUp", key: k, code, windowsVirtualKeyCode: vk, ...extra }); await frames(2); };
+  const hand = () => q("window.__desk.hand()");
+  const settledInHand = async (e) => (await until(async () => { const h = await hand(); return h?.entity === e && h.settled === true; }, 6000)) === true;
+  const landed = async () => (await until(async () => (await hand()) === null, 6000)) === true;
+  /** The source's record of `e`'s face: its inputs (since `from`), its page's cursor, its texture's logical size. */
+  const src = async (e, from = 0) => q(`(() => { const k = window.__desk.engine.docs.current()?.store.keyOf(${e}); const f = window.__deskRig.live.faces().find((x) => x.key === k); return f === undefined ? null : { key: k, inputs: f.inputs.slice(${from}), n: f.inputs.length, cursor: f.cursor, logical: f.texture?.logical ?? null, takes: f.takes }; })()`);
+  /** A screen point of the object in hand, in its own units (centred) — the hand's frame as the last frame drew it. */
+  const at = (h, ox, oy) => [h.frame.cx + ox * h.frame.s, h.frame.cy + oy * h.frame.s];
+  /** The page point the kind should send for a held point: the sheet's units to the frame's logical px. */
+  const page = (ox, oy) => [((ox + SHEET[0] / 2) / SHEET[0]) * LOGICAL[0], ((oy + SHEET[1] / 2) / SHEET[1]) * LOGICAL[1]];
+  const fmtIn = (i) => (i.kind === "pointer" ? `${i.phase} ${i.x.toFixed(1)},${i.y.toFixed(1)} b${i.button}/${i.buttons} ×${i.count}` : i.kind === "wheel" ? `wheel ${i.x.toFixed(1)},${i.y.toFixed(1)} ${i.dx},${i.dy}` : i.kind === "key" ? `key ${i.phase === "down" ? "↓" : "↑"}${i.key}${i.mods ? `+${i.mods}` : ""}` : i.kind === "text" ? `text "${i.text}"` : `compose "${i.text}" ${i.caret}`);
+  const nearPt = (i, p) => Math.abs(i.x - p[0]) < 0.6 && Math.abs(i.y - p[1]) < 0.6;
+  const cursor = () => q("document.querySelector('canvas')?.parentElement?.style.cursor ?? null");
+  await q(`window.__desk.open(${pg})`);
+  const inHand = await settledInHand(pg);
+  const h0 = await hand();
+  const lent = await q("document.activeElement?.hasAttribute('data-desk-editor') === true");
+  const s0 = await src(pg);
+  // 7a. a press, a move and a release on its `live` part, then a double-click there
+  const [p0, p1, p2] = [[-60, -30], [-20, -30], [40, 20]];
+  let from = s0.n;
+  await mouse("mouseMoved", ...at(h0, ...p0));
+  await mouse("mousePressed", ...at(h0, ...p0), { buttons: 1, clickCount: 1 });
+  await mouse("mouseMoved", ...at(h0, ...p1), { buttons: 1 });
+  await mouse("mouseReleased", ...at(h0, ...p1), { buttons: 0, clickCount: 1 });
+  const s1 = await src(pg, from);
+  const want1 = [["move", p0, 0, 0], ["down", p0, 1, 1], ["move", p1, 1, 0], ["up", p1, 0, 1]];
+  const got1 = s1.inputs.filter((i) => i.kind === "pointer");
+  check(inHand && lent && s0.logical?.[0] === LOGICAL[0] && s0.logical?.[1] === LOGICAL[1] && got1.length === want1.length && want1.every(([ph, pt, b, c], i) => got1[i]?.phase === ph && nearPt(got1[i], page(...pt)) && got1[i].buttons === b && got1[i].count === c),
+    `IN HAND (settled ${inHand}, the editor lent to the face ${lent}; the face's frame ${s0.logical?.join(" × ")} logical over ${SHEET.join(" × ")} units): a press, a move, a release on the live part reach the face in the frame's LOGICAL px — ${got1.map(fmtIn).join(" · ")} (want ${want1.map(([ph, pt, b, c]) => `${ph} ${page(...pt).map((v) => v.toFixed(1)).join(",")} /${b} ×${c}`).join(" · ")})`);
+  from = (await src(pg)).n;
+  await dblClick(tab, ...at(h0, ...p2));
+  await frames(4);
+  const s2 = await src(pg, from);
+  const presses = s2.inputs.filter((i) => i.kind === "pointer" && i.phase !== "move");
+  const still = await hand();
+  check(presses.map((i) => `${i.phase}${i.count}`).join(" ") === "down1 up1 down2 up2" && presses.every((i) => nearPt(i, page(...p2))) && still?.entity === pg && still.landing === false,
+    `a DOUBLE-CLICK on the live part reaches the face counted — ${presses.map(fmtIn).join(" · ")} — and the object stays IN HAND (${still?.entity === pg ? "held" : "NOT held"}): two presses on the kind's part are the kind's, never the hand's way back`);
+  // 7b. the edge — outside the part, the object itself: two instant taps there put it down, as ever, and the face hears nothing
+  from = (await src(pg)).n;
+  await dblClick(tab, ...at(h0, SHEET[0] / 2 - 5, 0));
+  const edgeDown = await landed();
+  const s3 = await src(pg, from);
+  check(edgeDown && s3.inputs.filter((i) => i.kind === "pointer" && i.phase !== "move").length === 0,
+    `a double-click on the face's EDGE (outside the live part — the object itself) does what it did: put down ${edgeDown}, the face sent ${s3.inputs.filter((i) => i.kind === "pointer" && i.phase !== "move").length} presses`);
+  // 7c. the wheel: a plain wheel is the face's — the hand never pans for it, brought close or not; ⌘-wheel zooms the hand
+  await q(`window.__desk.open(${pg})`);
+  await settledInHand(pg);
+  let hw = await hand();
+  from = (await src(pg)).n;
+  await mouse("mouseMoved", ...at(hw, ...p0));
+  await mouse("mouseWheel", ...at(hw, ...p0), { deltaX: 0, deltaY: 40 });
+  const view0 = await q(`window.__desk.heldView(${pg})`);
+  await mouse("mouseWheel", hw.frame.cx, hw.frame.cy, { deltaX: 0, deltaY: -60, modifiers: 4 });
+  await until(async () => (await q(`window.__desk.heldView(${pg})?.zoom ?? 1`)) > 1.2, 3000);
+  const view1 = await q(`window.__desk.heldView(${pg})`);
+  hw = await hand();
+  await mouse("mouseMoved", ...at(hw, ...p0));
+  await mouse("mouseWheel", ...at(hw, ...p0), { deltaX: 10, deltaY: 30 });
+  const view2 = await q(`window.__desk.heldView(${pg})`);
+  const wheels = (await src(pg, from)).inputs.filter((i) => i.kind === "wheel");
+  // the deltas in CSS px of the hand, as the page's wheel events said them: CDP's are device px — 40, and 10,30, are 20 and 5,15 at the
+  // rig's dpr 2 (probed: a bare page reads 10,30 at scale 1 and 5,15 at 2)
+  check(wheels.length === 2 && nearPt(wheels[0], page(...p0)) && wheels[0].dx === 0 && wheels[0].dy === 20 && nearPt(wheels[1], page(...p0)) && wheels[1].dx === 5 && wheels[1].dy === 15 && view0?.panX === 0 && view0.panY === 0 && view1.zoom > 1.2 && view2.panX === view1.panX && view2.panY === view1.panY,
+    `a plain WHEEL over the held face is the face's — ${wheels.map(fmtIn).join(" · ")} — and the hand never pans for it (the view ${JSON.stringify(view0)}; brought close by ⌘-wheel to ${view1.zoom.toFixed(2)}×, a plain wheel leaves its pan at ${view2.panX.toFixed(1)},${view2.panY.toFixed(1)}); ⌘ is the hand's: no wheel sent for it`);
+  await mouse("mouseWheel", hw.frame.cx, hw.frame.cy, { deltaX: 0, deltaY: 60, modifiers: 4 });   // back to the reading size
+  await until(async () => (await q(`window.__desk.heldView(${pg})?.zoom ?? 0`)) < 1.01, 3000);
+  await settle();
+  // 7d. the cursor: over the page's link its `pointer` (the kind's word, `open.cursor`), elsewhere on the face the desk's own
+  hw = await hand();
+  const overLink = [((60 / LOGICAL[0]) * SHEET[0]) - SHEET[0] / 2, ((120 / LOGICAL[1]) * SHEET[1]) - SHEET[1] / 2];
+  await mouse("mouseMoved", ...at(hw, ...overLink));
+  const onLink = await until(async () => (await cursor()) === "pointer", 2000);
+  const linkWord = await cursor();
+  await mouse("mouseMoved", ...at(hw, 90, -50));
+  await until(async () => (await cursor()) !== "pointer", 2000);
+  const offLink = await cursor();
+  const pageCursor = (await src(pg)).cursor;
+  check(onLink === true && linkWord === "pointer" && offLink !== "pointer" && pageCursor === null,
+    `the CURSOR the kind names is the container's: over the page's link "${linkWord}", elsewhere on the face "${offLink}" (the page's word now ${JSON.stringify(pageCursor)})`);
+  // 7e. keys, committed text and an IME composition — through the editor the face's DOM half leases
+  from = (await src(pg)).n;
+  await key("ArrowLeft", "ArrowLeft", 37);
+  await key("ArrowRight", "ArrowRight", 39, { modifiers: 8 });
+  await front();
+  await tab.send("Input.insertText", { text: "hello" });
+  await frames(2);
+  await front();
+  await tab.send("Input.dispatchKeyEvent", { type: "keyDown", key: "x", code: "KeyX", text: "x", windowsVirtualKeyCode: 88 });
+  await tab.send("Input.dispatchKeyEvent", { type: "keyUp", key: "x", code: "KeyX", windowsVirtualKeyCode: 88 });
+  await frames(2);
+  await tab.send("Input.imeSetComposition", { text: "に", selectionStart: 1, selectionEnd: 1 });
+  await frames(1);
+  await tab.send("Input.imeSetComposition", { text: "にほ", selectionStart: 1, selectionEnd: 1 });
+  await frames(1);
+  await tab.send("Input.insertText", { text: "日本" });
+  await frames(2);
+  const typed = (await src(pg, from)).inputs.filter((i) => i.kind !== "pointer" && i.kind !== "wheel").map(fmtIn);
+  const wantTyped = ["key ↓ArrowLeft", "key ↑ArrowLeft", "key ↓ArrowRight+8", "key ↑ArrowRight+8", 'text "hello"', "key ↓x", 'text "x"', "key ↑x", 'compose "" 0', 'compose "に" 1', 'compose "にほ" 1', 'compose "日本" 2', 'text "日本"'];
+  check(JSON.stringify(typed) === JSON.stringify(wantTyped),
+    `KEYS, TEXT and an IME COMPOSITION reach the face through the leased editor: ${typed.join(" · ")}${JSON.stringify(typed) === JSON.stringify(wantTyped) ? "" : ` (want ${wantTyped.join(" · ")})`}`);
+  // 7f. Esc: the page's is the desk's — one press puts it down (the lease declines it); the terminal's is its face's, and Done puts it down
+  from = (await src(pg)).n;
+  const doneTip = await q("document.querySelector('[data-ice-selection-menu] [data-act=\"done\"]')?.getAttribute('title') ?? null");
+  await key("Escape", "Escape", 27);
+  const escDown = await landed();
+  const escSent = (await src(pg, from)).inputs.filter((i) => i.kind === "key").length;
+  await q(`window.__desk.open(${tm})`);
+  const termHeld = await settledInHand(tm);
+  const termLent = await until(() => q("document.activeElement?.hasAttribute('data-desk-editor') === true"), 2000);
+  const tFrom = (await src(tm)).n;
+  await key("Escape", "Escape", 27);
+  await frames(6);
+  const termStill = (await hand())?.entity === tm;
+  const termKeys = (await src(tm, tFrom)).inputs.filter((i) => i.kind === "key").map(fmtIn);
+  const termTip = await q("document.querySelector('[data-ice-selection-menu] [data-act=\"done\"]')?.getAttribute('title') ?? null");
+  await q("document.querySelector('[data-ice-selection-menu] [data-act=\"done\"]')?.click()");
+  const doneDown = await landed();
+  check(escDown && escSent === 0 && doneTip === "Done (Esc)" && termHeld && termLent === true && termStill && JSON.stringify(termKeys) === JSON.stringify(["key ↓Escape", "key ↑Escape"]) && termTip === "Done" && doneDown,
+    `ESC puts the page down in ONE press (put down ${escDown}, the face sent ${escSent} keys; Done's tip "${doneTip}"); the TERMINAL's Esc is its face's (open.escape "kind": ${termKeys.join(" · ")}, still in hand ${termStill}; Done's tip "${termTip}") — and Done puts it down (${doneDown})`);
+  // 7g. THE COST of a held face playing at 60: the hand slot and its composites — the desk copy behind stands (never remade), one frame
+  //     a take; the hand's frame timed drained (holdCost's `hand`: the hand over the standing copy, drawn in full), the loop's main thread
+  await q(`window.__desk.open(${pg})`);
+  await settledInHand(pg);
+  await settle();
+  const costRead = "(() => { const h = window.__desk.handle; return { copies: window.__desk.holdCopies(), perf: h.perf(), redraws: h.redraws() }; })()";
+  const c0 = await q(costRead);
+  const k0 = (await src(pg)).takes;
+  await q("window.__deskRig.live.play(60)");
+  await sleep(2000);
+  await q("window.__deskRig.live.hold()");
+  await settle();
+  const c1 = await q(costRead);
+  const taken = (await src(pg)).takes - k0;
+  const drawn = c1.redraws - c0.redraws;
+  const mainMs = (c1.perf.frameMs - c0.perf.frameMs) / Math.max(1, c1.perf.frames - c0.perf.frames);
+  const rounds = [];
+  for (let i = 0; i < 5; i++) rounds.push(await tab.evaluate("window.__desk.holdCost(40)", { awaitPromise: true, timeoutMs: 60000 }));
+  const handMs = minOf(rounds.map((r) => r.hand.ms));
+  const standMs = minOf(rounds.map((r) => r.standing.ms));
+  const load7 = hostLoad();
+  check(c1.copies === c0.copies && taken >= 30 && drawn >= taken && drawn <= taken + 6 && handMs < 1000 / 60,
+    `the COST of a held face PLAYING at 60 for 2 s: ${taken} frames taken, ${drawn} drawn (${(drawn / 2).toFixed(0)}/s), the desk copy behind remade ${c1.copies - c0.copies} times — each frame the hand slot and its composites alone: ${handMs.toFixed(2)} ms drawn in full on the GPU (drained; median ${median(rounds.map((r) => r.hand.ms)).toFixed(2)}), ${standMs.toFixed(2)} ms standing, ${mainMs.toFixed(2)} ms of the loop's main thread a frame · load ${load7}`);
+  await q("window.__desk.putDown()");
+  await landed();
+  await settle();
+  }
+
+  // ---- 8. no page errors
   logs.push(...(await faultsOf(tab)));   // the faults the engine CONTAINED — a skipped frame is an error too (D7)
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
   check(logs.length === 0, "no page errors, no contained faults");

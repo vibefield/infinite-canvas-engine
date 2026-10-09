@@ -6,11 +6,19 @@
 // (`createLiveTexture` on the desk's device, from `deskLayer({ onDevice })`, labelled `rig/live <key>`: the memory ledger shows it
 // under `rig`). Every demand the kind sends is logged, so the rig holds it change-only. Never the product's: the product page never
 // loads src/rig/.
+// M24 LT2: each frame is a fake PAGE of `RIG_LIVE_LOGICAL` CSS px drawn at 2× — presented with its logical size, so the kind maps the
+// hand's point into the page's coordinates (`LiveTexture.logical`); the page has a LINK (`RIG_LIVE_LINK`) whose cursor is `pointer` —
+// said in the face's info at the last point it was told of, an info change being an arrival — and the source RECORDS every input
+// (`LiveInput`) it is sent, for rig:live to read.
 
-import { createLiveTexture, type LiveDemand, type LiveFace, type LiveSources, type LiveWriter } from "@ice/desk/kit";
+import { createLiveTexture, type LiveDemand, type LiveFace, type LiveInput, type LiveSources, type LiveWriter } from "@ice/desk/kit";
 
 /** The frame size every rig face is drawn at (texels): its level 0. */
 export const RIG_LIVE_SIZE = { width: 512, height: 320 } as const;
+/** The frame's LOGICAL size — its page's CSS viewport, the texels at 2× (M24 LT2): what each present says (`LiveTexture.logical`). */
+export const RIG_LIVE_LOGICAL = { width: 256, height: 160 } as const;
+/** The page's LINK, in its logical px: over it the page's cursor is `pointer` (M24 LT2 — the kind's `open.cursor` reads `LiveInfo.cursor`). */
+export const RIG_LIVE_LINK = { x: 12, y: 108, width: 112, height: 28 } as const;
 
 /** The ground colour of frame `n` — distinct from one frame to the next, so a capture says which one is shown (sRGB). */
 export const rigFrameColour = (n: number): readonly [number, number, number] => [(40 + n * 67) % 256, (90 + n * 131) % 256, (160 + n * 29) % 256];
@@ -29,8 +37,11 @@ export interface RigLiveFaceState {
   readonly shown: number;
   readonly demands: readonly LiveDemand[];
   readonly closed: boolean;
-  /** Its texture as the kind reads it: revision, epoch, bytes (undefined before the first take). */
-  readonly texture?: { readonly revision: number; readonly epoch: number; readonly bytes: number; readonly width: number; readonly height: number };
+  /** Every input the face was sent, in order (M24 LT2), and the cursor its page shows at the last point it was told of. */
+  readonly inputs: readonly LiveInput[];
+  readonly cursor: string | null;
+  /** Its texture as the kind reads it: revision, epoch, bytes, its logical size (undefined before the first take). */
+  readonly texture?: { readonly revision: number; readonly epoch: number; readonly bytes: number; readonly width: number; readonly height: number; readonly logical: readonly [number, number] };
 }
 
 export interface RigLive {
@@ -62,6 +73,8 @@ interface Face {
   takes: number;
   readonly demands: LiveDemand[];
   closed: boolean;
+  readonly inputs: LiveInput[];
+  cursor: string | undefined;
 }
 
 /** The frame's other inks — the fake page's content, numbers as its grounds are (sRGB; never a desk colour: those are the theme's). */
@@ -85,6 +98,10 @@ function draw(f: Face, n: number): void {
   f.g.fillText(String(n), 24, 96);
   f.g.font = "20px monospace";
   f.g.fillText(f.key, 24, 136);
+  // the page's LINK (M24 LT2): its word, underlined — where the page's cursor is `pointer`
+  const k = w / RIG_LIVE_LOGICAL.width;
+  f.g.fillText("a link", (RIG_LIVE_LINK.x + 4) * k, (RIG_LIVE_LINK.y + 20) * k);
+  f.g.fillRect(RIG_LIVE_LINK.x * k, (RIG_LIVE_LINK.y + RIG_LIVE_LINK.height - 3) * k, RIG_LIVE_LINK.width * k, 2 * k);
   f.frame = n;
   f.pending = true;
 }
@@ -110,7 +127,7 @@ export function createRigLive(): RigLive {
       const canvas = new OffscreenCanvas(RIG_LIVE_SIZE.width, RIG_LIVE_SIZE.height);
       const g = canvas.getContext("2d");
       if (g === null) throw new Error("rig live: no 2D context on an OffscreenCanvas");
-      const f: Face = { key, spec, arrived, canvas, g, writer: undefined, frame: -1, shown: -1, pending: false, arrivals: 0, asked: 0, takes: 0, demands: [], closed: false };
+      const f: Face = { key, spec, arrived, canvas, g, writer: undefined, frame: -1, shown: -1, pending: false, arrivals: 0, asked: 0, takes: 0, demands: [], closed: false, inputs: [], cursor: undefined };
       faces.set(key, f);
       draw(f, 0);   // the first take lands it — nothing arrives for frame 0
       const face: LiveFace = {
@@ -120,15 +137,26 @@ export function createRigLive(): RigLive {
           f.asked += 1;
           if (f.closed || !f.pending || gpu === undefined) return false;
           f.writer ??= createLiveTexture(gpu, { label: `rig/live ${key}`, width: RIG_LIVE_SIZE.width, height: RIG_LIVE_SIZE.height });
-          f.writer.present(f.canvas);   // ONE copy into level 0
+          f.writer.present(f.canvas, undefined, [RIG_LIVE_LOGICAL.width, RIG_LIVE_LOGICAL.height]);   // ONE copy into level 0, the page's logical size said
           f.pending = false;
           f.shown = f.frame;
           f.takes += 1;
           return true;
         },
         state: () => (f.closed ? { is: "closed" } : f.shown < 0 ? { is: "starting" } : { is: "live" }),
-        info: () => ({ title: `rig ${key}`, extra: { frame: f.shown } }),
+        info: () => ({ title: `rig ${key}`, ...(f.cursor !== undefined ? { cursor: f.cursor } : {}), extra: { frame: f.shown } }),
         demand(d) { f.demands.push(d); },
+        // the page's input (M24 LT2): recorded; a point over the link moves the page's cursor — an info change, so it ARRIVES
+        input(e) {
+          if (f.closed) return;
+          f.inputs.push(e);
+          if (e.kind !== "pointer" && e.kind !== "wheel") return;
+          const L = RIG_LIVE_LINK;
+          const cursor = e.x >= L.x && e.x < L.x + L.width && e.y >= L.y && e.y < L.y + L.height ? "pointer" : undefined;
+          if (cursor === f.cursor) return;
+          f.cursor = cursor;
+          f.arrived();
+        },
         close() {
           if (f.closed) return;
           f.closed = true;
@@ -155,7 +183,8 @@ export function createRigLive(): RigLive {
       const t = f.writer?.face;
       return {
         key: f.key, spec: f.spec, arrivals: f.arrivals, asked: f.asked, takes: f.takes, frame: f.frame, shown: f.shown, demands: [...f.demands], closed: f.closed,
-        ...(t !== undefined ? { texture: { revision: t.revision, epoch: t.epoch, bytes: t.bytes, width: t.width, height: t.height } } : {}),
+        inputs: [...f.inputs], cursor: f.cursor ?? null,
+        ...(t !== undefined ? { texture: { revision: t.revision, epoch: t.epoch, bytes: t.bytes, width: t.width, height: t.height, logical: t.logical } } : {}),
       };
     }),
   };
