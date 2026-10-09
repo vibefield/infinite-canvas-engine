@@ -16,7 +16,8 @@
     "test": "vitest run",
     "gen:shaders": "node tools/wgsl-to-ts.mjs",
     "gen:noise": "node tools/noise-to-ts.mjs",
-    "gen:check": "node tools/wgsl-to-ts.mjs --check && node tools/noise-to-ts.mjs --check"
+    "gen:check": "node tools/wgsl-to-ts.mjs --check && node tools/noise-to-ts.mjs --check",
+    "dawn": "vitest run --config vitest.dawn.config.ts"
   },
   "dependencies": {
     "@ice/core": "workspace:*",
@@ -24,6 +25,7 @@
   },
   "devDependencies": {
     "@webgpu/types": "^0.1.72",
-    "vitest": "^3"
+    "vitest": "^3",
+    "webgpu": "0.4.0"
   }
 }
