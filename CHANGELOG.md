@@ -6,6 +6,77 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+**M24 — the live face (design-019, PROPOSAL rev 1 — VibeField's PORTALS seam).** A kind's face may show a surface that lives outside
+the world — a web page, a captured window, a simulator's screen — as a texture on the desk's device that the HOST fills and the kind
+samples; nothing about a source enters the desk. LT1 lands the texture, the source a host lends, the sight and the three doors a live
+kind is handed; the hand's input is LT2's, the render half's containment LT3's. Additive: nothing of 0.15.0's surface moves.
+
+### Added
+
+<!-- M24 LT1 — the live texture, the source, the sight (design-019 §3.1–§3.5, §9; 2026-10-09) -->
+- **THE LIVE TEXTURE — `createLiveTexture(device, { label, width, height, format?, mips? }) → LiveWriter`** (`@vibecook/ice/desk/kit`,
+  design-019 §3.1; `LiveTextureOptions`): the HOST's writer of one stable texture on the desk's device (`deskLayer({ onDevice })`) —
+  `rgba8unorm-srgb` with a mip chain by default (`LiveFormat`: or `rgba8unorm`; `mips: false`, level 0 alone), labelled by the caller
+  (`<kind>/live <key>` by convention, so the memory ledger groups it under the kind). Every present is ONE copy into level 0 and moves
+  `revision`: `present(source, rect?)` from a `LiveImage` (`VideoFrame`, `ImageBitmap`, `OffscreenCanvas`, a canvas, `ImageData` —
+  `copyExternalImageToTexture`, from `rect`, a `LiveRect` in the source's pixels: a frame's `visibleRect`), `presentBytes(bytes, width,
+  height)` (raw RGBA8 rows — Node, Dawn, tests, stills), `presentTexture(texture, rect?)` (a texture already on the device, a device
+  copy in a submit of its own). A source of another size makes a new texture first (`resize` — `epoch` moves, the old one destroyed).
+  A `VideoFrame` is CLOSED by the writer once its copy is asked, whatever became of the copy (design-013 B6's law: a retained frame
+  starves its producer). The reader, `LiveTexture` (`width`, `height`, `format`, `revision`, `epoch`, `bytes` — every level, the kit's
+  `chainBytes` — `view()`), makes its mips with `prepare(encoder, upTo)`: INTO the frame's encoder (never a submit of its own), as deep
+  as asked, once per revision — a second call at the same revision and depth records nothing, a deeper one only the levels still
+  missing; the levels past the reach hold the last mips made. `liveDepth(face, px)` says how deep a face drawn at `px` device px is read.
+- **THE SOURCE A HOST LENDS — `LIVE`** (design-019 §3.2; `service(LIVE, sources)` in `deskLayer({ services })`): `LiveSources.open(key,
+  spec, arrived) → LiveFace` — a face per object, by its durable key (`KindHost.keyOf`), on a source the host understands (`spec` is
+  the host's contract); `arrived` is called outside a frame when something new is ready. `LiveFace`: `key`, `texture()` (undefined
+  before the first frame and after an eviction — the kind draws its still or its film), `take()` (the host copies the NEWEST arrival
+  once; true when the look changed — a kind takes once at the open, then whenever an arrival woke it), `state()` (`LiveState`: starting,
+  live, paused, closed, or failed with its reason and a retry), `info()` (`LiveInfo`: title, address, loading, back, forward, the
+  cursor, a degraded badge, the host's `extra`), `demand(d)` (`LiveDemand`: mode, fps, raster, viewport, interactive — the kind's law
+  over what it sees, change-only), `input?` (`LiveInput`, the face's own coordinates — declared now, routed by LT2), `close()`.
+- **THE SIGHT — `createSight(frames?) → Sight`** (design-019 §3.4): where a kind's faces were drawn, folded into one fact per entity
+  per frame — `saw(e, slot, face)` from a pass's prepare (the face's rect through the slot's view into device px), `step()` in the tick
+  (the entities whose `Seen` moved: `seen`, `px` — the largest extent drawn — and `held`), `of(e)`, `owed()` (a frame was drawn since
+  the last step: the kind is due now), `forget(e)`. The frame's and the hand's renders count; the desk COPY behind a carried object and
+  a CAPTURE do not — a face behind the hand reads unseen and rests on its last frame (§6, a policy). `frames` is the desk's count of
+  frames drawn (`KindHost.frames`): a step after no new frame moves nothing, one after a frame that did not prepare the kind (culled)
+  reads it unseen, and prepares outside the count (an instrument's render) are dropped.
+- **A STILL'S SOURCE — `stillLive(device, frames) → LiveSources`** (design-019 §9; `LiveStill`): committed bytes for a still
+  (`createStill({ services: [service(LIVE, stillLive(device, …))] })`) and the oracle — every face's first take presents its still
+  through `presentBytes` (labelled `live/still <key>`) and answers true once; `frames` is a record by key (read when a face opens, so a
+  stage may fill it with the keys its spawns were given — a still's document mints its own) or a function of the key and the host's
+  spec; a key with none is `starting` (the kind draws its film); a key opened twice while open throws.
+- **`mipsInto(device, encoder, texture, from, to)`** (`/desk/kit`, design-019 §3.1): a chain's levels `from` … `to` made into the
+  caller's encoder, each from the level above, the views and bind groups kept per texture (made once, never per call). The device is
+  its first argument — a WebGPU encoder and texture carry none. `generateMips` keeps its own-submit form, its calls unchanged.
+- **`KindHost.redraw()`** (design-019 §3.3): the next frame encoded again, NO record remade — what a kind asks when a face took a frame
+  (its tick then answers false; true would remake every record of the kind) — waking a sleeping loop (the reflector dirtied as a
+  driver's and a DOM half's `wake` dirty it). A still's does nothing (its one frame follows its one tick).
+- **`KindHost.keyOf(e)`** (design-019 §3.5): the object's DURABLE key — strata's `DurableStore.keyOf` through the document the host
+  lends (`deskLayer({ docs })`; a still's own): minted once per durable entity (`<peer>-<n>`, a peer's counter resuming past its own),
+  carried in the document, so the same on every peer and across a reload; undefined for a runtime-only entity and with no document.
+- **`KindHost.frames()`** (design-019 §3.4, a correction the build made — see M24 in docs/implementation-plan.md): the desk's count of
+  frames drawn (`DeskLayerHandle.redraws()`), the sight's frame boundary — a kind is ticked on steps that draw nothing, and a kind with
+  no records in a slot is never prepared, so "not asked" means "not drawn" only when a frame was.
+- **`kitWgsl`'s `"mat"`** (`KitWgslName`): the light piece by the mat's own name (the mat's module IS `light`), as `lamp`, `gobo`,
+  `night` and `noise` are.
+- **The light pass, in the contract's words** (`desk/src/kind.ts`): a kind's multiplicative light pipeline multiplies whatever lies
+  below its run, and lights nothing in the hand target (cleared to 0, premultiplied); the memory ledger's doc says it sees no
+  `VideoFrame` and no producer's buffers (`gpu-memory.ts`).
+- **Witnesses.** Node units: the writer, `mipsInto`, `liveDepth` and `stillLive` on a recording device (`test/live.test.ts`), the
+  sight and its frame boundary (`test/live-sight.test.ts`), a probe kind on a desk layer over a fake device — one redraw draws ONE frame
+  and remakes NO record, an arrival likewise, three coalesce, the restless contrast; `keyOf` across a reload and a peer's update;
+  `frames`; the sight culled by a pan (`test/kind-live.test.ts`). On Dawn — `pnpm --filter ./packages/desk dawn`, a new step of the
+  landing gate right after the oracle (`@ice/desk` gains `webgpu` 0.4.0 as a dev dependency): level 0 read back byte for byte, the mips
+  as deep as asked and filtered in linear light (a red|blue face's last level 188/0/188), a device copy from a rect, the label in the
+  ledger; and a live kind's still from committed bytes through `createStill` + `stillLive` — the face's pixels by colour count and
+  contrast, at 1:1 and minified through its mips, its film with no still, the ledger at zero (`test/live.dawn.test.ts`). In Chrome —
+  `rig:live`, the gate's twenty-first rig (`rig.html?live`: a rig live kind and a rig source over OffscreenCanvases, never public):
+  the face opened by its durable key; a quiet source → zero renders in 1.2 s; one arrival → exactly one frame and no record remade;
+  three coalesce; a playing source a frame per take; the sight's px through a zoom, unseen culled and behind the hand, held in hand,
+  seen inside a mini mat's portal; the ledger's `rig/live` lines; the demand change-only.
+
 ## [0.15.0] — 2026-10-08
 
 **VibeField's desk migration, released on `latest`.** Seven prereleases on `next` carried these asks while VibeField's

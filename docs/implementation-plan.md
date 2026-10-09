@@ -1971,6 +1971,76 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   lends its own. Witnesses: desk/test/still.test.ts (a writing stub on the fake raster) and the desk clock's Dawn still unchanged
   (once at the build, a throwaway Dawn probe of the real note: ink with a fixed raster lent, none without — not kept).
 
+## M24 — The live face (design-019) — **LT1 BUILT 2026-10-09 on branch `portals/lt1`** (graded by the orchestrator's own `ci` + `gate:landing`; cut as `0.16.0-portals.1` on `next` for VibeField's exact pin — the cut and the publish are not the builder's)
+
+VibeField's PORTALS program (`vibe-field/draft/thinking-portals.md`; James, 2026-10-09: "let's start working on this browser widget,
+and make it into a new plugin, and also work on the track of PORTALS, ICE's live-texture seam") asks the seam
+`docs/downstream-petitions.md` named and did not file: a kind's face fed by a host's source. `draft/design-019-the-live-face.md`
+(PROPOSAL rev 1, not locked) is the design; its evidence is four read-only maps in `vibe-field/draft/portals-maps/` (p2 maps this repo,
+file:line). Three slices, each cut as `0.16.0-portals.N` on `next`; `0.16.0` on `latest` at VibeField's lane's landing.
+
+- **LT1 — the live texture, the source, the sight** (`0.16.0-portals.1`; brief `vibe-field/draft/portals-maps/briefs/LT1-the-live-texture.md`):
+  - **kit/live.ts** (`@vibecook/ice/desk/kit`): `createLiveTexture` → `LiveWriter` and its reader `LiveTexture` (one copy into level 0
+    per present — a `VideoFrame` closed by the writer after its copy; a source of another size a new texture, `epoch` moves; `revision`
+    per present; `bytes` every level; `prepare(encoder, upTo)` — the mips into the frame's encoder, once per revision, only the missing
+    levels); `liveDepth`; the contract `LIVE` / `LiveSources` / `LiveFace` / `LiveState` / `LiveInfo` / `LiveDemand` / `LiveInput`
+    (declared; LT2 routes it); `createSight` → `Sight`, `Seen`; `stillLive` → a `LiveSources` of committed bytes. **kit/mips.ts**:
+    `mipsInto(device, encoder, texture, from, to)` — views and groups kept per texture; `generateMips` unchanged in its calls.
+  - **The desk's doors** (`KindHost`): `redraw()` — the frame drawn again, no record remade (`compose.wake("ink")`, as the driver's and
+    the DOM half's `wake` do; a no-op in `createStill`); `keyOf(e)` — the object's durable key (below); `frames()` — the desk's count of
+    frames drawn (below).
+  - **`keyOf`'s identity**: strata's PUBLIC `DurableStore.keyOf(e): EntityKey | undefined` (strata §14.3,
+    `strata-ecs/src/durable/durable-store.ts:448-451`; in 0.13.0's shipped d.ts), read through the session the host lends
+    (`deskLayer({ docs })` → `docs.current()?.store`). A key is minted ONCE per durable entity by the peer whose transaction made it —
+    `${peerId}-${counter}`, the counter resumed past that peer's own keys at construction so a reloaded document never re-mints one
+    (`durable-store.ts:219-222, 243-245`; `transaction.ts:244` `createPair`) — and is the entity's key in the document itself, so every
+    peer projects the entity under it and a reload binds it to a fresh runtime handle (`substrate/projector.ts` `resolveByKey`): the
+    same on every peer and across reloads, where the `Entity` is neither. Undefined for a runtime-only entity (a tray's insert ghost) and
+    with no document. ICE core already keys presence, behaviours and diagnostics by it (`facade/create-canvas-engine.ts:1262`,
+    `presence/publish.ts:53-54`). No strata petition was needed.
+  - **A design correction — the sight's frame boundary (`KindHost.frames`).** design-019 §3.4 has the sight fold "an entity not `saw`n
+    by the next step is `seen: false`". Against the code that is wrong: a kind with no records in a slot is never prepared
+    (`desk/src/ground.ts:625-634`), and a kind is TICKED on steps that draw nothing — every input step ticks every kind
+    (`desk/src/host/layer.ts` the flush: `timeAlone` is false on an input step) while the reflector draws only on dirt — so two input
+    steps in a row (a pointer over the bare mat) would read every face unseen and pause it. The sight needs the desk's count of frames
+    drawn: a step after no new frame moves nothing; one after a frame that did not prepare the kind reads it unseen (`frames` is the
+    reflector's `redraws()`; prepares made while the count already reads n — an instrument's render: the cost rig's batches, the
+    profiler's ablation — are no frame's and are dropped). A kind using the sight is due NOW after a frame it has not stepped over
+    (`Sight.owed()`), so a face culled by the last frame of a pan is told before the loop sleeps. Added as `KindHost.frames` beside the
+    brief's two doors — said here because the brief named only `redraw` and `keyOf`.
+  - **The hand and the capture (the photo's `keepSlotted` lesson, K9 R4)**: the sight counts the frame's renders and the HAND's
+    (`held`), never the desk COPY behind a carried object (prepared once per stamp — design-019 §6: a face behind the hand rests on its
+    last frame and reads unseen; its law pauses it) nor a CAPTURE (the last frame's inputs drawn once more, outside any frame). So no
+    re-ask is needed: under a carry the hand's prepare — the only prepare of each held frame — tells the held face, and every other face
+    reads unseen BY THE POLICY, not by the gap. The face's texture still stands for the copy: its mips are made by whichever prepare asks
+    (the copy's own, once per stamp), and nothing evicts a face's texture but its kind's budget law (§7; the rig kind charges none).
+  - **A still's live face**: `createStill` (design-019 §9) opens a face by the still's own document's key; a kind TAKES once at its
+    open (the face's contract says so), so a still — ticked once BEFORE its build — draws the committed bytes `stillLive` presents.
+  - The kit's `"mat"` alias for the `light` piece (p1 row 5); `kind.ts` states the light pass (a kind's multiplicative light multiplies
+    what lies below its run; it lights nothing in the hand target); `gpu-memory.ts` says the ledger sees no `VideoFrame` and no
+    producer's buffers.
+  - **Exit** — `portals/lt1` = `1030def` + the slice's commits, each green; `pnpm run ci` green; `pnpm run gate:landing` green (the
+    oracle's 116 scenes unchanged — no new scene; the desk's Dawn units a new step after it; twenty-one rigs; pack:audit; dts:check).
+    **Witnesses**: Node units — the writer, `mipsInto`, `liveDepth`, `stillLive` on a recording device (`packages/desk/test/live.test.ts`),
+    the sight and its frame boundary (`live-sight.test.ts`), a probe kind on a desk layer over a fake device — one redraw ONE frame and NO
+    record remade, an arrival likewise, three coalesce, the restless contrast; `keyOf` across a reload and a peer's update; `frames`; the
+    sight culled by a pan and back (`kind-live.test.ts`); the kit's `mat` (`packages/objects/test/kit-wgsl.test.ts`). On Dawn
+    (`pnpm --filter ./packages/desk dawn`, `test/live.dawn.test.ts`; `@ice/desk` gains `webgpu` 0.4.0 as a dev dependency) — level 0 read
+    back byte for byte; the mips as deep as asked, the levels past the reach the last revision's, filtered in linear light (a red|blue
+    face's last level 188/0/188, never 128); a device copy from a rect; the caller's label in the ledger, gone once destroyed; a LIVE
+    KIND's still from committed bytes (`test/sheet.ts`, a tiny kind of the tests' own) — its pixels by colour count and contrast, never a
+    hash: at 1:1 every face pixel its band's colour in order, minified through its mips each band's interior its colour, by a record the
+    stage fills with its spawn's key and by the host's spec, nothing past the face moved, its film with no still, the same still twice
+    the same bytes, the ledger at zero. In Chrome — **`rig:live`** (the twenty-first rig; `rig.html?live`: the rig live kind
+    `apps/desk/src/rig/live-kind.ts` + `live-pass.ts`, a lit sheet sampling its face through a trilinear sampler with its mips as deep as
+    each slot reads it, and the rig source `live-source.ts` over OffscreenCanvases the rig ticks or holds still, lent through
+    `deskLayer({ services })` with the layer's `onDevice` — never public): the face opened by its DURABLE key and frame 0 shown at the open (the face's centre 40,90,160 — frame 0's ground; the gobo off, so the sheet shows its face's own pixels); a QUIET source → 0 renders in 1.2 s (0 submits, 0 engine steps but a registered time's, the kind ticked 0 times); ONE ARRIVAL → 1 frame and 1 submit, NO record remade (the builder's `stats().totals.recorded` +0, `.restless` +0, the kind's record store `written` +0) while the texture's revision moves 1 → 2 and the pixels show frame 1 (107,221,189); three arrivals in one task → 1 frame, 1 take of the newest; a source playing 30 a second for 1 s → 30 arrivals, 30 takes, 30 frames, 0 records remade; the sight's px 640×400 → 320×200 through zoom 1 → 0.5 (dpr 2; the minified face still its frame's colour — its level 1 made into the frame's encoder); culled by a pan → unseen, its source told paused; a whiteboard held → the hold takes the face through ONE move, straight to unseen (the desk copy, prepared once at half the dpr, is no frame the eye sees), seen again put down; the live object held → seen, held, 1920×1200 px, its source told 60 and interactive; laid inside a mini mat → drawn in its live inside alone (presence 1; no rank in the root slot), seen at 230×144 px, unseen at presence 0; the ledger (`gpuLedger`) — two `rig/live <key>` lines of 853 KiB, under `rig` 1,747,608 B, the faces' own bytes; the demand CHANGE-ONLY — 9 demands to the first face over the whole rig, none twice in a row, none sent by an arrival or while it played (the sight moved 60 times over both faces, its law sent 11); no page errors (the builder's runs, 2026-10-09; the grade's numbers are in VibeField's `draft/portals-maps/landing-log.md`). 12 mutations through a restoring driver, every one red.
+  - **Not here** (the brief's §10): the hand's input (`HeldPress.count`, `OpenBinding.wheel/cursor/escape`, the lease's composition,
+    `KeyboardExclusive` retired — LT2); the render half contained (LT3); any VibeField or strata edit; an oracle scene of a live kind (the
+    brief's witness is the Dawn still by colour count; `shas.json` untouched); a budget law in the rig kind (§7 is the browser kind's).
+- **LT2 — the hand's input** (`0.16.0-portals.2`): owed.
+- **LT3 — the render half contained** (`0.16.0-portals.3`): owed.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field
