@@ -26,6 +26,8 @@ export { NO_DOCS, type TypingDocs, type WritableSession, writable } from "./docs
 // THE KIND BOUNDARY (petition I24): one kind's fault is that kind's — the faults a layer keeps and says (`DeskLayerStatus.faults`),
 // the ladder's numbers, `due().kinds`' word for a missing kind — and the missing face both hosts draw what nothing can draw with
 export { createKindFaults, faultText, KIND_MISSING, KIND_STRIKES, type KindFault, type KindFaults } from "./faults";
+// …and the render half's (M24 LT3, ground.ts `RenderBoundary`): the frame's encoder a kind is handed, what its throw left open closed
+export type { EncoderGuard, GuardMark } from "./encoder-guard";
 export { MISSING_KIND, MISSING_OBJECT } from "./missing/object";
 export { isMissingRecord, missingFace, type MissingRecord } from "./missing/layout";
 export * from "./theme";

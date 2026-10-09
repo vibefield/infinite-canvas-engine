@@ -194,7 +194,9 @@ export interface MatPin extends AmbientPin {
  *
  * `faults` (petition I24) — the KINDS this desk draws as MISSING, each its name and why, in the order they went: refused at create (a
  * pass that would not compile, a pipeline that failed validation) or quarantined at three strikes (a `resolve`, `record`, `chip`, `hit`,
- * `tick` or `due` that threw — src/faults.ts). Absent while none is. One kind's fault is that kind's: the state does not move for it
+ * `tick` or `due` that threw; in hand a `held` or `cursor`; the render half's calls — a pass's `prepare`, `drawRange` and the rest —
+ * a driver's `follow`, a desk state's `forget` or `keeps`, and a GPU error raised in a kind's `prepare` — src/faults.ts, ground.ts
+ * `RenderBoundary`; a strike loses no frame). Absent while none is. One kind's fault is that kind's: the state does not move for it
  * (`ready` stays `ready`), its objects wear the desk's missing face, nothing of it is called again. Each is said ONCE — the status
  * moves when a kind goes missing (`onStatus` hears it; a kind refused at the boot rides the boot's own `ready`), never again for it.
  */

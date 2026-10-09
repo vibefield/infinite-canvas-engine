@@ -384,7 +384,7 @@ try {
   // 7h. THE BOUNDARY'S PRICE (LT3): the frame recorded 100 times back to back (the CPU of recording it — the GPU's share is the
   //     frame's, unchanged) in four arms, in turn and drained between — NONE (the ground's boundary taken off), CONTAINED (every kind's
   //     call in its try, the frame's encoder guarded, no GPU scope), SLOT (one GPU error scope over each slot's kinds: the product's),
-  //     KIND (one over each kind's: what the desk keeps for a while after a slot's caught an error no one kind owns) — the minima of 7
+  //     KIND (one over each kind's: what the desk keeps for a while after a slot's caught an error no one kind owns) — the minima of 11
   //     rounds, the held frame and then the rest; the scopes counted in one frame of SLOT and of KIND
   const price = async () => q(`(async () => {
     const h = window.__desk.handle; const g = h.ground(); const root = g.root; const b = root.boundary; const d = h.device(); const inp = h.lastInputs();
@@ -393,7 +393,7 @@ try {
     const loop = (arm) => { root.boundary = arm === "none" ? undefined : b; b.scopes = arm === "none" || arm === "contained" ? "off" : arm; const t0 = performance.now(); for (let i = 0; i < 100; i++) g.render(inp); return ((performance.now() - t0) / 100) * 1000; };
     const arms = ["none", "contained", "slot", "kind"];
     const t = { none: [], contained: [], slot: [], kind: [] };
-    for (let r = 0; r < 7; r++) for (let a = 0; a < 4; a++) { const arm = arms[(a + r) % 4]; t[arm].push(loop(arm)); await d.queue.onSubmittedWorkDone(); }
+    for (let r = 0; r < 11; r++) for (let a = 0; a < 4; a++) { const arm = arms[(a + r) % 4]; t[arm].push(loop(arm)); await d.queue.onSubmittedWorkDone(); }
     root.boundary = b; b.scopes = "slot";
     return { scopes, none: Math.min(...t.none), contained: Math.min(...t.contained), slot: Math.min(...t.slot), kind: Math.min(...t.kind) };
   })()`);
@@ -405,7 +405,7 @@ try {
   const loadPrice = hostLoad();
   const priced = (p) => `${p.none.toFixed(1)} µs none; contained +${(p.contained - p.none).toFixed(1)}; the slot's scope${p.scopes.slot === 1 ? "" : "s"} (${p.scopes.slot}) +${(p.slot - p.contained).toFixed(1)}; each kind's (${p.scopes.kind}) +${(p.kind - p.contained).toFixed(1)}`;
   check(heldPrice.scopes.slot === 1 && restPrice.scopes.slot === 1 && restPrice.scopes.kind > 1 && heldPrice.slot - heldPrice.none < 25 && restPrice.slot - restPrice.none < 25,
-    `the BOUNDARY's price a frame (the frame recorded 100 times, the minima of 7): the held frame — ${priced(heldPrice)}; the rest frame — ${priced(restPrice)} · load ${loadPrice}`);
+    `the BOUNDARY's price a frame (the frame recorded 100 times, the minima of 11): the held frame — ${priced(heldPrice)}; the rest frame — ${priced(restPrice)} · load ${loadPrice}`);
   }
 
   // ---- 8. THE RENDER HALF CONTAINED (LT3): the fault door — each call in a page of its own, as a host's desk would meet it
