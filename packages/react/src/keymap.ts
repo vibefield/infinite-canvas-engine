@@ -8,7 +8,8 @@
  *   ⇧⌘Z / ⇧Ctrl-Z   → docs.redo
  *   ⌘D              → ops.duplicateSelection
  *   ⌘A              → ops.selectAll
- *   Esc             → closes the pegboard tray first (design-017 §4), else ops.cancelActiveGestures
+ *   Esc             → closes the pegboard tray first (design-017 §4), puts the object in hand down — unless its kind owns Esc
+ *                     (design-019 §5, M24 LT2: `open.escape: "kind"`, its type's `heldEscape`) — else ops.cancelActiveGestures
  *   Arrows          → nudge the selection ±1px (⇧ = ±10px) — ONE tx per press; a TAPED widget
  *                     never moves (design-015 §5.1 — `Locked`, D4a), its untaped companions do
  *   ⇧⌘L / ⇧Ctrl-L   → tape the selection down, or lift the tape when all of it is taped
@@ -33,8 +34,13 @@
  *     This gate runs BEFORE the editable gate on purpose (2026-08-09 review):
  *     a claim whose focus node is an editable proxy (the Ghosttea-style
  *     hidden textarea, design-007 §6) must still get the Escape release —
- *     editable-first would shadow it and silently turn every such widget
- *     into `keyboardEscape: "widget"`.
+ *     editable-first would shadow it and silently make every such claim
+ *     one that owns Escape. With an object IN HAND (design-019 §5, M24
+ *     LT2) the claim is its kind's lease on the desk's one editor — the
+ *     hand's keyboard: an Escape the lease declined releases it AND puts
+ *     the object down in the same press (a blur alone would leave it in
+ *     hand, deaf); a kind that owns Escape (`heldEscape: "kind"`) has it
+ *     left to its lease — no blur, no put-down.
  *  3. Editable target (input/textarea/select/contentEditable — the shared
  *     4-class predicate from @ice/dom) → ignored, so typing never triggers a
  *     shortcut. Kept narrow so UNDECLARED widgets behave exactly as before.
@@ -68,14 +74,27 @@ function openOrEnterSelected(engine: CanvasEngine): void {
 }
 
 /**
+ * Escape's owner IN HAND (design-019 §5, M24 LT2): the held object's type's `heldEscape` — `"desk"` unless its kind owns Esc (a
+ * terminal's source: `open.escape: "kind"`); undefined with nothing in hand.
+ */
+function heldEscape(engine: CanvasEngine): "desk" | "kind" | undefined {
+  const held = heldEntity(engine.world);
+  if (held === undefined) return undefined;
+  const typeId = engine.world.get(held, PrefabId)?.id;
+  return typeof typeId === "string" ? (engine.catalog.widget(typeId)?.heldEscape ?? "desk") : "desk";
+}
+
+/**
  * Esc (design-007 §3.3, design-015 §8 · §9, design-017 §4): the pegboard tray is closed first (K3 — the drawer is the nearest
- * thing to let go of); an object in hand is put down next (D4b — the object lands, still selected, so ⏎ opens it again); else a
- * live gesture is cancelled, as ever; with none to cancel, the current frame is left.
+ * thing to let go of); an object in hand is put down next (D4b — the object lands, still selected, so ⏎ opens it again) unless its
+ * kind owns Esc (M24 LT2 — then Done, a click off it or the pinch put it down, never this key); else a live gesture is cancelled,
+ * as ever; with none to cancel, the current frame is left.
  */
 function escapeOrExit(engine: CanvasEngine): void {
   const { world } = engine;
   if (trayOpen(world)) { closeTray(world); return; }
-  if (heldEntity(world) !== undefined) { engine.ops.putDown(); return; }
+  const hand = heldEscape(engine);
+  if (hand !== undefined) { if (hand === "desk") engine.ops.putDown(); return; }
   const gestureLive = world.firstOf(gestureActiveQ) !== undefined;
   if (!gestureLive && currentNavEntry(world) !== undefined) {
     engine.ops.exitContainer();
@@ -239,11 +258,16 @@ export function attachKeymap(
       // widget owns it. Everything else flows to the widget,
       // un-preventDefaulted.
       if (event.key === "Escape" && !claim.ownsEscape) {
+        // an object in hand whose kind owns Esc (M24 LT2): its lease declined it — the desk does nothing with it, not even a blur
+        const hand = heldEscape(engine);
+        if (hand === "kind") return;
         event.preventDefault();
         // SVG nodes are focusable too (tabindex) and are not HTMLElement —
         // the release must never eat Escape without actually blurring.
         const t = event.target;
         if (t instanceof HTMLElement || t instanceof SVGElement) t.blur();
+        // …and one in hand the desk lets go of on Esc: put down in the SAME press — its kind's lease is the hand's keyboard (M24 LT2)
+        if (hand === "desk") engine.ops.putDown();
       }
       return;
     }

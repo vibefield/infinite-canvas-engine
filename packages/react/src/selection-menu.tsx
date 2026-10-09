@@ -15,7 +15,7 @@
  *
  * `@ice/react` never imports the desk: the source is read structurally, as the ground layer is.
  */
-import { Locked, selectedEntities, type CanvasEngine } from "@ice/core";
+import { heldEntity, Locked, PrefabId, selectedEntities, type CanvasEngine } from "@ice/core";
 import { type ReactElement, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCanvasEngine } from "./engine-context";
 
@@ -409,7 +409,7 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
     );
   };
   const done = (
-    <button key="done" type="button" className="ice-sm-text" data-act="done" aria-label="Done" title="Done (Esc)" onClick={() => { setOpen(false); engine.ops.putDown(); }}>
+    <button key="done" type="button" className="ice-sm-text" data-act="done" aria-label="Done" title={escapeOwned(engine) ? "Done" : "Done (Esc)"} onClick={() => { setOpen(false); engine.ops.putDown(); }}>
       <Glyph glyph="check" />
       <span>Done</span>
     </button>
@@ -465,6 +465,13 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
       <style>{STYLE}</style>
     </div>
   );
+}
+
+/** The object in hand's kind owns Esc (design-019 §5, M24 LT2 — its type's `heldEscape`): Done's tip names no key then — Esc is the kind's. */
+function escapeOwned(engine: CanvasEngine): boolean {
+  const held = heldEntity(engine.world);
+  const typeId = held === undefined ? undefined : engine.world.get(held, PrefabId)?.id;
+  return typeof typeId === "string" && engine.catalog.widget(typeId)?.heldEscape === "kind";
 }
 
 /** The provider's engine when there is one (the menu may also be mounted outside an `EngineProvider` with `engine` given). */

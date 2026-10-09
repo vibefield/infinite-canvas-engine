@@ -58,6 +58,8 @@ defineWidget({
 });
 // …and an OPENABLE one: the hand's case of the inert desk (K9 S3's `unlessInert` test).
 defineWidget({ type: "rt:book", object: { name: "book" }, openable: true, defaultSize: { w: 200, h: 140 } });
+// …and one whose kind OWNS Esc in hand (design-019 §5, M24 LT2 — a terminal's face: `open.escape: "kind"`).
+defineWidget({ type: "rt:term", object: { name: "term" }, openable: true, heldEscape: "kind", defaultSize: { w: 200, h: 140 } });
 // …and one a TYPED canvas can place (K9 S8's tool-letter test: a typed engine wants an explicit widgets list).
 const PANBOX = defineWidget({ type: "rt:panbox", provides: ["widget"], defaultSize: { w: 10, h: 10 } });
 
@@ -746,7 +748,7 @@ describe("keymap standdown (design-007)", () => {
     expect(spy).toHaveBeenCalledTimes(1);
   });
 
-  it("keyboardEscape:'widget' passes even Escape through (vim-grade terminals)", () => {
+  it("a claim that OWNS Escape (`CLAIM_OWNS_ESCAPE`) receives even Escape (vim-grade terminals)", () => {
     const { engine } = makeEngine();
     const spy = vi.spyOn(engine.ops, "cancelActiveGestures");
     cleanups.push(attachKeymap(engine, window));
@@ -758,6 +760,50 @@ describe("keymap standdown (design-007)", () => {
     expect(esc.defaultPrevented).toBe(false); // the widget receives it
     expect(document.activeElement).toBe(node); // no engine release
     expect(spy).not.toHaveBeenCalled();
+  });
+
+  it("Esc IN HAND (design-019 §5, M24 LT2): puts the object down — with a claim focused (its kind's lease on the editor) in the SAME press, released too; a lease that takes Esc keeps it in hand; a kind that owns Esc is never put down by it, claim or none — not prevented, not blurred — and Done does", () => {
+    const { engine, step } = makeEngine();
+    const book = engine.ops.spawnWidget("rt:book", { x: 100, y: 100 });
+    const term = engine.ops.spawnWidget("rt:term", { x: 400, y: 100 });
+    step(2);
+    cleanups.push(attachKeymap(engine, window));
+    const esc = (target: EventTarget): KeyboardEvent => { const ev = new KeyboardEvent("keydown", { key: "Escape", bubbles: true, cancelable: true }); target.dispatchEvent(ev); return ev; };
+    // the desk's: one press, the claim released and the object put down
+    engine.ops.open(book);
+    step();
+    const node = claimedNode();
+    node.focus();
+    const first = esc(node);
+    expect(first.defaultPrevented).toBe(true);
+    expect(document.activeElement).not.toBe(node);
+    expect(heldEntity(engine.world)).toBeUndefined();
+    // a lease that TAKES Esc (prevented — the calendar's day line letting go of its days): the object stays in hand
+    engine.ops.open(book);
+    step();
+    node.focus();
+    const take = (ev: Event): void => { ev.preventDefault(); };
+    node.addEventListener("keydown", take);
+    esc(node);
+    expect(heldEntity(engine.world)).toBe(book);
+    node.removeEventListener("keydown", take);
+    // no claim: put down, as ever (the control)
+    node.blur();
+    esc(window);
+    expect(heldEntity(engine.world)).toBeUndefined();
+    // the kind's: never put down by Esc — focused or not; the event left to its lease, the focus kept
+    engine.ops.open(term);
+    step();
+    node.focus();
+    const owned = esc(node);
+    expect(owned.defaultPrevented).toBe(false);
+    expect(document.activeElement).toBe(node);
+    expect(heldEntity(engine.world)).toBe(term);
+    node.blur();
+    esc(window);
+    expect(heldEntity(engine.world)).toBe(term);
+    engine.ops.putDown();   // Done's op
+    expect(heldEntity(engine.world)).toBeUndefined();
   });
 
   it("Escape releases an EDITABLE focus proxy inside a claim (gate order — 2026-08-09 review fix)", () => {

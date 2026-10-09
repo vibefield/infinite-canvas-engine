@@ -17,6 +17,8 @@ import { attachKeymap, defaultSelectionActions, EngineProvider, placeSelectionMe
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
 const BOOK = defineWidget({ type: "hb:book", object: { name: "book" }, openable: true, defaultSize: { w: 180, h: 252 } });
+/** A face whose kind owns Esc in hand (design-019 §5, M24 LT2 — a terminal's: `open.escape: "kind"`). */
+const TERM = defineWidget({ type: "hb:term", object: { name: "term" }, openable: true, heldEscape: "kind", defaultSize: { w: 320, h: 200 } });
 const actions: string[] = [];
 const BOARD_TOOLS: readonly HeldToolDef[] = [
   { id: "marker:black", label: "Black marker", kind: "mode", keys: ["1"], hint: "1", glyph: "pen" },
@@ -52,11 +54,12 @@ function fakeSource(first: SelectionMenuAnchor): SelectionMenuSource & { set(a: 
 
 const SEND: SelectionAction = { id: "send", place: "lead", text: true, glyph: "agents", label: "Send to agent", run: () => {} };
 
-function mount(source: SelectionMenuSource): { engine: CanvasEngine; menu: () => HTMLElement; book: Entity; board: Entity } {
-  const engine = createCanvasEngine({ widgets: [BOOK, BOARD] });
+function mount(source: SelectionMenuSource): { engine: CanvasEngine; menu: () => HTMLElement; book: Entity; board: Entity; term: Entity } {
+  const engine = createCanvasEngine({ widgets: [BOOK, BOARD, TERM] });
   engine.docs.create();
   const book = engine.ops.spawnWidget("hb:book", { x: 100, y: 100, undoable: false });
   const board = engine.ops.spawnWidget("hb:board", { x: 400, y: 100, undoable: false });
+  const term = engine.ops.spawnWidget("hb:term", { x: 100, y: 500, undoable: false });
   engine.world.sync();
   const host = document.createElement("div");
   document.body.append(host);
@@ -67,7 +70,7 @@ function mount(source: SelectionMenuSource): { engine: CanvasEngine; menu: () =>
   });
   cleanups.push(() => { act(() => root?.unmount()); engine.dispose(); });
   const menu = (): HTMLElement => { const el = host.querySelector<HTMLElement>("[data-ice-selection-menu]"); if (el === null) throw new Error("no menu"); return el; };
-  return { engine, menu, book, board };
+  return { engine, menu, book, board, term };
 }
 
 /** The board's slots as the desk publishes them (its `HeldSlot`s): the bar's five — the wipe is keys-only — with the markers' swatches. */
@@ -126,6 +129,23 @@ describe("the held bar (design-015 §8)", () => {
     expect(engine.world.hasTag(book, Held)).toBe(true);
     act(() => { done?.click(); });
     expect(engine.world.hasTag(book, Held)).toBe(false);
+  });
+
+  it("Done's tip names Esc only where Esc puts the object down — not for a kind that owns Esc (M24 LT2), whose Done still puts it down", () => {
+    const source = fakeSource(anchorOf());
+    const { engine, menu, book, term } = mount(source);
+    engine.ops.open(book);
+    source.set(held());
+    expect(menu().querySelector('[data-act="done"]')?.getAttribute("title")).toBe("Done (Esc)");
+    engine.ops.putDown();
+    source.set(anchorOf());   // landed: the selection's bar
+    engine.ops.open(term);
+    engine.world.sync();   // as a frame would: the anchor is published after the step that moved the hand
+    source.set(held());
+    const done = menu().querySelector<HTMLButtonElement>('[data-act="done"]');
+    expect(done?.getAttribute("title")).toBe("Done");
+    act(() => { done?.click(); });
+    expect(engine.world.hasTag(term, Held)).toBe(false);
   });
 
   it("steps aside while the object flies home and comes back 200 ms after the landing; the travel's transition leaves after 340 ms", () => {
