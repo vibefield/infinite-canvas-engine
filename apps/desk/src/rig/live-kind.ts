@@ -22,6 +22,7 @@
 import type { Entity, WidgetType } from "@ice/core";
 import { CONTAINABLE, DESK_OBJECT, defineObject, type KindDriver, type KindDriverHost, type KindHost, type KindLocal, type ObjectContext, type ObjectDomHost, type ObjectKind } from "@ice/desk";
 import { createSight, type EditorLease, LIVE, type LiveDemand, type LiveFace, type LiveInput, type Seen, type Sight } from "@ice/desk/kit";
+import { rigFault } from "./live-fault";
 import { RigLivePass, type RigSheetRecord } from "./live-pass";
 import { RIG_LIVE_LOGICAL, RIG_LIVE_SIZE } from "./live-source";
 
@@ -88,7 +89,7 @@ export interface RigLiveLocal extends KindLocal {
 /** Inside the face's edge — the `live` part's extent, in the held extent's units (centred). */
 const onFace = (size: readonly [number, number], x: number, y: number): boolean => Math.abs(x) <= size[0] / 2 - RIG_LIVE_EDGE && Math.abs(y) <= size[1] / 2 - RIG_LIVE_EDGE;
 
-function createRigLiveLocal(host: KindHost): RigLiveLocal {
+function createRigLiveLocal(host: KindHost, kind: string): RigLiveLocal {
   const live = host.use?.(LIVE);
   const sight = createSight(host.frames);
   const faces = new Map<Entity, { readonly key: string; readonly face: LiveFace; demand: LiveDemand | undefined; readonly history: Seen[] }>();
@@ -150,6 +151,7 @@ function createRigLiveLocal(host: KindHost): RigLiveLocal {
     // THE HAND'S INPUT (M24 LT2): what lands on the `live` part — a press, its moves and its release wherever they go, the hover over
     // it, the wheel over it — sent to the face in the DISPLAYED frame's logical coordinates; the edge's presses are the hand's
     held(e, events) {
+      rigFault(kind, "held");   // the fault door (M24 LT3)
       const size = sizes.get(e);
       const face = faces.get(e)?.face;
       if (size === undefined || face === undefined) return;
@@ -192,7 +194,7 @@ function rigLiveKindOf(name: string, esc: "desk" | "kind"): ObjectKind<RigSheetG
     name,
     stratum: "things",
     reach: 2,
-    create: (device, format, mat) => RigLivePass.create(device, format, mat),
+    create: (device, format, mat) => RigLivePass.create(device, format, mat, name),
     resolve: (ctx: ObjectContext): RigSheetGeometry => ({ cx: ctx.rect.cx, cy: ctx.rect.cy, w: ctx.rect.w, h: ctx.rect.h, alpha: ctx.flux.fade, held: ctx.held !== undefined }),
     record(G: RigSheetGeometry, ctx: ObjectContext): RigSheetRecord {
       const local = ctx.local as RigLiveLocal | undefined;
@@ -206,7 +208,7 @@ function rigLiveKindOf(name: string, esc: "desk" | "kind"): ObjectKind<RigSheetG
       if (dx > G.w / 2 || dy > G.h / 2) return null;
       return G.held && dx <= G.w / 2 - RIG_LIVE_EDGE && dy <= G.h / 2 - RIG_LIVE_EDGE ? "live" : "content";
     },
-    local: (host) => createRigLiveLocal(host),
+    local: (host) => createRigLiveLocal(host, name),
     // picked up, it is held (design-015 §8): the hand's one focused object — its sight says `held`; the wheel over it is the face's,
     // its cursor the page's over its part, and Esc the desk's or (the terminal) the face's (M24 LT2)
     open: {

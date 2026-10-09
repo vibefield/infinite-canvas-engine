@@ -12,6 +12,7 @@
 // (`LiveInput`) it is sent, for rig:live to read.
 
 import { createLiveTexture, type LiveDemand, type LiveFace, type LiveInput, type LiveSources, type LiveWriter } from "@ice/desk/kit";
+import { armRigFault, type RigFaultCall } from "./live-fault";
 
 /** The frame size every rig face is drawn at (texels): its level 0. */
 export const RIG_LIVE_SIZE = { width: 512, height: 320 } as const;
@@ -56,6 +57,8 @@ export interface RigLive {
   /** Stop playing: the source is QUIET (sends nothing). */
   hold(): void;
   faces(): RigLiveFaceState[];
+  /** THE FAULT DOOR (M24 LT3 — live-fault.ts): arm a throw in `kind`'s `call` from its next call on; `null` disarms it. */
+  fault(kind: string, call: RigFaultCall | null): void;
 }
 
 interface Face {
@@ -179,6 +182,7 @@ export function createRigLive(): RigLive {
       if (timer !== undefined) clearInterval(timer);
       timer = undefined;
     },
+    fault: (kind, call) => { armRigFault(kind, call); },
     faces: () => [...faces.values()].map((f) => {
       const t = f.writer?.face;
       return {

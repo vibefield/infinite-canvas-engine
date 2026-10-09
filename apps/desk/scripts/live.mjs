@@ -20,7 +20,13 @@
 //      zooms the hand; the page's cursor over its link the container's; keys, committed text and an IME composition through the editor
 //      its DOM half leases; Esc puts it down in one press — the terminal's (`open.escape: "kind"`) is its face's, and Done puts it
 //      down; and the COST of a held face playing at 60 (the hand slot and its composites; the desk copy behind never remade);
-//   8. no page errors, no contained faults.
+//   8. THE RENDER HALF CONTAINED (ICE M24 LT3, design-019 §8): the boundary's price a frame (each kind's prepare in a GPU error scope
+//      of its own — the held frame and the rest frame, on vs off); and the FAULT DOOR (`__deskRig.live.fault(kind, call)`), each call in a
+//      page of its own (a quarantine is for the page's life): a rig live kind that throws in its pass's `prepare`, in its `drawRange`,
+//      in its `held` while in hand — three frames and it is MISSING, its object in the missing face, the status naming the call, every
+//      other kind drawn, the frame count rising, no frame lost (no contained reflector fault); the held one put down, its `up` told to
+//      no one;
+//   9. no page errors, no contained faults.
 // THE EXIT CODE IS THE VERDICT: the number of failed rows; 1 for a throw; 2 for the watchdog.
 //
 //   pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:live
@@ -374,12 +380,85 @@ try {
   const load7 = hostLoad();
   check(c1.copies === c0.copies && taken >= 30 && drawn >= taken && drawn <= taken + 6 && handMs < 1000 / 60,
     `the COST of a held face PLAYING at 60 for 2 s: ${taken} frames taken, ${drawn} drawn (${(drawn / 2).toFixed(0)}/s), the desk copy behind remade ${c1.copies - c0.copies} times — each frame the hand slot and its composites alone: ${handMs.toFixed(2)} ms drawn in full on the GPU (drained; median ${median(rounds.map((r) => r.hand.ms)).toFixed(2)}), ${standMs.toFixed(2)} ms standing, ${mainMs.toFixed(2)} ms of the loop's main thread a frame · load ${load7}`);
+  // 7h. THE BOUNDARY'S PRICE (LT3): each kind's prepare in a GPU error scope of its own — counted in one frame, and the frame recorded
+  //     200 times back to back with the scopes on and off (the CPU of recording a frame; the try/catch around a kind's calls costs
+  //     nothing measurable when nothing throws, so the scopes are the price), the minima of 7 rounds — the held frame, then the rest
+  const price = async () => q(`(async () => {
+    const h = window.__desk.handle; const g = h.ground(); const b = g.root.boundary; const d = h.device(); const inp = h.lastInputs();
+    let n = 0; const push = d.pushErrorScope.bind(d); d.pushErrorScope = (f) => { n++; return push(f); }; g.render(inp); d.pushErrorScope = push;
+    const loop = (watch) => { b.watch = watch; const t0 = performance.now(); for (let i = 0; i < 200; i++) g.render(inp); return ((performance.now() - t0) / 200) * 1000; };
+    const on = [], off = [];
+    for (let r = 0; r < 7; r++) { off.push(loop(false)); on.push(loop(true)); await d.queue.onSubmittedWorkDone(); }
+    b.watch = true;
+    return { scopes: n, on: Math.min(...on), off: Math.min(...off) };
+  })()`);
+  const heldPrice = await price();
   await q("window.__desk.putDown()");
   await landed();
   await settle();
+  const restPrice = await price();
+  const loadPrice = hostLoad();
+  check(heldPrice.scopes >= 1 && restPrice.scopes > heldPrice.scopes && heldPrice.on - heldPrice.off < 50 && restPrice.on - restPrice.off < 50,
+    `the BOUNDARY's price a frame (each kind's prepare in its own GPU error scope; a frame recorded 200 times, the minima of 7): the held frame ${heldPrice.scopes} scope${heldPrice.scopes === 1 ? "" : "s"} — ${heldPrice.on.toFixed(1)} µs on, ${heldPrice.off.toFixed(1)} off (${(heldPrice.on - heldPrice.off).toFixed(1)} µs); the rest frame ${restPrice.scopes} scopes — ${restPrice.on.toFixed(1)} µs on, ${restPrice.off.toFixed(1)} off (${(restPrice.on - restPrice.off).toFixed(1)} µs) · load ${loadPrice}`);
   }
 
-  // ---- 8. no page errors
+  // ---- 8. THE RENDER HALF CONTAINED (LT3): the fault door — each call in a page of its own, as a host's desk would meet it
+  for (const call of ["prepare", "drawRange", "held"]) {
+    const flogs = [];
+    const ft = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html?live`);
+    await ft.send("Runtime.enable"); await ft.send("Log.enable"); await ft.send("Page.enable");
+    watchPage(ft, flogs);
+    await ft.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
+    const fq = async (js, ms = 30000) => { await ft.send("Page.bringToFront"); return ft.evaluate(js, { awaitPromise: true, timeoutMs: ms }); };
+    for (let i = 0; i < 200; i++) { if (await fq("typeof window.__desk === 'object' && window.__desk.state.ready", 20000)) break; await sleep(200); }
+    const fsettle = () => fq("window.__desk.settle(6000)");
+    const fframes = (n = 2) => fq(`new Promise((r) => { let k = 0; const f = () => (++k >= ${n} ? r(k) : requestAnimationFrame(f)); requestAnimationFrame(f); })`);
+    const fhand = () => fq("window.__desk.hand()");
+    await fq("window.__desk.ambient('still'); window.__desk.setTheme('light'); window.__desk.pinMat({ opacity: 0 }); window.__desk.bar(false); window.__desk.setCamera({ x: 0, y: 0, zoom: 1 }); window.__desk.settle(6000)");
+    const lv = await fq(`window.__desk.spawn(${JSON.stringify(LIVE)}, {}, { x: 400, y: 300 })`);
+    const bd = await fq("window.__desk.spawn('desk.board', {}, { x: 900, y: 300 })");
+    await fsettle();
+    const look = () => fq(`(() => { const h = window.__desk.handle; const rec = (k) => h.lastInputs()?.objects?.find((o) => o.key === k)?.record ?? null;
+      const f = window.__deskRig.live.faces()[0]; return { redraws: h.redraws(), status: h.status(), kinds: h.stats().frame?.kinds ?? {}, live: rec(${lv}), board: rec(${bd}) !== null, missing: rec(${lv})?.missing === true, inputs: f?.inputs.length ?? 0, faults: window.__desk.faults ?? [] }; })()`);
+    if (call === "held") {
+      await fq(`window.__desk.open(${lv})`);
+      await until(async () => (await fhand())?.settled === true, 6000);
+    }
+    const before = await look();
+    await fq(`window.__deskRig.live.fault(${JSON.stringify(KIND)}, ${JSON.stringify(call)})`);
+    // three frames that ask the call: arrivals for the pass's (each a frame drawn again), the hand's input for `held` — a move, a press, a move
+    const h0 = call === "held" ? await fhand() : null;
+    const point = (dx) => (h0 === null ? [0, 0] : [h0.frame.cx + dx, h0.frame.cy]);
+    for (let n = 0; n < 3; n++) {
+      if (call === "held") {
+        const [x, y] = point(n * 8);
+        await ft.send("Input.dispatchMouseEvent", n === 1 ? { type: "mousePressed", x, y, button: "left", buttons: 1, clickCount: 1 } : { type: "mouseMoved", x, y, button: "none", buttons: n === 2 ? 1 : 0 });
+      } else await fq("window.__deskRig.live.tick()");
+      await fframes(3);
+    }
+    if (call === "held") {
+      const [x, y] = point(16);
+      await ft.send("Input.dispatchMouseEvent", { type: "mouseReleased", x, y, button: "left", buttons: 0, clickCount: 1 });
+      await fframes(3);
+    }
+    const after = await look();
+    // the frame count rises on: the camera nudged, a frame drawn — the missing face in the live object's place, the board drawn
+    await fq("window.__desk.setCamera({ x: 2, y: 0, zoom: 1 })");
+    await fsettle();
+    const later = await look();
+    const putDown = call === "held" ? (await fhand()) === null || (await fhand())?.landing === true : true;
+    const reason = after.status.faults?.[0]?.reason ?? "";
+    const unexpected = flogs.filter((l) => !l.includes(`"${KIND}"`));
+    check(before.status.faults === undefined && after.status.state === "ready" && after.status.faults?.length === 1 && after.status.faults[0].kind === KIND && reason.startsWith(`its \`${call}\` threw`) && reason.includes("(strike 3 of 3)")
+      && later.missing && later.board && (later.kinds.board ?? 0) === 1 && later.redraws > after.redraws && after.redraws > before.redraws && after.faults.length === 0 && later.faults.length === 0
+      && unexpected.length === 0 && flogs.filter((l) => l.includes("is MISSING")).length === 1
+      && (call !== "held" || (putDown && after.inputs === before.inputs)),
+      `THE FAULT DOOR — the "${KIND}" kind's \`${call}\` throws: MISSING after three frames (${JSON.stringify(after.status.faults?.[0] ?? null)}), said once; its object in the missing face (${later.missing}), the board drawn (${later.kinds.board ?? 0}), the frames ${before.redraws} → ${after.redraws} → ${later.redraws} — none lost (contained reflector faults ${after.faults.length + later.faults.length}), no other page error (${unexpected.length})${call === "held" ? `; the hand put down (${putDown}), the face sent ${after.inputs - before.inputs} inputs after the door armed — its \`up\` told to no one` : ""}`);
+    try { await fetch(`http://127.0.0.1:${chrome.port}/json/close/${ft.target.id}`); } catch {}
+    ft.close();
+  }
+
+  // ---- 9. no page errors
   logs.push(...(await faultsOf(tab)));   // the faults the engine CONTAINED — a skipped frame is an error too (D7)
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
   check(logs.length === 0, "no page errors, no contained faults");

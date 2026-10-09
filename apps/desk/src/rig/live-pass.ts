@@ -10,6 +10,7 @@ import { createRecordStore, type KindExtra, type KindPass, type RecordStore, typ
 import { bindGroup, bindLayout, compile, compose, defineStruct, renderPipeline } from "@ice/desk/engine";
 import { kitWgsl, type LiveFace, type LiveTexture, liveDepth, litByOwn, type MatPass, type Sight } from "@ice/desk/kit";
 import type { Entity } from "@ice/core";
+import { rigFault } from "./live-fault";
 
 /** A sheet's GPU record: its centre and half extents as drawn (world units) and its presence (a delete ghost fades). */
 export const RigSheet = defineStruct("RigSheet", [
@@ -108,6 +109,8 @@ interface Shared {
   /** Each face texture's group, made again when its epoch moves (a new texture). */
   readonly groups: WeakMap<LiveTexture, { readonly epoch: number; readonly group: GPUBindGroup }>;
   slots: number;
+  /** The kind the pass draws for (its name — the fault door's key, M24 LT3). */
+  readonly kind: string;
 }
 
 export class RigLivePass implements KindPass<RigSheetRecord> {
@@ -133,7 +136,7 @@ export class RigLivePass implements KindPass<RigSheetRecord> {
     this.rebind();
   }
 
-  static async create(device: GPUDevice, format: GPUTextureFormat, mat: MatPass): Promise<RigLivePass> {
+  static async create(device: GPUDevice, format: GPUTextureFormat, mat: MatPass, kind: string): Promise<RigLivePass> {
     const layout = bindLayout(device, [
       { binding: 0, stages: ["vertex", "fragment"], buffer: "uniform" },
       { binding: 1, stages: ["vertex", "fragment"], buffer: "read-only-storage" },
@@ -161,7 +164,7 @@ export class RigLivePass implements KindPass<RigSheetRecord> {
       goboSampler: device.createSampler({ label: "rig-live/gobo", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" }),
       noiseSampler: device.createSampler({ label: "rig-live/noise", magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" }),
       filmGroup: bindGroup(device, faceLayout, [film.createView(), faceSampler], "rig-live/film"),
-      groups: new WeakMap(), slots: 0,
+      groups: new WeakMap(), slots: 0, kind,
     };
     return new RigLivePass(shared, mat);
   }
@@ -189,6 +192,7 @@ export class RigLivePass implements KindPass<RigSheetRecord> {
     const list = records.length > MAX_SHEETS ? records.slice(0, MAX_SHEETS) : records;
     const keys = extra?.keys;
     this.count = this.store.prepare(list, keys !== undefined && keys.length > MAX_SHEETS ? keys.slice(0, MAX_SHEETS) : keys);
+    rigFault(this.shared.kind, "prepare");   // the fault door (M24 LT3): its records written, the rest of its prepare not made
     this.rebind();
     this.litElsewhere = !litByOwn(slot.view, slot.lit);
     const k = slot.view.zoom * slot.view.dpr;
@@ -209,6 +213,7 @@ export class RigLivePass implements KindPass<RigSheetRecord> {
     if (first >= hi) return;
     pass.setPipeline(this.litElsewhere ? this.shared.litPipeline : this.shared.pipeline);
     pass.setBindGroup(0, this.group);
+    rigFault(this.shared.kind, "drawRange");   // the fault door (M24 LT3): mid-run — its pipeline and first group set, nothing drawn
     for (let i = first; i < hi; i++) {
       pass.setBindGroup(1, this.faces[i] as GPUBindGroup);
       pass.draw(6, 1, 0, i);
