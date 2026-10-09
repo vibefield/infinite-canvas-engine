@@ -1,8 +1,9 @@
 // @vitest-environment node
 // M24 LT3 (design-019 §8): the RENDER HALF and the rest of a kind's calls under petition I24's ladder, on a desk layer as a host mounts
 // it (the fake device, the engine's frame gate, the engine's ops in the mount context): a throw from a kind's pass in a frame — its
-// `prepare`, its `drawRange` — from a driver's `follow`, a desk state's `forget` or `keeps`, its `held` while in hand, and a GPU error
-// raised in its `prepare` is a STRIKE against that kind, struck once the frame (or the trim) it broke is done — never a lost frame: the
+// `prepare`, its `drawRange` — from a driver's `follow`, a desk state's `forget` (the builder's, the tray's) or `keeps`, its `held`
+// while in hand, and a GPU error raised in its `prepare` (its slot's scope, then its own) is a STRIKE against that kind, struck once
+// the frame (or the trim) it broke is done — never a lost frame: the
 // reflector never faults, the frame count keeps rising, every other kind draws. The third quarantines it — said once, naming the call;
 // its objects wear the missing face from the next frame; an object of it in hand is put down, its `up` told to no one.
 import { createCanvasEngine, type Entity, heldEntity, type InputMods, NO_MODS, Viewport, type WidgetType } from "@ice/core";
@@ -11,6 +12,7 @@ import type { SlotObject } from "../src/ground";
 import { deskLayer, type DeskLayerHandle } from "../src/host/layer";
 import type { KindPass } from "../src/kind";
 import type { KindDriver, KindHost, KindLocal, ObjectKind, ObjectRect } from "../src/kinds/world";
+import { LAYER_IDLE_MS } from "../src/kit/layer";
 import { isMissingRecord } from "../src/missing/layout";
 import { defineObject } from "../src/object";
 import { type Palette, themeFrom } from "../src/theme";
@@ -88,9 +90,13 @@ const follower = (name: string, own: Fault | null) => (): KindDriver => ({
 
 const FAULTY = defineObject({ type: "lt3.faulty", version: 1, props: {}, size: { w: 200, h: 120 }, kind: faultyKind("faulty", fault), drivers: follower("faulty", fault) });
 const SOUND = defineObject({ type: "lt3.sound", version: 1, props: {}, size: { w: 200, h: 120 }, kind: faultyKind("sound", null), drivers: follower("sound", null) });
+/** Two kinds that hang on the tray, each specimen drawn with its kind's desk state (`tray.local`) — the first's `forget` faulted. */
+const HANG = { w: 110, h: 110, accessory: "hook" as const, pegs: [[0, -0.5]] as [number, number][] };
+const TRAYED = defineObject({ type: "lt3.trayed", version: 1, props: {}, size: { w: 200, h: 120 }, kind: faultyKind("trayed", fault), tray: { label: "Trayed", local: true, order: 0, hang: HANG } });
+const CALM = defineObject({ type: "lt3.calm", version: 1, props: {}, size: { w: 200, h: 120 }, kind: faultyKind("calm", null), tray: { label: "Calm", local: true, order: 1, hang: HANG } });
 
 /** A desk of the faulty kind and a sound one on the fake device — the engine's ops in the mount context — stepped on a clock of its own. */
-async function mountDesk() {
+async function mountDesk(more: readonly WidgetType[] = []) {
   const log: string[] = [];
   const fake = fakeDevice(log, { refuse: (code) => (code === BROKEN ? "unresolved value 'nothing_declares_this'" : undefined) });
   device = fake.device;
@@ -103,18 +109,18 @@ async function mountDesk() {
   const container = { ownerDocument: { createElement: (tag: string) => (tag === "canvas" ? canvas : node()), defaultView: undefined, addEventListener: () => {}, removeEventListener: () => {} }, prepend: () => {}, appendChild: () => {}, addEventListener: () => {}, removeEventListener: () => {} } as unknown as HTMLElement;
   vi.stubGlobal("navigator", { gpu });
   const frameFaults: string[] = [];
-  const objects: WidgetType[] = [FAULTY, SOUND];
+  const objects: WidgetType[] = [FAULTY, SOUND, ...more];
   const ce = createCanvasEngine({ widgets: objects, onReflectorFault: (name, err) => { frameFaults.push(`${name}: ${String(err)}`); } });
   ce.docs.create();
   ce.world.setResource(Viewport, VIEW);
   const handle: DeskLayerHandle = deskLayer({ gpu, objects, theme: themeFrom("light", PALETTE), palette: PALETTE, ambient: "still", rasterBudget: 1000 })({
-    host: { container }, world: ce.world, frame: ce.engine.frame, catalog: ce.catalog, heldPose: ce.stack.heldPose, framePick: ce.stack.framePick, ops: ce.ops,
+    host: { container }, world: ce.world, frame: ce.engine.frame, catalog: ce.catalog, heldPose: ce.stack.heldPose, framePick: ce.stack.framePick, trayPose: ce.stack.trayPose, ops: ce.ops,
   });
   const unregister = ce.engine.registerReflector(handle.reflector);
   for (let i = 0; i < 100 && handle.status().state === "pending"; i++) await new Promise((r) => setTimeout(r, 5));
   let clock = performance.now();
   /** One step on the desk's clock — and the microtasks it queued (a put-down the layer asked for) run before the next. */
-  const step = async (n = 1): Promise<void> => { for (let i = 0; i < n; i++) { clock += 16; ce.engine.step(clock); await Promise.resolve(); } };
+  const step = async (n = 1, ms = 16): Promise<void> => { for (let i = 0; i < n; i++) { clock += ms; ce.engine.step(clock); await Promise.resolve(); } };
   /** One drawn frame: the builder's records made again (a law tuned), so every kind is asked every frame. */
   const frame = async (): Promise<void> => { handle.builder.invalidate(); await step(); };
   const at = (type: string, x: number, y: number): Entity => ce.ops.spawnWidget(type, { x, y, undoable: false }) as Entity;
@@ -239,6 +245,29 @@ describe("the render half and the rest of a kind's calls under the ladder (desig
     } finally { d.dispose(); }
   });
 
+  it("a tray specimen's desk state let go once the drawer has been shut a while: a `forget` that throws is a strike against its kind — the other specimen's let go as ever, no frame lost", async () => {
+    const warns = vi.spyOn(console, "warn").mockImplementation(() => {});
+    vi.spyOn(console, "error").mockImplementation(() => {});
+    const d = await mountDesk([TRAYED, CALM]);
+    try {
+      await d.step(2);
+      d.handle.tray.open();
+      for (let i = 0; i < 60; i++) { await d.step(); await new Promise((r) => setTimeout(r, 0)); }   // the drawer out, the specimens drawn
+      expect(d.handle.tray.state().specimens.map((q) => q.type)).toEqual([TRAYED.type, CALM.type]);
+      fault.forget = true;
+      asked.length = 0;
+      d.handle.tray.close();
+      await d.step(60);                    // the drawer home
+      await d.step(1, LAYER_IDLE_MS + 100);   // shut a while: its specimens' desk state let go
+      await d.step(2);
+      const forgot = asked.filter((x) => x.includes(" forget ")).map((x) => x.replace(/\d+$/, "N"));
+      expect(forgot.sort()).toEqual(["calm forget N", "trayed forget N"]);
+      expect(said(warns, "trayed").filter((m) => m.includes("forget"))).toHaveLength(1);   // one strike, said
+      expect(d.handle.status().faults).toBeUndefined();
+      expect(d.frameFaults).toEqual([]);
+    } finally { d.dispose(); }
+  });
+
   it("a `held` that throws while its object is in hand: three frames of the hand's input and the kind is MISSING (`held`) — the hand PUT DOWN, its `up` told to no one", async () => {
     vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
@@ -267,18 +296,30 @@ describe("the render half and the rest of a kind's calls under the ladder (desig
     } finally { d.dispose(); }
   });
 
-  it("a GPU error raised in a kind's `prepare` — its own scope — is a strike against it, the layer never `degraded`: three frames and it is missing", async () => {
-    vi.spyOn(console, "warn").mockImplementation(() => {});
+  it("a GPU error raised in a kind's `prepare` — caught first by its slot's ONE scope beside another kind (said: one of the two; each kind's own scope kept from then), then by its own — is a strike against it, the layer never `degraded`: missing at the third; the slot's scope given back after its frames", async () => {
+    const warns = vi.spyOn(console, "warn").mockImplementation(() => {});
     vi.spyOn(console, "error").mockImplementation(() => {});
     const d = await mountDesk();
+    const answered = (): Promise<unknown> => new Promise((r) => setTimeout(r, 0));   // the device answers a scope later
+    const scopes = (): string | undefined => d.handle.ground()?.root.boundary?.scopes;
     try {
       d.at(FAULTY.type, 100, 100);
       d.at(SOUND.type, 500, 100);
       await d.frame();
+      expect(scopes()).toBe("slot");
       fault.gpu = true;
-      for (let n = 0; n < 4; n++) { await d.frame(); await new Promise((r) => setTimeout(r, 0)); }
+      await d.frame();
+      await answered();
+      const said = warns.mock.calls.map((c) => String(c[0])).filter((m) => m.includes("a GPU error in the prepare of one of"));
+      expect(said).toEqual([expect.stringContaining(`one of "faulty", "sound" — each kind's own scope kept for the next 120 frames`)]);
+      expect(scopes()).toBe("kind");
+      expect(d.handle.status().faults).toBeUndefined();   // unattributed: no one's strike
+      // each kind's own scope: the faulty kind's error its own, struck at the next frame's head — three, and it is missing
+      for (let n = 0; n < 4; n++) { await d.frame(); await answered(); }
       expect(d.handle.status()).toEqual({ state: "ready", faults: [{ kind: "faulty", reason: "its `prepare` threw (strike 3 of 3): a GPU error in its own scope — GPUValidationError: Error while parsing WGSL: unresolved value 'nothing_declares_this'" }] });
       expect(d.fake.uncaptured).toEqual([]);
+      for (let n = 0; n < 120 && scopes() === "kind"; n++) await d.frame();
+      expect(scopes()).toBe("slot");
     } finally { d.dispose(); }
   });
 });

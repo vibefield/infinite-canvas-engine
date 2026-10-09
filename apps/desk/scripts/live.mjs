@@ -20,12 +20,13 @@
 //      zooms the hand; the page's cursor over its link the container's; keys, committed text and an IME composition through the editor
 //      its DOM half leases; Esc puts it down in one press — the terminal's (`open.escape: "kind"`) is its face's, and Done puts it
 //      down; and the COST of a held face playing at 60 (the hand slot and its composites; the desk copy behind never remade);
-//   8. THE RENDER HALF CONTAINED (ICE M24 LT3, design-019 §8): the boundary's price a frame (each kind's prepare in a GPU error scope
-//      of its own — the held frame and the rest frame, on vs off); and the FAULT DOOR (`__deskRig.live.fault(kind, call)`), each call in a
-//      page of its own (a quarantine is for the page's life): a rig live kind that throws in its pass's `prepare`, in its `drawRange`,
-//      in its `held` while in hand — three frames and it is MISSING, its object in the missing face, the status naming the call, every
-//      other kind drawn, the frame count rising, no frame lost (no contained reflector fault); the held one put down, its `up` told to
-//      no one;
+//   8. THE RENDER HALF CONTAINED (ICE M24 LT3, design-019 §8): the boundary's price a frame (the held frame and the rest frame recorded
+//      with the boundary off, on, on with the slot's GPU error scope, and on with each kind's own); and the FAULT DOOR
+//      (`__deskRig.live.fault(kind, call)`), each call in a page of its own (a quarantine is for the page's life): a rig live kind that
+//      throws in its pass's `prepare` MID-PASS (its own pass and a debug group left open), in its `drawRange` MID-RUN (a viewport and a
+//      debug group of its own left in the desk's pass), in its `held` while in hand — three frames and it is MISSING, its object in the
+//      missing face, the status naming the call, the layer never degraded (no frame refused at the submit), every other kind drawn, the
+//      frame count rising, no frame lost (no contained reflector fault); the held one put down, its `up` told to no one;
 //   9. no page errors, no contained faults.
 // THE EXIT CODE IS THE VERDICT: the number of failed rows; 1 for a throw; 2 for the watchdog.
 //
@@ -380,17 +381,21 @@ try {
   const load7 = hostLoad();
   check(c1.copies === c0.copies && taken >= 30 && drawn >= taken && drawn <= taken + 6 && handMs < 1000 / 60,
     `the COST of a held face PLAYING at 60 for 2 s: ${taken} frames taken, ${drawn} drawn (${(drawn / 2).toFixed(0)}/s), the desk copy behind remade ${c1.copies - c0.copies} times — each frame the hand slot and its composites alone: ${handMs.toFixed(2)} ms drawn in full on the GPU (drained; median ${median(rounds.map((r) => r.hand.ms)).toFixed(2)}), ${standMs.toFixed(2)} ms standing, ${mainMs.toFixed(2)} ms of the loop's main thread a frame · load ${load7}`);
-  // 7h. THE BOUNDARY'S PRICE (LT3): each kind's prepare in a GPU error scope of its own — counted in one frame, and the frame recorded
-  //     200 times back to back with the scopes on and off (the CPU of recording a frame; the try/catch around a kind's calls costs
-  //     nothing measurable when nothing throws, so the scopes are the price), the minima of 7 rounds — the held frame, then the rest
+  // 7h. THE BOUNDARY'S PRICE (LT3): the frame recorded 100 times back to back (the CPU of recording it — the GPU's share is the
+  //     frame's, unchanged) in four arms, in turn and drained between — NONE (the ground's boundary taken off), CONTAINED (every kind's
+  //     call in its try, the frame's encoder guarded, no GPU scope), SLOT (one GPU error scope over each slot's kinds: the product's),
+  //     KIND (one over each kind's: what the desk keeps for a while after a slot's caught an error no one kind owns) — the minima of 7
+  //     rounds, the held frame and then the rest; the scopes counted in one frame of SLOT and of KIND
   const price = async () => q(`(async () => {
-    const h = window.__desk.handle; const g = h.ground(); const b = g.root.boundary; const d = h.device(); const inp = h.lastInputs();
-    let n = 0; const push = d.pushErrorScope.bind(d); d.pushErrorScope = (f) => { n++; return push(f); }; g.render(inp); d.pushErrorScope = push;
-    const loop = (watch) => { b.watch = watch; const t0 = performance.now(); for (let i = 0; i < 200; i++) g.render(inp); return ((performance.now() - t0) / 200) * 1000; };
-    const on = [], off = [];
-    for (let r = 0; r < 7; r++) { off.push(loop(false)); on.push(loop(true)); await d.queue.onSubmittedWorkDone(); }
-    b.watch = true;
-    return { scopes: n, on: Math.min(...on), off: Math.min(...off) };
+    const h = window.__desk.handle; const g = h.ground(); const root = g.root; const b = root.boundary; const d = h.device(); const inp = h.lastInputs();
+    const count = (mode) => { b.scopes = mode; let n = 0; const push = d.pushErrorScope.bind(d); d.pushErrorScope = (f) => { n++; return push(f); }; g.render(inp); d.pushErrorScope = push; return n; };
+    const scopes = { slot: count("slot"), kind: count("kind") };
+    const loop = (arm) => { root.boundary = arm === "none" ? undefined : b; b.scopes = arm === "none" || arm === "contained" ? "off" : arm; const t0 = performance.now(); for (let i = 0; i < 100; i++) g.render(inp); return ((performance.now() - t0) / 100) * 1000; };
+    const arms = ["none", "contained", "slot", "kind"];
+    const t = { none: [], contained: [], slot: [], kind: [] };
+    for (let r = 0; r < 7; r++) for (let a = 0; a < 4; a++) { const arm = arms[(a + r) % 4]; t[arm].push(loop(arm)); await d.queue.onSubmittedWorkDone(); }
+    root.boundary = b; b.scopes = "slot";
+    return { scopes, none: Math.min(...t.none), contained: Math.min(...t.contained), slot: Math.min(...t.slot), kind: Math.min(...t.kind) };
   })()`);
   const heldPrice = await price();
   await q("window.__desk.putDown()");
@@ -398,8 +403,9 @@ try {
   await settle();
   const restPrice = await price();
   const loadPrice = hostLoad();
-  check(heldPrice.scopes >= 1 && restPrice.scopes > heldPrice.scopes && heldPrice.on - heldPrice.off < 50 && restPrice.on - restPrice.off < 50,
-    `the BOUNDARY's price a frame (each kind's prepare in its own GPU error scope; a frame recorded 200 times, the minima of 7): the held frame ${heldPrice.scopes} scope${heldPrice.scopes === 1 ? "" : "s"} — ${heldPrice.on.toFixed(1)} µs on, ${heldPrice.off.toFixed(1)} off (${(heldPrice.on - heldPrice.off).toFixed(1)} µs); the rest frame ${restPrice.scopes} scopes — ${restPrice.on.toFixed(1)} µs on, ${restPrice.off.toFixed(1)} off (${(restPrice.on - restPrice.off).toFixed(1)} µs) · load ${loadPrice}`);
+  const priced = (p) => `${p.none.toFixed(1)} µs none; contained +${(p.contained - p.none).toFixed(1)}; the slot's scope${p.scopes.slot === 1 ? "" : "s"} (${p.scopes.slot}) +${(p.slot - p.contained).toFixed(1)}; each kind's (${p.scopes.kind}) +${(p.kind - p.contained).toFixed(1)}`;
+  check(heldPrice.scopes.slot === 1 && restPrice.scopes.slot === 1 && restPrice.scopes.kind > 1 && heldPrice.slot - heldPrice.none < 25 && restPrice.slot - restPrice.none < 25,
+    `the BOUNDARY's price a frame (the frame recorded 100 times, the minima of 7): the held frame — ${priced(heldPrice)}; the rest frame — ${priced(restPrice)} · load ${loadPrice}`);
   }
 
   // ---- 8. THE RENDER HALF CONTAINED (LT3): the fault door — each call in a page of its own, as a host's desk would meet it
@@ -449,11 +455,13 @@ try {
     const putDown = call === "held" ? (await fhand()) === null || (await fhand())?.landing === true : true;
     const reason = after.status.faults?.[0]?.reason ?? "";
     const unexpected = flogs.filter((l) => !l.includes(`"${KIND}"`));
-    check(before.status.faults === undefined && after.status.state === "ready" && after.status.faults?.length === 1 && after.status.faults[0].kind === KIND && reason.startsWith(`its \`${call}\` threw`) && reason.includes("(strike 3 of 3)")
+    // (the state READY: the kind's `prepare` and `drawRange` throw with a pass, a debug group or a viewport of their own left open — WebGPU
+    // would refuse the whole frame at the submit, the layer `degraded` for good, but the ground closed them)
+    check(before.status.faults === undefined && after.status.state === "ready" && later.status.state === "ready" && after.status.faults?.length === 1 && after.status.faults[0].kind === KIND && reason.startsWith(`its \`${call}\` threw`) && reason.includes("(strike 3 of 3)")
       && later.missing && later.board && (later.kinds.board ?? 0) === 1 && later.redraws > after.redraws && after.redraws > before.redraws && after.faults.length === 0 && later.faults.length === 0
       && unexpected.length === 0 && flogs.filter((l) => l.includes("is MISSING")).length === 1
       && (call !== "held" || (putDown && after.inputs === before.inputs)),
-      `THE FAULT DOOR — the "${KIND}" kind's \`${call}\` throws: MISSING after three frames (${JSON.stringify(after.status.faults?.[0] ?? null)}), said once; its object in the missing face (${later.missing}), the board drawn (${later.kinds.board ?? 0}), the frames ${before.redraws} → ${after.redraws} → ${later.redraws} — none lost (contained reflector faults ${after.faults.length + later.faults.length}), no other page error (${unexpected.length})${call === "held" ? `; the hand put down (${putDown}), the face sent ${after.inputs - before.inputs} inputs after the door armed — its \`up\` told to no one` : ""}`);
+      `THE FAULT DOOR — the "${KIND}" kind's \`${call}\` throws${call === "prepare" ? " mid-pass (its own pass and a debug group left open)" : call === "drawRange" ? " mid-run (a viewport and a debug group of its own left in the desk's pass)" : " in hand"}: MISSING after three frames (${JSON.stringify(after.status.faults?.[0] ?? null)}), said once, the layer ${later.status.state} (never degraded: no frame refused); its object in the missing face (${later.missing}), the board drawn (${later.kinds.board ?? 0}), the frames ${before.redraws} → ${after.redraws} → ${later.redraws} — none lost (contained reflector faults ${after.faults.length + later.faults.length}), no other page error (${unexpected.length})${call === "held" ? `; the hand put down (${putDown}), the face sent ${after.inputs - before.inputs} inputs after the door armed — its \`up\` told to no one` : ""}`);
     try { await fetch(`http://127.0.0.1:${chrome.port}/json/close/${ft.target.id}`); } catch {}
     ft.close();
   }

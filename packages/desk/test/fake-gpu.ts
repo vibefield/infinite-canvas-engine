@@ -30,8 +30,12 @@ export function installNavigatorGpu(format: GPUTextureFormat): Undo {
   return () => { if (was) Object.defineProperty(globalThis, "navigator", was); else Reflect.deleteProperty(globalThis, "navigator"); };
 }
 
-/** A render pass that logs what it is told, by label: `pipeline <label>`, `group <i> <label>`, `draw <args>`, `scissor <x,y,w,h>`, `viewport <x,y,w,h>` (and a mesh's `vertices <label>`, `indices <label>`, `drawIndexed <args>`; a debug group's `debug <label>` … `debug end`). */
-export function recordingPass(log: string[]): GPURenderPassEncoder {
+/**
+ * A render pass that logs what it is told, by label: `pipeline <label>`, `group <i> <label>`, `draw <args>`, `scissor <x,y,w,h>`, `viewport <x,y,w,h>` (and a mesh's `vertices <label>`, `indices <label>`, `drawIndexed <args>`; a debug group's `debug <label>` … `debug end`).
+ * Ended with a debug group still pushed it logs `invalid: …` as WebGPU refuses it (M24 LT3); `ended` is told its end.
+ */
+export function recordingPass(log: string[], ended?: () => void): GPURenderPassEncoder {
+  let depth = 0;
   return {
     setPipeline: (p: { label: string }) => log.push(`pipeline ${p.label}`),
     setBindGroup: (i: number, g: { label: string }) => log.push(`group ${i} ${g.label}`),
@@ -43,9 +47,13 @@ export function recordingPass(log: string[]): GPURenderPassEncoder {
     // (K7a: a layered kind draws its layer through a viewport shifted by its box's origin — kit/layer.ts `BoxTargets`)
     setViewport: (x: number, y: number, w: number, h: number) => log.push(`viewport ${x},${y},${w},${h}`),
     setBlendConstant: () => {},
-    pushDebugGroup: (label: string) => log.push(`debug ${label}`),
-    popDebugGroup: () => log.push("debug end"),
-    end: () => log.push("end"),
+    pushDebugGroup: (label: string) => { depth += 1; log.push(`debug ${label}`); },
+    popDebugGroup: () => { depth -= 1; log.push("debug end"); },
+    end: () => {
+      if (depth !== 0) log.push(`invalid: PushDebugGroup called ${depth} time(s) without a corresponding PopDebugGroup`);
+      log.push("end");
+      ended?.();
+    },
   } as unknown as GPURenderPassEncoder;
 }
 
@@ -105,12 +113,33 @@ export function fakeDevice(log: string[] = [], opts: FakeDeviceOptions = {}): Fa
     // row unpadding and channel order are checkable); any other an empty range, as before; its map resolves at once
     createBuffer: (d: GPUBufferDescriptor) => ({ ...labelled(d), size: d.size, destroy: () => {}, mapAsync: async () => {}, unmap: () => {}, getMappedRange: () => ((d.usage & 1) !== 0 ? new Uint8Array(d.size).map((_, i) => i & 255).buffer : new ArrayBuffer(0)) }),
     createTexture: (d: GPUTextureDescriptor) => ({ ...labelled(d), createView: () => ({ label: `${d.label ?? ""} view` }), destroy: () => {} }),
-    createCommandEncoder: () => ({
-      beginRenderPass: (d: GPURenderPassDescriptor) => { log.push(`pass ${d.label ?? ""}`); return recordingPass(log); },
-      copyTextureToTexture: () => {},
-      copyTextureToBuffer: () => {},
-      finish: () => ({}),
-    }),
+    // an encoder as WebGPU validates it (M24 LT3): LOCKED while a pass it began is open, and refused at its finish with a pass open or a
+    // debug group pushed — each logged `invalid: …` (Chrome's words), the command buffer the submit would drop
+    createCommandEncoder: () => {
+      let open: string | null = null;
+      let depth = 0;
+      const locked = (): void => { if (open !== null) log.push(`invalid: Recording in [CommandEncoder] which is locked while [RenderPassEncoder "${open}"] is open`); };
+      return {
+        beginRenderPass: (d: GPURenderPassDescriptor) => {
+          const label = d.label ?? "";
+          const busy = open !== null;
+          locked();
+          log.push(`pass ${label}`);
+          if (busy) return recordingPass(log);   // (an error pass: the encoder stays locked by the one open)
+          open = label;
+          return recordingPass(log, () => { if (open === label) open = null; });
+        },
+        pushDebugGroup: (label: string) => { locked(); depth += 1; log.push(`encoder debug ${label}`); },
+        popDebugGroup: () => { locked(); depth -= 1; log.push("encoder debug end"); },
+        copyTextureToTexture: locked,
+        copyTextureToBuffer: locked,
+        finish: () => {
+          if (open !== null) log.push(`invalid: Command buffer recording ended before [RenderPassEncoder "${open}"] was ended`);
+          if (depth !== 0) log.push(`invalid: PushDebugGroup called ${depth} time(s) without a corresponding PopDebugGroup prior to calling Finish`);
+          return {};
+        },
+      };
+    },
     // (the work a submit carries is done at once — the layer's first frame "presented", petition I25)
     queue: { writeBuffer: () => { queue.writes += 1; }, writeTexture: () => {}, submit: () => { queue.submits += 1; }, onSubmittedWorkDone: async () => {} },
     // a pass that watches its first frames (the notebook's `render`, the calendar's `renderLayer`) finds nothing wrong here — unless

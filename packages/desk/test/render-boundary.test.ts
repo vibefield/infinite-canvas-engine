@@ -3,9 +3,10 @@
 // with a PROBE kind beside a PLAIN one, and the boundary a host hands it (`GroundOptions.boundary`): in every slot a frame or a capture
 // draws — the root, a mini mat's inside, a departed desk, the hand, a capture, a tray specimen — a throw from the probe's pass (its
 // `prepare`, `drawRange`, `drawOver`, `spawn`, `endHold`, the tray's `idle`/`idleAt`) is handed to the boundary and the frame goes on:
-// that slot draws nothing more of the probe, the plain kind draws, the render pass stays usable (the slot's scissor set again). Each
-// kind's `prepare` runs in a GPU error scope of its own: an error raised there is the kind's, never the device's uncaptured. A ground
-// with no boundary throws as before (a unit's, the oracle's).
+// that slot draws nothing more of the probe, the plain kind draws, the encoder and the render pass stay usable (what the probe left
+// open closed — the fake device refuses an encoder as WebGPU does — the slot's scissor and the view's viewport set again). The kinds'
+// `prepare` run inside a GPU error scope — the slot's one, or each kind's own: an error raised there is a kind's (the kind's when its
+// scope held it alone), never the device's uncaptured. A ground with no boundary throws as before (a unit's, the oracle's).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { Ground, type GroundFrameInputs, type PortalInputs, type RenderBoundary } from "../src/ground";
 import { HOLD_SHADER_FILES, holdShaders } from "../src/hold/shaders";
@@ -37,6 +38,12 @@ interface Faults {
   idleAt?: boolean;
   /** Its prepare raises a GPU validation error (a module the device refuses) instead of throwing. */
   gpu?: boolean;
+  /** The root's prepare throws MID-PASS: its own pass begun (a layer of its own), a debug group pushed in it. */
+  open?: boolean;
+  /** The root's prepare throws inside a debug group it pushed on the frame's encoder. */
+  encoderGroup?: boolean;
+  /** The root's drawRange throws inside a debug group of its own, through a viewport of its own. */
+  runGroup?: boolean;
 }
 
 /** A kind that draws nothing but logs each range it draws (a debug group per range, by its slot's label), its pass's calls faulted on demand. */
@@ -44,13 +51,20 @@ function probeKind(name: string, faults: Faults, device: () => GPUDevice, compos
   const hits = (where: Faults["prepare"], spawned: boolean): boolean => where === "all" || (where === "root" && !spawned) || (where === "spawned" && spawned);
   const pass = (label: string, spawned: boolean): KindPass => ({
     spawn: () => { if (faults.spawn === true) throw new Error(`${name}: its spawn throws on purpose`); return pass(`${label}+`, true); },
-    prepare: (_e: GPUCommandEncoder, _s: SlotContext, records: readonly unknown[]) => {
+    prepare: (e: GPUCommandEncoder, _s: SlotContext, records: readonly unknown[]) => {
       if (faults.gpu === true) device().createShaderModule({ code: BROKEN, label: `${label} broken` });
+      if (faults.open === true && !spawned) {
+        const own = e.beginRenderPass({ label: `${label}/layer`, colorAttachments: [] });
+        own.pushDebugGroup(`${label}/layer`);
+        throw new Error(`${name}: its prepare throws mid-pass on purpose`);
+      }
+      if (faults.encoderGroup === true && !spawned) { e.pushDebugGroup(`${label}/uploads`); throw new Error(`${name}: its prepare throws inside a debug group on purpose`); }
       if (hits(faults.prepare, spawned)) throw new Error(`${name}: its prepare throws on purpose (${label})`);
       return records.length;
     },
     drawRange: (p, first, end) => {
       if (hits(faults.drawRange, spawned)) { p.setScissorRect(1, 2, 3, 4); throw new Error(`${name}: its drawRange throws on purpose (${label})`); }
+      if (faults.runGroup === true && !spawned) { p.setViewport(0, 0, 10, 10, 0, 1); p.pushDebugGroup(`${label}/run`); throw new Error(`${name}: its drawRange throws inside a debug group on purpose`); }
       p.pushDebugGroup(`kind ${label} ${first}-${end}`);
       p.popDebugGroup();
     },
@@ -69,17 +83,18 @@ function probeKind(name: string, faults: Faults, device: () => GPUDevice, compos
   };
 }
 
-/** A ground of the probe and the plain kind on the fake device, the boundary's words recorded; `watch` its GPU scopes. */
-async function groundOf(faults: Faults, opts: { readonly boundary?: boolean; readonly watch?: boolean; readonly composite?: boolean } = {}) {
+/** A ground of the probe and the plain kind on the fake device, the boundary's words recorded; `scopes` its GPU scopes (the desk's: the slot's). */
+async function groundOf(faults: Faults, opts: { readonly boundary?: boolean; readonly scopes?: RenderBoundary["scopes"]; readonly composite?: boolean } = {}) {
   const log: string[] = [];
   const fake = fakeDevice(log, { refuse: (code) => (code === BROKEN ? "unresolved value 'nothing_declares_this'" : undefined) });
   const threw: string[] = [];
   const gpu: string[] = [];
   const boundary: RenderBoundary = {
     threw: (kind, call, err) => { threw.push(`${kind} ${call}: ${err instanceof Error ? err.message : String(err)}`); },
-    watch: opts.watch ?? true,
+    scopes: opts.scopes ?? "slot",
     device: fake.device,
     gpu: (kind, error) => { gpu.push(`${kind}: ${error.message}`); },
+    gpuIn: (kinds, error) => { gpu.push(`one of ${kinds.join(", ")}: ${error.message}`); },
   };
   const probe = probeKind("probe", faults, () => fake.device, opts.composite === true);
   const plain = probeKind("plain", {}, () => fake.device);
@@ -130,6 +145,38 @@ describe("the kind boundary in the render half (design-019 §8, M24 LT3)", () =>
     expect(narrowed).toBeGreaterThan(-1);
     expect(g.log[narrowed + 1]).toBe("scissor 0,0,2400,1600");
     expect(g.log.indexOf("debug kind plain 0-2")).toBeGreaterThan(narrowed);
+    g.ground.dispose();
+  });
+
+  it("a prepare that throws with what it began still OPEN — its own pass (a debug group pushed in it), or a debug group on the encoder: closed before the frame's pass is begun, the frame's encoder valid (WebGPU refuses the WHOLE frame's command buffer otherwise)", async () => {
+    for (const f of [{ open: true }, { encoderGroup: true }] as Faults[]) {
+      const g = await groundOf(f);
+      g.ground.render(rest);
+      expect(g.threw).toHaveLength(1);
+      expect(g.log.filter((l) => l.startsWith("invalid:"))).toEqual([]);
+      expect(g.drew()).toEqual(["kind plain 0-2"]);
+      const main = g.log.indexOf("pass ground");
+      if (f.open === true) {
+        const own = g.log.indexOf("pass probe/layer");
+        expect(g.log.slice(own, own + 4)).toEqual(["pass probe/layer", "debug probe/layer", "debug end", "end"]);   // its group popped, its pass ended
+        expect(own + 3).toBeLessThan(main);
+      } else {
+        const at = g.log.indexOf("encoder debug probe/uploads");
+        expect(g.log[at + 1]).toBe("encoder debug end");
+        expect(at + 1).toBeLessThan(main);
+      }
+      g.ground.dispose();
+    }
+  });
+
+  it("a drawRange that throws inside a debug group of its own, through a viewport of its own: the group popped back, the slot's scissor and the whole view's viewport set again — the pass ends valid", async () => {
+    const g = await groundOf({ runGroup: true });
+    g.ground.render(rest);
+    expect(g.threw).toEqual(["probe drawRange: probe: its drawRange throws inside a debug group on purpose"]);
+    expect(g.log.filter((l) => l.startsWith("invalid:"))).toEqual([]);
+    const at = g.log.indexOf("debug probe/run");
+    expect(g.log.slice(at, at + 4)).toEqual(["debug probe/run", "debug end", "scissor 0,0,2400,1600", "viewport 0,0,2400,1600"]);
+    expect(g.drew()).toEqual(["kind plain 0-2"]);
     g.ground.dispose();
   });
 
@@ -238,20 +285,46 @@ describe("the kind boundary in the render half (design-019 §8, M24 LT3)", () =>
     g.ground.dispose();
   });
 
-  it("a GPU error raised in a kind's prepare is THAT kind's (its own validation scope) — told to the boundary, never the device's uncaptured; unwatched, the device's", async () => {
+  it("a GPU error raised in a kind's prepare: inside the slot's ONE scope (the desk's) it is the kind's when the slot asked it alone, else one of the kinds asked (`gpuIn`); inside each kind's own (`kind`) the kind's; never the device's uncaptured — with no scope (`off`), the device's", async () => {
+    const WGSL = "Error while parsing WGSL: unresolved value 'nothing_declares_this'";
+    const answered = (): Promise<unknown> => new Promise((r) => setTimeout(r, 0));   // the scopes are answered later, as a device answers them
+    /** The scopes pushed from now on. */
+    const counted = (device: GPUDevice): (() => number) => {
+      let n = 0;
+      const push = device.pushErrorScope.bind(device);
+      device.pushErrorScope = (f) => { n += 1; push(f); };
+      return () => n;
+    };
     const g = await groundOf({ gpu: true });
+    const pushed = counted(g.fake.device);
     g.ground.render(rest);
-    await new Promise((r) => setTimeout(r, 0));   // the scopes are answered later, as a device answers them
-    expect(g.gpu).toEqual(["probe: Error while parsing WGSL: unresolved value 'nothing_declares_this'"]);
+    await answered();
+    expect(pushed()).toBe(1);   // ONE scope for the root slot's two kinds
+    expect(g.gpu).toEqual([`one of probe, plain: ${WGSL}`]);
     expect(g.fake.uncaptured).toEqual([]);
     expect(g.threw).toEqual([]);   // a GPU error is no throw: the frame drew the probe
     expect(g.drew()).toEqual(["kind probe 0-1", "kind plain 0-1", "kind probe 1-2", "kind plain 1-2"]);
+    // the probe alone in its slot: the slot's scope is its own
+    g.gpu.length = 0;
+    g.ground.render({ ...rest, objects: objects.filter((o) => o.kind === "probe") });
+    await answered();
+    expect(g.gpu).toEqual([`probe: ${WGSL}`]);
     g.ground.dispose();
-    const u = await groundOf({ gpu: true }, { watch: false });
+    // each kind's own: two scopes, the error the probe's
+    const k = await groundOf({ gpu: true }, { scopes: "kind" });
+    const kinds = counted(k.fake.device);
+    k.ground.render(rest);
+    await answered();
+    expect(kinds()).toBe(2);
+    expect(k.gpu).toEqual([`probe: ${WGSL}`]);
+    expect(k.fake.uncaptured).toEqual([]);
+    k.ground.dispose();
+    // none: the device's uncaptured, as before
+    const u = await groundOf({ gpu: true }, { scopes: "off" });
     u.ground.render(rest);
-    await new Promise((r) => setTimeout(r, 0));
+    await answered();
     expect(u.gpu).toEqual([]);
-    expect(u.fake.uncaptured.map((e) => e.message)).toEqual(["Error while parsing WGSL: unresolved value 'nothing_declares_this'"]);
+    expect(u.fake.uncaptured.map((e) => e.message)).toEqual([WGSL]);
     u.ground.dispose();
   });
 
@@ -296,7 +369,7 @@ describe("the kind boundary in the render half (design-019 §8, M24 LT3)", () =>
         const fake = fakeDevice(log);
         const ground = await Ground.create({
           device: fake.device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: [program("note", {}), program("print", f)],
-          boundary: { threw: (kind, call) => { threw.push(`${kind} ${call}`); }, watch: false, device: fake.device, gpu: () => {} },
+          boundary: { threw: (kind, call) => { threw.push(`${kind} ${call}`); }, scopes: "off", device: fake.device, gpu: () => {}, gpuIn: () => {} },
         });
         ground.render({ view: VIEW, theme: THEME, objects: cards });
         expect(threw).toEqual([f.prepare === true ? "print prepare" : "print cardSlot"]);

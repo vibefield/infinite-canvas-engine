@@ -111,6 +111,8 @@ interface Shared {
   slots: number;
   /** The kind the pass draws for (its name — the fault door's key, M24 LT3). */
   readonly kind: string;
+  /** What the fault door's pass is begun on (made the first time it is, M24 LT3). */
+  faultTarget?: GPUTexture;
 }
 
 export class RigLivePass implements KindPass<RigSheetRecord> {
@@ -192,7 +194,13 @@ export class RigLivePass implements KindPass<RigSheetRecord> {
     const list = records.length > MAX_SHEETS ? records.slice(0, MAX_SHEETS) : records;
     const keys = extra?.keys;
     this.count = this.store.prepare(list, keys !== undefined && keys.length > MAX_SHEETS ? keys.slice(0, MAX_SHEETS) : keys);
-    rigFault(this.shared.kind, "prepare");   // the fault door (M24 LT3): its records written, the rest of its prepare not made
+    // the fault door (M24 LT3): its records written, the rest of its prepare not made — thrown MID-PASS, a pass of its own left open
+    rigFault(this.shared.kind, "prepare", () => {
+      const s = this.shared;
+      s.faultTarget ??= s.device.createTexture({ label: "rig-live/fault", size: [4, 4], format: "rgba8unorm", usage: GPUTextureUsage.RENDER_ATTACHMENT });
+      const own = encoder.beginRenderPass({ label: "rig-live/fault", colorAttachments: [{ view: s.faultTarget.createView(), loadOp: "load", storeOp: "store" }] });
+      own.pushDebugGroup("rig-live/fault");
+    });
     this.rebind();
     this.litElsewhere = !litByOwn(slot.view, slot.lit);
     const k = slot.view.zoom * slot.view.dpr;
@@ -213,7 +221,8 @@ export class RigLivePass implements KindPass<RigSheetRecord> {
     if (first >= hi) return;
     pass.setPipeline(this.litElsewhere ? this.shared.litPipeline : this.shared.pipeline);
     pass.setBindGroup(0, this.group);
-    rigFault(this.shared.kind, "drawRange");   // the fault door (M24 LT3): mid-run — its pipeline and first group set, nothing drawn
+    // the fault door (M24 LT3): mid-run — its pipeline and first group set, a viewport of its own and a debug group left in the desk's pass
+    rigFault(this.shared.kind, "drawRange", () => { pass.setViewport(0, 0, 1, 1, 0, 1); pass.pushDebugGroup("rig-live/fault"); });
     for (let i = first; i < hi; i++) {
       pass.setBindGroup(1, this.faces[i] as GPUBindGroup);
       pass.draw(6, 1, 0, i);
@@ -223,6 +232,6 @@ export class RigLivePass implements KindPass<RigSheetRecord> {
   dispose(): void {
     this.store.dispose();
     this.shared.slots -= 1;
-    if (this.shared.slots === 0) this.shared.film.destroy();   // the film goes with the last slot standing
+    if (this.shared.slots === 0) { this.shared.film.destroy(); this.shared.faultTarget?.destroy(); }   // the film goes with the last slot standing
   }
 }

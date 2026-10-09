@@ -173,6 +173,12 @@ export interface DeskLayerOptions {
  */
 export const DEFAULT_RASTER_BUDGET = 256 * 1024 * 1024;
 
+/**
+ * How many frames each kind's prepare keeps a GPU error scope of its own after a slot's scope caught an error with more than one kind
+ * asked (M24 LT3, ground.ts `RenderBoundary.scopes`): two seconds at 60 — an error a kind raises every frame is named on the next.
+ */
+const KIND_SCOPE_FRAMES = 120;
+
 /** The pinned still a parity scene states: the clocks, the plate and the gobo's opacity, the wind (0 = a still). */
 export interface MatPin extends AmbientPin {
   readonly plate?: PlateName;
@@ -688,6 +694,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     const unstruck: { readonly kind: string; readonly call: string; readonly err: unknown }[] = [];
     const strikeLater = (kind: string, call: string, err: unknown): void => { unstruck.push({ kind, call, err }); };
     const strikeNow = (): void => { for (const u of unstruck.splice(0)) faults.strike(u.kind, u.call, u.err); };
+    /** The ground's boundary (made with the ground) — its GPU scopes the slot's, each kind's own until `kindScopesUntil` frames are drawn after a slot's caught an error no one kind owns. */
+    let renderBoundary: RenderBoundary | undefined;
+    let kindScopesUntil = 0;
     /** Every move of the status goes through here, and `onStatus`'s listeners hear it (K9) — carrying the missing kinds once any is (I24). */
     const setStatus = (next: DeskLayerStatus): void => {
       const { faults: _was, ...rest } = next;
@@ -942,8 +951,10 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         // run) asks no driver (they follow input, and none came) and ticks only the kinds due now or woken; any other step asks
         // every part, as before. A desk at rest takes no step at all — the loop sleeps (dom/loop.ts).
         const timeAlone = frame?.settled() === true && woken.size === 0 && !compose.dirty();
-        // what the last frame's kinds broke, struck now — before anything of theirs is asked again (M24 LT3)
+        // what the last frame's kinds broke, struck now — before anything of theirs is asked again (M24 LT3); each kind's own GPU scope
+        // given back to the slot's once its frames are drawn
         strikeNow();
+        if (renderBoundary?.scopes === "kind" && compose.redraws() >= kindScopesUntil) renderBoundary.scopes = "slot";
         if (!timeAlone) {
           following = false;
           for (const [type, d] of drivers) {
@@ -1134,16 +1145,24 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           opts.onDevice?.(g.device);
           // each kind's pass in its own error scope (petition I24): a kind refused there is MISSING — the rest boot; a GPU error the
           // kinds' window caught that no kind raises alone is the device's, as it would have been
-          // …and the render half's kind boundary (M24 LT3): its throws and its kinds' GPU errors struck after the frame, the loop woken for them
+          // …and the render half's kind boundary (M24 LT3): its throws and its kinds' GPU errors struck after the frame, the loop woken for
+          // them; a GPU error a slot's scope caught with more than one kind asked is said, and each kind's own scope kept a while — a repeat
+          // is the kind's
           const boundary: RenderBoundary = {
             threw: strikeLater,
-            watch: true,
+            scopes: "slot",
             device: g.device,
             gpu: (kind, error) => {
               strikeLater(kind, "prepare", new Error(`a GPU error in its own scope — ${error.constructor?.name ?? "GPUError"}: ${error.message}`));
               frame?.wake("desk:gpu");   // struck at the next flush's head: a sleeping desk takes one
             },
+            gpuIn: (names, error) => {
+              console.warn(`[ice] desk: a GPU error in the prepare of one of ${names.map((n) => `"${n}"`).join(", ")} — each kind's own scope kept for the next ${KIND_SCOPE_FRAMES} frames, a repeat is its strike: ${error.constructor?.name ?? "GPUError"}: ${error.message}`);
+              boundary.scopes = "kind";
+              kindScopesUntil = compose.redraws() + KIND_SCOPE_FRAMES;
+            },
           };
+          renderBoundary = boundary;
           const made = await Ground.create({ device: g.device, surface: surface(g.device, canvas), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)), tray: trayShaders(shaderText), boundary, ...(events.onError !== undefined ? { onError: events.onError } : {}) });
           if (disposed || ended) { made.dispose(); return; }
           boot.compiled = performance.now() - mountedAt;
