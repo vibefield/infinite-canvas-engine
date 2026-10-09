@@ -20,7 +20,8 @@ the world — a web page, a captured window, a simulator's screen — as a textu
 samples; nothing about a source enters the desk. LT1 lands the texture, the source a host lends, the sight and the three doors a live
 kind is handed — additive. LT2 lands the hand's input to a kind in hand — the kind TOLD it, its wheel, cursor and Escape, the editor's
 composition, the displayed frame's logical size — and removes the keyboard claim's dead declaration (`### Removed`; a few types widen,
-`### Changed`). The render half's containment is LT3's.
+`### Changed`). LT3 contains the render half: a kind's throw in a frame — any slot — and its GPU errors where a scope can name it are
+petition I24's strikes against that kind, never a lost frame (additive; a few types widen).
 
 ### Added
 
@@ -146,6 +147,44 @@ composition, the displayed frame's logical size — and removes the keyboard cla
   down in one press, the terminal's Esc is its face's (and an Esc on the bare page, its lease blurred away, leaves it in hand) and Done
   puts it down; and a held face playing at 60 — the desk copy behind never remade, the hand slot and its composites timed.
 
+<!-- M24 LT3 — the render half contained (design-019 §8, §10 LT3; 2026-10-09) -->
+- **THE KIND BOUNDARY IN THE RENDER HALF — `GroundOptions.boundary` / `RenderBoundary`** (`@vibecook/ice/desk`; petition I24's
+  ladder extended): what a frame asks of a kind's PASS — `spawn` (a slot's own), `tune`, `prepare`, `dropped`, `cardSlot`,
+  `cardResources`, `drawRange`, `drawOver`, `endHold`, the tray's `idle`/`idleAt` — is asked inside it in EVERY slot (the root, a mini
+  mat's inside, a departed desk, the hand, a capture, a tray specimen, what the tray carries). A throw is handed to `threw(kind, call,
+  err)` and that slot draws nothing more of the kind this frame (`DrawSlot.skip`: its card routes withdrawn, its composite run not laid,
+  an inside lying on one of its objects still drawn) while every other kind draws; a spawn that throws draws the kind's objects there in
+  the missing face. The desk layer strikes each throw against the kind AFTER the frame (a quarantine swaps the passes a frame is encoded
+  with): three, and it is MISSING — its objects in the missing face, its passes swapped, its desk state let go, `DeskLayerStatus.faults`
+  naming the call ("its drawRange threw (strike 3 of 3): …"), the state `ready`. Beside the pass the layer now strikes a driver's
+  `idle`/`follow`, a desk state's `forget` (the builder's and the tray's let-go), `keeps` and a raster's EVICTION while the budget trims
+  (each once a trim), and puts the hand down when its object's kind goes missing (its `up` told to no one). A ground with no boundary
+  (a unit's, the oracle's) throws as before.
+- **THE ENCODER KEPT USABLE — `EncoderGuard` / `GuardMark`** (types; `DrawSlot.guard`): WebGPU locks a command encoder while a pass it
+  began is open and refuses a pass or an encoder ended with a debug group pushed — the WHOLE frame's command buffer dropped at the submit
+  and the layer `degraded` for good. A kind that throws mid-pass (its own layer pass, its mips, a debug group) left exactly that. With a
+  boundary the frame's encoder is watched, and after a kind's throw the ground closes what it left open — its pass's debug groups popped
+  and the pass ended, the slot pass's groups popped back, the encoder's popped back — and sets the slot's scissor and the whole view's
+  viewport again.
+- **A KIND'S GPU ERRORS NAMED where a scope can — `RenderBoundary.scopes` (`"slot"` | `"kind"` | `"off"`), `gpu(kind, error)`,
+  `gpuIn(kinds, error)`**: the kinds' `prepare` run inside a GPU `validation` error scope — ONE over each slot's kinds by default (about a
+  µs a slot a frame; one around each kind's measured +8–15 µs on a six-kind frame recorded in ~40–50 µs). An error it holds is the kind's
+  when the slot asked it alone — a strike, never the device's uncaptured — else `gpuIn`: said on the console, and the layer keeps each
+  kind's own scope for the next 120 frames, so an error a kind raises every frame is named on the next and struck. What a kind records
+  into an encoder is validated at the finish, outside every kind's scope: the layer's `degraded`, as before.
+- **`CardPass.prepare(slot, threw?)`** and **`RasterBudget.trim(keep?, threw?)`**: a material kind's `cardResources` and an owner's
+  eviction that throws are handed to `threw` by name (the card draws nothing in the slot that frame — every object its own kind's;
+  the trim goes on); absent, the throw is the caller's, as before.
+- **Witnesses (LT3).** Node units: the ground on the fake device — which now refuses an encoder as WebGPU does — with a probe kind
+  beside a plain one in every slot, a prepare that throws with its own pass and a debug group open, a drawRange inside its own group and
+  viewport, the flat card's three calls, the GPU error through the slot's scope, each kind's and none (`render-boundary.test.ts`); the
+  guard alone (`encoder-guard.test.ts`); on a desk layer — prepare and drawRange three frames and missing with no frame fault, follow,
+  forget (the builder's, the tray's), keeps, an eviction, held in hand put down, the GPU error from the slot's scope to the kind's own
+  and back (`kind-render-faults.test.ts`). In Chrome — `rig:live` gains four rows (25): the rig kind's fault door
+  (`__deskRig.live.fault(kind, call)`) throwing in `prepare` MID-PASS, in `drawRange` MID-RUN and in `held` in hand — missing after three
+  frames, the layer never `degraded`, every other kind drawn, the frame count rising, the hand put down in the world; and the boundary's
+  price a frame (within the noise: the containment ~0–3 µs, the slot's scope ~1–2.5 µs).
+
 ### Changed
 
 <!-- M24 LT2 — the hand's input (design-019 §5) -->
@@ -158,6 +197,14 @@ composition, the displayed frame's logical size — and removes the keyboard cla
   `LiveWriter`'s three presents take `logical?`; `HeldPress.count` (a hand-written press names it; its default is 1); `KindLocal.held?`;
   `OpenBinding.wheel?`, `cursor?`, `escape?`; `EditorLease.compose?`, `commit?`; `HeldPoseSource.cursor?`; `WidgetDef.heldWheel?` /
   `heldEscape?` and `WidgetType.heldWheel` / `heldEscape` (required on the compiled type); `createCursorSync(world, opts?)`.
+
+<!-- M24 LT3 — the render half contained (design-019 §8) -->
+- **A kind's throw in a frame is no longer the frame's** (`deskLayer`): a pass's `prepare`, `drawRange` and the rest, a driver's
+  `follow`, a desk state's `forget`/`keeps`, a raster's eviction and a GPU error raised in a kind's `prepare` were a lost frame each time
+  (the reflector's contained fault, or every frame's submit refused); now each is a strike against the kind and the frame goes on. A
+  host that counted `onReflectorFault` for a plugin kind's bug now reads `DeskLayerStatus.faults`.
+- **Types widen**: `GroundOptions.boundary?`, `SlotSet.boundary?`, `DrawSlot.boundary?` / `skip?` / `guard?`; `LayerContext.ops` takes
+  `putDown?` (`createDeskHost` passes the engine's).
 
 ### Removed
 

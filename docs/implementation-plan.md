@@ -1971,7 +1971,7 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   lends its own. Witnesses: desk/test/still.test.ts (a writing stub on the fake raster) and the desk clock's Dawn still unchanged
   (once at the build, a throwaway Dawn probe of the real note: ink with a fixed raster lent, none without — not kept).
 
-## M24 — The live face (design-019) — **LT1 BUILT 2026-10-09 on branch `portals/lt1`** (graded by the orchestrator's own `ci` + `gate:landing`; cut as `0.16.0-portals.1` on `next` for VibeField's exact pin — the cut and the publish are not the builder's) · **LT2 BUILT 2026-10-09 on branch `portals/lt2`** (for the orchestrator's grade; `0.16.0-portals.2` likewise not the builder's)
+## M24 — The live face (design-019) — **LT1 BUILT 2026-10-09 on branch `portals/lt1`** (graded by the orchestrator's own `ci` + `gate:landing`; cut as `0.16.0-portals.1` on `next` for VibeField's exact pin — the cut and the publish are not the builder's) · **LT2 BUILT 2026-10-09 on branch `portals/lt2`** (graded; cut as `0.16.0-portals.2`, not the builder's) · **LT3 BUILT 2026-10-09 on branch `portals/lt3`** (for the orchestrator's grade; `0.16.0-portals.3` likewise not the builder's)
 
 VibeField's PORTALS program (`vibe-field/draft/thinking-portals.md`; James, 2026-10-09: "let's start working on this browser widget,
 and make it into a new plugin, and also work on the track of PORTALS, ICE's live-texture seam") asks the seam
@@ -2127,7 +2127,76 @@ file:line). Three slices, each cut as `0.16.0-portals.N` on `next`; `0.16.0` on 
   - **Not here**: the render half contained (LT3); a native platform surface (§11); any VibeField or strata edit; multi-touch to a face
     (one pointer's events are told in order, several interleave with no id — open below); a secondary press to a face (I28 keeps it a
     point: a page's context menu is a later ruling).
-- **LT3 — the render half contained** (`0.16.0-portals.3`): owed.
+- **LT3 — the render half contained** (`0.16.0-portals.3`; brief `vibe-field/draft/portals-maps/briefs/LT3-the-render-half-contained.md`;
+  design-019 §8, §10 LT3; petition I24's ladder, `desk/src/faults.ts`):
+  - **The strike sites added.** A host hands the ground its boundary (`GroundOptions.boundary` → `RenderBoundary`, ground.ts; the layer's,
+    `desk/src/host/layer.ts`), and every call a frame makes of a kind's PASS is asked inside it, in every slot alike — the root, a mini
+    mat's inside, a departed desk, the hand, a capture, a tray specimen and what the tray carries: `spawn` (a slot's own —
+    `missing/slots.ts` `spawnInside`: one that throws draws the kind's objects there in the missing face; the slot is reused, so it is
+    not asked again), `tune`, `prepare`, `dropped`, `cardSlot`, `cardResources` (the flat card's group is made over every material's — a
+    throw there was every frame's: `CardPass.prepare(slot, threw?)` names the kind, and the card draws nothing in the slot that frame,
+    every object its own kind's as with the card off), `drawRange`, `drawOver`, `endHold`, the tray's `idle`/`idleAt`. Beside the pass:
+    a driver's `idle` and `follow` (the layer's flush), a desk state's `forget` (the builder's and the reflector's tray let-go), `keeps`
+    and a raster's EVICTION while the budget trims (`engine/budget.ts` `trim(keep?, threw?)` — the trim goes on; each struck ONCE a trim,
+    after it: the trim asks `keeps` of every key). `held` was LT2's; what LT3 adds there is the PUT-DOWN: a kind that goes missing with
+    its object in hand has the hand let go (`ctx.ops.putDown`, a microtask after the striking step — an op writes the world, a reflector
+    never does; `LayerContext.ops` gains `putDown`), its `up` told to no one.
+  - **When a strike lands.** A throw in the render half, a GPU error and a `keeps`/eviction are struck AFTER the work they broke — at the
+    flush's head and after the trim (`strikeLater` → `strikeNow`): a quarantine swaps the very passes a frame is encoded with
+    (`Ground.quarantine`) and `budget.forget` mid-trim would count twice. `follow`, `forget` and `held` strike at once, as I24's world half
+    does. Within a frame, a kind that threw in a slot draws nothing more THERE (`DrawSlot.skip` — one strike a slot a frame; its card
+    routes withdrawn, its composite run not laid, its objects left out — an inside lying on one still drawn where it lies).
+  - **The encoder kept usable — a correction to the brief.** "A JS throw between draw calls leaves the pass encoder open and valid" is
+    true of the PASS, and not enough. Probed on Chrome's WebGPU: a pass a kind's `prepare` began (its own layer, its mips) and left open
+    LOCKS the frame's encoder ("Recording in [CommandEncoder] which is locked while [RenderPassEncoder] is open"), and a pass or an encoder
+    ended with a debug group still pushed is refused ("PushDebugGroup called 1 time(s) without a corresponding PopDebugGroup") — either
+    way the submit drops the WHOLE frame's command buffer and the layer goes `degraded` for good, every frame until the third strike.
+    `encoder-guard.ts` (new; `EncoderGuard`/`GuardMark` exported as types): the frame's encoder is watched — own properties over
+    `beginRenderPass`/`beginComputePass`/debug groups and each pass's `end`/debug groups (the pass instrument's idiom) — and after a
+    kind's throw the ground unwinds to the mark it took before asking: the pass the kind left open has its groups popped and is ended,
+    the slot pass's groups popped back, the encoder's popped back; `drawSlot` sets the slot's scissor AND the whole view's viewport again.
+    The rest of the pass state needs nothing: every run sets its own pipeline and groups (and its vertex/index buffers, the board its
+    blend constant); no desk pipeline reads a blend constant or a stencil reference. Not unwound: an occlusion query a kind left open in
+    a pass of its own (none uses one; the desk's passes carry no query set).
+  - **GPU errors attributed where they can be.** Measured: ONE validation scope (push, pop, its promise) is ~1 µs alone; one around each
+    kind's `prepare` cost +8–15 µs on a six-kind rest frame recorded in ~40–50 µs (the frame recorded 100–150 times in each arm, the
+    minima and medians of 15–21 rounds, load 3–6) — a quarter of the recording, not affordable by "do not slow the frame". So
+    `RenderBoundary.scopes` is `"slot"`: ONE scope over each slot's kinds (a rest frame's one); an error it holds is the kind's when the
+    slot asked that kind alone (`gpu` → a strike, the reason "a GPU error in its own scope — GPUValidationError: …"), else `gpuIn` — said
+    on the console, and the layer keeps each kind's own scope (`"kind"`) for the next 120 frames, so an error a kind raises every frame is
+    named on the next and struck; `"off"`, none. What a scope catches is a DEVICE or QUEUE call's (a write past a buffer, a resource made
+    wrong); what a kind records into an encoder — its own passes in `prepare`, its draws — Dawn validates at the encoder's finish, outside
+    every kind's scope: unattributed, and `degraded` as it is. Out-of-memory and internal errors are not scoped (the filter is
+    `validation`): an OOM is the device's, not one kind's.
+  - **The price** (rig:live, the frame recorded 100 times in four arms, the minima of 11 rounds): the held frame 20.7 µs with no
+    boundary, +1.4 contained, the slot's scope +2.4, each kind's (1) +1.4; the rest frame 38.0 µs, +2.7, +0.9, each kind's (3) +4.1 —
+    at load 7/5/5, where the noise is ±2–3 µs. The containment (the try blocks, the guard's wrappers — an own property over a pass's
+    `end` slows no other call on it: 15.0 vs 14.7 ns a `setScissorRect`) is within the noise; the idle-zero is untouched (no frame, no
+    scope, no guard). LT2's held 60 fps cost row with the containment in: 120 taken, 120 drawn, the desk copy remade 0 times, 0.16 ms on
+    the GPU drained, 0.14 ms standing, 0.53 ms of the loop's main thread a frame at load 7/5/5 (LT2's: 0.15 · 0.14 · 0.48 at 9/11/13).
+  - **Exit** — `portals/lt3` = `826acc8` + the slice's commits, each green; `pnpm run ci` green; `pnpm run gate:landing` green (the
+    oracle's 116 unchanged; twenty-one rigs; pack:audit; dts:check). **Witnesses**: Node units — the ground on the fake device with a
+    probe kind beside a plain one, in every slot (`packages/desk/test/render-boundary.test.ts`: the root's prepare, a drawRange mid-slot,
+    a mini mat's inside — its spawned prepare, its spawn — an inside on a skipped object, a departed desk, a drawOver, the hand and its
+    endHold, a capture, a tray specimen and the tray's idle/idleAt, a composite's run, a prepare that throws with its own pass and a
+    debug group open or inside an encoder group, a drawRange inside its own group and viewport, the flat card's prepare/cardSlot/
+    cardResources, the GPU error through the slot's scope, each kind's and none, no boundary); the fake device now refuses an encoder
+    as WebGPU does (`invalid: …`); the guard alone (`encoder-guard.test.ts`); on a desk layer (`kind-render-faults.test.ts`): prepare and
+    drawRange — three frames, missing, the other kind drawn every frame, no frame fault — follow, the builder's forget and keeps, the
+    tray's let-go, an eviction (two trims, two strikes), held in hand (put down, its `up` told to no one), and the GPU error from the
+    slot's scope to the kind's own and back after 120 frames. In Chrome — **`rig:live`** gains four rows (25): the rig's FAULT DOOR
+    (`apps/desk/src/rig/live-fault.ts`, `__deskRig.live.fault(kind, call)`), each call in a page of its own — `prepare` MID-PASS (its
+    own pass and a debug group left open), `drawRange` MID-RUN (a viewport and a debug group left in the desk's pass), `held` in hand:
+    MISSING after three frames, said once, the status naming the call, the layer `ready` (never `degraded`: no frame refused), its
+    object in the missing face, the board drawn, the frames rising (6 → 10 → 11; held 38 → 45 → 49), no contained reflector fault, no
+    other page error; held: put down IN THE WORLD — the desk's pick door answers the board again (it answers nothing while anything is
+    held) — the face sent nothing after the door armed; and the BOUNDARY's price row above. 59 mutations through a restoring driver,
+    every one red — 50 against the units, 9 against rig:live (one of them, the put-down, stayed green until the row asked the pick
+    door: a missing kind's object in hand builds no hand to draw, so `__desk.hand()` read null either way).
+  - **Not here**: device-loss recovery (design-019 §8: unchanged — the host remounts); any VibeField or strata edit; attributing what a
+    kind records into an encoder (validated at the finish — `degraded` as before); `degraded` lifting once its cause is quarantined.
+    Outside the boundary still, each the caller's or the mount's: a host's door into a kind (`tuneLaw` → `tune`/`setLaw`, `records()`),
+    and the create-time calls — `local()`, `theme` (a theme change too), a DOM half's `text`/`mount`.
 
 ## Release cut & downstream
 

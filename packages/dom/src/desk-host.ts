@@ -91,7 +91,7 @@ export interface LayerContext {
    * handle's `tray.lay` — and (M24 LT3) `ops.putDown`, the hand let go when its object's kind goes missing. Absent (a bare host), the
    * lay throws and such an object stays in hand.
    */
-  readonly ops?: Pick<CanvasEngine["ops"], "layFromTray" | "putDown">;
+  readonly ops?: Pick<CanvasEngine["ops"], "layFromTray"> & Partial<Pick<CanvasEngine["ops"], "putDown">>;
 }
 
 export type LayerFactory<H extends LayerHandle = LayerHandle> = (ctx: LayerContext) => H;
