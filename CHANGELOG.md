@@ -136,7 +136,7 @@ composition, the displayed frame's logical size — and removes the keyboard cla
   (`kind-held.test.ts`); a compose lease told start, updates and commit, a plain lease the values (`editor-lease.test.ts`); the logical
   size on every present, a still's, a malformed one refused (`live.test.ts`); Esc in hand with and without a claim, a lease that takes
   it, the kind's never, Done's op (`packages/react/test/facade.test.ts`) and Done's tip (`held-bar.test.tsx`). In Chrome — `rig:live`
-  gains seven rows (21): a press, a move and a release on a held face reach its source in the displayed frame's logical px; a
+  gains eight rows (21): a press, a move and a release on a held face reach its source in the displayed frame's logical px; a
   double-click there counted 1 then 2, the object still in hand; the edge's double-click puts it down, as ever; a plain wheel the
   face's and never the hand's pan, ⌘ zooms the hand; the page's cursor over its link is the container's; keys, `Input.insertText` and
   an IME composition (`Input.imeSetComposition`) reach the face as key, text and compose through the leased editor; Esc puts the page

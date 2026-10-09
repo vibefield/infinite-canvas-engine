@@ -2107,7 +2107,7 @@ file:line). Three slices, each cut as `0.16.0-portals.N` on `next`; `0.16.0` on 
     a throwing `held` / `cursor` three strikes then missing, never a frame fault (`kind-held.test.ts`); the composition told, a plain
     lease the values (`editor-lease.test.ts`); the logical size on every present, a still's, a malformed one refused (`live.test.ts`);
     Esc in hand — one press with a claim, a lease that takes it, the kind's never, Done's op (`packages/react/test/facade.test.ts`) — and
-    Done's tip (`held-bar.test.tsx`). In Chrome — **`rig:live`** gains seven rows (21): the rig live kind (`apps/desk/src/rig/live-kind.ts`)
+    Done's tip (`held-bar.test.tsx`). In Chrome — **`rig:live`** gains eight rows (21): the rig live kind (`apps/desk/src/rig/live-kind.ts`)
     names its face inside a 12-unit edge `live` in hand, takes the wheel, names the page's cursor, and its DOM half leases the editor in
     hand; the rig source frames a 256 × 160 logical page at 2× with a link and records every `LiveInput`; a second object, the TERMINAL,
     owns Esc. The rows (the builder's runs, 2026-10-09; the grade's numbers are in VibeField's `draft/portals-maps/landing-log.md`): a
