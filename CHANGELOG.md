@@ -6,14 +6,16 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
-> **`0.16.0-portals.2` on the `next` dist-tag (cut 2026-10-09)** — a prerelease carrying everything below for VibeField's PORTALS
+> **`0.16.0-portals.3` on the `next` dist-tag (cut 2026-10-09)** — a prerelease carrying everything below for VibeField's PORTALS
 > program (live surfaces back on the desk as object kinds) to pin exactly while its landing branch is open: `portals.1` (9 Oct, cut,
 > never published) M24 LT1, the live face (design-019) — `createLiveTexture` and the `LIVE` source a host lends, the sight,
-> `KindHost.redraw`/`keyOf`/`frames`, `mipsInto`, `stillLive`, the kit's `mat` name; `portals.2` adds LT2, the hand's input to a
-> kind in hand — `KindLocal.held` and `HeldEvent` (a press, its moves, its click count, the kind's wheel), `OpenBinding.wheel`/
-> `cursor`/`escape`, the editor lease's `compose`/`commit`, `LiveTexture.logical`. The section stays `[Unreleased]` until 0.16.0 is
-> cut. **One removal breaks a declaration:** `interaction.keyboard`/`keyboardEscape` (and the `KeyboardExclusive` tag — inert since
-> D5b) are gone, and declaring either now throws at definition, naming the editor lease and `open.escape` as their replacements.
+> `KindHost.redraw`/`keyOf`/`frames`, `mipsInto`, `stillLive`, the kit's `mat` name; `portals.2` (9 Oct) LT2, the hand's input to
+> a kind in hand — `KindLocal.held` and `HeldEvent`, `OpenBinding.wheel`/`cursor`/`escape`, the editor lease's `compose`/`commit`,
+> `LiveTexture.logical`; `portals.3` adds LT3, the render half contained — a kind's pass, its drivers, `forget`, `keeps` and a
+> raster's eviction under petition I24's three strikes in every slot, the frame's encoder kept usable after a kind's throw (a pass
+> it left open ended, its debug groups popped), GPU errors attributed by one scope a slot. The section stays `[Unreleased]` until
+> 0.16.0 is cut. **One removal breaks a declaration (portals.2):** `interaction.keyboard`/`keyboardEscape` and the
+> `KeyboardExclusive` tag are gone, and declaring either throws at definition, naming the editor lease and `open.escape`.
 
 **M24 — the live face (design-019, PROPOSAL rev 1 — VibeField's PORTALS seam).** A kind's face may show a surface that lives outside
 the world — a web page, a captured window, a simulator's screen — as a texture on the desk's device that the HOST fills and the kind
