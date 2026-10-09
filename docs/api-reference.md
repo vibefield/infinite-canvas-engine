@@ -270,7 +270,7 @@ CHANGELOG's `### Removed` lists them).
 | `useTool()` / `useToolState(id)` | `[id, setTool]` over the `ActiveTool` resource. |
 | `useUndoStatus()` | `{canUndo, canRedo}` via the `DurableUndoStatus` resource — survives doc swaps. |
 | `usePresencePeers()` | Remote peers (`PresencePeer` × `Not(Local)`), membership-keyed stable snapshots. A host that draws them itself mounts the desk with `deskLayer({ cursors: false })` (petition I26), and the desk's remote cursors stay off. |
-| `attachKeymap(ce, target?, overrides?)` · `nudgeSelection` · `toggleTape` | Defaults: ⌫ delete · ⌘Z/⇧⌘Z · ⌘D · ⌘A · Esc · arrows nudge (one tx/press) · ⏎ opens / enters · tool shortcuts. All resolve to ops; editable targets and keyboard claims skipped. |
+| `attachKeymap(ce, target?, overrides?)` · `nudgeSelection` · `toggleTape` | Defaults: ⌫ delete · ⌘Z/⇧⌘Z · ⌘D · ⌘A · Esc · arrows nudge (one tx/press) · ⏎ opens / enters · tool shortcuts. All resolve to ops; editable targets and keyboard claims skipped. Esc closes the tray, then puts the object in hand down — in ONE press even while its kind leases the editor (M24 LT2: the claim released with it) — and never for a kind that owns Esc (`open.escape: "kind"`, the type's `heldEscape`: its lease takes the key; Done, a click off it or the pinch put it down). |
 | `<SelectionMenu source actions>` · `defaultSelectionActions` · `placeSelectionMenu` · `SELECTION_MENU` · `SELECTION_GLYPHS` · `selectionTaped` | *Marks on the Mat*'s ink bar and the held bar (design-015 §7–§8, D4a/D4b): placed from the desk layer's `selection` anchor. K8a: the anchor's `menu` puts a selection's KIND ACTS first (`SelectionMenuAct` — a type's `defineWidget({ menu })`, run by `ops.runMenuAction`); a held tool's or an act's glyph is a name of `SELECTION_GLYPHS` or its own drawing (`SelectionGlyph` `{ path, fill? }`), and a name the set lacks is marked missing (its initial, `data-glyph-missing`), never drawn as the ellipsis. |
 | `<TrayBar source label? keys?>` · `placeTrayBar` · `TRAY_BAR` · `TRAY_BAR_GLYPHS` · `DESK_TAPE` | The pegboard drawer's HANDLE and its FILTERS (design-018 §5–§6, R4), the menu's sibling: two islands under one root. `source` is the desk handle's `tray` door, read structurally (`TrayBarSource` — `anchor()`, `subscribe()`, `toggle()`, `category(id?)`). THE PILL, in the desk's ink (the same `--ice-menu-*` custom properties, declared on its own root — an app re-points both islands alike): shut, a 40 px pill 16 px above the view's foot — the pegboard glyph and "Objects", titled "Objects (A)", `aria-expanded`; out, it rides the drawer's top edge as "× Objects", its bottom at `min(vh − 16, drawer.y − 10)`. THE CATEGORY CHIPS (R4) lie in the drawer's clear HEADER (the anchor's `drawer.header`) as LABEL TAPE — the specimens' own tags, `DESK_TAPE`'s custom properties (the tape, its raised capitals, the chosen cream, the mono face) — All, then the drawer's categories, the chosen one cream tape with ink letters; `aria-pressed`, a `role="toolbar"`; centred on the drawer and in the band, following the slide and fading in over its last part (`smoothstep(0.6, 1, p)`), scrolling inside the band past its width (each end fading where more lies beyond), stepping back by night by the anchor's `night` as the tags do. `placeTrayBar(anchor)` → `{ y, head: { x, y, w, h, opacity } | null }`. Both are written each frame the desk publishes (no render per frame, no rAF of its own) and step aside in hand and with nothing to offer. The pill and the chips' toolbar are `data-canvas-interactive`: the tray's input never takes their downs (a chip never closes the drawer) and the desk's tap lends nothing under them — the header's bare board beside them stays the drawer's. Enter/Space act on a focused button, ←/→/Home/End walk the chips; a pointer's click leaves no focus (Space still pans). |
 | `useCanvasCatalog` / `useCanvasTools` / `useCurrentCanvas` / `useCanvasDiagnostics` / `useFramePreview` · `<FramePreviewBoundary>` | The canvas SDK hooks. |
@@ -486,15 +486,28 @@ engine names a kind:
   kind opens a face per object by its DURABLE key (`KindHost.keyOf(e)` — strata's document key: the same on every peer and across a
   reload), takes once at the open and then on each arrival (`arrived` → `KindHost.wake()`; its tick `take()`s; a face that landed asks
   `KindHost.redraw()` — the frame drawn again, NO record remade — and the tick answers false), draws `face.texture()` (`LiveTexture`:
-  `view()`, `revision`, `epoch`; `prepare(encoder, liveDepth(face, px))` makes its mips into the frame's encoder as deep as they are
+  `view()`, `revision`, `epoch`, `logical` — the DISPLAYED frame's logical size, what each present said: `present(source, rect?, logical?)`,
+  its texels when none (M24 LT2); `prepare(encoder, liveDepth(face, px))` makes its mips into the frame's encoder as deep as they are
   read), and tells the host what it sees: `createSight(host.frames)` folds its prepares' `saw` into `Seen` per entity per frame (the
   desk copy behind the hand and a capture never count — a face behind the hand reads unseen), and its law hands `face.demand(d)` a
   `LiveDemand` change-only. A still draws one from committed bytes: `createStill({ services: [service(LIVE, stillLive(device, …))] })`.
+- **The hand's input to a kind** (M24 LT2, design-019 §5): IN HAND a kind is TOLD what the hand did — `KindLocal.held(e, events)`, once
+  a frame something happened, `HeldEvent`s in its held extent's units (centred): `pointer` (`down`/`move`/`up`, the kind's `part`,
+  `button`, `buttons`, `count` — 1, 2, 3 within the desk's multi-tap window and slop: core's `HeldPress.count`) for a press ON the object
+  and the moves between presses (a pan, a press on the soft desk and a secondary's are the hand's: never told), and `wheel` when its
+  `open.wheel` is `"kind"` (a plain wheel while it is held is the kind's, told with its point — the hand never pans for it; ⌘ and
+  the pinch zoom the hand). It never reads core's pointer components. `open.cursor(ctx)` names the cursor over its named parts
+  (`HeldCursorContext`: `entity`, `part`, `local`; the container shows it above the desk's own), and `open.escape: "kind"` keeps
+  Esc its own. A kind names the part that takes presses in hand only (`ctx.held`): at rest a named part takes the desk's drags and
+  taps. Keys, text and the IME reach it through the one editor its DOM half leases (below); a live kind sends what it is told to
+  its face (`face.input`) in the displayed frame's logical coordinates.
 - **Text input**: the ONE focused editor is the DESK's (`handle.editor(): DeskEditor`, `ObjectDomHost.editor`), made whatever kinds
   are registered; a kind declares its TEXT PARTS (`host: { text: (h) => TextPart[] }`) — a part with `tap` the desk routes every
   tap to (`TextTap`: the world point, the stack's exact hit), answering an `EditorLease` (`part`, `label`, `value`, `input`,
-  `keydown`, `caret`, `place` → `EditorPlace`, `idle`, `ended`, `live`); a part without one is leased by the kind's own half at
-  event time (`h.editor.lend(lease)`). The note's body (`NOTE_BODY`) and the calendar's day line (`CALENDAR_LINE`) are two such parts.
+  `keydown`, `caret`, `place` → `EditorPlace`, `idle`, `ended`, `live`, and — M24 LT2 — `compose(text, caret)` / `commit(text)`: a
+  lease that declares `compose` is told the IME's composition as it runs and its commit, instead of the field's values meanwhile); a
+  part without one is leased by the kind's own half at event time (`h.editor.lend(lease)`). The note's body (`NOTE_BODY`) and the
+  calendar's day line (`CALENDAR_LINE`) are two such parts.
 - **Placement by provides-keys** (`@ice/desk`): `DESK_OBJECT` (the desk canvas places what provides it), `CONTAINABLE` (the mini
   mat holds what provides it), `PINNABLE` (the calendar pins it to a day — `KindDriverHost.provides(key)`).
 - **Chips and containers**: a kind's `chip()` names its `finish` (`ChipFinish`, open — the kit's `PAPER_FINISH`/`VINYL_FINISH`, or

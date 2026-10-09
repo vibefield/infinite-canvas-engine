@@ -1971,7 +1971,7 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   lends its own. Witnesses: desk/test/still.test.ts (a writing stub on the fake raster) and the desk clock's Dawn still unchanged
   (once at the build, a throwaway Dawn probe of the real note: ink with a fixed raster lent, none without — not kept).
 
-## M24 — The live face (design-019) — **LT1 BUILT 2026-10-09 on branch `portals/lt1`** (graded by the orchestrator's own `ci` + `gate:landing`; cut as `0.16.0-portals.1` on `next` for VibeField's exact pin — the cut and the publish are not the builder's)
+## M24 — The live face (design-019) — **LT1 BUILT 2026-10-09 on branch `portals/lt1`** (graded by the orchestrator's own `ci` + `gate:landing`; cut as `0.16.0-portals.1` on `next` for VibeField's exact pin — the cut and the publish are not the builder's) · **LT2 BUILT 2026-10-09 on branch `portals/lt2`** (for the orchestrator's grade; `0.16.0-portals.2` likewise not the builder's)
 
 VibeField's PORTALS program (`vibe-field/draft/thinking-portals.md`; James, 2026-10-09: "let's start working on this browser widget,
 and make it into a new plugin, and also work on the track of PORTALS, ICE's live-texture seam") asks the seam
@@ -2038,7 +2038,95 @@ file:line). Three slices, each cut as `0.16.0-portals.N` on `next`; `0.16.0` on 
   - **Not here** (the brief's §10): the hand's input (`HeldPress.count`, `OpenBinding.wheel/cursor/escape`, the lease's composition,
     `KeyboardExclusive` retired — LT2); the render half contained (LT3); any VibeField or strata edit; an oracle scene of a live kind (the
     brief's witness is the Dawn still by colour count; `shas.json` untouched); a budget law in the rig kind (§7 is the browser kind's).
-- **LT2 — the hand's input** (`0.16.0-portals.2`): owed.
+- **LT2 — the hand's input to a live face** (`0.16.0-portals.2`; brief `vibe-field/draft/portals-maps/briefs/LT2-the-hand-s-input.md`;
+  design-019 §5 with rev 2's two rulings, §13.2):
+  - **The kind is TOLD its held input** (ruling 1): `KindLocal.held?(e, events: readonly HeldEvent[])` — once a frame something happened
+    while `e` is in hand, after the drivers and before the kinds' ticks (the layer's flush, `desk/src/host/layer.ts`), the frame's events
+    in order in the held extent's own units, centred. `desk/src/hold/told.ts` folds them from what core already writes — `HeldPointer`
+    (the point and the kind's part), `HeldPress` (whose press it is, its count) and `HeldWheel` — reading the folded facts once a frame,
+    so the adapters still only enqueue. THE CUT (core `l0-input.ts`) lands a press and its release in separate ticks and the desk's
+    reflector is `always`, so a press is seen to begin (its `HeldPress` appears, or is replaced — its down's own time, point and count)
+    and to end (it leaves) one frame each. **Told**: a press ON the object (a named part, its `content` or `frame`, a tool's stroke) with
+    its moves and release, and the pointer's moves between presses. **Never told** (the build's reading of "the hand's"): a pan (the
+    middle button, Space), a press on the soft desk, a secondary's (a point — I28 keeps no `HeldPress` for it), one held since before
+    the hold (the click that opened it), nor their moves. A primary press's mask is never empty (a synthetic down that names no button
+    is the primary's, core's `pressButton`); a press of the kind's still down when the hand lets go is told its `up` in the next frame,
+    so a source never keeps a button held. `button` is 0 for a press (−1 on a move), `count` 0 on a move. A throwing `held` is a strike
+    (I24). The calendar's hand keeps its driver.
+  - **`count` — the desk counts** (the brief: "the platform's `detail` where the adapter has it, else the desk's own multi-tap memory;
+    say which"): the DESK'S MEMORY. Probed in headless Chrome under CDP `clickCount` 1 then 2: a pointerdown's `detail` is 0 both times,
+    only `click` carries 1/2 — after the release — and the adapter never sees a mousedown (a pointerdown's
+    default can be prevented: the focus driver does so inside a claim, a held face's DOM half on its face). So core counts:
+    `HeldPress.count` — 1, then 2, 3… for each PRIMARY press within `GestureSettings.multiTapWindowMs` (280) and `multiTapSlopPx` (20) of
+    the one before, down to down, by the down events' own times (`PointerButtons.downMs`, the frame's `now` for an input with none —
+    K9 S6's law, so a stall never unpairs a double-click), kept by the new `HeldPressMemo` resource (any pointer: each touch is a pointer
+    of its own) and cleared when nothing is held. Uncapped (a fourth press is 4, as a browser's `detail` is). The desk's window, not
+    the OS's (macOS defaults near 500 ms): a double-click on a held face pairs exactly as the desk's own double-tap does.
+  - **The wheel** (ruling 2; §5.2's `HeldWheel {dx, dy, seq}` as designed): the widget type's `heldWheel` (`defineObject` carries
+    `open.wheel`; refused on what does not open) — with `"kind"`, core's held input writes a plain wheel to the pointer's `HeldWheel`
+    (the tick's deltas, `seq` once a tick; cleared with the pointer's other held facts) and never pans the hand for it, brought close or
+    not; ⌘/ctrl and the pinch zoom the hand as ever, and past 0.72× put it down. Like every held wheel it waits for the pickup to settle.
+  - **The cursor** (ruling 3): `OpenBinding.cursor?(ctx: HeldCursorContext)` — `{ entity, part, local }` — answered through the pose
+    seam (`HeldPoseSource.cursor?(entity, part)`, the desk's, through the kind's boundary), which core's L4 (`createCursorSync(world,
+    { pose })`) asks first, while the mouse is over one of the held object's NAMED parts; the dom's cursor reflector writes on change, as
+    ever. No new reflector: the container shows what L4 resolves.
+  - **Escape** (ruling 4): the widget type's `heldEscape`. With `"kind"` the keymap never puts the object down for Esc — neither its
+    entry (`escapeOrExit`) nor gate 2 (no blur: the event is its lease's). **A correction the build made — Esc in ONE press.** With a
+    held kind's DOM half leasing the editor (ruling 5), Esc lands on design-007's gate 2 (the editor carries the claim marker), which
+    only BLURRED: the lease ended and the object stayed in hand with no keys — "Esc puts the object down" took two presses, the first
+    leaving the face deaf. Gate 2 now releases the claim AND puts the object down in the same press when an object is in hand whose
+    Escape is the desk's. A lease that TAKES Esc (gate 1 — the calendar's day line letting go of its days) keeps the object in hand,
+    as before. The held bar's Done names Esc in its tip only where Esc puts the object down.
+  - **Keys, text and the IME** (ruling 5): `EditorLease.compose?(text, caret)` / `commit?(text)`. A lease that declares `compose` is
+    told the composition as it runs — `("", 0)` at `compositionstart`, then after each update THE PLATFORM APPLIED (told on the
+    composing `input`: `compositionupdate` comes before the field moves, so the caret within the preedit — what CDP's
+    `imeSetComposition` `selectionStart` sets — is known only then; probed headless) — and `commit` with `compositionend`'s data,
+    instead of the field's values meanwhile. A lease without one sees the values as ever (the preedit inside them). `keydown` stays raw.
+    The held tools' keys stay first in the keymap's own order — and a lease takes keys before the keymap hears them (its target-phase
+    listener), as the calendar's day line always has: a held face's lease that wants a held tool's key must decline it (open below).
+  - **`KeyboardExclusive` RETIRES** (ruling 6): the tag, its stamping from `interaction.keyboard`, and `interaction.keyboard` /
+    `keyboardEscape` with the widget type's `keyboard` / `keyboardEscape` — no reader in ICE, its devtools or VibeField (p2 §4.7,
+    re-grepped). Declaring either is REFUSED at definition with the way forward (the `presentation` precedent, design-013 A1) rather than
+    ignored. The dom's claim marker (`data-canvas-keyboard`, `CLAIM_OWNS_ESCAPE`) stays: the desk's editor carries it.
+  - **The displayed frame's logical size** (ruling 7): `LiveWriter.present(source, rect?, logical?)`, `presentBytes(…, logical?)` and —
+    the build's, for one law over the three presents — `presentTexture(texture, rect?, logical?)` record the frame's LOGICAL size;
+    `LiveTexture.logical` reads it (`[w, h]`, the texels when none was given and after a resize); a malformed one throws before the copy
+    (a `VideoFrame` still closed). `LiveStill.logical` for a still.
+  - **A rule for a portal kind's author** (the rig kind found it): name the input part IN HAND ONLY (`ctx.held` in `resolve`, read by
+    `hit`). At rest a named part is a part for the desk's whole stack — a tap writes `PartTap` instead of selecting, a drag on it is no
+    move — and at rest a live face must be an object like any other (§5).
+  - **Exit** — `portals/lt2` = `5ce1d44` + the slice's commits, each green; `pnpm run ci` green; `pnpm run gate:landing` green (the oracle's
+    116 unchanged; twenty-one rigs; pack:audit; dts:check). **Witnesses**: Node units — the press counted by its events' times and
+    points (1, 2, 3; afresh past 280 ms and past 20 px; the memo cleared once nothing is held), the kind's wheel (`HeldWheel`, no pan
+    brought close, ⌘ and the pinch the hand's, put down past 0.72×) with the book's control, the kind's cursor over a named part and not
+    off it (`packages/core/test/held.test.ts`); the claim refused, the owners' defaults and refusals (`widget.test.ts`); the fold through
+    the real stack — the first sample a move, the named part's down/move/up with their counts and masks, a synthetic down's mask, the
+    hand's presses, a secondary's and a pre-hold one never told, the kind's wheel and ⌘'s, the up when the hand lets go mid-press
+    (`packages/desk/test/held-told.test.ts`); on a desk layer with the pickup settled — the type carrying wheel and escape, the kind told
+    in its extent's units (the edge's presses `content`, two taps there still putting it down), the cursor with `{ entity, part, local }`,
+    a throwing `held` / `cursor` three strikes then missing, never a frame fault (`kind-held.test.ts`); the composition told, a plain
+    lease the values (`editor-lease.test.ts`); the logical size on every present, a still's, a malformed one refused (`live.test.ts`);
+    Esc in hand — one press with a claim, a lease that takes it, the kind's never, Done's op (`packages/react/test/facade.test.ts`) — and
+    Done's tip (`held-bar.test.tsx`). In Chrome — **`rig:live`** gains seven rows (21): the rig live kind (`apps/desk/src/rig/live-kind.ts`)
+    names its face inside a 12-unit edge `live` in hand, takes the wheel, names the page's cursor, and its DOM half leases the editor in
+    hand; the rig source frames a 256 × 160 logical page at 2× with a link and records every `LiveInput`; a second object, the TERMINAL,
+    owns Esc. The rows (the builder's runs, 2026-10-09; the grade's numbers are in VibeField's `draft/portals-maps/landing-log.md`): a
+    press, a move and a release on the face reach the source in the frame's logical px (move · down ×1 /1 · move /1 · up ×1, at 80,56 →
+    112,56); a double-click there down ×1 · up ×1 · down ×2 · up ×2 and the object still in hand; the edge's double-click puts it down
+    and the face hears no press; a plain wheel the face's (CDP's device px at the rig's dpr 2 — 20, then 5,15) and the hand's pan
+    untouched brought close to 1.37×; the container's cursor `pointer` over the link, `default` off it; ↓↑ArrowLeft, ⇧ArrowRight (+8),
+    `insertText` "hello", a typed x and an IME composition reach the face as key · text · compose "" 0 · "に" 1 · "にほ" 1 · "日本" 2 ·
+    text "日本"; Esc puts the page down in one press (no key sent; Done's tip "Done (Esc)"), the terminal's Esc reaches its face (↓↑Escape,
+    still in hand — and, its lease blurred away, an Esc on the bare page leaves it in hand; Done's tip "Done") and Done puts it down; a
+    held face PLAYING at 60 for 2 s — 118 taken, 118 drawn (59/s), the desk copy behind remade 0 times, the held frame (the hand slot and
+    its composites) 0.15 ms on the GPU drawn in full and drained, 0.14 ms standing, 0.48 ms of the loop's main thread a frame, at load
+    9/11/13. 52 mutations through a restoring driver, every one red — 39 against the units, 13 against rig:live (one of them, the
+    keymap's own path for a kind's Esc, stayed green until the row learnt the bare page: the rig's terminal takes its Esc through its
+    lease, gate 1, so `escapeOrExit` was never reached). Gate 2's branch for a kind's DECLINED Esc is its unit's alone — a kind that
+    takes its Esc never reaches it.
+  - **Not here**: the render half contained (LT3); a native platform surface (§11); any VibeField or strata edit; multi-touch to a face
+    (one pointer's events are told in order, several interleave with no id — open below); a secondary press to a face (I28 keeps it a
+    point: a page's context menu is a later ruling).
 - **LT3 — the render half contained** (`0.16.0-portals.3`): owed.
 
 ## Release cut & downstream

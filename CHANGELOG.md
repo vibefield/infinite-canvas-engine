@@ -15,7 +15,9 @@ All notable changes to ICE are documented here. The format follows
 **M24 — the live face (design-019, PROPOSAL rev 1 — VibeField's PORTALS seam).** A kind's face may show a surface that lives outside
 the world — a web page, a captured window, a simulator's screen — as a texture on the desk's device that the HOST fills and the kind
 samples; nothing about a source enters the desk. LT1 lands the texture, the source a host lends, the sight and the three doors a live
-kind is handed; the hand's input is LT2's, the render half's containment LT3's. Additive: nothing of 0.15.0's surface moves.
+kind is handed — additive. LT2 lands the hand's input to a kind in hand — the kind TOLD it, its wheel, cursor and Escape, the editor's
+composition, the displayed frame's logical size — and removes the keyboard claim's dead declaration (`### Removed`; a few types widen,
+`### Changed`). The render half's containment is LT3's.
 
 ### Added
 
@@ -82,6 +84,87 @@ kind is handed; the hand's input is LT2's, the render half's containment LT3's. 
   the face opened by its durable key; a quiet source → zero renders in 1.2 s; one arrival → exactly one frame and no record remade;
   three coalesce; a playing source a frame per take; the sight's px through a zoom, unseen culled and behind the hand, held in hand,
   seen inside a mini mat's portal; the ledger's `rig/live` lines; the demand change-only.
+
+<!-- M24 LT2 — the hand's input to a live face (design-019 §5 · §13.2; 2026-10-09) -->
+- **THE HAND'S INPUT, TOLD — `KindLocal.held?(e, events: readonly HeldEvent[])`** (`@vibecook/ice/desk`; design-019 §5, §13.2 ruling 1):
+  while `e` is IN HAND its kind is told what the hand did, once a frame something happened (after the drivers, before the kinds'
+  ticks), in its held extent's own units, centred (as core's `HeldPointer` is): `{ type: "pointer", phase: "down" | "move" | "up", x, y,
+  part, button, buttons, count }` for a press ON the object — on a named part, its `content` or `frame`, a tool's stroke — and the
+  pointer's moves between presses (one sample a frame), and `{ type: "wheel", x, y, dx, dy }` for the kind's wheel (CSS px of the hand).
+  A plugin kind reaches the desk through `/desk`, `/desk/kit` and `/desk/engine` alone, so it is TOLD — it never reads core's pointer
+  components; the desk folds the events from what core writes (`HeldPointer`, `HeldPress`, `HeldWheel`), never a second input path. A
+  press the HAND takes — a pan (the middle button, Space), a press on the soft desk — a secondary's (a point, I28) and one held since
+  before the hold are never told, nor their moves; a primary press's mask is never empty (a synthetic down that names no button is the
+  primary's); a press of the kind's still down when the hand lets go is told its `up` where the pointer was last. A `held` that throws
+  is a strike against the kind (I24). `HeldEvent` is exported.
+- **`HeldPress.count`** (core; design-019 §5.1): a primary press in hand is COUNTED — 1, then 2, 3… for each within the desk's multi-tap
+  window and slop of the one before (`GestureSettings.multiTapWindowMs` 280 / `multiTapSlopPx` 20, down to down, by the down events'
+  own times: `PointerButtons.downMs`), kept by the new `HeldPressMemo` resource (any pointer — each touch is a pointer of its own;
+  cleared when nothing is held). The browser's `detail` is 0 on a pointerdown, and the adapter never sees a mousedown, so the desk
+  counts. `HeldEvent`'s `count` is it.
+- **THE WHEEL IN HAND — `OpenBinding.wheel?: "hand" | "kind"`** (default `"hand"`, as ever): with `"kind"` a plain wheel while the
+  object is held is the kind's, told with its point — core writes it to the pointer's new `HeldWheel { dx, dy, seq }` (the tick's
+  deltas, `seq` once a tick) and never pans the hand for it, brought close or not; ⌘/ctrl-wheel and the pinch zoom the hand, and past
+  0.72× still put it down.
+  `defineObject` carries it onto the widget type (`WidgetDef.heldWheel`, `WidgetType.heldWheel` — refused on anything that does not
+  open, and an unknown word refused).
+- **THE CURSOR IN HAND — `OpenBinding.cursor?(ctx: HeldCursorContext) → string | undefined`** (`{ entity, part, local }`): asked while
+  the object is held and the mouse is over one of the kind's NAMED parts (any but `content` and `frame`) — a link's `pointer`, a text
+  field's `text`, from `LiveInfo.cursor`; core's L4 shows it above everything else (the pose seam's new `HeldPoseSource.cursor?(entity,
+  part)`, which the desk answers; `createCursorSync(world, { pose })`), the container's style written on change only. A throw is a
+  strike, and the desk's own cursor shows.
+- **ESCAPE IN HAND — `OpenBinding.escape?: "desk" | "kind"`** (default `"desk"`): with `"kind"` Esc is the kind's (a terminal's
+  source) — the keymap never puts the object down for it, nor blurs the editor its lease holds; Done, a click off it and the pinch put
+  it down. Carried onto the widget type (`WidgetDef.heldEscape`, `WidgetType.heldEscape`). The held bar's Done names Esc in its tip
+  only where Esc puts the object down.
+- **THE IME'S COMPOSITION — `EditorLease.compose?(text, caret)` and `commit?(text)`** (design-019 §5.4, gap 13): a lease that declares
+  `compose` is told the composition as it runs — `("", 0)` at its start, then after each update the platform applied (the preedit's
+  text and the caret within it, known only once the field moved: `compositionupdate` comes first) — and `commit` with `compositionend`'s
+  data, instead of the field's values meanwhile; a lease without one sees the values as ever. `keydown` stays raw. A held kind's DOM
+  half leases the one editor for its face (the calendar's day-line pattern).
+- **THE DISPLAYED FRAME'S LOGICAL SIZE — `LiveTexture.logical`** (`/desk/kit`; §13.2 ruling 2): `[width, height]` — what the present
+  said (a page's CSS viewport: `present(source, rect?, logical?)`, `presentBytes(bytes, width, height, logical?)`,
+  `presentTexture(texture, rect?, logical?)`, a still's `LiveStill.logical`), the texel size when none was given and after a resize; a
+  malformed one (not finite, ≤ 0) throws before the copy. A kind maps the hand's point into the frame it DISPLAYED; `LiveInput` is said
+  in those coordinates.
+- **Witnesses (LT2).** Node units: the press counted, the kind's wheel and the book's control, the kind's cursor over a named part, the
+  edge, a silent seam and nothing held (`packages/core/test/held.test.ts`); the claim refused and the owners' defaults
+  (`widget.test.ts`); the fold through the real stack — the first sample a move, the named part's down/move/up and their counts, a
+  synthetic down's mask, the hand's presses, a secondary's and a pre-hold one never told, the kind's wheel and ⌘'s, the up when the hand
+  lets go mid-press (`packages/desk/test/held-told.test.ts`); on a desk layer with the pickup settled, the kind told in its extent's
+  units, the cursor shown with `{ entity, part, local }`, a throwing `held`/`cursor` three strikes and missing, never a frame fault
+  (`kind-held.test.ts`); a compose lease told start, updates and commit, a plain lease the values (`editor-lease.test.ts`); the logical
+  size on every present, a still's, a malformed one refused (`live.test.ts`); Esc in hand with and without a claim, a lease that takes
+  it, the kind's never, Done's op (`packages/react/test/facade.test.ts`) and Done's tip (`held-bar.test.tsx`). In Chrome — `rig:live`
+  gains seven rows (21): a press, a move and a release on a held face reach its source in the displayed frame's logical px; a
+  double-click there counted 1 then 2, the object still in hand; the edge's double-click puts it down, as ever; a plain wheel the
+  face's and never the hand's pan, ⌘ zooms the hand; the page's cursor over its link is the container's; keys, `Input.insertText` and
+  an IME composition (`Input.imeSetComposition`) reach the face as key, text and compose through the leased editor; Esc puts the page
+  down in one press, the terminal's Esc is its face's (and an Esc on the bare page, its lease blurred away, leaves it in hand) and Done
+  puts it down; and a held face playing at 60 — the desk copy behind never remade, the hand slot and its composites timed.
+
+### Changed
+
+<!-- M24 LT2 — the hand's input (design-019 §5) -->
+- **Esc in hand with a claim focused puts the object down in ONE press** (`@vibecook/ice/react`'s keymap, gate 2): an Esc that a lease
+  on the desk's one editor declined, with an object in hand whose Escape is the desk's, releases the claim AND puts the object down —
+  before, the blur alone left a held kind's face in hand with its lease gone, deaf to keys. A lease that TAKES Esc (gate 1 — the
+  calendar's day line letting go of its days) keeps the object in hand, as ever. With `heldEscape: "kind"` the keymap leaves Esc alone
+  in both its paths (no blur, no put-down, not prevented).
+- **Types widen** — a member added to an interface a host may implement or construct by hand: `LiveTexture.logical` (required);
+  `LiveWriter`'s three presents take `logical?`; `HeldPress.count` (a hand-written press names it; its default is 1); `KindLocal.held?`;
+  `OpenBinding.wheel?`, `cursor?`, `escape?`; `EditorLease.compose?`, `commit?`; `HeldPoseSource.cursor?`; `WidgetDef.heldWheel?` /
+  `heldEscape?` and `WidgetType.heldWheel` / `heldEscape` (required on the compiled type); `createCursorSync(world, opts?)`.
+
+### Removed
+
+<!-- M24 LT2 — the keyboard claim's declaration (design-019 §5.5) -->
+- **`KeyboardExclusive`** (core's tag), **`interaction.keyboard`** and **`interaction.keyboardEscape`** (`WidgetInteraction`), and
+  `WidgetType.keyboard` / `keyboardEscape`: the declaration stamped a tag nothing has read since design-015 D5b (the DOM widgets that
+  held a claim are gone — no reader in ICE, its devtools or VibeField). Declaring either is now REFUSED at definition, naming the way
+  forward (the `presentation` precedent): a kind takes keys by LEASING the desk's one editor (`EditorLease` — the lease is the claim),
+  and an object in hand that owns Escape says `open.escape: "kind"`. The dom's claim marker stays (`data-canvas-keyboard`,
+  `CLAIM_OWNS_ESCAPE`, `keyboardClaimOf`): the desk's editor carries it, and an app's own chrome may.
 
 ## [0.15.0] — 2026-10-08
 
