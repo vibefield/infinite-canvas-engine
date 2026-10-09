@@ -61,8 +61,8 @@ export interface WidgetFocusHandle {
   /**
    * Programmatically focus a claiming widget (its proxy, else its host).
    * Returns false when the entity has no host in the lookup (always, without
-   * one) or no keyboard claim — only `keyboard: "exclusive"` widgets are
-   * focusable (declaration drives focusability; design-007 §3.1).
+   * one) or the host carries no keyboard claim (the `data-canvas-keyboard`
+   * marker — the claim drives focusability; design-007 §3.1).
    */
   focusWidget(entity: Entity): boolean;
   /** Blur whatever claim currently holds focus. False when none does. */

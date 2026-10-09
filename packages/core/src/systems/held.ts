@@ -28,15 +28,21 @@
  *    PARTS (D3t-b: any part but `content` and `frame`, the object itself): that press is the KIND's
  *    (`HeldPress` `part`, with the part it began on — a notebook's turn: two clicks there turn two pages);
  *  - every route above is the PRIMARY button's (petition I28, press-button.ts): a secondary press — and a middle one with nothing
- *    to pan — is a point in the hand as on the desk: it keeps no `HeldPress`, so it puts nothing down, works no part, lays no stroke.
+ *    to pan — is a point in the hand as on the desk: it keeps no `HeldPress`, so it puts nothing down, works no part, lays no stroke;
+ *  - (design-019 §5, M24 LT2) a primary press is COUNTED — `HeldPress.count`, 1, 2, 3… within the multi-tap window and slop of the
+ *    last (`HeldPressMemo`, by the down events' own times): the platform's `detail` is 0 on a pointerdown, so the desk counts; and a
+ *    kind that takes the wheel (`OpenBinding.wheel: "kind"` — its type's `heldWheel`) has a plain wheel written to `HeldWheel` for it
+ *    instead of panning the hand — ⌘/ctrl and the pinch zoom the hand as ever, and past 0.72× still put it down.
  * The ways back are OPS (`ops.putDown`, structural) and a system may not run them mid-tick: it writes
  * the one-tick `HeldIntent` and the facade applies it after the step (D2b's `NavIntent`, same shape).
  * Nothing here reads a kind: the seam gives a frame and (D3t-a) the part under a point; the tool in
- * hand is core's `HeldTool`.
+ * hand is core's `HeldTool`, the wheel's owner the widget type's `heldWheel`. The kind is TOLD its input by the desk, which folds
+ * `HeldPointer`, `HeldPress` and `HeldWheel` into its `held` events (desk/hold/told.ts) — never a second input path.
  */
 import type { Entity, System, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
-import { Held, HeldIntent, HeldMute, HeldPointer, HeldPress, HeldTapMemo, HeldTool, HeldView } from "../catalog/desk";
+import { widgetTypeFor } from "../canvas/engine-catalog";
+import { Held, HeldIntent, HeldMute, HeldPointer, HeldPress, HeldPressMemo, HeldTapMemo, HeldTool, HeldView, HeldWheel } from "../catalog/desk";
 import {
   HandledByWidget,
   Keyboard,
@@ -53,6 +59,7 @@ import {
 } from "../catalog/pointer";
 import { GestureSettings } from "../catalog/settings-resources";
 import { FrameInfo } from "../engine/frame-info";
+import { PrefabId } from "../schema/prefab";
 import { GESTURE_DEFAULTS } from "../settings/defaults";
 import { pressButton } from "./press-button";
 
@@ -69,11 +76,13 @@ export interface HeldScreenFrame {
 /**
  * The pose seam: the renderer's word on where the held object is — `undefined` before its first frame — and (D3t-a) which of
  * its kind's parts is under a point of the object's own frame (its `hit` on the geometry it drew: the board's melamine
- * `content`, its `frame`), null over nothing; absent = no parts ("content" inside the frame).
+ * `content`, its `frame`), null over nothing; absent = no parts ("content" inside the frame). `cursor` (design-019 §5, M24 LT2):
+ * the kind's cursor over one of its NAMED parts (its `open.cursor`) — L4 shows it above its own; undefined: L4's.
  */
 export interface HeldPoseSource {
   frame(entity: Entity): HeldScreenFrame | undefined;
   part?(entity: Entity, x: number, y: number): string | null;
+  cursor?(entity: Entity, part: string): string | undefined;
 }
 
 /** The stack's slot for the pose source — a mutable box, so the renderer can arrive after install (as `framePick`). */
@@ -106,10 +115,13 @@ export function createHeldInput(world: World, opts: { readonly pose: HeldPoseSlo
         // nothing in hand: the mute swallows the tail of the gesture that put the object down, and a pointer's held facts leave
         const mute = world.getResource(HeldMute);
         let muted = mute !== undefined && now < mute.until;
+        // the hand's count starts again with the next hold (written once, never a stamp a tick)
+        if ((world.getResource(HeldPressMemo)?.count ?? 0) !== 0) world.setResource(HeldPressMemo, { x: 0, y: 0, at: 0, count: 0 });
         for (const r of b) {
           const p = b.entity(r);
           if (ctx.has(p, HeldPointer)) ctx.removeComponent(p, HeldPointer);
           if (ctx.has(p, HeldPress)) ctx.removeComponent(p, HeldPress);
+          if (ctx.has(p, HeldWheel)) ctx.removeComponent(p, HeldWheel);
           if (!muted) continue;
           const w = ctx.get(p, PointerWheel);
           if (w === undefined || (w.dx === 0 && w.dy === 0 && w.pinch === 0) || ctx.hasTag(p, WheelHandled)) continue;
@@ -126,6 +138,9 @@ export function createHeldInput(world: World, opts: { readonly pose: HeldPoseSlo
       const windowMs = gs?.multiTapWindowMs ?? GESTURE_DEFAULTS.multiTapWindowMs;
       const slopPx = gs?.multiTapSlopPx ?? GESTURE_DEFAULTS.multiTapSlopPx;
       const space = world.getResource(Keyboard)?.space === true;
+      // the plain wheel's owner in hand (M24 LT2): the hand's (it pans the object brought close) unless the kind takes it
+      const typeId = world.get(held, PrefabId)?.id;
+      const wheelToKind = typeof typeId === "string" && widgetTypeFor(world, typeId)?.heldWheel === "kind";
       /** The pan clamp at a zoom: half the held extent on screen there (desk.js `heldPanBy`). */
       const clampPan = (x: number, y: number, zoom: number): readonly [number, number] => {
         if (frame === undefined) return [x, y];
@@ -175,6 +190,12 @@ export function createHeldInput(world: World, opts: { readonly pose: HeldPoseSlo
               const [px, py] = zoom <= 1 ? [0, 0] : clampPan(next.panX + (s.x - cx) * (1 - ratio), next.panY + (s.y - cy) * (1 - ratio), zoom);
               next = { zoom, panX: px, panY: py };
             }
+          } else if (wheelToKind) {
+            // the kind's wheel (design-019 §5): this tick's deltas, told once by `seq` — the hand never pans for it
+            const cur = ctx.get(p, HeldWheel);
+            const wheel = { dx: w.dx, dy: w.dy, seq: (cur?.seq ?? 0) + 1 };
+            if (cur === undefined) ctx.addComponent(p, HeldWheel, wheel);
+            else ctx.edit(p).set(HeldWheel, wheel);
           } else if (next.zoom > 1.001) {
             const [px, py] = clampPan(next.panX - w.dx, next.panY - w.dy, next.zoom);
             next = { ...next, panX: px, panY: py };
@@ -192,7 +213,17 @@ export function createHeldInput(world: World, opts: { readonly pose: HeldPoseSlo
             const tool = part === "content" && (world.get(held, HeldTool)?.id ?? "") !== "";
             const named = part !== "" && part !== "content" && part !== "frame";
             const kind = pan ? "pan" : tool ? "tool" : named ? "part" : inside ? "object" : "desk";
-            const press = { kind, part, x: s.x, y: s.y, panX0: next.panX, panY0: next.panY, moved: false } as const;
+            // its click count (M24 LT2): on from the last primary press within the multi-tap window and slop, by the down events' own
+            // times (as the taps below pair) — a pointerdown's `detail` is 0 in the browser, so the desk counts
+            let count = 1;
+            if (button === "primary") {
+              const memo = world.getResource(HeldPressMemo);
+              const downMs = ctx.get(p, PointerButtons)?.downMs ?? 0;
+              const at = downMs !== 0 ? downMs : now;
+              if (memo !== undefined && memo.count > 0 && at - memo.at <= windowMs && Math.hypot(s.x - memo.x, s.y - memo.y) <= slopPx) count = memo.count + 1;
+              world.setResource(HeldPressMemo, { x: s.x, y: s.y, at, count });
+            }
+            const press = { kind, part, x: s.x, y: s.y, panX0: next.panX, panY0: next.panY, moved: false, count } as const;
             if (ctx.has(p, HeldPress)) ctx.edit(p).set(HeldPress, press);
             else ctx.addComponent(p, HeldPress, press);
           } else if (ctx.has(p, HeldPress)) ctx.removeComponent(p, HeldPress);
@@ -233,6 +264,6 @@ export function createHeldInput(world: World, opts: { readonly pose: HeldPoseSlo
         else ctx.addComponent(held, HeldView, next);
       }
     },
-    { name: "heldInput", access: { write: [HeldView, HeldPointer, HeldPress] } },
+    { name: "heldInput", access: { write: [HeldView, HeldPointer, HeldPress, HeldWheel] } },
   );
 }

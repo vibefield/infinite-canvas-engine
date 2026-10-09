@@ -7,7 +7,6 @@ import {
   Camera,
   Container,
   Culled,
-  KeyboardExclusive,
   Movable,
   Opacity,
   Position,
@@ -153,19 +152,32 @@ describe("spawnWidget → equip → mount store", () => {
   });
 });
 
-describe("keyboard claim declaration (design-007 §3.1)", () => {
-  it("keyboard:'exclusive' stamps KeyboardExclusive and rides the registry", () => {
-    const Term = defineWidget({
-      type: "wt:terminal",
-      interaction: { keyboard: "exclusive", keyboardEscape: "widget" },
-    });
-    expect(Term.capabilityTags).toContain(KeyboardExclusive);
-    expect(Term.keyboard).toBe("exclusive");
-    expect(Term.keyboardEscape).toBe("widget");
-
+describe("the keyboard claim declaration is RETIRED (design-019 §5, M24 LT2)", () => {
+  it("interaction.keyboard / keyboardEscape are refused at definition, naming the lease and open.escape; a plain widget is unchanged", () => {
+    expect(() => defineWidget({ type: "wt:terminal", interaction: { keyboard: "exclusive" } as never })).toThrow(
+      /declares interaction\.keyboard — the keyboard claim is retired \(design-019 §5, M24 LT2\).*`EditorLease`.*open\.escape: "kind".*Drop it\./,
+    );
+    expect(() => defineWidget({ type: "wt:terminal-2", interaction: { keyboard: "shared", keyboardEscape: "widget" } as never })).toThrow(
+      /interaction\.keyboard and interaction\.keyboardEscape — .*Drop them\./,
+    );
+    expect(widgets.get("wt:terminal")).toBeUndefined();   // refused before it was registered
     const Plain = defineWidget({ type: "wt:plain-card" });
-    expect(Plain.capabilityTags).not.toContain(KeyboardExclusive);
-    expect(Plain.keyboard).toBe("shared"); // the default — undeclared widgets unchanged
-    expect(Plain.keyboardEscape).toBe("release");
+    expect(Object.keys(Plain)).not.toContain("keyboard");
+    expect(Object.keys(Plain)).not.toContain("keyboardEscape");
+  });
+});
+
+describe("the wheel's and Escape's owners in hand (design-019 §5, M24 LT2)", () => {
+  it("default to the hand's and the desk's; an object that opens may give them to its kind; refused on anything that does not open, and an unknown word refused", () => {
+    const Plain = widgets.get("wt:plain-card") ?? defineWidget({ type: "wt:plain-card" });
+    expect([Plain.heldWheel, Plain.heldEscape]).toEqual(["hand", "desk"]);
+    const Page = defineWidget({ type: "wt:page", object: { name: "page" }, openable: true, heldWheel: "kind", heldEscape: "kind" });
+    expect([Page.heldWheel, Page.heldEscape]).toEqual(["kind", "kind"]);
+    const Book = defineWidget({ type: "wt:held-book", object: { name: "book" }, openable: true });
+    expect([Book.heldWheel, Book.heldEscape]).toEqual(["hand", "desk"]);
+    expect(() => defineWidget({ type: "wt:shut", object: { name: "shut" }, heldWheel: "kind" })).toThrow(/declares heldWheel or heldEscape but does not open/);
+    expect(() => defineWidget({ type: "wt:faceless", heldEscape: "kind" })).toThrow(/does not open/);
+    expect(() => defineWidget({ type: "wt:bad-wheel", object: { name: "b" }, openable: true, heldWheel: "page" as never })).toThrow(/heldWheel "page" — the wheel in hand is "hand" or "kind"/);
+    expect(() => defineWidget({ type: "wt:bad-esc", object: { name: "b" }, openable: true, heldEscape: "release" as never })).toThrow(/heldEscape "release" — Escape in hand is "desk" or "kind"/);
   });
 });

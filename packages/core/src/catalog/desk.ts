@@ -150,7 +150,10 @@ export const HeldPointer = defineComponent("HeldPointer", {
  * a tap that puts it down), on one of the kind's named PARTS (`part`, D3t-b: the kind's own — a
  * notebook's turn, its click and its drag; never a tap that puts it down) or elsewhere on the object
  * itself (`object`: two instant taps put it down). `part`: the part it began on ("" — none); `x`/`y`
- * where it began (CSS px), the pan it began from, and whether it has moved past the slop.
+ * where it began (CSS px), the pan it began from, and whether it has moved past the slop. `count`
+ * (design-019 §5, M24 LT2): its CLICK COUNT — 1, then 2, 3… for each primary press that lands within
+ * the desk's multi-tap window and slop of the one before (`HeldPressMemo`; a pointerdown's `detail`
+ * is 0 in the browser, so the desk counts — by the down events' own times); a middle press's is 1.
  */
 export const HeldPress = defineComponent("HeldPress", {
   kind: field(enumOf(["desk", "pan", "object", "tool", "part"]), { default: "desk" }),
@@ -160,6 +163,29 @@ export const HeldPress = defineComponent("HeldPress", {
   panX0: field("f64", { default: 0 }),
   panY0: field("f64", { default: 0 }),
   moved: field("bool", { default: false }),
+  count: field("u32", { default: 1 }),
+});
+
+/**
+ * The last PRIMARY press in hand (design-019 §5, M24 LT2): where it began (CSS px), when (its down event's own time — the frame's
+ * `now` for an input with none) and its click count — the next primary press within `GestureSettings.multiTapWindowMs` and
+ * `multiTapSlopPx` of it counts on (down to down, any pointer: each touch is a pointer of its own). Cleared when nothing is held.
+ */
+export const HeldPressMemo = defineResource(
+  "HeldPressMemo",
+  { x: field("f64", { default: 0 }), y: field("f64", { default: 0 }), at: field("f64", { default: 0 }), count: field("u32", { default: 0 }) },
+  { durable: false },
+);
+
+/**
+ * Runtime, on a local pointer while an object is held whose kind takes the WHEEL (`OpenBinding.wheel: "kind"` — design-019 §5, M24
+ * LT2): the plain wheel's deltas of the last tick that had any, CSS px of the hand, and `seq` — moved once per such tick, so the
+ * desk tells the kind each tick's wheel once (`HeldEvent` "wheel"). ⌘/ctrl-wheel and the pinch stay the hand's (they zoom it).
+ */
+export const HeldWheel = defineComponent("HeldWheel", {
+  dx: field("f64", { default: 0 }),
+  dy: field("f64", { default: 0 }),
+  seq: field("u32", { default: 0 }),
 });
 
 /** The last instant tap on the held object: where and when — a second within the window puts it down (the notebook's case, generalised). */

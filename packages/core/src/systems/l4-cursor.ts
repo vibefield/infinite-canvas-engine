@@ -12,7 +12,10 @@
  * everything but the hand's. (design-018 §5: the lip's "pointer" retired with its handle — the drawer's handle is the app's DOM bar.)
  * Above all of them (design-015 §8, D3t-a): with an object IN HAND, the mode in hand's own
  * `cursor` (its `HeldToolDef.cursor` — "none" where the tool draws itself: the board's marker) while
- * the mouse is over the object's drawing surface (`HeldPointer.part` "content") or presses the tool.
+ * the mouse is over the object's drawing surface (`HeldPointer.part` "content") or presses the tool —
+ * and (design-019 §5, M24 LT2) over one of the kind's NAMED parts, the KIND's cursor when it names one:
+ * the pose seam's `cursor` (its `open.cursor` — a link's `pointer`, a text field's `text`), asked each
+ * run while the mouse is over such a part; undefined there falls to the rest, as ever.
  *
  * Scheduled on the `CanvasSurface` anchor query (exactly one such entity,
  * guaranteed by install — the same idiom `pointerIngest` uses in l0-input.ts)
@@ -26,6 +29,7 @@
 import type { Entity, System, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
 import { resolveToolFor, widgetTypeFor } from "../canvas/engine-catalog";
+import type { HeldPoseSlot } from "./held";
 import {
   ActiveTool,
   CanvasSurface,
@@ -79,6 +83,28 @@ function heldToolCursor(world: World): string | undefined {
 }
 
 /**
+ * The KIND's cursor in hand (design-019 §5, M24 LT2): the mouse over one of the held object's NAMED parts (any but `content` and
+ * `frame` — `HeldPointer.part`) asks the pose seam (`HeldPoseSource.cursor` — the kind's `open.cursor`); undefined — the kind names
+ * none there, no seam, nothing held.
+ */
+function heldKindCursor(world: World, pose: HeldPoseSlot | undefined): string | undefined {
+  const source = pose?.current;
+  if (source?.cursor === undefined) return undefined;
+  const held = world.firstOf(heldQ);
+  if (held === undefined) return undefined;
+  let part = "";
+  world.query(localPointerQ).each((b) => {
+    for (const r of b) {
+      const p = b.entity(r);
+      if (world.read(p, Pointer).device === "mouse") part = world.get(p, HeldPointer)?.part ?? "";
+    }
+  });
+  if (part === "" || part === "content" || part === "frame") return undefined;
+  const c = source.cursor(held, part);
+  return typeof c === "string" && c !== "" ? c : undefined;
+}
+
+/**
  * The pegboard tray under the mouse (design-017 §4, K3 — the tray input's facts): K9 (S12):
  * a specimen a thing to take (`Tray.hover`, the open hand), its copy lifted off the board (`Tray.take`) and, handed to the desk, carried
  * to its drop (the mouse's `TrayPress carry` — the ticks before the ghost's own drag is recognized included): the closed one.
@@ -116,13 +142,14 @@ function resizeCursorForAnchor(anchor: string): string {
   }
 }
 
-export function createCursorSync(world: World): System & { readCursor(): string } {
+/** `pose`: the stack's held pose slot (`installInteractionStack`'s `heldPose`) — the kind's cursor in hand rides it (M24 LT2). */
+export function createCursorSync(world: World, opts: { readonly pose?: HeldPoseSlot } = {}): System & { readCursor(): string } {
   let cursor = "default";
 
   const system = defineSystem(
     anchorQ,
     (_b, ctx) => {
-      let resolved: string | undefined = heldToolCursor(world) ?? trayCursor(world);
+      let resolved: string | undefined = heldKindCursor(world, opts.pose) ?? heldToolCursor(world) ?? trayCursor(world);
       let mouseTargets: Entity | undefined;
 
       world.query(localPointerQ).each((b) => {

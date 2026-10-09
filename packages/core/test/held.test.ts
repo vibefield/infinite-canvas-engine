@@ -18,7 +18,10 @@ import {
   HeldIntent,
   HeldMute,
   HeldPointer,
+  HeldPress,
+  HeldPressMemo,
   HeldView,
+  HeldWheel,
   LocalPointer,
   NO_MODS,
   Pointer,
@@ -44,13 +47,17 @@ const NOTE =
 const FOLDER =
   widgets.get("held:folder") ??
   defineWidget({ type: "held:folder", defaultSize: { w: 200, h: 150 }, container: { accepts: ["widget"] } });
+/** A live face's object (design-019 §5, M24 LT2): it opens, and its kind takes the wheel in hand. */
+const PAGE =
+  widgets.get("held:page") ??
+  defineWidget({ type: "held:page", object: { name: "page" }, openable: true, heldWheel: "kind", heldEscape: "kind", defaultSize: { w: 200, h: 140 } });
 
 const VP = { w: 800, h: 600, dpr: 1 };
 const META: InputMods = { ...NO_MODS, meta: true };
 const pointerQ = defineQuery([Pointer, LocalPointer]);
 
 function rig() {
-  const ce = createCanvasEngine({ widgets: [BOOK, NOTE, FOLDER], settings: { gestures: { wheel: "zoom" } } });
+  const ce = createCanvasEngine({ widgets: [BOOK, NOTE, FOLDER, PAGE], settings: { gestures: { wheel: "zoom" } } });
   ce.docs.create();
   ce.world.setResource(Viewport, VP);
   ce.world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false }); // screen == world
@@ -339,5 +346,116 @@ describe("Held is scoped to the frame (D7 #8): an object that leaves the frame i
     expect(r.world.hasTag(r.book, Active)).toBe(false);
     expect(r.held()).toBe(false);
     expect(r.world.has(r.book, HeldView)).toBe(false);
+  });
+});
+
+/**
+ * The page in hand (design-019 §5, M24 LT2): the rig's book's pose for a PAGE whose kind names a `live` part over its inside (|x| ≤ 80,
+ * |y| ≤ 50 of its 100 × 66.7 units at 1.5 px a unit) — its edge is `content` — and names a cursor there through the seam.
+ */
+function pageRig() {
+  const r = rig();
+  const page = r.ce.ops.spawnWidget("held:page", { x: 560, y: 260, undoable: false });
+  r.world.sync();
+  r.step();
+  const asked: [Entity, string][] = [];
+  let cursor: string | undefined = "pointer";
+  r.ce.stack.heldPose.current = {
+    frame: (e) => {
+      if (e !== page && e !== r.book) return undefined;
+      const v = r.world.get(e, HeldView) ?? { zoom: 1, panX: 0, panY: 0 };
+      return { cx: r.FRAME.cx + v.panX, cy: r.FRAME.cy + v.panY, hx: r.FRAME.hx * v.zoom, hy: r.FRAME.hy * v.zoom, s: r.FRAME.s * v.zoom, settled: true };
+    },
+    part: (e, x, y) => (e === page && Math.abs(x) <= 80 && Math.abs(y) <= 50 ? "live" : Math.abs(x) <= 100 && Math.abs(y) <= 200 / 3 ? "content" : null),
+    cursor: (e, part) => { asked.push([e, part]); return cursor; },
+  };
+  /** A press and its release on separate ticks (the cut), the down at `tMs` by its event. */
+  const press = (x: number, y: number, tMs: number): number | undefined => {
+    r.mouse("move", x, y, 0); r.step();
+    r.mouse("down", x, y, 1, NO_MODS, tMs); r.step();
+    const p = r.pointer();
+    const count = p === undefined ? undefined : r.world.get(p, HeldPress)?.count;
+    r.mouse("up", x, y, 0); r.step();
+    return count;
+  };
+  return { ...r, page, press, asked, setCursor: (c: string | undefined) => { cursor = c; } };
+}
+
+describe("the hand's input for the kind (design-019 §5, M24 LT2)", () => {
+  it("a primary press in hand is COUNTED by the down events' own times and points — 1, 2, 3 within the multi-tap window and slop, then 1 past either; a double-click on a named part keeps the object in hand", () => {
+    const r = pageRig();
+    r.ce.ops.open(r.page);
+    r.step();
+    // (430, 300) is the page's `live` part: x = 20 units — a part's press, never a tap that puts it down
+    expect([r.press(430, 300, 5000), r.press(430, 300, 5100), r.press(432, 302, 5200)]).toEqual([1, 2, 3]);
+    expect(r.held()).toBe(false);   // the BOOK is not held: this is the page's hand
+    expect(r.world.hasTag(r.page, Held)).toBe(true);   // two and three presses on its part: still in hand
+    expect(r.press(430, 300, 5200 + 281)).toBe(1);   // past the window (280 ms): counted afresh
+    expect(r.press(430, 300, 5500)).toBe(2);
+    expect(r.press(430 + 21, 300, 5600)).toBe(1);   // past the slop (20 px): afresh
+    expect(r.world.getResource(HeldPressMemo)).toMatchObject({ x: 451, y: 300, at: 5600, count: 1 });
+    r.ce.ops.putDown();
+    r.step();
+    expect(r.world.getResource(HeldPressMemo)?.count).toBe(0);   // nothing in hand: the count starts again with the next hold
+    r.ce.ops.open(r.page);
+    r.step();
+    expect(r.press(451, 300, 5650)).toBe(1);
+  });
+
+  it("a kind that takes the wheel has the plain wheel in HeldWheel — the tick's deltas, seq once a tick — and the hand never pans for it, even brought close; ⌘-wheel zooms the hand and past 0.72× puts it down (the book's control pans)", () => {
+    const r = pageRig();
+    r.ce.ops.open(r.page);
+    r.step();
+    r.wheel(430, 300, { dx: 3, dy: 7 });
+    const p = r.pointer() as Entity;
+    expect(r.world.get(p, HeldWheel)).toEqual({ dx: 3, dy: 7, seq: 1 });
+    expect(r.world.get(r.page, HeldView)).toEqual({ zoom: 1, panX: 0, panY: 0 });
+    r.wheel(400, 300, { dy: -50 }, META);   // ⌘: the hand's — closer, and no wheel for the kind
+    const zoomed = r.world.get(r.page, HeldView);
+    expect(zoomed?.zoom).toBeGreaterThan(1);
+    expect(r.world.get(p, HeldWheel)?.seq).toBe(1);
+    r.wheel(400, 300, { dx: -10, dy: 20 });   // brought close, a plain wheel is STILL the kind's: no pan
+    expect(r.world.get(p, HeldWheel)).toEqual({ dx: -10, dy: 20, seq: 2 });
+    expect(r.world.get(r.page, HeldView)).toEqual(zoomed);
+    r.wheel(400, 300, { pinch: 30 });   // the pinch zooms the hand
+    expect(r.world.get(r.page, HeldView)?.zoom).toBeLessThan(zoomed?.zoom ?? 0);
+    for (let i = 0; i < 4 && r.world.hasTag(r.page, Held); i++) r.wheel(400, 300, { dy: 40 }, META);
+    expect(r.world.hasTag(r.page, Held)).toBe(false);   // past 0.72×: put down
+    r.step(30);
+    expect(r.world.has(p, HeldWheel)).toBe(false);   // nothing in hand: the pointer's held facts leave
+    // the control — the book's wheel is the hand's: brought close, a plain wheel pans it and writes no HeldWheel
+    r.ce.ops.open(r.book);
+    r.step();
+    r.wheel(400, 300, { dy: -50 }, META);
+    r.wheel(400, 300, { dx: 10, dy: 20 });
+    expect(r.view()?.panX).toBeCloseTo(-10, 9);
+    expect(r.world.has(p, HeldWheel)).toBe(false);
+  });
+
+  it("the kind's cursor in hand: over a NAMED part L4 shows what the seam says, above its own; over the edge (content), with the seam silent, or with nothing held — L4's own", () => {
+    const r = pageRig();
+    r.ce.ops.open(r.page);
+    r.mouse("move", 430, 300, 0);   // the `live` part
+    r.step();
+    expect(r.ce.stack.readCursor()).toBe("pointer");
+    expect(r.asked.at(-1)).toEqual([r.page, "live"]);
+    r.setCursor("text");
+    r.step();
+    expect(r.ce.stack.readCursor()).toBe("text");   // asked each run: the kind's word as it is now
+    r.setCursor(undefined);
+    r.step();
+    expect(r.ce.stack.readCursor()).toBe("default");   // the kind names none there: L4's own
+    r.setCursor("pointer");
+    const asks = r.asked.length;
+    r.mouse("move", 400 + 90 * 1.5, 300, 0);   // the edge — x = 90 units: content, never the kind's
+    r.step();
+    expect(r.ce.stack.readCursor()).toBe("default");
+    expect(r.asked.length).toBe(asks);   // not asked off its named parts
+    r.mouse("move", 430, 300, 0);
+    r.step();
+    expect(r.ce.stack.readCursor()).toBe("pointer");
+    r.ce.ops.putDown();
+    r.step(2);
+    expect(r.ce.stack.readCursor()).toBe("default");   // nothing in hand
   });
 });

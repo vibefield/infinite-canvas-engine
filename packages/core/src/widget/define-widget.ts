@@ -26,7 +26,6 @@ import {
   Accepts,
   ChildOf,
   Container,
-  KeyboardExclusive,
   LongPressDrag,
   Movable,
   Opacity,
@@ -171,24 +170,6 @@ export interface WidgetInteraction {
    * that pointer is the widget's, never the camera's; its deltas add up in the pointer's `PressWheel`. Default false.
    */
   readonly wheelTurns?: boolean;
-  /**
-   * Keyboard claim (design-007 §3.1, petitions I1/I4). `"exclusive"`: while a
-   * node inside this widget's claim holds browser focus, the engine keymap and
-   * the adapter's Space pan modifier stand down — keys flow to the widget's own
-   * handlers (the engine stops competing; it never delivers behavior). The claim
-   * is a `data-canvas-keyboard` host in screen space (the desk's one focused
-   * editor carries it), and plain wheel over its scrollable content cedes to
-   * native scroll (ctrl/pinch stays canvas zoom always). Default `"shared"`.
-   */
-  readonly keyboard?: "shared" | "exclusive";
-  /**
-   * Escape ownership under an exclusive claim (design-007 §3.3 / §7-Q1).
-   * `"release"` (default): Escape is the engine-reserved release gesture — it
-   * blurs the widget; the NEXT Escape, with focus gone, cancels gestures.
-   * `"widget"`: even Escape flows to the widget (vim-grade terminals); release
-   * is click-away or `blurFocus()`. Ignored unless `keyboard: "exclusive"`.
-   */
-  readonly keyboardEscape?: "release" | "widget";
 }
 
 export interface WidgetDef {
@@ -230,6 +211,18 @@ export interface WidgetDef {
   readonly heldTools?: readonly HeldToolDef[];
   /** The mode in hand when the object is picked up, from its props (the board: its capped marker's ink). Default: the first mode, else none. */
   readonly heldTool?: (props: Readonly<Record<string, unknown>>) => string;
+  /**
+   * The WHEEL in hand (design-019 §5, M24 LT2 — the desk's `defineObject` passes its kind's `open.wheel`): `"hand"` (the default — a
+   * plain wheel moves the object once brought close) or `"kind"` — a plain wheel is the kind's (core writes it to the pointer's
+   * `HeldWheel`, the desk tells the kind); ⌘/ctrl-wheel and the pinch zoom the hand either way. Refused on anything that does not open.
+   */
+  readonly heldWheel?: "hand" | "kind";
+  /**
+   * ESCAPE in hand (design-019 §5, M24 LT2 — the kind's `open.escape`): `"desk"` (the default — Esc puts the object down) or `"kind"` —
+   * Esc is the kind's (a source that owns it: a terminal), and the keymap never puts the object down for it: Done, a click off it or
+   * the pinch do. Refused on anything that does not open.
+   */
+  readonly heldEscape?: "desk" | "kind";
   /**
    * The acts the SELECTION MENU offers for a selection of this type's objects (design-016 §5 · K-L2, K8a — widget/menu-actions.ts):
    * each an id, a label, a glyph and an op; the menu shows one when every selected object's type declares it, and
@@ -372,10 +365,10 @@ export interface WidgetType {
   readonly provides: readonly string[];
   /** Fixed nested-frame binding and ingress/portal metadata, when a container. */
   readonly container: WidgetContainerEntry | undefined;
-  /** Keyboard claim (design-007): the dom layer reads THIS (registry truth), not the tag. */
-  readonly keyboard: "shared" | "exclusive";
-  /** Escape ownership under an exclusive claim ("release" = engine-reserved). */
-  readonly keyboardEscape: "release" | "widget";
+  /** The plain wheel's owner in hand (M24 LT2): `"hand"` unless the object's kind takes it — core's held input reads THIS. */
+  readonly heldWheel: "hand" | "kind";
+  /** Escape's owner in hand (M24 LT2): `"desk"` unless the object's kind owns it — the keymap reads THIS. */
+  readonly heldEscape: "desk" | "kind";
   /** May instances be dropped INTO an accepting container (design-015 §9; `"never"` = a root object always, D-D18)? The drop system reads THIS. */
   readonly drop: "into" | "never";
   readonly migrate: Readonly<Record<number, (prev: Record<string, unknown>) => Record<string, unknown>>>;
@@ -614,6 +607,15 @@ export function defineWidget(def: WidgetDef): WidgetType {
       `ice: defineWidget("${def.type}") declares ${retired.join(", ")} — the view half of a widget is retired (design-015 D5b): a widget's face is its object kind's program (\`object:\`), and nothing mounts a component, a chrome, a preview or a surface for it. Drop ${retired.length > 1 ? "them" : "it"}.`,
     );
   }
+  // THE RETIRED KEYBOARD CLAIM (design-019 §5, M24 LT2): `interaction.keyboard: "exclusive"` stamped `KeyboardExclusive`, which nothing
+  // has read since D5b (the DOM widgets that held a claim are gone), and `keyboardEscape` was its Escape. The desk's ONE editor's lease
+  // IS the claim now (a kind's DOM half leases it), and an object in hand that owns Escape says so with its kind's `open.escape`.
+  const claim = ["keyboard", "keyboardEscape"].filter((k) => (def.interaction as Readonly<Record<string, unknown>> | undefined)?.[k] !== undefined);
+  if (claim.length > 0) {
+    throw new Error(
+      `ice: defineWidget("${def.type}") declares interaction.${claim.join(" and interaction.")} — the keyboard claim is retired (design-019 §5, M24 LT2): a kind takes keys by LEASING the desk's one editor (\`EditorLease\`), and an object in hand that owns Escape says \`open.escape: "kind"\`. Drop ${claim.length > 1 ? "them" : "it"}.`,
+    );
+  }
   if ((def.container as { framePreview?: unknown } | undefined)?.framePreview !== undefined) {
     throw new Error(
       `ice: defineWidget("${def.type}") container declares framePreview — the container's preview renderer is retired (design-015 D5b): a mini mat's inside is drawn by the desk.`,
@@ -633,6 +635,18 @@ export function defineWidget(def: WidgetDef): WidgetType {
       throw new Error(`ice: defineWidget("${def.type}") declares held tools but does not open — only an object picked up into the hand has a held bar (design-015 §8).`);
     }
     validateHeldTools(def.type, def.heldTools ?? []);
+  }
+  // …and so do the wheel's and Escape's owners in hand (design-019 §5, M24 LT2)
+  if (def.heldWheel !== undefined || def.heldEscape !== undefined) {
+    if (!(hasObject && def.openable === true)) {
+      throw new Error(`ice: defineWidget("${def.type}") declares heldWheel or heldEscape but does not open — only an object picked up into the hand has a wheel or an Escape of its own (design-019 §5).`);
+    }
+    if (def.heldWheel !== undefined && def.heldWheel !== "hand" && def.heldWheel !== "kind") {
+      throw new Error(`ice: defineWidget("${def.type}") declares heldWheel "${String(def.heldWheel)}" — the wheel in hand is "hand" or "kind" (design-019 §5).`);
+    }
+    if (def.heldEscape !== undefined && def.heldEscape !== "desk" && def.heldEscape !== "kind") {
+      throw new Error(`ice: defineWidget("${def.type}") declares heldEscape "${String(def.heldEscape)}" — Escape in hand is "desk" or "kind" (design-019 §5).`);
+    }
   }
   validateMenuActions(def.type, def.menu ?? []);
   for (const d of def.data ?? []) {
@@ -676,7 +690,6 @@ export function defineWidget(def: WidgetDef): WidgetType {
   if (interaction.dragOn === "longPress") capabilityTags.push(LongPressDrag);
   if (interaction.sweepContained === true) capabilityTags.push(SweepsContained);
   if (interaction.wheelTurns === true) capabilityTags.push(WheelTurns);
-  if (interaction.keyboard === "exclusive") capabilityTags.push(KeyboardExclusive);
   const snap = interaction.snap ?? "target";
   if (snap === "source" || snap === "both") capabilityTags.push(SnapSource);
   if (snap === "target" || snap === "both") capabilityTags.push(SnapTarget);
@@ -719,8 +732,8 @@ export function defineWidget(def: WidgetDef): WidgetType {
             frameProjection: def.container.frameProjection,
             typed: def.container.typed === true,
           }),
-    keyboard: interaction.keyboard ?? "shared",
-    keyboardEscape: interaction.keyboardEscape ?? "release",
+    heldWheel: def.heldWheel ?? "hand",
+    heldEscape: def.heldEscape ?? "desk",
     drop: interaction.drop ?? "into",
     migrate: def.migrate ?? {},
     behaviors: behaviorEntries,

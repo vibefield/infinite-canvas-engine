@@ -6,9 +6,11 @@
  *  - `isEditableTarget` — the 4-class editable gate (keymap default + the
  *    adapter's Space-types fix). Kept narrow so UNDECLARED widgets behave
  *    exactly as before (design-007 F5).
- *  - `keyboardClaimOf` — the `data-canvas-keyboard` claim marker written by the
- *    dom-widgets reflector for `interaction.keyboard: "exclusive"` widgets.
- *    Read UNBOUNDED (page-global) on purpose: `document.activeElement` is one
+ *  - `keyboardClaimOf` — the `data-canvas-keyboard` claim marker on a focused
+ *    screen-space host: the desk's one editor carries it while a kind leases it
+ *    (M24 LT2: the lease IS the claim — the `interaction.keyboard` declaration
+ *    and its `KeyboardExclusive` tag, unread since D5b, are retired), and an
+ *    app's own chrome may. Read UNBOUNDED (page-global) on purpose: `document.activeElement` is one
  *    per page, so engine B's keymap must stand down while you type into engine
  *    A's claiming widget (design-007 F2 — only the DOM is page-global).
  *  - `wheelCede` — the NARROW, DYNAMIC scroll opt-out (design-007 §3.4/§4):

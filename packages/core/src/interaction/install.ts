@@ -207,7 +207,7 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
   const connect = createConnectSystems(world, sink, index, wires);
   const ports = createPortMaterialize(world, index);
   const camera = createCameraSystems(world);
-  const cursor = createCursorSync(world);
+  const cursor = createCursorSync(world, { pose: heldPose });
   const cleanup = createCleanupSystems(world);
 
   const removers = [
