@@ -6,7 +6,8 @@
  * is on for 340 ms and off again after (a moving selection still places instantly). happy-dom: no layout, the bar is placed
  * as 40 tall. D3t-a: the slots are LIVE — a press uses the tool through `ops.useHeldTool` (a mode becomes the tool in hand,
  * an action runs its op), the mode in hand is marked (and only it), a swatch shows a marker's ink — and the keymap routes the
- * held type's keys to its tools, only while it is held.
+ * held type's keys to its tools, only while it is held. Petition I49: a slot its kind says is DISABLED now is dim and
+ * `aria-disabled`, its press and its key doing nothing (the key still the tool's), and shows the glyph and label said now.
  */
 import { createCanvasEngine, defineWidget, Held, HeldTool, type CanvasEngine, type Entity, type HeldToolDef } from "@ice/core";
 import { act, createElement } from "react";
@@ -28,6 +29,13 @@ const BOARD_TOOLS: readonly HeldToolDef[] = [
   { id: "wipe", label: "Wipe", kind: "action", keys: ["mod+Backspace"], bar: false, run: () => { actions.push("wipe"); } },
 ];
 const BOARD = defineWidget({ type: "hb:board", object: { name: "board" }, openable: true, defaultSize: { w: 480, h: 320 }, heldTools: BOARD_TOOLS });
+/** A pane whose tools say their state (petition I49): ‹ back live only with a history — the test moves `page`. */
+const page = { back: false };
+const PANE_TOOLS: readonly HeldToolDef[] = [
+  { id: "back", label: "Back", kind: "action", keys: ["mod+["], hint: "⌘[", glyph: "chevron-left", run: () => { actions.push("back"); }, state: () => ({ enabled: page.back }) },
+  { id: "reload", label: "Reload", kind: "action", keys: ["mod+r"], hint: "⌘R", glyph: "undo", run: () => { actions.push("reload"); } },
+];
+const PANE = defineWidget({ type: "hb:pane", object: { name: "pane" }, openable: true, defaultSize: { w: 320, h: 200 }, heldTools: PANE_TOOLS });
 
 const cleanups: (() => void)[] = [];
 afterEach(() => {
@@ -54,12 +62,13 @@ function fakeSource(first: SelectionMenuAnchor): SelectionMenuSource & { set(a: 
 
 const SEND: SelectionAction = { id: "send", place: "lead", text: true, glyph: "agents", label: "Send to agent", run: () => {} };
 
-function mount(source: SelectionMenuSource): { engine: CanvasEngine; menu: () => HTMLElement; book: Entity; board: Entity; term: Entity } {
-  const engine = createCanvasEngine({ widgets: [BOOK, BOARD, TERM] });
+function mount(source: SelectionMenuSource): { engine: CanvasEngine; menu: () => HTMLElement; book: Entity; board: Entity; term: Entity; pane: Entity } {
+  const engine = createCanvasEngine({ widgets: [BOOK, BOARD, TERM, PANE] });
   engine.docs.create();
   const book = engine.ops.spawnWidget("hb:book", { x: 100, y: 100, undoable: false });
   const board = engine.ops.spawnWidget("hb:board", { x: 400, y: 100, undoable: false });
   const term = engine.ops.spawnWidget("hb:term", { x: 100, y: 500, undoable: false });
+  const pane = engine.ops.spawnWidget("hb:pane", { x: 600, y: 500, undoable: false });
   engine.world.sync();
   const host = document.createElement("div");
   document.body.append(host);
@@ -70,7 +79,7 @@ function mount(source: SelectionMenuSource): { engine: CanvasEngine; menu: () =>
   });
   cleanups.push(() => { act(() => root?.unmount()); engine.dispose(); });
   const menu = (): HTMLElement => { const el = host.querySelector<HTMLElement>("[data-ice-selection-menu]"); if (el === null) throw new Error("no menu"); return el; };
-  return { engine, menu, book, board, term };
+  return { engine, menu, book, board, term, pane };
 }
 
 /** The board's slots as the desk publishes them (its `HeldSlot`s): the bar's five — the wipe is keys-only — with the markers' swatches. */
@@ -243,6 +252,66 @@ describe("the held bar's live tools (design-015 §8, D3t-a)", () => {
     engine.ops.putDown();
     key("Backspace", { meta: true });
     expect(actions).toEqual(["undo", "wipe"]);
+  });
+});
+
+// Petition I49 (VibeField's browser pane): the bar showed ‹ › always live and ↻ never ✕ — a tool had no word for its state. The desk
+// now publishes each slot as its kind says it is NOW (`HeldSlot.enabled: false`, the glyph and label said now); the bar says so.
+describe("the held bar shows a tool as its kind says it is now (petition I49)", () => {
+  const STOP = { path: "M6 6 L18 18 M18 6 L6 18" };
+  const slots = (back: boolean, loading: boolean) => [
+    { id: "back", label: "Back", kind: "action" as const, hint: "⌘[", glyph: "chevron-left", ...(back ? {} : { enabled: false as const }) },
+    { id: "reload", label: loading ? "Stop" : "Reload", kind: "action" as const, hint: "⌘R", glyph: loading ? STOP : "undo" },
+  ];
+  const heldPane = (back: boolean, loading: boolean): SelectionMenuAnchor => anchorOf({ box: null, count: 0, held: { tools: slots(back, loading), active: "", landing: false, settled: true } });
+
+  it("a slot said disabled is dim and `aria-disabled`, its press doing nothing — it keeps its place and its kind; live again, its press uses the tool; the glyph and the label are the ones said now", () => {
+    actions.length = 0;
+    page.back = false;
+    const source = fakeSource(anchorOf());
+    const { engine, menu, pane } = mount(source);
+    engine.ops.open(pane);
+    source.set(heldPane(false, false));
+    const slot = (id: string) => menu().querySelector<HTMLButtonElement>(`[data-tool="${id}"]`);
+    expect(slot("back")?.getAttribute("aria-disabled")).toBe("true");
+    expect(slot("back")?.classList.contains("is-dim")).toBe(true);
+    expect(slot("back")?.dataset.kind).toBe("action");   // a live tool, disabled NOW — not a declared-only one
+    expect(slot("back")?.tabIndex).toBe(0);
+    expect(slot("reload")?.hasAttribute("aria-disabled")).toBe(false);
+    act(() => { slot("back")?.click(); });
+    expect(actions).toEqual([]);
+    // the page gains a history and starts loading: the same button, live; reload is Stop, drawn with its own glyph
+    const before = slot("back");
+    page.back = true;
+    source.set(heldPane(true, true));
+    expect(slot("back")).toBe(before);
+    expect(slot("back")?.hasAttribute("aria-disabled")).toBe(false);
+    expect(slot("back")?.classList.contains("is-dim")).toBe(false);
+    expect(slot("reload")?.getAttribute("aria-label")).toBe("Stop");
+    expect(slot("reload")?.title).toBe("Stop (⌘R)");
+    expect(slot("reload")?.querySelector("path")?.getAttribute("d")).toBe(STOP.path);
+    act(() => { slot("back")?.click(); });
+    act(() => { slot("reload")?.click(); });
+    expect(actions).toEqual(["back", "reload"]);
+  });
+
+  it("a disabled tool's key is still the TOOL's — taken, nothing run, nothing else reached; live again, it runs", () => {
+    actions.length = 0;
+    page.back = false;
+    const source = fakeSource(anchorOf());
+    const { engine, pane } = mount(source);
+    cleanups.push(attachKeymap(engine, window));
+    const key = (k: string): KeyboardEvent => {
+      const e = new KeyboardEvent("keydown", { key: k, metaKey: true, bubbles: true, cancelable: true });
+      window.dispatchEvent(e);
+      return e;
+    };
+    engine.ops.open(pane);
+    expect(key("[").defaultPrevented).toBe(true);   // ⌘[ with no history: the tool's key, doing nothing (never the browser's own Back)
+    expect(actions).toEqual([]);
+    page.back = true;
+    expect(key("[").defaultPrevented).toBe(true);
+    expect(actions).toEqual(["back"]);
   });
 });
 

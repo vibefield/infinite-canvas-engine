@@ -34,7 +34,7 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, closeTray, type Entity, focusTray, frameParent, heldEntity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type MarqueeBuffer, type MenuActionDef, type NavFace, type NavGeometrySlot, NavTransition, NO_ENTITY, openTray, type PointPick, PrefabId, type PresentationTransitionAdapter, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayFocus, type TrayFocusMove, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, closeTray, type Entity, focusTray, frameParent, heldEntity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type HeldToolDef, type HeldToolState, type MarqueeBuffer, type MenuActionDef, type NavFace, type NavGeometrySlot, NavTransition, NO_ENTITY, openTray, type PointPick, PrefabId, type PresentationTransitionAdapter, readHeldToolState, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayFocus, type TrayFocusMove, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
 import { screenToWorld } from "@ice/kernel";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
@@ -619,7 +619,8 @@ function tellAwake(kind: string): void {
 
 /**
  * The kinds told, once a page, that a call the selection's anchor makes of them threw — their `open.readout` (I22: the held bar kept
- * their tools and showed no word) or their `open.swatches` (I24: the tools kept, their slots without a swatch). Contained at the CALL,
+ * their tools and showed no word), their `open.swatches` (I24: the tools kept, their slots without a swatch) or a tool's `state` (I49:
+ * the tool as declared — live, its own glyph and label; said once a tool). Contained at the CALL,
  * never a strike against the kind (petition I24's ladder counts what draws the desk): the anchor is recomposed at the HOST's rate — every
  * `selection.anchor()` read besides the frame's publish — and only while the object is in hand, so strikes counted here would let a
  * host's reads decide when a kind goes, and would retire every such kind with its object in hand; and neither call draws the desk.
@@ -631,6 +632,13 @@ function tellAnchor(kind: string, call: "readout" | "swatches", err: unknown): v
   toldAnchor.add(key);
   const kept = call === "readout" ? "no word (petition I22)" : "no swatches (petition I24)";
   console.error(`[ice] desk: the kind "${kind}"'s \`open.${call}\` threw — the anchor carries its held tools and ${kept}; said once a page`, err);
+}
+/** …and a held tool's `state` (petition I49): the tool stands as declared; said once a tool a page. */
+function tellToolState(kind: string, tool: string, err: unknown): void {
+  const key = `state ${kind} ${tool}`;
+  if (toldAnchor.has(key)) return;
+  toldAnchor.add(key);
+  console.error(`[ice] desk: the kind "${kind}"'s held tool "${tool}" threw in its \`state\` — the tool stands as declared: live, its own glyph and label (petition I49); said once a page`, err);
 }
 
 /** A host's length or time for the desk's chrome (I20, I21): a finite number ≥ 0, or the mount refuses it by its name. */
@@ -808,10 +816,18 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       try { return kind.open.swatches(compose.look(kind.name)); }
       catch (err) { tellAnchor(kind.name, "swatches", err); return {}; }
     };
+    // what the kind says of a held tool NOW (I49): its `state`, read off the world, the object's props and the kind's desk state —
+    // each time the anchor is recomposed, and when core uses the tool (the pose seam's `toolState`); a throw is caught as the word's
+    // is and said once — the tool as declared; nothing of a MISSING kind is asked (I24)
+    const toolStateOf = (kind: ObjectKind | undefined, tool: HeldToolDef, e: Entity): HeldToolState | undefined => {
+      if (kind === undefined || tool.state === undefined || faults.missing(kind.name)) return undefined;
+      return readHeldToolState(tool, { world, entity: e, props: () => propsOf(e), local: locals.get(kind.name) }, (err) => { tellToolState(kind.name, tool.id, err); });
+    };
     // the selection menu's source: the anchor published whenever a frame moved it — the marks' word, and the hand's (D4b: with an
     // object in hand the menu travels to the foot and becomes the held bar; it hides while the object flies home). D3t-a: the kind's
     // tools as the bar's slots (their swatches from the kind's look) and the mode in hand — core's `HeldTool`, the one slot marked;
-    // I20: the bar's travel when the host set one; I22: the kind's word in hand when it says one
+    // I20: the bar's travel when the host set one; I22: the kind's word in hand when it says one; I49: each tool as its kind says it
+    // is now — disabled, another glyph, another label
     const anchorOf = (): SelectionAnchor => {
       const a = builder.anchor();
       // the pegboard tray is out (design-017 §4): the desk under it is inert, so the menu has nothing to act on — it steps away
@@ -822,7 +838,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       const swatches = swatchesOf(kind);
       const active = world.isAlive(h.entity) ? (world.get(h.entity, HeldTool)?.id ?? "") : "";
       const readout = readoutOf(kind, h.entity);
-      return { ...a, held: { tools: heldSlots(kind?.open?.tools ?? [], swatches), active, landing: h.landing, settled: h.settled, ...(hold.travelMs !== undefined ? { travelMs: hold.travelMs } : {}), ...(readout !== undefined ? { readout } : {}) } };
+      return { ...a, held: { tools: heldSlots(kind?.open?.tools ?? [], swatches, (t) => toolStateOf(kind, t, h.entity)), active, landing: h.landing, settled: h.settled, ...(hold.travelMs !== undefined ? { travelMs: hold.travelMs } : {}), ...(readout !== undefined ? { readout } : {}) } };
     };
     const listeners = new Set<() => void>();
     let published = "";
@@ -1099,6 +1115,12 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         const open = k?.open;
         if (k === undefined || open?.cursor === undefined || faults.missing(k.name)) return undefined;
         try { return open.cursor({ entity: e, part, local: locals.get(k.name) }); } catch (err) { faults.strike(k.name, "cursor", err, e); return undefined; }
+      },
+      // …and (petition I49) what the kind says of its tool `id` now: core's `ops.useHeldTool` does nothing for one it says is disabled
+      toolState: (e, id) => {
+        const k = builder.kindOf(e);
+        const tool = k?.open?.tools?.find((t) => t.id === id);
+        return tool === undefined ? undefined : toolStateOf(k, tool, e);
       },
     };
     const heldPose = ctx.heldPose;

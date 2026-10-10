@@ -37,7 +37,7 @@ import {
   type World,
 } from "@ice/core";
 import { assembleMarks, type MarkedObject } from "../marks/assemble";
-import type { HeldToolDef } from "../kinds/world";
+import type { HeldToolDef, HeldToolState } from "../kinds/world";
 import { laserKey, type WorldBar, type WorldGuide } from "../marks/laser";
 import { type MarkBox, type MarkFrame, type MarksInput, selectionBox } from "../marks/layout";
 import { MARKS } from "../theme";
@@ -119,7 +119,11 @@ export function withKindActs(a: SelectionAnchor, selected: readonly Entity[], me
   return menu.length === 0 ? a : { ...a, menu };
 }
 
-/** A tool's slot as the bar shows it: plain data (the op stays on the widget type — the bar uses a tool through `ops.useHeldTool`). */
+/**
+ * A tool's slot as the bar shows it: plain data (the op stays on the widget type — the bar uses a tool through `ops.useHeldTool`).
+ * Its `label` and `glyph` are what its kind says NOW (petition I49 — the tool's `state`, read each time the anchor is recomposed),
+ * else the declared ones.
+ */
 export interface HeldSlot {
   readonly id: string;
   readonly label: string;
@@ -130,17 +134,31 @@ export interface HeldSlot {
   readonly glyph?: HeldGlyph;
   /** A colour the slot shows instead of its glyph (a marker's ink), CSS. */
   readonly swatch?: string;
+  /**
+   * `false`: its kind says the tool is DISABLED now (petition I49 — ‹ back with no history): the bar shows it dim and `aria-disabled`,
+   * and `ops.useHeldTool` does nothing for it — its press, its keys. Absent: live.
+   */
+  readonly enabled?: false;
 }
 
-/** The slots a kind's tools take in the bar: every tool not keys-only, as plain data, its swatch from the kind's look. */
-export function heldSlots(tools: readonly HeldToolDef[], swatches: Readonly<Record<string, string>> = {}): HeldSlot[] {
-  return tools.filter((t) => t.bar !== false).map((t) => ({
-    id: t.id, label: t.label,
-    ...(t.kind !== undefined ? { kind: t.kind } : {}),
-    ...(t.hint !== undefined ? { hint: t.hint } : {}),
-    ...(t.glyph !== undefined ? { glyph: t.glyph } : {}),
-    ...(swatches[t.id] !== undefined ? { swatch: swatches[t.id] as string } : {}),
-  }));
+/**
+ * The slots a kind's tools take in the bar: every tool not keys-only, as plain data, its swatch from the kind's look — and what its
+ * kind says of it NOW (petition I49 — `stateOf`: the tool's `state`, read by the caller with the kind's desk state): disabled, another
+ * glyph, another label.
+ */
+export function heldSlots(tools: readonly HeldToolDef[], swatches: Readonly<Record<string, string>> = {}, stateOf?: (tool: HeldToolDef) => HeldToolState | undefined): HeldSlot[] {
+  return tools.filter((t) => t.bar !== false).map((t) => {
+    const now = stateOf?.(t);
+    const glyph = now?.glyph ?? t.glyph;
+    return {
+      id: t.id, label: now?.label ?? t.label,
+      ...(t.kind !== undefined ? { kind: t.kind } : {}),
+      ...(t.hint !== undefined ? { hint: t.hint } : {}),
+      ...(glyph !== undefined ? { glyph } : {}),
+      ...(swatches[t.id] !== undefined ? { swatch: swatches[t.id] as string } : {}),
+      ...(now?.enabled === false ? { enabled: false as const } : {}),
+    };
+  });
 }
 
 export interface MarksFrameInput {

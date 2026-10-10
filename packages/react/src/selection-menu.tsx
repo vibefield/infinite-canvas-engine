@@ -70,7 +70,9 @@ export type SelectionGlyph = string | { readonly path: string; readonly fill?: b
  * becomes the tool in hand) or an `action` (pressed, it runs its op), both through `ops.useHeldTool`; no `kind` = declared
  * only, shown dim and inert. `swatch`: a colour shown instead of the glyph (a marker's ink). `glyph` (K8a): a name of the bar's
  * set or the tool's own drawing — a plugin kind's tool draws its own; a name the bar does not draw is MARKED missing (its label's
- * initial, `data-glyph-missing`, one console error), never drawn as another glyph.
+ * initial, `data-glyph-missing`, one console error), never drawn as another glyph. `enabled: false` (petition I49 — the kind's word
+ * on its tool NOW: ‹ back with no history): shown dim and `aria-disabled`, its press doing nothing (and `ops.useHeldTool` refuses it
+ * — its keys too); `label` and `glyph` are already what the kind says now (↻ reload → ✕ stop).
  */
 export interface SelectionMenuTool {
   readonly id: string;
@@ -79,6 +81,7 @@ export interface SelectionMenuTool {
   readonly hint?: string;
   readonly glyph?: SelectionGlyph;
   readonly swatch?: string;
+  readonly enabled?: false;
 }
 
 /** The anchor's source — the desk handle's `selection` (anchor + a subscription that fires when it moves). */
@@ -253,6 +256,8 @@ const STYLE = `
 [data-ice-selection-menu] .ice-sm-ink{width:28px;height:32px;border-radius:14px;display:grid;place-items:center}
 [data-ice-selection-menu] .ice-sm-ink i{width:12px;height:12px;border-radius:50%;box-shadow:inset 0 0 0 1px rgb(255 255 255 / .16);transition:transform 160ms cubic-bezier(.3,1.4,.5,1),box-shadow 160ms ease}
 [data-ice-selection-menu] .ice-sm-ink:hover i{transform:scale(1.18)}
+[data-ice-selection-menu] .ice-sm-ink.is-dim{opacity:.38;cursor:default}
+[data-ice-selection-menu] .ice-sm-ink.is-dim:hover i{transform:none}
 [data-ice-selection-menu] .ice-sm-ink[data-on="true"] i{box-shadow:0 0 0 2px var(--ice-menu-ink-solid),0 0 0 3.5px var(--ice-menu-cream)}
 `;
 
@@ -270,7 +275,8 @@ const shownOf = (a: SelectionMenuAnchor): Shown => {
   const held = a.held !== undefined && !a.held.landing;
   // flying home the bar steps aside as for a gesture — and comes back 200 ms after the landing
   const landing = a.held?.landing === true;
-  const tools = held ? (a.held?.tools ?? []).map((t) => `${t.id}:${t.kind ?? ""}:${t.swatch ?? ""}`).join("|") : "";
+  // (I49: a slot is drawn again when its kind says another state of it — disabled, another label, another glyph)
+  const tools = held ? (a.held?.tools ?? []).map((t) => `${t.id}:${t.kind ?? ""}:${t.swatch ?? ""}:${t.enabled === false ? "off" : ""}:${t.label}:${typeof t.glyph === "object" ? `${t.glyph.path}${t.glyph.fill === true ? "#" : ""}` : (t.glyph ?? "")}`).join("|") : "";
   const menu = (a.menu ?? []).map((m) => `${m.id}:${m.label}`).join("|");
   return { count: a.count, locked: a.locked, visible: (a.count > 0 && a.box !== null) || held, gesturing: a.gesturing || a.editing === true || landing, held, tools, active: held ? (a.held?.active ?? "") : "", menu };
 };
@@ -398,11 +404,14 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
       );
     }
     const on = t.kind === "mode" && t.id === shown.active;
+    // I49: a tool its kind says is DISABLED now — dim, `aria-disabled`, its press doing nothing (it keeps its place and the focus:
+    // the next anchor may say it is live again)
+    const off = t.enabled === false;
     return (
       <button
-        key={t.id} type="button" className={t.swatch !== undefined ? "ice-sm-ink" : "ice-sm-btn"} data-tool={t.id} data-kind={t.kind} data-glyph-missing={g.missing}
-        data-on={on ? "true" : undefined} aria-pressed={t.kind === "mode" ? on : undefined} aria-label={t.label} title={tip}
-        onClick={() => { setOpen(false); engine.ops.useHeldTool(t.id); }}
+        key={t.id} type="button" className={`${t.swatch !== undefined ? "ice-sm-ink" : "ice-sm-btn"}${off ? " is-dim" : ""}`} data-tool={t.id} data-kind={t.kind} data-glyph-missing={g.missing}
+        data-on={on ? "true" : undefined} aria-pressed={t.kind === "mode" ? on : undefined} aria-disabled={off ? "true" : undefined} aria-label={t.label} title={tip}
+        onClick={off ? undefined : () => { setOpen(false); engine.ops.useHeldTool(t.id); }}
       >
         {t.swatch !== undefined ? <i style={{ background: t.swatch }} /> : glyph}
       </button>
