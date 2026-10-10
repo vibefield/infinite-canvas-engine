@@ -818,9 +818,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     };
     // what the kind says of a held tool NOW (I49): its `state`, read off the world, the object's props and the kind's desk state —
     // each time the anchor is recomposed, and when core uses the tool (the pose seam's `toolState`); a throw is caught as the word's
-    // is and said once — the tool as declared; nothing of a MISSING kind is asked (I24)
+    // is and said once — the tool as declared
     const toolStateOf = (kind: ObjectKind | undefined, tool: HeldToolDef, e: Entity): HeldToolState | undefined => {
-      if (kind === undefined || tool.state === undefined || faults.missing(kind.name)) return undefined;
+      if (kind === undefined || tool.state === undefined) return undefined;
       return readHeldToolState(tool, { world, entity: e, props: () => propsOf(e), local: locals.get(kind.name) }, (err) => { tellToolState(kind.name, tool.id, err); });
     };
     // the selection menu's source: the anchor published whenever a frame moved it — the marks' word, and the hand's (D4b: with an

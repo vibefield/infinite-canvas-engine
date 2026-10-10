@@ -283,6 +283,9 @@ describe("the held bar shows a tool as its kind says it is now (petition I49)", 
     // the page gains a history and starts loading: the same button, live; reload is Stop, drawn with its own glyph
     const before = slot("back");
     page.back = true;
+    // …the kind already says live, the anchor not yet (it is published with the next frame): a slot SHOWN disabled does nothing
+    act(() => { slot("back")?.click(); });
+    expect(actions).toEqual([]);
     source.set(heldPane(true, true));
     expect(slot("back")).toBe(before);
     expect(slot("back")?.hasAttribute("aria-disabled")).toBe(false);

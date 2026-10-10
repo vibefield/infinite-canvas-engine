@@ -23,12 +23,15 @@ samples; nothing about a source enters the desk. LT1 lands the texture, the sour
 kind is handed — additive. LT2 lands the hand's input to a kind in hand — the kind TOLD it, its wheel, cursor and Escape, the editor's
 composition, the displayed frame's logical size — and removes the keyboard claim's dead declaration (`### Removed`; a few types widen,
 `### Changed`). LT3 contains the render half: a kind's throw in a frame — any slot — and its GPU errors where a scope can name it are
-petition I24's strikes against that kind, never a lost frame (additive; a few types widen).
+petition I24's strikes against that kind, never a lost frame (additive; a few types widen). LT4 lands the four asks VibeField's
+builders found using the seam — a held tool's state (I49), the sight's box (I50), the live face's host half off the kit (I51 — a
+MOVE: `### Changed`), the mat's cast colour as a palette role (I46).
 
 ### Added
 
 <!-- M24 LT1 — the live texture, the source, the sight (design-019 §3.1–§3.5, §9; 2026-10-09) -->
-- **THE LIVE TEXTURE — `createLiveTexture(device, { label, width, height, format?, mips? }) → LiveWriter`** (`@vibecook/ice/desk/kit`,
+- **THE LIVE TEXTURE — `createLiveTexture(device, { label, width, height, format?, mips? }) → LiveWriter`** (`@vibecook/ice/desk` — the
+  host's entry: on `/desk/kit` in `portals.1`–`.3`, moved at LT4, `### Changed`; the reader `LiveTexture` is the kit's;
   design-019 §3.1; `LiveTextureOptions`): the HOST's writer of one stable texture on the desk's device (`deskLayer({ onDevice })`) —
   `rgba8unorm-srgb` with a mip chain by default (`LiveFormat`: or `rgba8unorm`; `mips: false`, level 0 alone), labelled by the caller
   (`<kind>/live <key>` by convention, so the memory ledger groups it under the kind). Every present is ONE copy into level 0 and moves
@@ -56,7 +59,8 @@ petition I24's strikes against that kind, never a lost frame (additive; a few ty
   a CAPTURE do not — a face behind the hand reads unseen and rests on its last frame (§6, a policy). `frames` is the desk's count of
   frames drawn (`KindHost.frames`): a step after no new frame moves nothing, one after a frame that did not prepare the kind (culled)
   reads it unseen, and prepares outside the count (an instrument's render) are dropped.
-- **A STILL'S SOURCE — `stillLive(device, frames) → LiveSources`** (design-019 §9; `LiveStill`): committed bytes for a still
+- **A STILL'S SOURCE — `stillLive(device, frames) → LiveSources`** (`@vibecook/ice/desk`, with the writer — `### Changed`;
+  design-019 §9; `LiveStill`): committed bytes for a still
   (`createStill({ services: [service(LIVE, stillLive(device, …))] })`) and the oracle — every face's first take presents its still
   through `presentBytes` (labelled `live/still <key>`) and answers true once; `frames` is a record by key (read when a face opens, so a
   stage may fill it with the keys its spawns were given — a still's document mints its own) or a function of the key and the host's
@@ -187,6 +191,37 @@ petition I24's strikes against that kind, never a lost frame (additive; a few ty
   frames, the layer never `degraded`, every other kind drawn, the frame count rising, the hand put down in the world; and the boundary's
   price a frame (within the noise: the containment ~0–3 µs, the slot's scope ~1–2.5 µs).
 
+<!-- M24 LT4 — the asks PORTALS found: I46, I49, I50 (2026-10-10; I51 is a move — ### Changed) -->
+- **A HELD TOOL SAYS ITS STATE — `HeldToolDef.state?(ctx) → HeldToolState`** (petition I49; `@vibecook/ice`, and by name from
+  `/desk`): `{ enabled?, glyph?, label? }` — a tool DISABLED now (‹ back with no history), shown with another glyph and label (↻
+  reload → ✕ stop while a page loads). `ctx` (`HeldToolStateContext`) is what the kind's `open.readout` reads: `world`, `entity`,
+  `props()`, and the kind's state on the desk that holds the object (`local` — a live face's `info()`). It is read with the anchor —
+  the pickup, a held tool's act, every frame drawn in hand (a kind whose state moves with no frame asks `KindHost.redraw()`) — and
+  surfaces on the bar's rows: **`HeldSlot.enabled: false`**, and `label` / `glyph` as said now. **`ops.useHeldTool` does nothing for
+  a tool said disabled** — a slot's press, its keys (still the tool's: the keymap takes them) — asking the renderer through the pose
+  seam (`HeldPoseSource.toolState?(entity, id)`), or the tool's own `state` where no renderer answers. `readHeldToolState(tool, ctx,
+  threw?)` is the safe read (only what is well-formed kept; a throw told, the tool as declared); on a desk a throwing `state` is caught
+  at the call and said once a tool — never a strike. `@vibecook/ice/react`'s held bar shows a disabled slot dim and `aria-disabled`
+  (`SelectionMenuTool.enabled`), its press doing nothing.
+- **THE SIGHT BELIEVES ONLY WHAT MEETS THE SLOT'S BOX** (petition I50; `/desk/kit` `Sight.saw`): a slot's records are prepared within
+  their kind's reach and the cull's margin, beyond the view — `saw` now ignores a face whose rect does not meet the slot's box
+  (`view.box`, a mini mat's face for its inside, or the whole view, under the slot's camera; touching is not meeting), so a face
+  wholly off the view reads `seen: false` though its pass told the sight of it; one straddling the edge is seen at its WHOLE px. A
+  kind that clipped for itself may stop.
+- **THE MAT'S CAST COLOUR AS A PALETTE ROLE — `KindPalette`, `kindPalette(palette)`** (petition I46; `/desk`): a kind's
+  `theme(palette, name)` is handed the host's palette — its own extra roles with it — and the desk's own role beside them: `cast`, the
+  colour an object's shadow casts on the mat (the mat's own, `MAT.cast`). `rgb(palette.cast.css)` follows the mat in every theme
+  with no copy of the number; a host's palette never sets it.
+- **Witnesses (LT4).** Node units: core `held-tools.test.ts` (the safe read, a disabled action and mode, the renderer's word through
+  the seam), desk `held-tool-state.test.ts` (the rows off the desk state and the props, a disabled use, a throw caught and said once),
+  `live-sight.test.ts` (off each edge and touching, straddling whole, a camera, a slot's own box, the hand's view),
+  `kind-palette.test.ts`, react `held-bar.test.tsx` (the disabled slot, its press, its key), objects `quickstart.test.ts` (the cast
+  through the stock palettes) and `live-host-half.test.ts` (no kind names the host half). In Chrome — `rig:live` gains two rows (27):
+  a page 40 px off the view, its record still prepared, is unseen and its source paused — 4 px of it in view, seen whole; the rig
+  kind's bar shows ‹ Back disabled with no history (the anchor's row, the button `aria-disabled`, its press and the op doing nothing)
+  and ↻ Reload as ✕ Stop while its page loads, each press reaching the face. `pack:audit` gains its eleventh row (the kit carries no
+  host half of the live face).
+
 ### Changed
 
 <!-- M24 LT2 — the hand's input (design-019 §5) -->
@@ -207,6 +242,21 @@ petition I24's strikes against that kind, never a lost frame (additive; a few ty
   host that counted `onReflectorFault` for a plugin kind's bug now reads `DeskLayerStatus.faults`.
 - **Types widen**: `GroundOptions.boundary?`, `SlotSet.boundary?`, `DrawSlot.boundary?` / `skip?` / `guard?`; `LayerContext.ops` takes
   `putDown?` (`createDeskHost` passes the engine's).
+
+<!-- M24 LT4 — the asks PORTALS found (I51, I46, I49) -->
+- **MOVED — the live face's HOST half is on `@vibecook/ice/desk`, no longer on `/desk/kit`** (petition I51; a prerelease-only API,
+  0.16.0-portals.1–.3, moving before 0.16.0): `createLiveTexture`, `LiveWriter`, `LiveTextureOptions`, `LiveImage`, `LiveRect`,
+  `stillLive`, `LiveStill`. Import them from `@vibecook/ice/desk` — the host's entry, beside `deskLayer` (whose `onDevice` hands the
+  device they are made on). `/desk/kit` keeps what a KIND reads: `LiveTexture`, `LiveFormat`, `liveDepth`, `LIVE`, `LiveSources`,
+  `LiveFace`, `LiveState`, `LiveInfo`, `LiveDemand`, `LiveInput`, `Seen`, `Sight`, `createSight`. A door that re-exports the kit whole
+  for kinds (VibeField's plugin SDK) no longer needs to shadow the writer: the kit does not carry it (`pack:audit` holds it so).
+- **`ObjectKind.theme` takes `KindPalette`** (petition I46): the desk hands it (`looksOf`), so a kind changes nothing — but a caller
+  that asks a kind's `theme` ITSELF with a host's palette (a test, a harness) now passes `kindPalette(palette)`; it is a compile error
+  where it does not, never an undefined role at run time.
+- **Types widen** (I49): `HeldToolDef.state?`; `HeldSlot.enabled?`; `HeldPoseSource.toolState?`; `SelectionMenuTool.enabled?`;
+  `heldSlots(tools, swatches?, stateOf?)`.
+- **Fixed with it**: `@vibecook/ice/react`'s held bar re-rendered a slot only when its id, kind or swatch moved, so a label or glyph
+  the desk published anew never reached the DOM; a slot is now drawn again when what it shows moves.
 
 ### Removed
 

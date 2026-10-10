@@ -313,8 +313,11 @@ try {
   await mouse("mouseWheel", ...at(hw, ...p0), { deltaX: 10, deltaY: 30 });
   const view2 = await q(`window.__desk.heldView(${pg})`);
   const wheels = (await src(pg, from)).inputs.filter((i) => i.kind === "wheel");
-  // the deltas in CSS px of the hand, as the page's wheel events said them: CDP's are device px — 40, and 10,30, are 20 and 5,15 at the
-  // rig's dpr 2 (probed: a bare page reads 10,30 at scale 1 and 5,15 at 2)
+  // the deltas in CSS px of the hand, as the page's wheel events said them. CDP's deltas into THIS page — the rig's shell page, under
+  // an EMULATED device scale factor (`Emulation.setDeviceMetricsOverride`) — are divided by that factor: 40, and 10,30, are 20 and
+  // 5,15 at the rig's 2 (probed: a bare page reads 10,30 at scale 1 and 5,15 at 2). That is the emulation's, not a law of CDP: an
+  // OFFSCREEN page driven through its own session takes them as CSS px (VibeField PT-3 measured it — 772 px scrolled for 386 when it
+  // multiplied by the density). The kind and the source carry no density: `LiveInput`'s wheel is the DOM event's deltas, as they are
   check(wheels.length === 2 && nearPt(wheels[0], page(...p0)) && wheels[0].dx === 0 && wheels[0].dy === 20 && nearPt(wheels[1], page(...p0)) && wheels[1].dx === 5 && wheels[1].dy === 15 && view0?.panX === 0 && view0.panY === 0 && view1.zoom > 1.2 && view2.panX === view1.panX && view2.panY === view1.panY,
     `a plain WHEEL over the held face is the face's — ${wheels.map(fmtIn).join(" · ")} — and the hand never pans for it (the view ${JSON.stringify(view0)}; brought close by ⌘-wheel to ${view1.zoom.toFixed(2)}×, a plain wheel leaves its pan at ${view2.panX.toFixed(1)},${view2.panY.toFixed(1)}); ⌘ is the hand's: no wheel sent for it`);
   await mouse("mouseWheel", hw.frame.cx, hw.frame.cy, { deltaX: 0, deltaY: 60, modifiers: 4 });   // back to the reading size

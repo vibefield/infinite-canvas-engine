@@ -1971,13 +1971,14 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   lends its own. Witnesses: desk/test/still.test.ts (a writing stub on the fake raster) and the desk clock's Dawn still unchanged
   (once at the build, a throwaway Dawn probe of the real note: ink with a fixed raster lent, none without — not kept).
 
-## M24 — The live face (design-019) — **LT1 BUILT 2026-10-09 on branch `portals/lt1`** (graded by the orchestrator's own `ci` + `gate:landing`; cut as `0.16.0-portals.1` on `next` for VibeField's exact pin — the cut and the publish are not the builder's) · **LT2 BUILT 2026-10-09 on branch `portals/lt2`** (graded; cut as `0.16.0-portals.2`, not the builder's) · **LT3 BUILT 2026-10-09 on branch `portals/lt3`** (for the orchestrator's grade; `0.16.0-portals.3` likewise not the builder's)
+## M24 — The live face (design-019) — **LT1 BUILT 2026-10-09 on branch `portals/lt1`** (graded by the orchestrator's own `ci` + `gate:landing`; cut as `0.16.0-portals.1` on `next` for VibeField's exact pin — the cut and the publish are not the builder's) · **LT2 BUILT 2026-10-09 on branch `portals/lt2`** (graded; cut as `0.16.0-portals.2`, not the builder's) · **LT3 BUILT 2026-10-09 on branch `portals/lt3`** (graded; cut as `0.16.0-portals.3`, not the builder's) · **LT4 BUILT 2026-10-10 on branch `portals/lt4`** (for the orchestrator's grade; `0.16.0-portals.4` likewise not the builder's)
 
 VibeField's PORTALS program (`vibe-field/draft/thinking-portals.md`; James, 2026-10-09: "let's start working on this browser widget,
 and make it into a new plugin, and also work on the track of PORTALS, ICE's live-texture seam") asks the seam
 `docs/downstream-petitions.md` named and did not file: a kind's face fed by a host's source. `draft/design-019-the-live-face.md`
 (PROPOSAL rev 1, not locked) is the design; its evidence is four read-only maps in `vibe-field/draft/portals-maps/` (p2 maps this repo,
-file:line). Three slices, each cut as `0.16.0-portals.N` on `next`; `0.16.0` on `latest` at VibeField's lane's landing.
+file:line). Three slices — and a fourth for the asks VibeField's builders found using them — each cut as `0.16.0-portals.N` on `next`;
+`0.16.0` on `latest` at VibeField's lane's landing.
 
 - **LT1 — the live texture, the source, the sight** (`0.16.0-portals.1`; brief `vibe-field/draft/portals-maps/briefs/LT1-the-live-texture.md`):
   - **kit/live.ts** (`@vibecook/ice/desk/kit`): `createLiveTexture` → `LiveWriter` and its reader `LiveTexture` (one copy into level 0
@@ -2197,6 +2198,83 @@ file:line). Three slices, each cut as `0.16.0-portals.N` on `next`; `0.16.0` on 
     kind records into an encoder (validated at the finish — `degraded` as before); `degraded` lifting once its cause is quarantined.
     Outside the boundary still, each the caller's or the mount's: a host's door into a kind (`tuneLaw` → `tune`/`setLaw`, `records()`),
     and the create-time calls — `local()`, `theme` (a theme change too), a DOM half's `text`/`mount`.
+- **LT4 — the asks PORTALS found** (`0.16.0-portals.4`; brief `vibe-field/draft/portals-maps/briefs/LT4-the-asks-portals-found.md`;
+  petitions I46, I49, I50, I51 — `docs/downstream-petitions.md`; I47 and I48 are named, not filed, not built):
+  - **I49 — a held tool says its state** (the one VibeField's bar lied without: ‹ › always live, ↻ never ✕). `HeldToolDef.state?(ctx)`
+    → `HeldToolState` `{ enabled?, glyph?, label? }` (core, `widget/held-tools.ts`); `ctx` is what the kind's `open.readout` reads —
+    `world`, `entity`, `props()` and the kind's state on the desk that holds the object (`local`: a live face's `info()`) —
+    `HeldToolStateContext`. Read with the anchor as the readout is (`host/layer.ts` `anchorOf`: the pickup, a tool's act, every frame
+    drawn in hand — a kind whose state moves with no frame asks `KindHost.redraw()`), surfaced on the bar's rows: `HeldSlot.enabled:
+    false`, `label`/`glyph` as said now (`compose/marks.ts` `heldSlots(tools, swatches, stateOf?)`). THE USE: `ops.useHeldTool`
+    returns false — nothing written, nothing run — for a tool said disabled, a slot's press and a keys-only tool's key alike; it asks
+    the renderer through the pose seam (`HeldPoseSource.toolState?(entity, id)` — the layer answers with the same read, so the kind's
+    desk state is in it) and, where no renderer answers, the tool's own `state` with no desk state. The keymap is unchanged: a disabled
+    tool's key is still matched — the tool's, taken — and its use does nothing. ONE safe read for both callers
+    (`readHeldToolState(tool, ctx, threw?)`): only what is well-formed is kept (`enabled` when it is `false`, a glyph that is one, a
+    label that is a word); a throw is caught at the call — said once a tool a page (`tellToolState`), never a strike, as the readout's
+    (I24: the anchor is read at the host's rate and only in hand) — and the tool stands as declared. THE BAR (`@ice/react`): a
+    disabled slot is dim and `aria-disabled`, its press does nothing (even where the kind already says live and the anchor not yet), it
+    keeps its place, its kind and the focus. **A defect the unit found**: the bar re-rendered its slots only when an id, a kind or a
+    swatch moved (`shownOf`'s key), so a state the desk published never reached the DOM — the key now carries what a slot shows.
+  - **I50 — the sight believes only what meets the slot's box.** A slot's records are prepared within their kind's REACH and the
+    cull's 200 px margin, beyond the view, so a pass that tells the sight every record it prepared kept an off-view face live (the
+    browser pane's UNSEEN row). The petition's lean, as built: `Sight.saw` itself ignores a face whose rect does not meet the slot's
+    box — `view.box` (a mini mat's face for its inside) or the whole view, under the slot's camera and zoom; touching is not meeting —
+    and one straddling the edge is seen at its WHOLE px (a face half on screen is still asked at its size). No helper, nothing for a
+    kind to change. The rect is axis-aligned (`ObjectRect`): a turned face passes the rect that covers it.
+  - **I51 — the live face's host half off the kit.** `createLiveTexture`, `LiveWriter`, `LiveTextureOptions`, `LiveImage`, `LiveRect`,
+    `stillLive`, `LiveStill` moved from `kit/live.ts` to `packages/desk/src/host/live-texture.ts`, exported by the host barrel: on
+    `@vibecook/ice/desk` — the HOST's entry, beside `deskLayer`, whose `onDevice` hands the device they are made on — and off
+    `/desk/kit`, which keeps the reader (`LiveTexture`, `LiveFormat`, `liveDepth`, `LIVE`, `LiveSources`, `LiveFace` and its words,
+    `Seen`, `Sight`, `createSight`). WHICH ENTRY: `/desk`, not a new `/desk/host` — `/desk` already is the host's and VibeField's door
+    curates it by name; a tenth entry holding two functions while `deskLayer` stays on `/desk` would split nothing true. THE WALLS:
+    under host/, the writer is off the kit's module graph by the standing `desk-dom-free` rule (nothing outside host/ imports host/);
+    that no kind NAMES it through the desk's entry — where a cruiser sees no names — is `packages/objects/test/live-host-half.test.ts`
+    (the six built-ins, the example plugin kind, the kit's own modules); that the SHIPPED kit carries none of it is `pack:audit`'s row
+    11 (`/desk/kit`'s chunk closure holds neither name; `/desk` exports both; the kit still exports `LIVE`, `createSight`, `liveDepth`).
+    A prerelease-only API moved before 0.16.0.
+  - **I46 — the mat's cast colour as a palette role.** A kind's `theme(palette, name)` is handed `KindPalette`: the host's `Palette`
+    (its own extra roles with it) with the desk's own role beside them, `cast` — the colour an object's shadow casts on the mat
+    (`MAT.cast`); `kindPalette(palette)` makes it and `looksOf` (the one caller: the layer's reflector, a still, the tray) hands it. A
+    host's palette never sets it. WHY THIS DOOR and not a field of `GroundTheme`: a kind resolves its colours once per theme in
+    `theme` — the look its records and its pass read, where the pane kept its copy — and the brief asks for the role. `ObjectKind.theme`
+    takes `KindPalette`, so a caller that asks a kind's `theme` ITSELF (a test, a harness) hands `kindPalette(palette)` — a compile
+    error where it does not, never an undefined at run time (ICE's own 38 direct callers are wrapped). The six built-ins read
+    `MAT_COLORS.cast` as before: no pixel moves.
+  - **`degraded` lifting once its cause is quarantined (LT3's open question; the brief: "if it is small") — NOT built, and why.** It is
+    not small in what it must decide. (1) There is no fact to lift on: an error a scope can attribute never degrades the layer (it is
+    the kind's strike); the uncaptured errors that DO degrade it are exactly the ones no kind owns — so "its cause is quarantined"
+    could only be inferred from timing (a kind went missing near the error, and a clean frame followed). (2) The timing is not
+    ordered: a frame's uncaptured error is told a task or more after its submit, so the errors of the faulty kind's last frames may
+    arrive AFTER its quarantine — a rule armed by "a kind went missing while degraded" never fires then, and one that tolerates the
+    late errors also lifts for an unrelated quarantine. (3) It reverses D7's deliberate "never `ready` again on its own", which a
+    host's honest face keys on, and a lazy lift needs a frame drawn after the last error (a desk at rest stays `degraded` until
+    something draws; waking a frame per error would turn a rest into an error loop). Two candidate rules for design-019's next
+    revision: the lift armed by a quarantine within a stated window of the error, or — plainer — `degraded` as "an uncaptured error
+    since the last N clean frames", with no cause claimed.
+  - **A finding checked (VibeField PT-3)**: CDP `mouseWheel` deltas are divided by a page's EMULATED device scale factor — the rig's
+    shell page, LT2's probe — and are CSS px into an offscreen page's own session. The rig's wheel row dispatches into the emulated
+    shell page (its halved expectations stand; its comment now says whose rule that is); the rig's kind, hand and source carry no
+    density, and `LiveInput`'s wheel is the DOM event's deltas as they are — said in its doc: a host forwards them unchanged.
+  - **Exit** — `portals/lt4` = `c1f628b` + the slice's commits, each green (each intermediate commit's `ci` run alone in a scratch
+    worktree); `pnpm run ci` green; `pnpm run gate:landing` green (the oracle's 116 unchanged; twenty-one rigs; pack:audit — eleven
+    rows; dts:check). **Witnesses**: Node units — core `held-tools.test.ts` (+5 → 15: the safe read, the definition refused, a disabled
+    action and mode and live again, the renderer's word through the seam); desk `held-tool-state.test.ts` (4: the rows off the desk
+    state and the props, heard once; a disabled use doing nothing, live again with no frame between; a throw caught, said once, never
+    a strike; nothing asked while nothing is held), `live-sight.test.ts` (+4 → 12: off each edge and touching, straddling whole, a
+    camera and zoom, a slot's own box, the hand's view), `kind-palette.test.ts` (2), `still.test.ts` (a still hands the role too);
+    react `held-bar.test.tsx` (+2 → 13); objects `quickstart.test.ts` (+1: the cast through the stock palettes),
+    `live-host-half.test.ts` (2). In Chrome — **`rig:live`** gains two rows (27): the rig live kind declares the bar's tools
+    (`RIG_LIVE_TOOLS` — ‹ back live only with a history, ↻ reload ✕ stop while loading, off `LiveInfo`) and its source says its pages'
+    history and loading (`__deskRig.live.say`): THE SIGHT MEETS THE VIEW — a page 40 px off the view, its record still prepared
+    inside the cull's margin, unseen and its source paused; 4 px of it in view, seen at 640 × 400, its source live; THE BAR'S TOOLS
+    SAY THEIR STATE — Back disabled on the anchor's row and the bar's button (aria-disabled, dim), its press and the op doing nothing
+    (0 keys sent); a history and a load said → 1 frame drawn, Back live, Reload "Stop" with its own glyph; pressed: BrowserBack ·
+    BrowserStop; loaded, Reload again: BrowserRefresh. 46 mutations through a restoring driver, every one red — 38 against the units
+    (and the cruiser), 6 against rig:live, 2 against pack:audit's row.
+  - **Not here**: I47, I48; the render-target mode (design-019 §11); `degraded` lifting (above); any VibeField or strata edit. A tool's
+    `run(api)` is still handed no desk state (its `state` is): VibeField's `handOf(api.world)` and the rig's hands-by-world stand in
+    for it — a later ask, if one is filed.
 
 ## Release cut & downstream
 

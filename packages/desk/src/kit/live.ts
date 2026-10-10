@@ -111,7 +111,8 @@ export interface LiveDemand {
 /**
  * Input to a face, in the coordinates of the frame it DISPLAYED — its LOGICAL size (`LiveTexture.logical`, design-019 §5; M24 LT2): a
  * pointer (`button` the one pressed or released — −1 on a move, `buttons` the mask held, `count` the click count the hand told the kind:
- * 1, 2, 3… — `HeldEvent`'s), a wheel (CSS px of the hand), a key (`mods` Chrome DevTools' modifier mask — Alt 1, Ctrl 2, Meta 4,
+ * 1, 2, 3… — `HeldEvent`'s), a wheel (CSS px of the hand — the DOM wheel event's deltas as they are, never multiplied by a density: a
+ * host forwards them to its source unchanged), a key (`mods` Chrome DevTools' modifier mask — Alt 1, Ctrl 2, Meta 4,
  * Shift 8), committed text, an IME composition (its text and its caret within it — `EditorLease.compose`). A kind maps what the hand
  * told it (`KindLocal.held`, the editor's lease) and sends it; it carries no geometry revision: the host stamps the frame it displayed.
  */
