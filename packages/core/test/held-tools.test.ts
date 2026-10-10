@@ -6,7 +6,9 @@
 // object's props); a declared-only tool routes nothing; keys match exactly on their modifiers and case-blind on the key.
 // Through the REAL stack: a press on the drawing surface with a mode in hand is the TOOL's (never two taps that put the
 // object down, which elsewhere on it still do), the pose seam's part rides `HeldPointer`, and the mode's cursor shows over
-// the surface alone.
+// the surface alone. Petition I49: a tool says its STATE NOW (`state` → disabled, another glyph, another label) — read safely
+// (`readHeldToolState`), and `ops.useHeldTool` does nothing for a tool said disabled: by the renderer's word where the pose seam has
+// one (`toolState`), by the tool's own with no desk state where none answers.
 import { describe, expect, it } from "vitest";
 import {
   Camera,
@@ -25,9 +27,12 @@ import {
   keyMatches,
   matchHeldTool,
   p,
+  readHeldToolState,
   widgets,
   type Entity,
+  type HeldGlyph,
   type HeldToolDef,
+  type HeldToolStateContext,
 } from "../src";
 
 const ran: string[] = [];
@@ -55,17 +60,34 @@ const PAD =
   widgets.get("tools:pad") ??
   defineWidget({ type: "tools:pad", object: { name: "pad" }, openable: true, defaultSize: { w: 100, h: 100 }, heldTools: [{ id: "month", label: "Month", kind: "action", run: () => {} }, { id: "pen", label: "Pen", kind: "mode" }] });
 
+/** What the pane's "page" says now (petition I49) — the test moves it; its tools' `state` read it. */
+const page = { back: false, loading: false, throws: false };
+const STOP: HeldGlyph = { path: "M6 6 L18 18 M18 6 L6 18" };
+const PANE_TOOLS: readonly HeldToolDef[] = [
+  { id: "back", label: "Back", kind: "action", keys: ["mod+["], glyph: "chevron-left", run: () => { ran.push("back"); }, state: () => ({ enabled: page.back }) },
+  { id: "reload", label: "Reload", kind: "action", keys: ["mod+r"], glyph: "reload", run: () => { ran.push(page.loading ? "stop" : "reload"); }, state: () => (page.loading ? { glyph: STOP, label: "Stop" } : undefined) },
+  // a mode whose state reads the object's PROPS (no desk state needed)
+  { id: "zoom", label: "Zoom", kind: "mode", state: (c) => ({ enabled: Number(c.props().n ?? 0) > 0 }) },
+  { id: "pen", label: "Pen", kind: "mode" },
+  { id: "odd", label: "Odd", kind: "action", run: () => { ran.push("odd"); }, state: () => { if (page.throws) throw new Error("no state today"); return { enabled: "no" as unknown as boolean, glyph: { path: " " } as HeldGlyph, label: "" }; } },
+];
+const PANE =
+  widgets.get("tools:pane") ??
+  defineWidget({ type: "tools:pane", object: { name: "pane" }, openable: true, defaultSize: { w: 320, h: 200 }, props: { n: p.number({ default: 0 }) }, heldTools: PANE_TOOLS, heldTool: () => "pen" });
+
 const VP = { w: 800, h: 600, dpr: 1 };
 const pointerQ = defineQuery([Pointer, LocalPointer]);
 
 function rig() {
   ran.length = 0;
-  const ce = createCanvasEngine({ widgets: [BOARD, PAD] });
+  page.back = false; page.loading = false; page.throws = false;
+  const ce = createCanvasEngine({ widgets: [BOARD, PAD, PANE] });
   ce.docs.create();
   ce.world.setResource(Viewport, VP);
   ce.world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
   const board = ce.ops.spawnWidget("tools:board", { x: 100, y: 100, undoable: false });
   const pad = ce.ops.spawnWidget("tools:pad", { x: 500, y: 400, undoable: false });
+  const pane = ce.ops.spawnWidget("tools:pane", { x: 100, y: 400, undoable: false });
   ce.world.sync();
   let now = 1000;
   const step = (n = 1): void => { for (let i = 0; i < n; i++) { now += 16; ce.step(now); } };
@@ -82,7 +104,7 @@ function rig() {
   };
   const tool = (e: Entity = board) => ce.world.get(e, HeldTool);
   const pointer = (): Entity | undefined => ce.world.firstOf(pointerQ);
-  return { ce, world: ce.world, step, mouse, tap, tool, pointer, board, pad };
+  return { ce, world: ce.world, step, mouse, tap, tool, pointer, board, pad, pane };
 }
 
 describe("the held tools' keys (widget/held-tools.ts)", () => {
@@ -109,6 +131,72 @@ describe("the held tools' keys (widget/held-tools.ts)", () => {
     expect(() => defineWidget({ type: "tools:bad2", object: {}, openable: true, heldTools: [{ id: "a", label: "A", kind: "action" }] })).toThrow(/declare `run`/);
     expect(() => defineWidget({ type: "tools:bad3", object: {}, openable: true, heldTools: [{ id: "a", label: "A", kind: "mode", keys: ["cmd+z"] }] })).toThrow(/not a key spec/);
     expect(() => defineWidget({ type: "tools:bad4", object: {}, heldTools: [{ id: "a", label: "A", kind: "mode" }] })).toThrow(/does not open/);
+    expect(() => defineWidget({ type: "tools:bad5", object: {}, openable: true, heldTools: [{ id: "a", label: "A", kind: "mode", state: { enabled: false } } as unknown as HeldToolDef] })).toThrow(/`state` is a function/);
+  });
+});
+
+describe("a held tool says its state now (petition I49)", () => {
+  const ctx = (props: Record<string, unknown> = {}): HeldToolStateContext => ({ world: undefined as never, entity: 0 as Entity, props: () => props, local: undefined });
+  const tool = (id: string): HeldToolDef => PANE_TOOLS.find((t) => t.id === id) as HeldToolDef;
+
+  it("readHeldToolState: none declared, nothing said, or `enabled: true` — the tool as declared; disabled, a glyph and a label carried", () => {
+    page.back = false; page.loading = false; page.throws = false;
+    expect(readHeldToolState(tool("pen"), ctx())).toBeUndefined();          // declares none
+    expect(readHeldToolState(tool("reload"), ctx())).toBeUndefined();       // says nothing now
+    expect(readHeldToolState(tool("back"), ctx())).toEqual({ enabled: false });
+    page.back = true;
+    expect(readHeldToolState(tool("back"), ctx())).toBeUndefined();         // enabled: the tool as declared
+    page.loading = true;
+    expect(readHeldToolState(tool("reload"), ctx())).toEqual({ glyph: STOP, label: "Stop" });
+    expect(readHeldToolState(tool("zoom"), ctx({ n: 0 }))).toEqual({ enabled: false });   // read off the props
+    expect(readHeldToolState(tool("zoom"), ctx({ n: 2 }))).toBeUndefined();
+  });
+
+  it("readHeldToolState: a malformed answer's fields are dropped — never a disabled tool by accident; a THROW is told and the tool stands as declared", () => {
+    page.throws = false;
+    expect(readHeldToolState(tool("odd"), ctx())).toBeUndefined();   // enabled "no", an empty path, an empty label: nothing kept
+    page.throws = true;
+    const told: unknown[] = [];
+    expect(readHeldToolState(tool("odd"), ctx(), (err) => { told.push(err); })).toBeUndefined();
+    expect(told.map((e) => (e as Error).message)).toEqual(["no state today"]);
+    expect(readHeldToolState(tool("odd"), ctx())).toBeUndefined();   // with no one to tell: caught all the same
+  });
+
+  it("ops.useHeldTool does nothing for a tool said DISABLED — an action's op never runs, a mode never becomes the tool in hand — and uses it once it is live", () => {
+    const r = rig();
+    r.ce.stack.heldPose.current = null;   // no renderer: the tool's own state, with no desk state
+    r.ce.ops.open(r.pane);
+    expect(r.tool(r.pane)).toEqual({ id: "pen", prev: "pen" });
+    expect(r.ce.ops.useHeldTool("back")).toBe(false);
+    expect(ran).toEqual([]);
+    expect(r.ce.ops.useHeldTool("zoom")).toBe(false);   // its props' n is 0
+    expect(r.tool(r.pane)).toEqual({ id: "pen", prev: "pen" });
+    page.back = true;
+    expect(r.ce.ops.useHeldTool("back")).toBe(true);
+    r.ce.ops.setWidgetProps(r.pane, { n: 3 });
+    r.world.sync();
+    expect(r.ce.ops.useHeldTool("zoom")).toBe(true);
+    expect(r.tool(r.pane)).toEqual({ id: "zoom", prev: "pen" });
+    // a state that says another glyph and label disables nothing; one that THROWS leaves the tool as declared — live
+    page.loading = true;
+    expect(r.ce.ops.useHeldTool("reload")).toBe(true);
+    page.throws = true;
+    expect(r.ce.ops.useHeldTool("odd")).toBe(true);
+    expect(ran).toEqual(["back", "stop", "odd"]);
+  });
+
+  it("…by the RENDERER's word where the pose seam has one (it reads the kind's state on its desk): the seam asked with the object and the tool, its answer the tool's", () => {
+    const r = rig();
+    const asked: string[] = [];
+    r.ce.stack.heldPose.current = {
+      frame: () => undefined,
+      toolState: (e, id) => { asked.push(`${e === r.pane ? "pane" : "?"} ${id}`); return id === "reload" ? { enabled: false } : undefined; },
+    };
+    r.ce.ops.open(r.pane);
+    expect(r.ce.ops.useHeldTool("reload")).toBe(false);   // the renderer says disabled, whatever the tool's own would say
+    expect(r.ce.ops.useHeldTool("back")).toBe(true);      // …and says nothing of this one: as declared (the tool's own is not asked twice)
+    expect(asked).toEqual(["pane reload", "pane back"]);
+    expect(ran).toEqual(["back"]);
   });
 });
 

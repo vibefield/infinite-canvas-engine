@@ -61,6 +61,7 @@ import { GestureSettings } from "../catalog/settings-resources";
 import { FrameInfo } from "../engine/frame-info";
 import { PrefabId } from "../schema/prefab";
 import { GESTURE_DEFAULTS } from "../settings/defaults";
+import type { HeldToolState } from "../widget/held-tools";
 import { pressButton } from "./press-button";
 
 /** The held object's frame ON SCREEN as the renderer drew it this frame (CSS px): its centre, half extents, its scale (CSS px per object unit), and whether the pickup has settled (the wheel waits for it). */
@@ -77,12 +78,15 @@ export interface HeldScreenFrame {
  * The pose seam: the renderer's word on where the held object is — `undefined` before its first frame — and (D3t-a) which of
  * its kind's parts is under a point of the object's own frame (its `hit` on the geometry it drew: the board's melamine
  * `content`, its `frame`), null over nothing; absent = no parts ("content" inside the frame). `cursor` (design-019 §5, M24 LT2):
- * the kind's cursor over one of its NAMED parts (its `open.cursor`) — L4 shows it above its own; undefined: L4's.
+ * the kind's cursor over one of its NAMED parts (its `open.cursor`) — L4 shows it above its own; undefined: L4's. `toolState`
+ * (petition I49): what the held object's kind says of its tool `id` NOW — the renderer reads the tool's `state` with the kind's state
+ * on its desk; `ops.useHeldTool` asks it and does nothing for a tool it says is disabled. Undefined: the tool as declared.
  */
 export interface HeldPoseSource {
   frame(entity: Entity): HeldScreenFrame | undefined;
   part?(entity: Entity, x: number, y: number): string | null;
   cursor?(entity: Entity, part: string): string | undefined;
+  toolState?(entity: Entity, id: string): HeldToolState | undefined;
 }
 
 /** The stack's slot for the pose source — a mutable box, so the renderer can arrive after install (as `framePick`). */

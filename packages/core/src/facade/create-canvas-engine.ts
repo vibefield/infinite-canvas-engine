@@ -123,6 +123,7 @@ import { installWidgetRuntime, type WidgetRuntime } from "../widget/mount-store"
 import { spawnWidget, type SpawnWidgetOpts } from "../widget/spawn";
 import { setWidgetProps } from "../widget/set-props";
 import { trayTakeProps, WidgetEquipped, type WidgetType } from "../widget/define-widget";
+import { readHeldToolState } from "../widget/held-tools";
 import { registerBuiltinTools, type Tool } from "../tools/define-tool";
 import { PrefabId } from "../schema/prefab";
 import { createDocSession, openDocSession, type DocSession, type DocSessionOpts, type OpenDocResult } from "../doc/doc-kit";
@@ -330,7 +331,8 @@ export interface CanvasOps {
    * Use a tool of the held bar (design-015 §8; D3t-a — widget/held-tools.ts): a `mode` becomes the held object's ACTIVE
    * tool (`HeldTool` — a runtime write, the user's fact; a `toggle` mode chosen again hands back the one before it), an
    * `action` runs its op once (its transaction, the document's undo or redo). False when nothing is held, the held type
-   * names no such tool, or the tool is declared only.
+   * names no such tool, the tool is declared only, or its kind says it is DISABLED now (petition I49 — its `state`: the
+   * renderer's word through the pose seam, the tool's own where no renderer answers): nothing is written, nothing runs.
    */
   useHeldTool(id: string): boolean;
   /**
@@ -1850,6 +1852,11 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       if (held === undefined || !world.isAlive(held)) return false;
       const tool = heldToolsOf(held).find((t) => t.id === id);
       if (tool === undefined || tool.kind === undefined) return false;
+      // a tool its kind says is DISABLED now does nothing (petition I49): the renderer's word where there is one — it reads the
+      // tool's `state` with the kind's state on its desk — else the tool's own, with no desk state
+      const pose = stack.heldPose.current;
+      const state = pose?.toolState !== undefined ? pose.toolState(held, id) : readHeldToolState(tool, { world, entity: held, props: () => propsOf(held), local: undefined });
+      if (state?.enabled === false) return false;
       if (tool.kind === "mode") {
         const cur = world.get(held, HeldTool) ?? { id: "", prev: "" };
         const next = cur.id !== id ? { id, prev: cur.id } : tool.toggle === true ? { id: cur.prev, prev: id } : undefined;
