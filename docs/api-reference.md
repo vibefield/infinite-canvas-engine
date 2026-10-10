@@ -373,7 +373,10 @@ the kind CONTRACT — `defineObject`/`objectKindOf`/`driversOf`/`hostOf`, `Objec
 `ObjectHost` (a kind's DOM half, declared: `lend` · `text` · `mount` — design-016 K4b, K8a) —, the builder/pick/ambient/reflector
 of `compose`, `instrumentSubmits`, the GPU profiler (design-016 K2: `createGpuProfiler` — the layer's `handle.profiler()`, unarmed until
 `arm()` — `instrumentPasses`, `instrumentMemory` under `deskLayer({ gpuLedger: true })`, `ablateKinds`/`withoutKind`,
-`traceOf`; `packages/devtools/README.md` says what each number means), the theme (`themeFrom`, `Palette`, `MAT`, …), `shaderText`
+`traceOf`; `packages/devtools/README.md` says what each number means), the theme (`themeFrom`, `Palette`, `MAT`, … — and `KindPalette`
+/ `kindPalette`, petition I46: a kind's `theme(palette, name)` is handed the host's palette with the desk's own role beside its
+roles, `cast` — the colour a shadow casts on the mat, the mat's own — so `rgb(palette.cast.css)` follows the mat in every theme; a
+caller that asks a kind's `theme` itself hands it `kindPalette(palette)`), `shaderText`
 (the desk's WGSL: the kit, the mat, the hold, the marks), `blueNoise`, `createStill` (petition I30 — one still of a desk on the
 caller's device, no canvas: Plugin parity, below), the mat config `DEFAULT_MAT_CONFIG`/`GLYPHS`, the springs
 `SPRINGS`, the zoom band `ZOOM_MIN`/`ZOOM_MAX`) · **`@ice/desk/engine`** (the raw-WebGPU engine: `acquire`/`adopt`, the
@@ -482,15 +485,19 @@ engine names a kind:
   (`compose.wake`), a lent service's landing (`LendHost.wake`), a menu act's writes (the document's outside door).
 - **Live faces** (M24, design-019 — PROPOSAL rev 1): a kind's face fed by a HOST's source, the texture on the desk's device. The host
   lends `LIVE` (`@ice/desk/kit`: `LiveSources.open(key, spec, arrived) → LiveFace`) and makes each face's texture with
-  `createLiveTexture(device, { label, … }) → LiveWriter` (one copy into level 0 per present; a `VideoFrame` closed by the writer). The
+  `createLiveTexture(device, { label, … }) → LiveWriter` (one copy into level 0 per present; a `VideoFrame` closed by the writer) —
+  the HOST's half, on `@ice/desk` beside `deskLayer` and OFF the kit (petition I51, M24 LT4: `createLiveTexture`, `LiveWriter`,
+  `LiveTextureOptions`, `LiveImage`, `LiveRect`, `stillLive`, `LiveStill`): a kind is handed the kit whole and never makes a face. The
   kind opens a face per object by its DURABLE key (`KindHost.keyOf(e)` — strata's document key: the same on every peer and across a
   reload), takes once at the open and then on each arrival (`arrived` → `KindHost.wake()`; its tick `take()`s; a face that landed asks
   `KindHost.redraw()` — the frame drawn again, NO record remade — and the tick answers false), draws `face.texture()` (`LiveTexture`:
   `view()`, `revision`, `epoch`, `logical` — the DISPLAYED frame's logical size, what each present said: `present(source, rect?, logical?)`,
   its texels when none (M24 LT2); `prepare(encoder, liveDepth(face, px))` makes its mips into the frame's encoder as deep as they are
   read), and tells the host what it sees: `createSight(host.frames)` folds its prepares' `saw` into `Seen` per entity per frame (the
-  desk copy behind the hand and a capture never count — a face behind the hand reads unseen), and its law hands `face.demand(d)` a
-  `LiveDemand` change-only. A still draws one from committed bytes: `createStill({ services: [service(LIVE, stillLive(device, …))] })`.
+  desk copy behind the hand and a capture never count — a face behind the hand reads unseen; a face whose rect does not MEET the
+  slot's box is not seen though its record was prepared within the kind's reach, and one straddling the edge is seen at its whole
+  px — petition I50), and its law hands `face.demand(d)` a `LiveDemand` change-only. A still draws one from committed bytes:
+  `createStill({ services: [service(LIVE, stillLive(device, …))] })` (`stillLive` is the still host's: `@ice/desk`).
 - **The hand's input to a kind** (M24 LT2, design-019 §5): IN HAND a kind is TOLD what the hand did — `KindLocal.held(e, events)`, once
   a frame something happened, `HeldEvent`s in its held extent's units (centred): `pointer` (`down`/`move`/`up`, the kind's `part`,
   `button`, `buttons`, `count` — 1, 2, 3 within the desk's multi-tap window and slop: core's `HeldPress.count`) for a press ON the object
@@ -520,9 +527,17 @@ engine names a kind:
   `held.readout`, recomposed with it (every frame drawn while held), for a host's bar to print; none, "" or a non-string — no word; a
   throw is caught at the kind's boundary and said once. The notebook says its page ("Page 2"), the calendar its month ("September"), and
   the example's desk clock (`examples/desk-clock`) the time its hands show — a plugin's word, declared as a built-in's.
+- **A held tool's state** (petition I49, M24 LT4): a tool says what it is NOW — `HeldToolDef.state?(ctx) → { enabled?, glyph?, label? }`
+  (`HeldToolState`; `ctx` what a readout reads: `world`, `entity`, `props()`, the kind's desk state `local` — `HeldToolStateContext`):
+  DISABLED (‹ back with no history), another glyph and label (↻ reload → ✕ stop while a page loads). It is read with the anchor, as the
+  readout is — the pickup, a tool's act, every frame drawn in hand (a kind whose state moves with no frame asks `KindHost.redraw()`) —
+  and surfaces on the bar's slots: `HeldSlot.enabled: false`, and `label`/`glyph` as said now. `ops.useHeldTool` does NOTHING for a
+  tool said disabled — a slot's press, its keys (still the tool's: the keymap takes them) — asking the renderer through the pose seam
+  (`HeldPoseSource.toolState`), or the tool's own `state` where no renderer answers. The React bar shows a disabled slot dim and
+  `aria-disabled`. A `state` that throws is caught at the call and said once a tool — never a strike: the tool stands as declared.
 - **The anchor's parts by name** (petition I36): `/desk` exports the selection's anchor (`SelectionAnchor`) and its parts as types —
   the hand `HeldAnchor` (`tools`, `active`, `landing`, `settled`, `travelMs?`, `readout?`), each bar slot `HeldSlot` (`id`, `label`,
-  `kind?`, `hint?`, `glyph?`, `swatch?`) and a slot's `HeldGlyph` — so a host that draws the held bar itself types it by these names,
+  `kind?`, `hint?`, `glyph?`, `swatch?`, `enabled?` — I49) and a slot's `HeldGlyph` — so a host that draws the held bar itself types it by these names,
   never by `NonNullable<SelectionAnchor["held"]>` (which a rename passes without a word); the desk clock's `dts:check` imports them.
 - **Menu acts**: `defineObject({ menu })` (core's `MenuActionDef`) — the anchor's `menu` carries a selection's shared acts
   (`withKindActs`), the React menu shows them first and runs `ops.runMenuAction`.
@@ -594,8 +609,9 @@ engine names a kind:
      `landed` —, `chip`, `hit`, `lifted`, `veils`, its desk state's `tick` and `due`) is caught at the kind: a STRIKE, said on the
      console (`console.warn`: the call, the entity, the error) and never to the host; the frame goes on without that object (its
      record reset and made afresh next time; a `hit` that throws is a miss — the pick goes on to the object under it). The THIRD
-     strike quarantines the kind (design-009 §16's ladder). What the selection's anchor asks of it — `open.readout` (I22) and
-     `open.swatches` — is caught at the CALL, never a strike: no word, or the slots without their swatches, said once a page (the
+     strike quarantines the kind (design-009 §16's ladder). What the selection's anchor asks of it — `open.readout` (I22),
+     `open.swatches` and a held tool's `state` (I49) — is caught at the CALL, never a strike: no word, the slots without their
+     swatches, or the tool as declared, said once a page (the
      anchor is read at the host's rate and only while the object is in hand, and it draws nothing of the desk).
   3. **Missing** — refused or quarantined, the kind is MISSING for the desk's life: nothing of it is called again; its passes are
      swapped out of every slot and their `dispose` called, its desk state's `dispose` called and let go (no tick, no `due`), its
