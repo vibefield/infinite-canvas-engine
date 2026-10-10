@@ -19,5 +19,9 @@ export { decodePicture } from "./picture";
 // What a host FEEDS the mat through the handle (the render map's finding #2): the plates' slots, the glyph atlas's shape and cells, the mat's config.
 export { DEFAULT_MAT_CONFIG, GLYPH_PAD, GLYPHS, type GlyphAtlasMeta, type MatConfig, type PlateName, type RulerConfig } from "../mat/layout";
 export type { GridConfig } from "../mat/grid";
+// THE LIVE FACE'S HOST HALF (design-019 §3.1, §9; petition I51 — off `/desk/kit` since M24 LT4): the writer a host fills on the desk's
+// device (`deskLayer({ onDevice })`) and a still host's source of committed bytes — a kind reads the face through the kit and never
+// makes one
+export { createLiveTexture, type LiveImage, type LiveRect, type LiveStill, type LiveTextureOptions, type LiveWriter, stillLive } from "./live-texture";
 // …and the objects' springs a host may keep and tune live (`DeskLayerOptions.springs` — the dev panel, D5a)
 export { type ObjectSprings, SPRINGS } from "../kit/springs";

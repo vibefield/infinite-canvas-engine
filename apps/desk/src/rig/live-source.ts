@@ -10,8 +10,11 @@
 // hand's point into the page's coordinates (`LiveTexture.logical`); the page has a LINK (`RIG_LIVE_LINK`) whose cursor is `pointer` —
 // said in the face's info at the last point it was told of, an info change being an arrival — and the source RECORDS every input
 // (`LiveInput`) it is sent, for rig:live to read.
+// M24 LT4 (petition I49): the pages SAY their history and their loading (`say` — `LiveInfo.back`, `loading`): an info change ARRIVES and
+// the next take answers that the look moved, so the kind redraws and the held bar's tools read their state anew.
 
-import { createLiveTexture, type LiveDemand, type LiveFace, type LiveInput, type LiveSources, type LiveWriter } from "@ice/desk/kit";
+import { createLiveTexture, type LiveWriter } from "@ice/desk";
+import type { LiveDemand, LiveFace, LiveInput, LiveSources } from "@ice/desk/kit";
 import { armRigFault, type RigFaultCall } from "./live-fault";
 
 /** The frame size every rig face is drawn at (texels): its level 0. */
@@ -59,6 +62,11 @@ export interface RigLive {
   faces(): RigLiveFaceState[];
   /** THE FAULT DOOR (M24 LT3 — live-fault.ts): arm a throw in `kind`'s `call` from its next call on; `null` disarms it. */
   fault(kind: string, call: RigFaultCall | null): void;
+  /**
+   * What every open face's page says of itself beside its frames (petition I49 — the held bar's tools read it): whether it has a
+   * history to go BACK through, and how far it has LOADED (0 … 1; null: not loading). Each face's info moves — it ARRIVES.
+   */
+  say(words: { readonly back?: boolean; readonly loading?: number | null }): void;
 }
 
 interface Face {
@@ -78,6 +86,8 @@ interface Face {
   closed: boolean;
   readonly inputs: LiveInput[];
   cursor: string | undefined;
+  /** Its words moved since the last take (the rig's `say`): the look changed with no frame. */
+  said: boolean;
 }
 
 /** The frame's other inks — the fake page's content, numbers as its grounds are (sRGB; never a desk colour: those are the theme's). */
@@ -113,6 +123,8 @@ export function createRigLive(): RigLive {
   let gpu: GPUDevice | undefined;
   const faces = new Map<string, Face>();
   let timer: ReturnType<typeof setInterval> | undefined;
+  /** What the pages say of themselves (I49): a history to go back through, a load under way. */
+  let words: { back?: boolean; loading?: number } = {};
   const tick = (key?: string): number => {
     let n = 0;
     for (const f of faces.values()) {
@@ -130,7 +142,7 @@ export function createRigLive(): RigLive {
       const canvas = new OffscreenCanvas(RIG_LIVE_SIZE.width, RIG_LIVE_SIZE.height);
       const g = canvas.getContext("2d");
       if (g === null) throw new Error("rig live: no 2D context on an OffscreenCanvas");
-      const f: Face = { key, spec, arrived, canvas, g, writer: undefined, frame: -1, shown: -1, pending: false, arrivals: 0, asked: 0, takes: 0, demands: [], closed: false, inputs: [], cursor: undefined };
+      const f: Face = { key, spec, arrived, canvas, g, writer: undefined, frame: -1, shown: -1, pending: false, arrivals: 0, asked: 0, takes: 0, demands: [], closed: false, inputs: [], cursor: undefined, said: false };
       faces.set(key, f);
       draw(f, 0);   // the first take lands it — nothing arrives for frame 0
       const face: LiveFace = {
@@ -138,7 +150,11 @@ export function createRigLive(): RigLive {
         texture: () => f.writer?.face,
         take() {
           f.asked += 1;
-          if (f.closed || !f.pending || gpu === undefined) return false;
+          if (f.closed) return false;
+          // its words moved (the rig's `say`): the look changed though no frame landed — `takes` counts the frames alone
+          const said = f.said;
+          f.said = false;
+          if (!f.pending || gpu === undefined) return said;
           f.writer ??= createLiveTexture(gpu, { label: `rig/live ${key}`, width: RIG_LIVE_SIZE.width, height: RIG_LIVE_SIZE.height });
           f.writer.present(f.canvas, undefined, [RIG_LIVE_LOGICAL.width, RIG_LIVE_LOGICAL.height]);   // ONE copy into level 0, the page's logical size said
           f.pending = false;
@@ -147,7 +163,7 @@ export function createRigLive(): RigLive {
           return true;
         },
         state: () => (f.closed ? { is: "closed" } : f.shown < 0 ? { is: "starting" } : { is: "live" }),
-        info: () => ({ title: `rig ${key}`, ...(f.cursor !== undefined ? { cursor: f.cursor } : {}), extra: { frame: f.shown } }),
+        info: () => ({ title: `rig ${key}`, ...(f.cursor !== undefined ? { cursor: f.cursor } : {}), ...(words.back !== undefined ? { back: words.back } : {}), ...(words.loading !== undefined ? { loading: words.loading } : {}), extra: { frame: f.shown } }),
         demand(d) { f.demands.push(d); },
         // the page's input (M24 LT2): recorded; a point over the link moves the page's cursor — an info change, so it ARRIVES
         input(e) {
@@ -183,6 +199,14 @@ export function createRigLive(): RigLive {
       timer = undefined;
     },
     fault: (kind, call) => { armRigFault(kind, call); },
+    say(next) {
+      words = { ...(next.back !== undefined ? { back: next.back } : {}), ...(typeof next.loading === "number" ? { loading: next.loading } : {}) };
+      for (const f of faces.values()) {
+        if (f.closed) continue;
+        f.said = true;
+        f.arrived();
+      }
+    },
     faces: () => [...faces.values()].map((f) => {
       const t = f.writer?.face;
       return {

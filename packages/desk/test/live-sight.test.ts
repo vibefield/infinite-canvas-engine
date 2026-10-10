@@ -2,6 +2,7 @@
 // the last frame — not in the desk copy behind the hand, not in a capture), `px` (the largest device-px extent there), `held` (drawn in
 // the hand). Its FRAME BOUNDARY is the desk's count of frames drawn (`KindHost.frames`): a kind with no records in a slot is never
 // prepared and a kind is ticked on steps that draw nothing, so without the count "not asked" cannot tell "culled" from "no frame".
+// Petition I50: `saw` believes only a face that MEETS the slot's box — a kind's records are prepared within its reach, beyond the view.
 import type { Entity } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import type { RenderTarget, SlotContext } from "../src/kind";
@@ -114,5 +115,58 @@ describe("the sight (design-019 §3.4)", () => {
     expect(sight.of(A)).toBeUndefined();
     d.draw();
     expect(sight.step().size).toBe(0);
+  });
+
+  describe("what meets the slot's box (petition I50)", () => {
+    /** A slot under a camera of its own, and (a mini mat's inside) a box on the attachment. */
+    const under = (camX: number, camY: number, zoom: number, box?: { x: number; y: number; w: number; h: number }, target?: RenderTarget): SlotContext =>
+      ({ view: { camX, camY, zoom, width: 1200, height: 800, dpr: 2, ...(box !== undefined ? { box } : {}) }, ...(target !== undefined ? { target } : {}) }) as unknown as SlotContext;
+    /** A 400 × 250 face whose LEFT edge is at world x `left`, its top at `top`. */
+    const at = (left: number, top = 100) => ({ cx: left + 200, cy: top + 125, w: 400, h: 250 });
+
+    it("a face wholly OUTSIDE the view — prepared all the same, within its kind's reach — reads unseen; one straddling the edge is seen at its FULL px; touching the edge is not meeting", () => {
+      const d = desk();
+      const sight = createSight(d.frames);
+      // off the left edge by 10 units, and exactly touching it: nothing of either is drawn where the eye sees
+      d.draw(() => { sight.saw(A, under(0, 0, 1), at(-410)); sight.saw(B, under(0, 0, 1), at(-400)); });
+      expect(sight.step().size).toBe(0);
+      expect(sight.of(A)).toBeUndefined();
+      // ten units of it in view: seen, at its whole extent (a face half on screen is still asked at its size)
+      d.draw(() => { sight.saw(A, under(0, 0, 1), at(-390)); sight.saw(B, under(0, 0, 1), at(1199)); });
+      expect(facts(sight.step())).toEqual({ 11: { seen: true, px: [800, 500], held: false }, 12: { seen: true, px: [800, 500], held: false } });
+      // …and off again by each edge in turn — right, top, bottom: unseen at the frame that drew none of it
+      d.draw(() => { sight.saw(A, under(0, 0, 1), at(1200)); sight.saw(B, under(0, 0, 1), at(100, -250)); });
+      expect(facts(sight.step())).toEqual({ 11: { seen: false, px: [0, 0], held: false }, 12: { seen: false, px: [0, 0], held: false } });
+      d.draw(() => { sight.saw(A, under(0, 0, 1), at(100, 799)); sight.saw(B, under(0, 0, 1), at(100, 800)); });
+      expect(facts(sight.step())).toEqual({ 11: { seen: true, px: [800, 500], held: false } });
+    });
+
+    it("under the slot's CAMERA and zoom: the same face meets one view and not another", () => {
+      const d = desk();
+      const sight = createSight(d.frames);
+      // the camera at 1000: the face at world 100…500 lies left of the view
+      d.draw(() => sight.saw(A, under(1000, 0, 1), at(100)));
+      expect(sight.step().size).toBe(0);
+      // zoomed out to 0.5, the view shows world 1000…3400: a face at 3300 straddles its right edge, one at 3400 touches it
+      d.draw(() => { sight.saw(A, under(1000, 0, 0.5), at(3300)); sight.saw(B, under(1000, 0, 0.5), at(3400)); });
+      expect(facts(sight.step())).toEqual({ 11: { seen: true, px: [400, 250], held: false } });
+    });
+
+    it("a slot's own BOX (a mini mat's face for its inside): inside the view and outside the box is unseen; meeting the box, seen", () => {
+      const d = desk();
+      const sight = createSight(d.frames);
+      const box = { x: 500, y: 300, w: 200, h: 100 };
+      d.draw(() => { sight.saw(A, under(0, 0, 1, box), at(90, 100)); sight.saw(B, under(0, 0, 1, box), at(600, 350)); });   // A ends at x 490: left of the box
+      expect(facts(sight.step())).toEqual({ 12: { seen: true, px: [800, 500], held: false } });
+      d.draw(() => { sight.saw(A, under(0, 0, 1, box), at(101, 100)); sight.saw(B, under(0, 0, 1, box), at(600, 400)); });   // A reaches x 501; B's top touches the box's foot
+      expect(facts(sight.step())).toEqual({ 11: { seen: true, px: [800, 500], held: false }, 12: { seen: false, px: [0, 0], held: false } });
+    });
+
+    it("off the frame's box and in the HAND's view: seen, held — each slot judged by its own view", () => {
+      const d = desk();
+      const sight = createSight(d.frames);
+      d.draw(() => { sight.saw(A, under(0, 0, 1), at(-900)); sight.saw(A, under(-1000, -100, 1.5, undefined, "hand"), at(-900)); });
+      expect(facts(sight.step())).toEqual({ 11: { seen: true, px: [1200, 750], held: true } });
+    });
   });
 });

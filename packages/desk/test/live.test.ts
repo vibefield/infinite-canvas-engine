@@ -4,7 +4,8 @@
 // (test/live.dawn.test.ts) and the rig's (apps/desk rig:live).
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { chainBytes } from "../src/kit/arrays";
-import { createLiveTexture, type LiveImage, liveDepth, stillLive } from "../src/kit/live";
+import { createLiveTexture, type LiveImage, stillLive } from "../src/host/live-texture";
+import { liveDepth } from "../src/kit/live";
 import { generateMips, mipCount, mipsInto } from "../src/kit/mips";
 import { installGpuFlags } from "./fake-gpu";
 

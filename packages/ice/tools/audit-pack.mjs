@@ -31,6 +31,9 @@
  *      (`KIT_WGSL_FILES` and `LAYER_COMPOSITE_FILE`) byte for byte as its .wgsl source — the `///` blocks with it — and the same
  *      parser check-docs holds the source to (scripts/wgsl-docs.mjs) finds no declaration unsaid in that text; the d.ts carries
  *      each kit record's JSDoc (`MatUniforms`, `NbUniforms`, `NbBook`) naming every field the shipped record declares.
+ *  11. THE KIT CARRIES NO HOST HALF OF THE LIVE FACE (petition I51, M24 LT4): `/desk/kit` — what a kind is handed whole — neither
+ *      exports `createLiveTexture` / `stillLive` nor carries their code anywhere in its chunk closure; `/desk` (the host's entry, where
+ *      `deskLayer` is) exports both, and the kit still exports what a kind reads (`LIVE`, `createSight`, `liveDepth`).
  *
  * Run: `node packages/ice/tools/audit-pack.mjs` (`pnpm --filter ./packages/ice pack:audit` builds first).
  */
@@ -298,7 +301,26 @@ say(
     : kitProblems.slice(0, 6).join(" · "),
 );
 
-console.log("[pack-audit] @vibecook/ice — design-013 D-B8.1 · design-015 §11.5 · D7 · design-016 K4b · I31");
+// --- 11. the kit carries no host half of the live face (petition I51) -------------------------------------------------------
+// the writer that takes frames and a still host's source are the HOST's: on `/desk`, beside `deskLayer`, and off `/desk/kit` — which
+// VibeField's plugin door re-exports WHOLE (K-L1), so what the kit carries is what a plugin kind can reach (PA-22: never a frame)
+const hostHalf = ["createLiveTexture", "stillLive"];
+const kindHalf = ["LIVE", "createSight", "liveDepth"];
+const deskDist = await import(pathToFileURL(resolve(dist, entryFile("./desk"))).href);
+const kitCarries = closureOf(entryFile("./desk/kit")).flatMap((f) => hostHalf.filter((n) => f.text.includes(n)).map((n) => `./desk/kit → ${f.name} carries ${n}`));
+const kitExports = hostHalf.filter((n) => kitDist[n] !== undefined).map((n) => `./desk/kit exports ${n}`);
+const deskLacks = hostHalf.filter((n) => typeof deskDist[n] !== "function").map((n) => `./desk does not export ${n}`);
+const kitLacks = kindHalf.filter((n) => kitDist[n] === undefined).map((n) => `./desk/kit does not export ${n}`);
+const liveProblems = [...kitCarries, ...kitExports, ...deskLacks, ...kitLacks];
+say(
+  liveProblems.length === 0,
+  "the kit carries NO HOST HALF of the live face",
+  liveProblems.length === 0
+    ? `${hostHalf.join(", ")} are exported by ./desk and in none of ./desk/kit's ${closureOf(entryFile("./desk/kit")).length} chunks; the kit exports what a kind reads (${kindHalf.join(", ")}) — petition I51`
+    : liveProblems.slice(0, 6).join(" · "),
+);
+
+console.log("[pack-audit] @vibecook/ice — design-013 D-B8.1 · design-015 §11.5 · D7 · design-016 K4b · I31 · I51");
 for (const r of rows) console.log(`[pack-audit] ${r}`);
 console.log(fail.length === 0 ? "[pack-audit] ALL PASS" : `[pack-audit] ${fail.length} FAILED`);
 process.exit(fail.length === 0 ? 0 : 1);

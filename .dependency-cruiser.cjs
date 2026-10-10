@@ -140,7 +140,11 @@ module.exports = {
         "desk/src outside host/ may import host/ (the DOM half is a LEAF the composition root and the " +
         "world half never reach) — except the package's root barrel, `src/index.ts`, which is the " +
         "published door and re-exports both halves. The API half — no `document`/`window`/`navigator` " +
-        "outside host/ — is `packages/desk/test/dom-free.test.ts`, the grep a cruiser cannot be.",
+        "outside host/ — is `packages/desk/test/dom-free.test.ts`, the grep a cruiser cannot be. " +
+        "Petition I51 (M24 LT4): the live face's HOST half (host/live-texture.ts — `createLiveTexture`, `stillLive`) is under host/, " +
+        "so this same rule keeps it off the kit's module graph (`/desk/kit` — what a kind is handed whole); that no kind NAMES it " +
+        "through the desk's entry is packages/objects/test/live-host-half.test.ts, and that the shipped kit carries none of it " +
+        "packages/ice/tools/audit-pack.mjs (11).",
       severity: "error",
       from: { path: "^packages/desk/src", pathNot: ["^packages/desk/src/host/", "^packages/desk/src/index\\.ts$"] },
       to: { path: "^packages/desk/src/host/" },
