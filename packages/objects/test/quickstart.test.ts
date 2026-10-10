@@ -11,7 +11,7 @@ import { resolve } from "node:path";
 import { ActiveTool, CameraLimits, createCanvasEngine, GestureSettings, ZoomThroughSettings } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { looksOf } from "../../desk/src/compose/reflector";
-import { deskLayer, objectKindOf, type ObjectKind } from "@ice/desk";
+import { deskLayer, type KindPalette, MAT_COLORS, objectKindOf, type ObjectKind, rgb } from "@ice/desk";
 import { ZOOM_MAX, ZOOM_MIN } from "@ice/desk";
 import { DESK_ENGINE, DESK_OBJECTS, deskPalette, deskSelect, deskTheme } from "../src";
 import { PALETTE } from "../src/palette";
@@ -76,6 +76,13 @@ describe("the published quickstart (design-015 D7)", () => {
     }
     // the documented roles alone answer none of the looks — the reason the default ships
     expect(() => looksOf(kinds, PALETTE.light, deskTheme("light"))).toThrow(/palette/);
+  });
+
+  it("the cast colour a plugin kind's theme is handed is the mat's own in both stock themes (petition I46)", () => {
+    const plugin = { name: "plugin", theme: (palette: KindPalette) => rgb(palette.cast.css) } as unknown as ObjectKind;
+    for (const name of ["light", "dark"] as const) {
+      expect(looksOf([...deskKinds(), plugin], deskPalette(name), deskTheme(name)).get("plugin")).toEqual(MAT_COLORS.cast);
+    }
   });
 
   it("a mount whose palette cannot answer throws and leaves nothing behind — no canvas in the container, no reduced-motion listener", () => {

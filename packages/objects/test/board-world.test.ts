@@ -10,7 +10,7 @@ import type { BoardPass } from "../src/board/board-pass";
 import type { BoardOp } from "../src/board/history";
 import { worldChildren } from "../../desk/src/compose/children";
 import { type BoardInk, BoardKind, boardFrame, boardKind } from "../src/board/kind";
-import { FLUX_REST, type ObjectContext, rectOf, DEFAULT_GRID, objectKindOf, MAT_GRID } from "@ice/desk";
+import { FLUX_REST, type ObjectContext, rectOf, DEFAULT_GRID, objectKindOf, MAT_GRID, kindPalette } from "@ice/desk";
 import { addStroke, Board, BOARD_TYPE, BoardStroke, boardOps, decodePoints, encodePoints, strokeRow, strokeSeed } from "../src";
 import { ERASER_TOOL, StrokeBuilder } from "../src/board/stroke";
 import { lampOf } from "../src/paper/paper";
@@ -22,7 +22,7 @@ import { must } from "../../desk/test/must";
 const lamp = lampOf(MAT_GRID.plane);
 const palette = { ...PALETTE.light, board: BOARD_LOOK, markers: MARKERS };
 const kind = boardKind();
-const look = must(kind.theme)(palette, "light");
+const look = must(kind.theme)(kindPalette(palette), "light");
 const W = BOARD.spec.width;
 const H = BOARD.spec.height;
 /** A scene's camera as the builder hands it (the oracle's VIEW: 1200 × 800 CSS px at dpr 2). */
@@ -284,6 +284,6 @@ describe("the board's mirror, reach and look", () => {
   it("theme parses the palette's materials and markers; a palette without the board's materials is the host's mistake, said so", () => {
     expect(look.markers.blue?.opacity).toBe(0.97);
     expect(look.surface).toEqual([0xf3 / 255, 0xf2 / 255, 0xed / 255]);
-    expect(() => must(kind.theme)(PALETTE.light, "light")).toThrow(/board/);
+    expect(() => must(kind.theme)(kindPalette(PALETTE.light), "light")).toThrow(/board/);
   });
 });

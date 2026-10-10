@@ -5,7 +5,7 @@
 // (border) — and `outside` for a miss; `pad` the widest reach; `live` while a spring moves.
 import { createCanvasEngine, type Entity, Viewport } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { createDeskBuilder, createPickSource, DEFAULT_GRID } from "@ice/desk";
+import { createDeskBuilder, createPickSource, DEFAULT_GRID, kindPalette } from "@ice/desk";
 import { minimatKind } from "../src/minimat/kind";
 import { paperKind } from "../src/paper/kind";
 import { MiniMat, Note } from "../src";
@@ -15,7 +15,7 @@ import { must } from "../../desk/test/must";
 const VP = { width: 1200, height: 800, dpr: 2 };
 const CAM = { x: 0, y: 0, zoom: 1 };
 const palette = { ...PALETTE.light, papers: { yellow: SURFACES.note }, pens: PENS, vinyls: VINYLS };
-const LOOKS = new Map<string, unknown>([["paper", must(paperKind().theme)(palette, "light")], ["minimat", must(minimatKind().theme)(palette, "light")]]);
+const LOOKS = new Map<string, unknown>([["paper", must(paperKind().theme)(kindPalette(palette), "light")], ["minimat", must(minimatKind().theme)(kindPalette(palette), "light")]]);
 
 describe("the pick source (core's FramePickSource over the kinds' mirrors)", () => {
   it("answers undefined before the first build, the part names after, outside on a miss; pad is the widest reach; live follows the springs", () => {

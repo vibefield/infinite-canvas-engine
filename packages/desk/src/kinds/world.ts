@@ -32,7 +32,7 @@ import type { LendHost, Lent, ServiceKey, Services } from "../kit/services";
 import type { Rect } from "../kit/nav";
 import type { GridConfig, View } from "../kit/view";
 import type { MarkFrame } from "../marks/layout";
-import type { GroundTheme, Palette, ThemeName } from "../theme";
+import type { GroundTheme, KindPalette, ThemeName } from "../theme";
 
 /**
  * What the builder hands a CONTAINER kind's `record` about its inside (D2b): the bounds of the
@@ -77,9 +77,11 @@ export type ObjectHit = "content" | "frame" | (string & {});
  * A slot of the held bar for a kind in hand (design-015 §8 — "the kind's tools take the middle"): core's `HeldToolDef`
  * (D3t-a — widget/held-tools.ts), declared by the kind and carried onto its widget type by `defineObject`, so the one
  * keymap and the one bar reach it through the engine: a `mode` (the tool in hand, core's `HeldTool`), an `action` (an op),
- * or — no `kind` — declared only (dim; a later slice builds it). `glyph` names one of the bar's.
+ * or — no `kind` — declared only (dim; a later slice builds it). `glyph` names one of the bar's. A tool may say its STATE NOW
+ * (petition I49 — `HeldToolDef.state(ctx)` → `HeldToolState`: disabled, another glyph, another label), read with the anchor as the
+ * kind's `readout` is — from the object's props and the kind's state on this desk (`HeldToolStateContext.local`).
  */
-export type { HeldToolDef } from "@ice/core";
+export type { HeldToolDef, HeldToolState, HeldToolStateContext } from "@ice/core";
 
 /**
  * What a kind's `open.readout` reads (petition I22): the READ side of what its held tools' acts are handed (core's `HeldToolApi` —
@@ -440,8 +442,12 @@ export interface ObjectKind<G = unknown, R = unknown, L = unknown> extends KindP
    * the rect, square to the mat (`rectFrame`).
    */
   frame?(geometry: G): MarkFrame;
-  /** The kind's colours from the host's palette, per theme — the look `record` reads (`ctx.look`). */
-  theme?(palette: Palette, name: ThemeName): L;
+  /**
+   * The kind's colours from the host's palette, per theme — the look `record` reads (`ctx.look`). The palette is the host's, its
+   * own extra roles with it, and the desk's `cast` beside them (petition I46 — `KindPalette`: the colour a shadow casts on the mat,
+   * the mat's own).
+   */
+  theme?(palette: KindPalette, name: ThemeName): L;
   /** The kind's own state on one desk (`ctx.local`) — made by the host once per desk; absent = none (D2c). */
   local?(host: KindHost): KindLocal;
   /** The kind's OPENING (design-015 §8, D4b): what picking it up means. Absent = the object never opens (`ops.open` refuses it). */

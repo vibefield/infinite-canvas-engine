@@ -5,7 +5,7 @@
 // is asked of the desk's frame raster queue — a board with no ink drawn BARE meanwhile — and made and replayed in its turn.
 import type { Entity } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createRasterQueue, createSlotSet, DEFAULT_GRID, DEFAULT_MAT_CONFIG, MAT_GRID, type SlotContext } from "@ice/desk";
+import { createRasterQueue, createSlotSet, DEFAULT_GRID, DEFAULT_MAT_CONFIG, MAT_GRID, type SlotContext, kindPalette } from "@ice/desk";
 import { BOARD_REST, quadOf, resolveBoard } from "../src/board/board";
 import { BOARD_SLOTS, boardRung, type BoardPass } from "../src/board/board-pass";
 import { BOARD_KIND, type BoardKind, boardKind, type BoardObjectLook, createBoardInk } from "../src/board/kind";
@@ -23,7 +23,7 @@ import { must } from "../../desk/test/must";
 const VIEW = { camX: 0, camY: -2000, zoom: 1, width: 1200, height: 4000, dpr: 2 };
 const E = (n: number) => n as Entity;
 const palette = { ...PALETTE.light, board: BOARD_LOOK, markers: MARKERS };
-const look = must(boardKind().theme)(palette, "light") as BoardObjectLook;
+const look = must(boardKind().theme)(kindPalette(palette), "light") as BoardObjectLook;
 const ctx = (view = VIEW): SlotContext => ({ view, fadeIn: DEFAULT_GRID.fadeIn, cfg: DEFAULT_MAT_CONFIG, frame: undefined, present: undefined, light: THEMES.light.matLight, lit: undefined, select: THEMES.light.select, theme: THEMES.light });
 const lamp = lampOf(MAT_GRID.plane);
 /** Board `id` in a column at x 600 (on screen), or at x 9000 (in the cull's margin: off screen). */

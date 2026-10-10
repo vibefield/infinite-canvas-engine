@@ -6,7 +6,7 @@
 // control (a note spawned at rest; a deleted note, which fades).
 import { createCanvasEngine, NO_MODS, Viewport, type Entity } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { createDeskBuilder, DEFAULT_GRID } from "@ice/desk";
+import { createDeskBuilder, DEFAULT_GRID, kindPalette } from "@ice/desk";
 import { MiniMat, Note } from "../src";
 import { PALETTE, PENS, SURFACES, THEMES, VINYLS } from "../oracle/fixtures/vf-theme";
 import { paperKind } from "../src/paper/kind";
@@ -17,7 +17,7 @@ const VP = { width: 1200, height: 800, dpr: 2 };
 const CAM = { x: 0, y: 0, zoom: 1 };
 const DT = 1 / 60;
 const palette = { ...PALETTE.light, papers: { yellow: SURFACES.note }, pens: PENS, vinyls: VINYLS };
-const LOOKS = new Map<string, unknown>([["paper", must(paperKind().theme)(palette, "light")], ["minimat", must(minimatKind().theme)(palette, "light")]]);
+const LOOKS = new Map<string, unknown>([["paper", must(paperKind().theme)(kindPalette(palette), "light")], ["minimat", must(minimatKind().theme)(kindPalette(palette), "light")]]);
 
 function makeDesk() {
   const ce = createCanvasEngine({ widgets: [Note, MiniMat] });

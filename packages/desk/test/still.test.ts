@@ -10,7 +10,7 @@
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { defineWidget, p } from "@ice/core";
 import { instrumentMemory } from "../src/gpu-memory";
-import { createStill, STILL_PALETTE, type StillOptions, type StillStage } from "../src/index";
+import { createStill, kindPalette, STILL_PALETTE, type StillOptions, type StillStage } from "../src/index";
 import type { KindPass } from "../src/kind";
 import type { KindLocal, ObjectKind, ObjectRect } from "../src/kinds/world";
 import { attachmentOf } from "../src/kit/layer";
@@ -205,11 +205,12 @@ describe("createStill — one still of a desk on the caller's device (petition I
     const kind = stubKind(`still-stub-look-${++types}`);
     const Looked = defineObject({ type: `test.still-looked-${types}`, version: 1, props: {}, kind: { ...kind, theme: (palette, name) => { seen.push([palette, name]); return name; } } });
     await createStill({ device: gpu.device, format: "rgba8unorm", size: { width: 16, height: 16 }, dpr: 1, objects: [Looked], stage: () => {} });
-    expect(seen).toEqual([[STILL_PALETTE, "light"]]);
+    // (the palette a kind's theme is handed: the still's, with the mat's cast beside its roles — petition I46, as on a mounted desk)
+    expect(seen).toEqual([[kindPalette(STILL_PALETTE), "light"]]);
     seen.length = 0;
     const palette = { ...STILL_PALETTE, canvasBg: { token: "test", css: "#000000" } };
     await createStill({ device: gpu.device, format: "rgba8unorm", size: { width: 16, height: 16 }, dpr: 1, objects: [Looked], theme: "dark", palette, stage: () => {} });
-    expect(seen).toEqual([[palette, "dark"]]);
+    expect(seen).toEqual([[kindPalette(palette), "dark"]]);
   });
 });
 

@@ -16,7 +16,7 @@ import { printSheet } from "../src/calendar/print";
 import { sheetOf } from "../src/calendar/sheet";
 import { monthGrid, monthIndex, phasesBetween } from "../src/calendar/month";
 import { calendarKind, type CalendarGeometry, createPads, DRAFT_ID, type Pads, partAt } from "../src/calendar/kind";
-import { FLUX_REST, type ObjectContext, rectOf, MAT_GRID, DEFAULT_GRID } from "@ice/desk";
+import { FLUX_REST, type ObjectContext, rectOf, MAT_GRID, DEFAULT_GRID, kindPalette } from "@ice/desk";
 import { addEvent, Calendar, CalendarEvent, createCalendarHand, createCalendarWriting, Note, PadSelection } from "../src";
 import { lampOf } from "../src/paper/paper";
 import { createServices, type HandMetrics, HAND, PRINT_RASTER, service } from "@ice/desk/kit";
@@ -226,7 +226,7 @@ describe("the hand marks each pad from the user's selection (objects/calendar-ha
 const METRICS: HandMetrics = { ascent: 0.8, descent: 0.25, advance: (ch) => (ch === " " ? 0.3 : 0.5) };
 const kind = calendarKind();
 const palette = { ...PALETTE.light, calendars: CALENDAR_LOOK, pens: PENS };
-const look = must(kind.theme)(palette, "light");
+const look = must(kind.theme)(kindPalette(palette), "light");
 const view = { camX: -1200, camY: -1000, zoom: 0.42, width: 1200, height: 800, dpr: 2 };
 const ctxOf = (over: Partial<ObjectContext> = {}): ObjectContext => ({
   entity: 7 as Entity, rect: rectOf({ x: -PAD.W / 2, y: -PAD.H / 2 }, { w: PAD.W, h: PAD.H }), props: { month: "2026-09", weekStart: 1, tape: "ink", pen: "felt" },

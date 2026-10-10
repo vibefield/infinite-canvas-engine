@@ -5,7 +5,7 @@
 // This is the fix for the page-slot leak D2a-world left: a note deleted and undone N times leaks nothing.
 import { Active, createCanvasEngine, type Entity, Viewport } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { createDeskBuilder, type KindLocal, DEFAULT_GRID } from "@ice/desk";
+import { createDeskBuilder, type KindLocal, DEFAULT_GRID, kindPalette } from "@ice/desk";
 import { minimatKind } from "../src/minimat/kind";
 import { paperKind } from "../src/paper/kind";
 import { MiniMat, Note } from "../src";
@@ -14,7 +14,7 @@ import { must } from "../../desk/test/must";
 
 const VP = { width: 1200, height: 800, dpr: 2 };
 const palette = { ...PALETTE.light, papers: { yellow: SURFACES.note }, pens: PENS, vinyls: VINYLS };
-const LOOKS = new Map<string, unknown>([["paper", must(paperKind().theme)(palette, "light")], ["minimat", must(minimatKind().theme)(palette, "light")]]);
+const LOOKS = new Map<string, unknown>([["paper", must(paperKind().theme)(kindPalette(palette), "light")], ["minimat", must(minimatKind().theme)(kindPalette(palette), "light")]]);
 
 /** A paper kind's local that records what it is handed and what it is told. */
 function spyLocal() {

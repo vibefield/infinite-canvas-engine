@@ -19,6 +19,7 @@ import { EMPTY, entryOf, levelFor, MISSING, TILE_TEX, tileGrid, tilesIn } from "
 import { calendarKind } from "../src/calendar/kind";
 import { CALENDAR_LOOK, calendarPrint, PALETTE, PENS } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
+import { kindPalette } from "@ice/desk";
 
 const METRICS: HandMetrics = { ascent: 0.8, descent: 0.25, advance: (ch) => (ch === " " ? 0.3 : 0.5) };
 const MEASURE = (font: string, s: string): number => { const px = Number(/(\d+(?:\.\d+)?)px/.exec(font)?.[1] ?? 10); return s.length * px * 0.55; };
@@ -285,7 +286,7 @@ describe("the product's print inks through the kind's theme = the fixture's `cal
   it("the pens a line is written in, the pencil at 55 %, the highlighters, the presences", () => {
     const kind = calendarKind();
     const palette = { ...PALETTE.light, calendars: CALENDAR_LOOK, pens: PENS };
-    const look = must(kind.theme)(palette, "light");
+    const look = must(kind.theme)(kindPalette(palette), "light");
     expect(look.print).toEqual(calendarPrint());
   });
 });

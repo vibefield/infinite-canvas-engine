@@ -10,7 +10,7 @@ import { ChildOf, createCanvasEngine, durablePrefabFor, guardedTransaction, Held
 import { describe, expect, it } from "vitest";
 import { worldChildren } from "../../desk/src/compose/children";
 import { type Books, NOTEBOOK_PENS, NOTEBOOK_TOOLS, NotebookKind, notebookKind, type NotebookObjectLook, PageTurns, penToolId } from "../src/notebook/kind";
-import { FLUX_REST, type ObjectContext, rectOf, DEFAULT_GRID, MAT_GRID } from "@ice/desk";
+import { FLUX_REST, type ObjectContext, rectOf, DEFAULT_GRID, MAT_GRID, kindPalette } from "@ice/desk";
 import { INK_H, INK_LAYERS, INK_W, inkPoints, nibWidth, nibWidths, PEN, pagesInView } from "../src/notebook/ink";
 import { NOTEBOOK } from "../src/notebook/law";
 import { frameOf, specOf } from "../src/notebook/shape";
@@ -191,7 +191,7 @@ describe("the pages' ink on the device — a cache of the strokes (notebook/page
 const lamp = lampOf(MAT_GRID.plane);
 const palette = { ...PALETTE.light, notebooks: { ...NOTEBOOK_LOOK, rule: notebookRuleInk()[3] }, pens: PEN_TOKENS };
 const kind = notebookKind();
-const look = must(kind.theme)(palette, "light") as NotebookObjectLook;
+const look = must(kind.theme)(kindPalette(palette), "light") as NotebookObjectLook;
 const W = NOTEBOOK.cover.width;
 const H = NOTEBOOK.cover.height;
 

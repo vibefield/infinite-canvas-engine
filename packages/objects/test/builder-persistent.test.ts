@@ -8,7 +8,7 @@
 // when a look is changed under the builder's feet (the control that proves the checker bites).
 import { createCanvasEngine, type Entity, Grab, NO_ENTITY, Position, Viewport } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { createDeskBuilder, createRasterQueue, type DeskBuilder, DEFAULT_GRID, type KindHost, type KindLocal } from "@ice/desk";
+import { createDeskBuilder, createRasterQueue, type DeskBuilder, DEFAULT_GRID, type KindHost, type KindLocal, kindPalette } from "@ice/desk";
 import type { HandMetrics, InkBitmap, TextRaster } from "@ice/desk/kit";
 import type { SpatialSource } from "../../desk/src/compose/builder";
 import { minimatKind } from "../src/minimat/kind";
@@ -23,7 +23,7 @@ const VP = { width: 1200, height: 800, dpr: 2 };
 const CAM = { x: 0, y: 0, zoom: 1 };
 const DT = 1 / 60;
 const palette = { ...PALETTE.light, papers: { yellow: SURFACES.note }, pens: PENS, vinyls: VINYLS };
-const looksOf = () => new Map<string, unknown>([["paper", must(paperKind().theme)(palette, "light")], ["minimat", must(minimatKind().theme)(palette, "light")]]);
+const looksOf = () => new Map<string, unknown>([["paper", must(paperKind().theme)(kindPalette(palette), "light")], ["minimat", must(minimatKind().theme)(kindPalette(palette), "light")]]);
 const LOOKS = looksOf();
 
 function makeDesk(indexed = false, locals?: ReadonlyMap<string, KindLocal>) {

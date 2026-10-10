@@ -12,12 +12,12 @@ import type { StrokeBuilder } from "../src/board/stroke";
 import { type BoardInk, boardKind, type BoardObjectLook, type PenHand } from "../src/board/kind";
 import { addStroke, Board, BoardStroke, boardOps, createBoardPen, decodePoints, decodeTimes } from "../src";
 import { lampOf } from "../src/paper/paper";
-import { MAT_GRID } from "@ice/desk";
+import { MAT_GRID, kindPalette } from "@ice/desk";
 import { BOARD_LOOK, MARKERS, PALETTE } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
 const palette = { ...PALETTE.light, board: BOARD_LOOK, markers: MARKERS };
-const look = must(boardKind().theme)(palette, "light") as BoardObjectLook;
+const look = must(boardKind().theme)(kindPalette(palette), "light") as BoardObjectLook;
 const pointerQ = defineQuery([Pointer, LocalPointer]);
 
 function rig(props: Record<string, unknown> = {}, readOnly?: () => boolean) {

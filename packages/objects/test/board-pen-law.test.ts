@@ -7,13 +7,13 @@ import { resolveBoard } from "../src/board/board";
 import { followHand, HAND_ANGLE, handOnMelamine, penAtRest, penPose, stepPen } from "../src/board/pen";
 import { boardKind, type BoardObjectLook, boardRest } from "../src/board/kind";
 import { lampOf } from "../src/paper/paper";
-import { MAT_GRID } from "@ice/desk";
+import { MAT_GRID, kindPalette } from "@ice/desk";
 import { BOARD } from "../src/board/theme";
 import { BOARD_LOOK, MARKERS, PALETTE } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 
 const palette = { ...PALETTE.light, board: BOARD_LOOK, markers: MARKERS };
-const look = must(boardKind().theme)(palette, "light") as BoardObjectLook;
+const look = must(boardKind().theme)(kindPalette(palette), "light") as BoardObjectLook;
 const G = resolveBoard({ cx: 340, cy: 260, w: 480, h: 320 }, { held: 0, ring: 0, fade: 1 }, lampOf(MAT_GRID.plane));
 const INK: [number, number, number] = [0.2, 0.3, 0.8];
 

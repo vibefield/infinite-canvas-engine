@@ -5,7 +5,7 @@
 import { ChildOf, createCanvasEngine, defineQuery, type Entity, heldEntity, HeldPointer, LocalPointer, NO_MODS, Pointer, Viewport } from "@ice/core";
 import { worldChildren } from "../../desk/src/compose/children";
 import { type Books, type NotebookGeometry, NotebookKind, notebookKind, type NotebookObjectLook } from "../src/notebook/kind";
-import { FLUX_REST, type ObjectContext, rectOf, DEFAULT_GRID, MAT_GRID } from "@ice/desk";
+import { FLUX_REST, type ObjectContext, rectOf, DEFAULT_GRID, MAT_GRID, kindPalette } from "@ice/desk";
 import { NOTEBOOK } from "../src/notebook/law";
 import type { NotebookPass } from "../src/notebook/pass";
 import { BoardStroke, createNotebookHand, Notebook } from "../src";
@@ -16,7 +16,7 @@ import { must } from "../../desk/test/must";
 const lamp = lampOf(MAT_GRID.plane);
 const palette = { ...PALETTE.light, notebooks: { ...NOTEBOOK_LOOK, rule: notebookRuleInk()[3] }, pens: PENS };
 export const kind = notebookKind();
-export const look = must(kind.theme)(palette, "light") as NotebookObjectLook;
+export const look = must(kind.theme)(kindPalette(palette), "light") as NotebookObjectLook;
 const W = NOTEBOOK.cover.width;
 const H = NOTEBOOK.cover.height;
 const pointerQ = defineQuery([Pointer, LocalPointer]);

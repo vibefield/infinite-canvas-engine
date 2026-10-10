@@ -7,7 +7,7 @@
 // the laser's strike (160 ms) on a NEW alignment, the tape's give on a drag that meets it; the menu's anchor.
 import { Captures, createCanvasEngine, Drag, Editing, GestureActive, GuideLine, LocalPointer, type MarqueeBuffer, Pointer, PointerScreen, Position, Resizable, RoutedMove, Viewport } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { createDeskBuilder, DEFAULT_GRID, MARKS } from "@ice/desk";
+import { createDeskBuilder, DEFAULT_GRID, MARKS, kindPalette } from "@ice/desk";
 import { MiniMat, Note } from "../src";
 import { minimatKind } from "../src/minimat/kind";
 import { paperKind } from "../src/paper/kind";
@@ -18,7 +18,7 @@ const VP = { width: 1200, height: 800, dpr: 2 };
 const CAM = { x: 0, y: 0, zoom: 1 };
 const DT = 1 / 60;
 const palette = { ...PALETTE.light, papers: { yellow: SURFACES.note }, pens: PENS, vinyls: VINYLS };
-const LOOKS = new Map<string, unknown>([["paper", must(paperKind().theme)(palette, "light")], ["minimat", must(minimatKind().theme)(palette, "light")]]);
+const LOOKS = new Map<string, unknown>([["paper", must(paperKind().theme)(kindPalette(palette), "light")], ["minimat", must(minimatKind().theme)(kindPalette(palette), "light")]]);
 
 function makeDesk() {
   const ce = createCanvasEngine({ widgets: [Note, MiniMat] });

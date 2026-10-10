@@ -127,6 +127,22 @@ export const MAT = {
 export const MAT_COLORS: { readonly ground: RGB; readonly line: RGB; readonly cast: RGB } = { ground: rgb(MAT.ground.css, STRICT), line: rgb(MAT.line.css, STRICT), cast: rgb(MAT.cast.css, STRICT) };
 
 /**
+ * THE PALETTE A KIND'S `theme` IS HANDED (petition I46): the host's roles — and its own extra ones, as it passed them — and beside
+ * them the desk's OWN material role a kind needs to stand on the mat as the built-ins do: `cast`, the colour an object's shadow casts
+ * ON the mat (the mat's own — `MAT.cast`, the same in both stock themes). A kind reads it in its `theme` (`rgb(palette.cast.css)`),
+ * so its shadow falls in the mat's colour in every theme with no copy of the number. It is the DESK's word: a host's palette never
+ * sets it (a `cast` there is replaced).
+ */
+export interface KindPalette extends Palette {
+  readonly cast: TokenRef;
+}
+
+/** A host's palette as a kind's `theme` is handed it (I46 — `KindPalette`): every role the host passed, with the mat's `cast`. */
+export function kindPalette<P extends Palette>(palette: P): P & KindPalette {
+  return { ...palette, cast: MAT.cast };
+}
+
+/**
  * The mat's line law and the gobo's numbers (research/tree-shadow/prototype:
  * shaders.js `cuttingMatAlbedo` · `sampleGobo` · `heroFrag`, scenes.js `hero`).
  * Line widths are DEVICE px — the reference's hairlines are 0.5 / 0.75 of a

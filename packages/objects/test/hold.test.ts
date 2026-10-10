@@ -8,7 +8,7 @@
 // composites; the copy is reused while the stamp stands; at a carry of 0 the frame is the rest frame's path.
 import { Camera, createCanvasEngine, type Entity, HeldView, Viewport } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
-import { createDeskBuilder, createPickSource, Ground, type GroundFrameInputs, HOLD, readingTarget, FLUX_REST, type ObjectContext, rectOf, MARKS_SHADER_FILES, marksShaders, DEFAULT_GRID } from "@ice/desk";
+import { createDeskBuilder, createPickSource, Ground, type GroundFrameInputs, HOLD, readingTarget, FLUX_REST, type ObjectContext, rectOf, MARKS_SHADER_FILES, marksShaders, DEFAULT_GRID, kindPalette } from "@ice/desk";
 import { worldChildren } from "../../desk/src/compose/children";
 import { looksOf } from "../../desk/src/compose/reflector";
 import { HOLD_SHADER_FILES, holdShaders } from "../../desk/src/hold/shaders";
@@ -275,7 +275,7 @@ describe("the ground's held frame on a fake device", () => {
     const kinds = [paperKind()];
     const ground = await Ground.create({ device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds, marks: marksShaders(shaderText(MARKS_SHADER_FILES)), hold: holdShaders(shaderText(HOLD_SHADER_FILES)) });
     const paper = must(kinds[0]);
-    const look = must(paper.theme)(palette, "light");
+    const look = must(paper.theme)(kindPalette(palette), "light");
     const view = { camX: 0, camY: 0, zoom: 1, width: 1200, height: 800, dpr: 2 };
     const ctx: ObjectContext = { entity: 7 as never, rect: rectOf({ x: 300, y: 250 }, { w: 200, h: 200 }), props: { seed: 7 }, flux: FLUX_REST, look, theme: THEMES.light, lamp: lampOf(DEFAULT_GRID.mat.plane), view, grid: DEFAULT_GRID, dt: DT };
     const record = paper.record(paper.resolve(ctx), ctx);

@@ -8,7 +8,7 @@
 // log space from the zoom the desk was dressed for, the lamp handed over on the same ramp, a hold at 0.
 import { Camera, createCanvasEngine, Grab, NavRedress, NavTransition, NO_ENTITY, Retained, Selected, Viewport, writeRuntimeResource } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { createDeskBuilder, DEFAULT_GRID, FIT, outgoingCamera, portalAffine, visibleRect, PORTAL_GATE } from "@ice/desk";
+import { createDeskBuilder, DEFAULT_GRID, FIT, outgoingCamera, portalAffine, visibleRect, PORTAL_GATE, kindPalette } from "@ice/desk";
 import { minimatKind } from "../src/minimat/kind";
 import { paperKind } from "../src/paper/kind";
 import { insideViewOfFace } from "@ice/desk/kit";
@@ -23,7 +23,7 @@ const VP = { width: 1200, height: 800, dpr: 2 };
 const CAM = { x: 0, y: 0, zoom: 1 };
 const DT = 1 / 60;
 const palette = { ...PALETTE.light, papers: { yellow: SURFACES.note }, pens: PENS, vinyls: VINYLS };
-const LOOKS = new Map<string, unknown>([["paper", must(paperKind().theme)(palette, "light")], ["minimat", must(minimatKind().theme)(palette, "light")]]);
+const LOOKS = new Map<string, unknown>([["paper", must(paperKind().theme)(kindPalette(palette), "light")], ["minimat", must(minimatKind().theme)(kindPalette(palette), "light")]]);
 
 function makeDesk() {
   const ce = createCanvasEngine({ widgets: [Note, MiniMat] });

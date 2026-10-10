@@ -50,7 +50,7 @@ import { type KindLocal, type ObjectKind, rectOf } from "../kinds/world";
 import { lampOf } from "../mat/lamp";
 import { LAYER_IDLE_MS } from "../kit/layer";
 import { DEFAULT_GRID, type GridConfig } from "../mat/grid";
-import type { GroundTheme, Palette } from "../theme";
+import { type GroundTheme, kindPalette, type Palette } from "../theme";
 import { objectKindOf } from "../object";
 import { drawerRect, type TrayOptions } from "../tray/drawer";
 import { createTrayFlux, type TrayFlux } from "../tray/flux";
@@ -546,9 +546,13 @@ function readGhosts(w: World): CarryGhost[] {
   return out;
 }
 
-/** Each kind's look for a theme, by kind name — what `ObjectContext.look` carries. */
+/**
+ * Each kind's look for a theme, by kind name — what `ObjectContext.look` carries: its `theme` handed the host's palette with the
+ * desk's own role beside its roles (petition I46 — `KindPalette.cast`, the mat's cast colour).
+ */
 export function looksOf(kinds: readonly ObjectKind[], palette: Palette, theme: GroundTheme): Map<string, unknown> {
   const out = new Map<string, unknown>();
-  for (const k of kinds) if (k.theme !== undefined) out.set(k.name, k.theme(palette, theme.name));
+  const handed = kindPalette(palette);
+  for (const k of kinds) if (k.theme !== undefined) out.set(k.name, k.theme(handed, theme.name));
   return out;
 }

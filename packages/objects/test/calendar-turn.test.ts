@@ -11,7 +11,7 @@ import { monthIndex } from "../src/calendar/month";
 import { padFrame } from "../src/calendar/pad";
 import { dragTo, grabMoving, letGo, newRoll, type PadRoll, rollSheets, startTurn, stepRoll } from "../src/calendar/turn";
 import { calendarKind, type CalendarGeometry, createPads, partAt } from "../src/calendar/kind";
-import { FLUX_REST, type ObjectContext, rectOf, DEFAULT_GRID, MAT_GRID } from "@ice/desk";
+import { FLUX_REST, type ObjectContext, rectOf, DEFAULT_GRID, MAT_GRID, kindPalette } from "@ice/desk";
 import { lampOf } from "../src/paper/paper";
 import { CALENDAR_LOOK, PALETTE, PENS, THEMES } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
@@ -173,7 +173,7 @@ describe("through the kind: a pad mid-turn", () => {
   it("resolves the two sheets from its local, the marks on the one showing; a press on the sheet in motion is `moving`", () => {
     const kind = calendarKind();
     const palette = { ...PALETTE.light, calendars: CALENDAR_LOOK, pens: PENS };
-    const look = must(kind.theme)(palette, "light");
+    const look = must(kind.theme)(kindPalette(palette), "light");
     const pads = createPads({ pass: () => undefined });
     const ctx: ObjectContext = {
       entity: 9 as Entity, rect: rectOf({ x: -F.W / 2, y: -F.H / 2 }, { w: F.W, h: F.H }), props: { month: "2026-10", weekStart: 1, tape: "ink", pen: "felt" },

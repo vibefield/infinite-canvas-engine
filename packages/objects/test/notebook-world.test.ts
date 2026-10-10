@@ -8,7 +8,7 @@
 import type { Entity } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { type BookPose, type Books, NotebookKind, notebookKind } from "../src/notebook/kind";
-import { FLUX_REST, type ObjectContext, rectOf, type SlotContext, DEFAULT_GRID, objectKindOf, MAT_GRID, type DataChildren } from "@ice/desk";
+import { FLUX_REST, type ObjectContext, rectOf, type SlotContext, DEFAULT_GRID, objectKindOf, MAT_GRID, type DataChildren, kindPalette } from "@ice/desk";
 import { NOTEBOOK } from "../src/notebook/law";
 import type { NotebookDraw, NotebookPass } from "../src/notebook/pass";
 import { Notebook, NOTEBOOK_TYPE } from "../src";
@@ -23,7 +23,7 @@ import { must } from "../../desk/test/must";
 const lamp = lampOf(MAT_GRID.plane);
 const palette = { ...PALETTE.light, notebooks: { ...NOTEBOOK_LOOK, rule: notebookRuleInk()[3] }, pens: PENS };
 const kind = notebookKind();
-const look = must(kind.theme)(palette, "light");
+const look = must(kind.theme)(kindPalette(palette), "light");
 const W = NOTEBOOK.cover.width;
 const H = NOTEBOOK.cover.height;
 type Book = { x: number; y: number; angle?: number; cover?: string; seed?: number; open?: boolean | number; left?: number; held?: boolean; tilt?: [number, number]; selected?: boolean; ruling?: string };
@@ -198,6 +198,6 @@ describe("the notebook's mirror, ring, tilt, delete and ink", () => {
     kind.record(kind.resolve(ctx), ctx);
     expect(pass.ruleInk).toEqual(notebookRuleInk());
     expect(look.covers.label?.paperCover).toBe(true);
-    expect(() => kind.record(kind.resolve(ctxOf({ x: 0, y: 0 }, scene)), ctxOf({ x: 0, y: 0 }, scene, { look: must(kind.theme)(PALETTE.light, "light") }))).toThrow(/notebooks/);
+    expect(() => kind.record(kind.resolve(ctxOf({ x: 0, y: 0 }, scene)), ctxOf({ x: 0, y: 0 }, scene, { look: must(kind.theme)(kindPalette(PALETTE.light), "light") }))).toThrow(/notebooks/);
   });
 });

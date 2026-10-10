@@ -14,7 +14,7 @@ import { dayIn, dayOfKey, monthOfDay } from "../src/calendar/month";
 import { padFrame } from "../src/calendar/pad";
 import { worldChildren } from "../../desk/src/compose/children";
 import { CalendarKind, calendarKind, createPads, type Pads } from "../src/calendar/kind";
-import { FLUX_REST, type ObjectContext, rectOf, DEFAULT_GRID, objectKindOf, MAT_GRID } from "@ice/desk";
+import { FLUX_REST, type ObjectContext, rectOf, DEFAULT_GRID, objectKindOf, MAT_GRID, kindPalette } from "@ice/desk";
 import { addEvent, Calendar, CALENDAR_TYPE, CalendarEvent, daySlot, NOTE_TYPE, Note, NotePin, pinNote, PinsNote } from "../src";
 import { lampOf } from "../src/paper/paper";
 import { CALENDAR_LOOK, PALETTE, PENS, THEMES } from "../oracle/fixtures/vf-theme";
@@ -25,7 +25,7 @@ import { must } from "../../desk/test/must";
 const lamp = lampOf(MAT_GRID.plane);
 const palette = { ...PALETTE.light, calendars: CALENDAR_LOOK, pens: PENS };
 const kind = calendarKind();
-const look = must(kind.theme)(palette, "light");
+const look = must(kind.theme)(kindPalette(palette), "light");
 const PAD = padFrame(CALENDAR);
 type Pad = { x: number; y: number; month?: string; weekStart?: 0 | 1; pose?: { dir: 1 | -1; p: number; tilt?: number }; tape?: string; pen?: string };
 type Scene = { camX: number; camY: number; zoom: number; calendars: Pad[]; notes?: { pin?: { day: string } }[] };
@@ -166,7 +166,7 @@ describe("the pad's mirror, ring, presences and slots", () => {
     expect(second.id).toBe(2);
     pads.forget?.(31 as Entity);
     expect(pads.state(33 as Entity).slot).toBe(0);
-    expect(() => kind.record(kind.resolve(ctxOf(c, s)), ctxOf(c, s, { look: must(kind.theme)(PALETTE.light, "light") }))).toThrow(/calendars/);
+    expect(() => kind.record(kind.resolve(ctxOf(c, s)), ctxOf(c, s, { look: must(kind.theme)(kindPalette(PALETTE.light), "light") }))).toThrow(/calendars/);
   });
 
   it("tiles still to draw ask for a frame only while their pad DRAWS (D7): culled, the pad's waiting tiles are no reason; forgotten, they go with it", () => {

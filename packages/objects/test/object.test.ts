@@ -7,7 +7,7 @@
 // hit, reach, theme.
 import { STRATUM_BANDS, widgets } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { CONTAINABLE, DESK_OBJECT, FLUX_REST, isObjectKind, type ObjectContext, PINNABLE, rectOf, DEFAULT_GRID, FIT, PORTAL_GATE, defineObject, driversOf, hostOf, objectKindOf, MAT_GRID } from "@ice/desk";
+import { CONTAINABLE, DESK_OBJECT, FLUX_REST, isObjectKind, type ObjectContext, PINNABLE, rectOf, DEFAULT_GRID, FIT, PORTAL_GATE, defineObject, driversOf, hostOf, objectKindOf, MAT_GRID, kindPalette } from "@ice/desk";
 import { minimatKind, miniMatReach } from "../src/minimat/kind";
 import { paperKind, paperReach } from "../src/paper/kind";
 import { DEFAULT_MINIMAT_LAW, faceOf, pickMiniMat, resolveMiniMat } from "../src/minimat/minimat";
@@ -81,7 +81,7 @@ describe("defineObject (design-015 §5.2, D-D16)", () => {
 
 describe("the note's world half (kinds/paper.ts paperKind)", () => {
   const kind = paperKind();
-  const look = must(kind.theme)(palette, "light");
+  const look = must(kind.theme)(kindPalette(palette), "light");
 
   it("rectOf converts ICE's top-left Position + Size to the centred rect the laws read — the one conversion", () => {
     expect(rectOf({ x: 200, y: 150 }, { w: 200, h: 200 })).toEqual({ cx: 300, cy: 250, w: 200, h: 200 });
@@ -149,13 +149,13 @@ describe("the note's world half (kinds/paper.ts paperKind)", () => {
   it("theme parses the palette's papers and pens; a palette without them gives an empty look", () => {
     expect(look.papers.yellow).toEqual(surface("note"));
     expect(Object.keys(look.pens).sort()).toEqual(["ball", "felt", "fountain", "red"]);
-    expect(must(kind.theme)(PALETTE.dark, "dark")).toEqual({ papers: {}, pens: {} });
+    expect(must(kind.theme)(kindPalette(PALETTE.dark), "dark")).toEqual({ papers: {}, pens: {} });
   });
 });
 
 describe("the mini mat's world half (kinds/minimat.ts minimatKind)", () => {
   const kind = minimatKind();
-  const look = must(kind.theme)(palette, "light");
+  const look = must(kind.theme)(kindPalette(palette), "light");
 
   it("resolve = resolveMiniMat on the rect with the flux — hover included: a mini mat rises under the pointer (Q-j)", () => {
     const ctx = ctxOf({ rect: rectOf({ x: 60, y: 90 }, { w: 640, h: 480 }), flux: { lift: 0, hover: 1, ring: 0, fade: 1 } });
@@ -197,7 +197,7 @@ describe("the mini mat's world half (kinds/minimat.ts minimatKind)", () => {
   it("theme parses the palette's vinyls", () => {
     expect(look.vinyls.slate).toEqual(vinyl("slate", DEFAULT_GRID.mat.ground));
     expect(look.vinyls.charcoal).toEqual(vinyl("charcoal", DEFAULT_GRID.mat.ground));
-    expect(must(kind.theme)(PALETTE.dark, "dark")).toEqual({ vinyls: {} });
+    expect(must(kind.theme)(kindPalette(PALETTE.dark), "dark")).toEqual({ vinyls: {} });
   });
 });
 

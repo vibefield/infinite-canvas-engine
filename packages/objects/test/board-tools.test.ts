@@ -11,9 +11,10 @@ import { BOARD_TOOLS, boardKind, type BoardObjectLook, ERASER_TOOL_ID, inkOfTool
 import { addStroke, Board, BoardStroke } from "../src";
 import { BOARD_LOOK, MARKERS, PALETTE } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
+import { kindPalette } from "@ice/desk";
 
 const palette = { ...PALETTE.light, board: BOARD_LOOK, markers: MARKERS };
-const look = must(boardKind().theme)(palette, "light") as BoardObjectLook;
+const look = must(boardKind().theme)(kindPalette(palette), "light") as BoardObjectLook;
 
 function desk(props: Record<string, unknown> = {}) {
   const ce = createCanvasEngine({ widgets: [Board] });

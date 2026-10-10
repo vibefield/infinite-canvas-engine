@@ -4,7 +4,7 @@
 // root held: black before any desk board, the look's after (rig:world's tray scenes alone drew its marker black, the full order white —
 // an order-dependent still). A record made without the local carries its look's materials, and the kind's pass takes them.
 import { describe, expect, it } from "vitest";
-import { DEFAULT_GRID, type ObjectContext } from "@ice/desk";
+import { DEFAULT_GRID, type ObjectContext, kindPalette } from "@ice/desk";
 import { BoardKind, boardKind, type BoardObjectLook } from "../src/board/kind";
 import type { BoardPass } from "../src/board/board-pass";
 import type { BoardInstance } from "../src/board/layout";
@@ -13,7 +13,7 @@ import { BOARD_LOOK, MARKERS, PALETTE, THEMES } from "../oracle/fixtures/vf-them
 import { must } from "../../desk/test/must";
 
 const palette = { ...PALETTE.light, board: BOARD_LOOK, markers: MARKERS };
-const look = must(boardKind().theme)(palette, "light") as BoardObjectLook;
+const look = must(boardKind().theme)(kindPalette(palette), "light") as BoardObjectLook;
 
 const ctxOf = (local?: unknown): ObjectContext => ({
   entity: 5 as ObjectContext["entity"],

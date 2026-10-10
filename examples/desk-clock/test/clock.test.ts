@@ -4,7 +4,7 @@
 // pinned or undrawn one never), the round pick, the chip, the marks' frame, the look. (Until K8b the only "third-party kind" test
 // was object.test's, over `paperKind()` imported from the reference kinds.)
 import { createWorld, type Entity, type HeldToolApi, type MenuActionApi } from "@vibecook/ice";
-import { CONTAINABLE, DESK_OBJECT, defineObject, driversOf, hostOf, type KindDriverHost, type ObjectContext, objectKindOf } from "@vibecook/ice/desk";
+import { CONTAINABLE, DESK_OBJECT, defineObject, driversOf, hostOf, type KindDriverHost, kindPalette, type ObjectContext, objectKindOf } from "@vibecook/ice/desk";
 import { DEFAULT_GRID, lampOf, PAPER_FINISH } from "@vibecook/ice/desk/kit";
 import { describe, expect, it } from "vitest";
 import { CLOCK, CLOCK_KIND, CLOCK_SECONDS_ACT, CLOCK_TOOLS, CLOCK_TYPE, type ClockGeometry, type ClockInstance, type ClockLocal, clockKind, clockLook, DeskClock, SECONDS_GLYPH, SHOP_TIME, timeOfDay } from "../src";
@@ -196,7 +196,7 @@ describe("the desk clock's world half", () => {
 
   it("its look is its own palette's unless the host's names the clocks", () => {
     const k = clockKind();
-    const own = k.theme?.({ canvasBg: { token: "x", css: "#000" }, select: { token: "y", css: "#fff" } }, "light");
+    const own = k.theme?.(kindPalette({ canvasBg: { token: "x", css: "#000" }, select: { token: "y", css: "#fff" } }), "light");
     expect(own).toEqual(clockLook());
     const red = { token: "t", css: "#ff0000" };
     const dial = { dial: red, grain: 0, ink: red, case: red, metal: 0, hands: red, second: red, lume: red, glow: 0 };

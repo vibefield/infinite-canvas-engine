@@ -11,7 +11,7 @@ import { dayOfKey, monthGrid, monthIndex } from "../src/calendar/month";
 import { sheetOf } from "../src/calendar/sheet";
 import { CALENDAR } from "../src/calendar/law";
 import { padFrame } from "../src/calendar/pad";
-import { createDeskBuilder, createPickSource, DEFAULT_GRID } from "@ice/desk";
+import { createDeskBuilder, createPickSource, DEFAULT_GRID, kindPalette } from "@ice/desk";
 import { worldChildren } from "../../desk/src/compose/children";
 import { calendarKind, createPads, type Pads } from "../src/calendar/kind";
 import { paperKind } from "../src/paper/kind";
@@ -22,7 +22,7 @@ import { must } from "../../desk/test/must";
 const VP = { width: 1200, height: 800, dpr: 2 };
 const F = padFrame(CALENDAR);
 const palette = { ...PALETTE.light, papers: { yellow: SURFACES.note }, pens: PENS, calendars: CALENDAR_LOOK };
-const LOOKS = new Map<string, unknown>([["paper", must(paperKind().theme)(palette, "light")], ["calendar", must(calendarKind().theme)(palette, "light")]]);
+const LOOKS = new Map<string, unknown>([["paper", must(paperKind().theme)(kindPalette(palette), "light")], ["calendar", must(calendarKind().theme)(kindPalette(palette), "light")]]);
 const CAM = { x: -1300, y: -950, zoom: 0.42 };
 
 function desk() {
