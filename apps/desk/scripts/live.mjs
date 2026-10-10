@@ -19,7 +19,10 @@
 //      hand (the edge's double-click still puts it down: the hand's rule); a plain wheel the face's and the hand never pans for it, ⌘
 //      zooms the hand; the page's cursor over its link the container's; keys, committed text and an IME composition through the editor
 //      its DOM half leases; Esc puts it down in one press — the terminal's (`open.escape: "kind"`) is its face's, and Done puts it
-//      down; and the COST of a held face playing at 60 (the hand slot and its composites; the desk copy behind never remade);
+//      down; and the COST of a held face playing at 60 (the hand slot and its composites; the desk copy behind never remade). LT4:
+//      the sight believes only what MEETS THE VIEW (petition I50 — a page 40 px off it, its record still prepared, is unseen; 4 px of
+//      it in view, seen whole); the bar's tools SAY THEIR STATE (petition I49 — ‹ back disabled with no history, ↻ reload ✕ stop
+//      while the page loads: on the anchor's rows and the bar's buttons, a disabled press doing nothing);
 //   8. THE RENDER HALF CONTAINED (ICE M24 LT3, design-019 §8): the boundary's price a frame (the held frame and the rest frame recorded
 //      with the boundary off, on, on with the slot's GPU error scope, and on with each kind's own); and the FAULT DOOR
 //      (`__deskRig.live.fault(kind, call)`), each call in a page of its own (a quarantine is for the page's life): a rig live kind that
@@ -245,6 +248,23 @@ try {
   const fmtIn = (i) => (i.kind === "pointer" ? `${i.phase} ${i.x.toFixed(1)},${i.y.toFixed(1)} b${i.button}/${i.buttons} ×${i.count}` : i.kind === "wheel" ? `wheel ${i.x.toFixed(1)},${i.y.toFixed(1)} ${i.dx},${i.dy}` : i.kind === "key" ? `key ${i.phase === "down" ? "↓" : "↑"}${i.key}${i.mods ? `+${i.mods}` : ""}` : i.kind === "text" ? `text "${i.text}"` : `compose "${i.text}" ${i.caret}`);
   const nearPt = (i, p) => Math.abs(i.x - p[0]) < 0.6 && Math.abs(i.y - p[1]) < 0.6;
   const cursor = () => q("document.querySelector('canvas')?.parentElement?.style.cursor ?? null");
+  // 7.0 THE SIGHT MEETS THE VIEW (LT4, petition I50): the page at rest, panned 40 px off the view's left edge — inside the cull's
+  //     margin, so its record is still PREPARED (a kind's reach: a shadow's) and its pass tells the sight of it; the sight believes only
+  //     what meets the view: unseen, its source told paused. Four px of it back in view: seen at its WHOLE extent, its source live.
+  const key50 = (await src(pg)).key;
+  const at50 = async (x) => {
+    await q(`window.__desk.setCamera({ x: ${x}, y: 0, zoom: 1 })`);
+    await settle();
+    const st = await state(pg);
+    return { seen: st.seen, prepared: await q(`window.__desk.handle.lastInputs()?.objects?.some((o) => o.key === ${pg}) === true`), demand: faceOf(st, key50)?.demands.at(-1) };
+  };
+  const home50 = await at50(0);
+  const off50 = await at50(800);    // the page spans world x 440 … 760: its right edge 40 px left of the view
+  const edge50 = await at50(756);   // …and 4 px of it in view
+  await q("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 })");
+  await settle();
+  check(home50.seen?.seen === true && off50.prepared && off50.seen?.seen === false && off50.demand?.mode === "paused" && edge50.prepared && edge50.seen?.seen === true && edge50.seen.px[0] === 640 && edge50.seen.px[1] === 400 && edge50.demand?.mode === "live",
+    `THE SIGHT MEETS THE VIEW (I50): a page 40 px off the view — its record still prepared (${off50.prepared}: inside the cull's margin) — is unseen (${off50.seen?.seen}, its source told ${off50.demand?.mode}); 4 px of it in view it is seen at its whole extent ${fmtPx(edge50.seen?.px)} (${edge50.seen?.seen}, its source ${edge50.demand?.mode})`);
   await q(`window.__desk.open(${pg})`);
   const inHand = await settledInHand(pg);
   const h0 = await hand();
@@ -358,7 +378,52 @@ try {
   const doneDown = await landed();
   check(escDown && escSent === 0 && doneTip === "Done (Esc)" && termHeld && termLent === true && termStill && JSON.stringify(termKeys) === JSON.stringify(["key ↓Escape", "key ↑Escape"]) && termBare && termTip === "Done" && doneDown,
     `ESC puts the page down in ONE press (put down ${escDown}, the face sent ${escSent} keys; Done's tip "${doneTip}"); the TERMINAL's Esc is its face's (open.escape "kind": ${termKeys.join(" · ")}, still in hand ${termStill}; with its lease blurred away, an Esc on the bare page leaves it in hand ${termBare}; Done's tip "${termTip}") — and Done puts it down (${doneDown})`);
-  // 7g. THE COST of a held face playing at 60: the hand slot and its composites — the desk copy behind stands (never remade), one frame
+  // 7g. THE BAR'S TOOLS SAY THEIR STATE (LT4, petition I49): the page in hand — ‹ back disabled while its page has no history (the
+  //     anchor's row `enabled: false`; the bar's button dim and `aria-disabled`, its press and the op doing nothing: the face sent no
+  //     key), ↻ reload as declared; the page gains a history and starts loading (an info change — it ARRIVES, the kind redraws, the
+  //     anchor is recomposed): back live, reload now ✕ Stop — its glyph and label; each press reaches the face; loaded, it is Reload again
+  await q(`window.__desk.open(${pg})`);
+  const toolsHeld = await settledInHand(pg);
+  const bar = () => q(`(() => {
+    const tools = window.__desk.handle.selection.anchor().held?.tools ?? [];
+    const dom = (id) => { const b = document.querySelector('[data-ice-selection-menu] [data-tool="' + id + '"]'); return b === null ? null : { off: b.getAttribute('aria-disabled') === 'true', dim: b.classList.contains('is-dim'), label: b.getAttribute('aria-label'), path: b.querySelector('path')?.getAttribute('d') ?? null }; };
+    return { back: tools.find((t) => t.id === 'back') ?? null, reload: tools.find((t) => t.id === 'reload') ?? null, dom: { back: dom('back'), reload: dom('reload') } };
+  })()`);
+  const press = (id) => q(`document.querySelector('[data-ice-selection-menu] [data-tool="${id}"]')?.click()`);
+  const keysSince = async (n) => (await src(pg, n)).inputs.filter((i) => i.kind === "key").map(fmtIn);
+  const STOP_PATH = "M7 7 L17 17 M17 7 L7 17";
+  const t0 = await bar();
+  const tFrom0 = (await src(pg)).n;
+  await press("back");
+  const usedOff = await q("window.__desk.engine.ops.useHeldTool('back')");
+  await frames(2);
+  const sentOff = await keysSince(tFrom0);
+  const tr0 = await q("window.__desk.handle.redraws()");
+  await q("window.__deskRig.live.say({ back: true, loading: 0.4 })");
+  await until(async () => (await bar()).dom.back?.off === false, 3000);
+  const t1 = await bar();
+  const tr1 = await q("window.__desk.handle.redraws()");
+  await press("back");
+  await press("reload");
+  await frames(2);
+  const sentOn = await keysSince(tFrom0);
+  await q("window.__deskRig.live.say({ back: true, loading: null })");
+  await until(async () => (await bar()).dom.reload?.label === "Reload", 3000);
+  const t2 = await bar();
+  await press("reload");
+  await frames(2);
+  const sentDone = await keysSince(tFrom0);
+  check(toolsHeld && t0.back?.enabled === false && t0.back.label === "Back" && t0.reload?.enabled === undefined && t0.reload.label === "Reload" && t0.dom.back?.off === true && t0.dom.back.dim === true && t0.dom.reload?.off === false
+    && usedOff === false && sentOff.length === 0
+    && t1.back?.enabled === undefined && t1.reload?.label === "Stop" && t1.reload.glyph?.path === STOP_PATH && t1.dom.back?.off === false && t1.dom.back.dim === false && t1.dom.reload?.label === "Stop" && t1.dom.reload.path === STOP_PATH && tr1 - tr0 >= 1 && tr1 - tr0 <= 3
+    && JSON.stringify(sentOn) === JSON.stringify(["key ↓BrowserBack", "key ↓BrowserStop"])
+    && t2.reload?.label === "Reload" && t2.dom.reload?.path !== STOP_PATH && JSON.stringify(sentDone) === JSON.stringify(["key ↓BrowserBack", "key ↓BrowserStop", "key ↓BrowserRefresh"]),
+    `THE BAR'S TOOLS SAY THEIR STATE (I49): with no history ‹ Back is disabled — the anchor's row ${JSON.stringify(t0.back?.enabled)}, the bar's button aria-disabled ${t0.dom.back?.off} and dim ${t0.dom.back?.dim}; its press and the op do nothing (useHeldTool ${usedOff}, the face sent ${sentOff.length} keys); the page says it has a history and is loading — ${tr1 - tr0} frame${tr1 - tr0 === 1 ? "" : "s"} drawn — Back is live (${t1.dom.back?.off === false}) and Reload is "${t1.dom.reload?.label}", drawn with its own glyph (${t1.dom.reload?.path === STOP_PATH}); pressed: ${sentOn.join(" · ")}; loaded, it is "${t2.dom.reload?.label}" again: ${sentDone.at(-1)}`);
+  await q("window.__deskRig.live.say({})");
+  await q("window.__desk.putDown()");
+  await landed();
+  await settle();
+  // 7h. THE COST of a held face playing at 60: the hand slot and its composites — the desk copy behind stands (never remade), one frame
   //     a take; the hand's frame timed drained (holdCost's `hand`: the hand over the standing copy, drawn in full), the loop's main thread
   await q(`window.__desk.open(${pg})`);
   await settledInHand(pg);
@@ -381,7 +446,7 @@ try {
   const load7 = hostLoad();
   check(c1.copies === c0.copies && taken >= 30 && drawn >= taken && drawn <= taken + 6 && handMs < 1000 / 60,
     `the COST of a held face PLAYING at 60 for 2 s: ${taken} frames taken, ${drawn} drawn (${(drawn / 2).toFixed(0)}/s), the desk copy behind remade ${c1.copies - c0.copies} times — each frame the hand slot and its composites alone: ${handMs.toFixed(2)} ms drawn in full on the GPU (drained; median ${median(rounds.map((r) => r.hand.ms)).toFixed(2)}), ${standMs.toFixed(2)} ms standing, ${mainMs.toFixed(2)} ms of the loop's main thread a frame · load ${load7}`);
-  // 7h. THE BOUNDARY'S PRICE (LT3): the frame recorded 100 times back to back (the CPU of recording it — the GPU's share is the
+  // 7i. THE BOUNDARY'S PRICE (LT3): the frame recorded 100 times back to back (the CPU of recording it — the GPU's share is the
   //     frame's, unchanged) in four arms, in turn and drained between — NONE (the ground's boundary taken off), CONTAINED (every kind's
   //     call in its try, the frame's encoder guarded, no GPU scope), SLOT (one GPU error scope over each slot's kinds: the product's),
   //     KIND (one over each kind's: what the desk keeps for a while after a slot's caught an error no one kind owns) — the minima of 11

@@ -16,12 +16,15 @@
 // (`createRigLiveHand`) LEASES the desk's one editor while one of its objects is in hand — keys, committed text and the IME's
 // composition to the face; Esc the desk's (it puts the object down), or the face's for the rig's TERMINAL (`rig.live-term` —
 // `open.escape: "kind"`).
+// THE BAR'S TOOLS (M24 LT4 — petition I49): ‹ back and ↻ reload, each saying its STATE from what its page says (`LiveInfo.back`,
+// `LiveInfo.loading` — `HeldToolDef.state`, read off the kind's desk state): back disabled with no history, reload shown as ✕ stop
+// while the page loads. An act reaches the face through the desk's hand (a tool's `run` is handed the world, never the kind's state).
 // Counters a rig reads (`handle.local("rig-live")`): faces opened, takes that landed, redraws asked, demands sent, ticks; events told,
 // inputs sent.
 
-import type { Entity, WidgetType } from "@ice/core";
+import type { Entity, HeldToolApi, HeldToolDef, WidgetType } from "@ice/core";
 import { CONTAINABLE, DESK_OBJECT, defineObject, type KindDriver, type KindDriverHost, type KindHost, type KindLocal, type ObjectContext, type ObjectDomHost, type ObjectKind } from "@ice/desk";
-import { createSight, type EditorLease, LIVE, type LiveDemand, type LiveFace, type LiveInput, type Seen, type Sight } from "@ice/desk/kit";
+import { createSight, type EditorLease, LIVE, type LiveDemand, type LiveFace, type LiveInfo, type LiveInput, type Seen, type Sight } from "@ice/desk/kit";
 import { rigFault } from "./live-fault";
 import { RigLivePass, type RigSheetRecord } from "./live-pass";
 import { RIG_LIVE_LOGICAL, RIG_LIVE_SIZE } from "./live-source";
@@ -188,6 +191,27 @@ function createRigLiveLocal(host: KindHost, kind: string): RigLiveLocal {
   };
 }
 
+/** The rig's hands by world — one a kind (the page's, the terminal's): a held tool's act finds the hand of the object's kind by the world it is handed (`HeldToolApi.world`). */
+const hands = new WeakMap<object, Set<RigLiveHand>>();
+/** What the page in hand says of itself — its face's info, read off the kind's desk state (a tool's `state`). */
+const pageOf = (c: { readonly entity: Entity; readonly local: unknown }): LiveInfo | undefined => (c.local as RigLiveLocal | undefined)?.opened(c.entity)?.info();
+/** A browser key sent to the face in hand — what a tool's act is, to the rig's source (it records every input). */
+const browserKey = (key: (loading: boolean) => string) => (api: HeldToolApi): void => {
+  for (const hand of hands.get(api.world) ?? []) if (hand.owns(api.entity)) hand.act(api.entity, key);
+};
+/**
+ * THE HELD BAR'S TOOLS (petition I49): ‹ back — live only while the page has a history (`LiveInfo.back`) — and ↻ reload, which is
+ * ✕ stop while the page loads (`LiveInfo.loading`): its glyph and its label said now. Paths in the bar's 24-unit box.
+ */
+export const RIG_LIVE_TOOLS: readonly HeldToolDef[] = [
+  { id: "back", label: "Back", kind: "action", hint: "⌘[", glyph: { path: "M14.5 5.5 L8 12 L14.5 18.5" }, run: browserKey(() => "BrowserBack"), state: (c) => ({ enabled: pageOf(c)?.back === true }) },
+  {
+    id: "reload", label: "Reload", kind: "action", hint: "⌘R", glyph: { path: "M18.5 12 A6.5 6.5 0 1 1 15.6 6.6 M18.5 4.5 V9 H14" },
+    run: browserKey((loading) => (loading ? "BrowserStop" : "BrowserRefresh")),
+    state: (c) => (pageOf(c)?.loading !== undefined ? { glyph: { path: "M7 7 L17 17 M17 7 L7 17" }, label: "Stop" } : undefined),
+  },
+];
+
 /** A rig live kind: its name, and whether Esc in hand is the desk's (it puts the object down) or the face's (a terminal's). */
 function rigLiveKindOf(name: string, esc: "desk" | "kind"): ObjectKind<RigSheetGeometry, RigSheetRecord> {
   return {
@@ -213,6 +237,7 @@ function rigLiveKindOf(name: string, esc: "desk" | "kind"): ObjectKind<RigSheetG
     // its cursor the page's over its part, and Esc the desk's or (the terminal) the face's (M24 LT2)
     open: {
       extent: (c) => c.rect,
+      tools: RIG_LIVE_TOOLS,
       wheel: "kind",
       escape: esc,
       cursor: (c) => (c.part === "live" ? (c.local as RigLiveLocal | undefined)?.opened(c.entity)?.info().cursor : undefined),
@@ -226,6 +251,10 @@ export const rigLiveTermKind = rigLiveKindOf(RIG_LIVE_TERM_KIND, "kind");
 /** The rig live kind's hand on the editor — its driver, which its DOM half joins at the mount. */
 interface RigLiveHand extends KindDriver {
   join(dom: ObjectDomHost): void;
+  /** Is `e` one of this hand's kind? */
+  owns(e: Entity): boolean;
+  /** A held tool's act (petition I49): a browser key — by whether its page is loading — sent to `e`'s face. */
+  act(e: Entity, key: (loading: boolean) => string): void;
 }
 
 /** CDP's modifier mask (Alt 1, Ctrl 2, Meta 4, Shift 8 — `LiveInput` key's `mods`). */
@@ -298,10 +327,15 @@ function createRigLiveHand(h: KindDriverHost, esc: "desk" | "kind"): RigLiveHand
     },
     live: () => leased !== undefined && inHand() === leased,
   };
-  return {
+  const hand: RigLiveHand = {
     join(d) {
       dom = d;
       d.container.addEventListener("pointerdown", onDown, { capture: true });
+    },
+    owns: (e) => h.isKind(e),
+    act(e, key) {
+      const k = key(local()?.opened(e)?.info().loading !== undefined);
+      local()?.send(e, { kind: "key", key: k, code: k, phase: "down", mods: 0, repeat: false });
     },
     follow() {
       const e = inHand();
@@ -316,8 +350,12 @@ function createRigLiveHand(h: KindDriverHost, esc: "desk" | "kind"): RigLiveHand
     dispose() {
       dom?.container.removeEventListener("pointerdown", onDown, { capture: true });
       if (dom !== undefined && dom.editor.lease() === lease) dom.editor.release(lease);
+      hands.get(h.world)?.delete(hand);
     },
   };
+  const here = hands.get(h.world) ?? new Set<RigLiveHand>();
+  hands.set(h.world, here.add(hand));
+  return hand;
 }
 
 /** A rig live object: a sheet 320 × 200 on the desk, a thing that goes into a mini mat by what it provides; its DOM half leases the editor in hand. */
