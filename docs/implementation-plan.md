@@ -2258,10 +2258,10 @@ file:line). Three slices — and a fourth for the asks VibeField's builders foun
     density, and `LiveInput`'s wheel is the DOM event's deltas as they are — said in its doc: a host forwards them unchanged.
   - **Exit** — `portals/lt4` = `c1f628b` + the slice's commits, each green (each intermediate commit's `ci` run alone in a scratch
     worktree); `pnpm run ci` green; `pnpm run gate:landing` green (the oracle's 116 unchanged; twenty-one rigs; pack:audit — eleven
-    rows; dts:check). **Witnesses**: Node units — core `held-tools.test.ts` (+5 → 15: the safe read, the definition refused, a disabled
+    rows; dts:check). **Witnesses**: Node units — core `held-tools.test.ts` (+4 → 15, one extended: the safe read, the definition refused, a disabled
     action and mode and live again, the renderer's word through the seam); desk `held-tool-state.test.ts` (4: the rows off the desk
     state and the props, heard once; a disabled use doing nothing, live again with no frame between; a throw caught, said once, never
-    a strike; nothing asked while nothing is held), `live-sight.test.ts` (+4 → 12: off each edge and touching, straddling whole, a
+    a strike; nothing asked while nothing is held), `live-sight.test.ts` (+4 → 11: off each edge and touching, straddling whole, a
     camera and zoom, a slot's own box, the hand's view), `kind-palette.test.ts` (2), `still.test.ts` (a still hands the role too);
     react `held-bar.test.tsx` (+2 → 13); objects `quickstart.test.ts` (+1: the cast through the stock palettes),
     `live-host-half.test.ts` (2). In Chrome — **`rig:live`** gains two rows (27): the rig live kind declares the bar's tools
