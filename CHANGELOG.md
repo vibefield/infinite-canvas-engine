@@ -6,21 +6,22 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
-> **`0.16.0-portals.4` on the `next` dist-tag (cut 2026-10-10)** — a prerelease carrying everything below for VibeField's PORTALS
-> program (live surfaces back on the desk as object kinds) to pin exactly while its landing branch is open: `portals.1` (9 Oct, cut,
-> never published) M24 LT1, the live face (design-019) — `createLiveTexture` and the `LIVE` source a host lends, the sight,
-> `KindHost.redraw`/`keyOf`/`frames`, `mipsInto`, `stillLive`, the kit's `mat` name; `portals.2` (9 Oct) LT2, the hand's input to
-> a kind in hand — `KindLocal.held` and `HeldEvent`, `OpenBinding.wheel`/`cursor`/`escape`, the editor lease's `compose`/`commit`,
-> `LiveTexture.logical`; `portals.3` (9 Oct) LT3, the render half contained — a kind's pass, its drivers, `forget`, `keeps` and a
-> raster's eviction under petition I24's three strikes in every slot, the frame's encoder kept usable after a kind's throw, GPU
-> errors attributed by one scope a slot; `portals.4` adds LT4, the four asks VibeField's builders found using the seam — a held
-> tool says its state (`HeldToolDef.state`: disabled, another glyph, another label — petition I49), the sight believes only what
-> meets the slot's box (I50), the mat's cast colour as a palette role (`KindPalette` — I46), and the live face's host half off the
-> kit (I51). The section stays `[Unreleased]` until 0.16.0 is cut. **Two changes break a build:** (portals.2)
-> `interaction.keyboard`/`keyboardEscape` and the `KeyboardExclusive` tag are gone, and declaring either throws at definition,
-> naming the editor lease and `open.escape`; (portals.4) `createLiveTexture` and `stillLive` (with `LiveWriter`,
-> `LiveTextureOptions`, `LiveImage`, `LiveRect`, `LiveStill`) are imported from `@vibecook/ice/desk`, no longer from `/desk/kit`,
-> and a caller that asks a kind's `theme` itself passes `kindPalette(palette)`.
+## [0.16.0] — 2026-10-14
+
+**VibeField's PORTALS program, the ICE half (M24, design-019 — the live face), released on `latest`.** Four prereleases on `next`
+carried it while VibeField's landing branch pinned each exactly: `portals.1` (9 Oct, cut, never published) LT1, the live face —
+`createLiveTexture` and the `LIVE` source a host lends, the sight, `KindHost.redraw`/`keyOf`/`frames`, `mipsInto`, `stillLive`, the
+kit's `mat` name; `portals.2` (9 Oct) LT2, the hand's input to a kind in hand — `KindLocal.held` and `HeldEvent`,
+`OpenBinding.wheel`/`cursor`/`escape`, the editor lease's `compose`/`commit`, `LiveTexture.logical`; `portals.3` (9 Oct) LT3, the
+render half contained — a kind's pass, its drivers, `forget`, `keeps` and a raster's eviction under petition I24's three strikes
+in every slot, the frame's encoder kept usable after a kind's throw, GPU errors attributed by one scope a slot; `portals.4` (10 Oct)
+LT4, the four asks VibeField's builders found using the seam — a held tool's state (I49), the sight's box (I50), the mat's cast
+colour as a palette role (I46), the live face's host half off the kit (I51). `0.16.0` adds LT5 (14 Oct), petition I52: the
+reference kinds' drivers follow only their OWN object in hand, so another kind's object held still lets the desk sleep (no API
+change). **Two changes break a build:** (portals.2) `interaction.keyboard`/`keyboardEscape` and the `KeyboardExclusive` tag are
+gone, and declaring either throws at definition, naming the editor lease and `open.escape`; (portals.4) `createLiveTexture` and
+`stillLive` (with `LiveWriter`, `LiveTextureOptions`, `LiveImage`, `LiveRect`, `LiveStill`) are imported from
+`@vibecook/ice/desk`, no longer from `/desk/kit`, and a caller that asks a kind's `theme` itself passes `kindPalette(palette)`.
 
 **M24 — the live face (design-019, PROPOSAL rev 1 — VibeField's PORTALS seam).** A kind's face may show a surface that lives outside
 the world — a web page, a captured window, a simulator's screen — as a texture on the desk's device that the HOST fills and the kind
