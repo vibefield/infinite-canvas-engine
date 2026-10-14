@@ -1971,7 +1971,7 @@ Their status rows live in `docs/downstream-petitions.md`; what each built is her
   lends its own. Witnesses: desk/test/still.test.ts (a writing stub on the fake raster) and the desk clock's Dawn still unchanged
   (once at the build, a throwaway Dawn probe of the real note: ink with a fixed raster lent, none without — not kept).
 
-## M24 — The live face (design-019) — **LT1 BUILT 2026-10-09 on branch `portals/lt1`** (graded by the orchestrator's own `ci` + `gate:landing`; cut as `0.16.0-portals.1` on `next` for VibeField's exact pin — the cut and the publish are not the builder's) · **LT2 BUILT 2026-10-09 on branch `portals/lt2`** (graded; cut as `0.16.0-portals.2`, not the builder's) · **LT3 BUILT 2026-10-09 on branch `portals/lt3`** (graded; cut as `0.16.0-portals.3`, not the builder's) · **LT4 BUILT 2026-10-10 on branch `portals/lt4`** (for the orchestrator's grade; `0.16.0-portals.4` likewise not the builder's)
+## M24 — The live face (design-019) — **LT1 BUILT 2026-10-09 on branch `portals/lt1`** (graded by the orchestrator's own `ci` + `gate:landing`; cut as `0.16.0-portals.1` on `next` for VibeField's exact pin — the cut and the publish are not the builder's) · **LT2 BUILT 2026-10-09 on branch `portals/lt2`** (graded; cut as `0.16.0-portals.2`, not the builder's) · **LT3 BUILT 2026-10-09 on branch `portals/lt3`** (graded; cut as `0.16.0-portals.3`, not the builder's) · **LT4 BUILT 2026-10-10 on branch `portals/lt4`** (for the orchestrator's grade; `0.16.0-portals.4` likewise not the builder's) · **LT5 BUILT 2026-10-14 on branch `portals/lt5`** (petition I52, the last slice before `0.16.0` FINAL; for the orchestrator's grade — the cut is not the builder's)
 
 VibeField's PORTALS program (`vibe-field/draft/thinking-portals.md`; James, 2026-10-09: "let's start working on this browser widget,
 and make it into a new plugin, and also work on the track of PORTALS, ICE's live-texture seam") asks the seam
@@ -2275,6 +2275,43 @@ file:line). Three slices — and a fourth for the asks VibeField's builders foun
   - **Not here**: I47, I48; the render-target mode (design-019 §11); `degraded` lifting (above); any VibeField or strata edit. A tool's
     `run(api)` is still handed no desk state (its `state` is): VibeField's `handOf(api.world)` and the rig's hands-by-world stand in
     for it — a later ask, if one is filed.
+- **LT5 — the reference kinds idle while another kind's object is in hand** (`0.16.0` FINAL — James 2026-10-14: "Include I52"; brief
+  `vibe-field/draft/portals-maps/briefs/LT5-the-reference-kinds-idle.md`; petition I52 — `docs/downstream-petitions.md`):
+  - **The defect** (VibeField PT-6a's C1): the board's pen (`board/board-pen.ts`), the notebook's leaf (`notebook/leaf.ts`) and the
+    calendar's hand (`calendar/hand.ts`) were not idle while ANY object was in hand (`heldEntity(world) !== undefined`). The layer
+    follows a driver that is not idle and keeps the desk due NOW while one does (`host/layer.ts` `following` → `deskDue`), so a held
+    object of any other kind — a plugin's: VibeField's browser pane, held still — kept all three following and the desk stepping every
+    frame (120 steps a second for 2 frames drawn; its SLEEP row red with the pane's own driver idle).
+  - **As built**: each driver's `idle()` asks whether ITS OWN object is in hand — the predicate its `follow` already acted on: the pen's
+    `boardInHand()` and the leaf's `bookInHand()` (one helper each, read by `follow` and `idle` alike, so the two cannot drift), the
+    calendar hand's `isPad(held)` (a PAD only: the hand acts on no HELD note — `isNote` is read for a note CARRIED, core's `Grab`, and
+    at the landing inside core's move transaction). Its other conditions unchanged: a stroke, a turn, a roll or a lifted corner still
+    keeps it awake, and the moment its own object leaves the hand — another kind's taken up in the same frame or not — is still
+    followed: the stroke lands and the marker lies down (`stroke`, `last`), the turn is let go (`turn`, `inHand`), the corner lies down
+    (`peeked`). Nothing a driver does while it acts changed. `KindDriver.idle`'s JSDoc (`kinds/world.ts`) states the contract a
+    plugin's driver keeps too: no object of ITS kind in hand.
+  - **The table first** (the builder's note, `vibe-field/draft/portals-maps/notes/LT5-builder-note.md`): callers × states per driver.
+    With another kind's object in hand the pen's and the leaf's `follow` read `Held` once and treat it exactly as nothing in hand; the
+    hand's reads it three times besides (`deskOf`, `pressesNow`, `peekUnder`) and does LESS than with nothing in hand (the desk behind
+    the hand is inert: no corner lifts) — so the change moves no pixel and no write: the oracle unchanged. Two invariants make clauses
+    redundant at every ask (the pen: `stroke ⇒ last`; the leaf: `stroke ⇒ inHand`, `turn ⇒ inHand`): a mutation dropping one alone stays
+    green — by the invariant, not a missing row.
+  - **Exit** — `portals/lt5` = `08787d2` + the slice's commits, each green; `pnpm run ci` green; `pnpm run gate:landing` green (the
+    oracle's golden unchanged; twenty-one rigs, rig:idle with its new row; pack:audit; dts:check). **Witnesses**: Node units —
+    objects `board-pen.test.ts` (+2), `notebook-hand.test.ts` (+2), `notebook-leaves.test.ts` (+1), `calendar-hand.test.ts` (+2), each
+    stepped as the layer steps a driver (`follow` only when not idle): another kind's object in hand → idle; its own → following; its
+    own put down mid-stroke, mid-turn or with its corner lifted, another kind's taken up in the same frame → not idle until that is
+    followed, then idle; `registered-wakes.test.ts` (+2 — a desk layer as a host mounts it, beside the six a kind of the test's own,
+    openable and driverless, as a plugin's: another kind's object in hand, still → the loop asleep within the pickup's flight,
+    `following` empty; each reference kind's object in hand → `following` names its own driver alone). In Chrome — **`rig:idle`**
+    gains a row (14): on the rigs' `?plugins` page, the desk clock (a third-party kind, no driver; its seconds hand off) held still
+    over a whiteboard, a notebook and a desk calendar — once the pickup has landed and any registered time due within the window is
+    waited out, 240 frames with 0 engine steps, the loop asleep, `following` empty (against `08787d2`'s drivers: 240 steps over the
+    240 frames, 1200 driver asks, never asleep, `following` the three). Red first: every new row red against `08787d2`'s drivers
+    (the units 9 of 58, nothing else; the rig's row); 12 mutations through a restoring driver (9 red on every row they name; 3
+    single-clause mutations green, as the invariants say).
+  - **Not here**: the `0.16.0` FINAL cut and its version bump (the orchestrator's); VibeField's half (the pane's driver idle once
+    still, `77d402d2` reverted as `c64fdc61`, back at the FINAL's pin with its SLEEP row); any strata edit.
 
 ## Release cut & downstream
 

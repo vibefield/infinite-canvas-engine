@@ -30,7 +30,8 @@ composition, the displayed frame's logical size — and removes the keyboard cla
 `### Changed`). LT3 contains the render half: a kind's throw in a frame — any slot — and its GPU errors where a scope can name it are
 petition I24's strikes against that kind, never a lost frame (additive; a few types widen). LT4 lands the four asks VibeField's
 builders found using the seam — a held tool's state (I49), the sight's box (I50), the live face's host half off the kit (I51 — a
-MOVE: `### Changed`), the mat's cast colour as a palette role (I46).
+MOVE: `### Changed`), the mat's cast colour as a palette role (I46). LT5 lands petition I52: ICE's three reference kinds' drivers follow
+only their OWN object in hand, so another kind's object held still lets the desk sleep (`### Fixed`).
 
 ### Added
 
@@ -272,6 +273,19 @@ MOVE: `### Changed`), the mat's cast colour as a palette role (I46).
   forward (the `presentation` precedent): a kind takes keys by LEASING the desk's one editor (`EditorLease` — the lease is the claim),
   and an object in hand that owns Escape says `open.escape: "kind"`. The dom's claim marker stays (`data-canvas-keyboard`,
   `CLAIM_OWNS_ESCAPE`, `keyboardClaimOf`): the desk's editor carries it, and an app's own chrome may.
+
+### Fixed
+
+<!-- M24 LT5 — petition I52 (VibeField PT-6a's C1; 2026-10-14) -->
+- **ANOTHER KIND'S OBJECT IN HAND NO LONGER KEEPS THE DESK STEPPING** (petition I52): the whiteboard's pen, the notebook's leaf and
+  the desk calendar's hand were not idle while ANY object was in hand, so an object of any other kind held still — a plugin's;
+  VibeField's browser pane — kept all three following and the desk stepping every frame (VibeField measured 120 steps a second for 2
+  frames drawn, its desk never asleep). Each is idle now unless the object in hand is ITS OWN — a board; a book; a pad (the hand never
+  acts on a held note) — its other conditions unchanged: a stroke, a turn, a roll or a lifted corner in flight still keeps it awake,
+  and the moment its own object leaves the hand is still followed (the stroke lands, the marker lies down, the turn is let go, the
+  corner lies down). With another kind's object in hand each one's `follow` did what it does with nothing in hand, so nothing drawn
+  or written moves (the oracle's stills unchanged). `KindDriver.idle`'s contract now says what a driver's idle means — no object of
+  ITS kind in hand — since a plugin's driver that follows whatever is held keeps every desk stepping the same way. No API change.
 
 ## [0.15.0] — 2026-10-08
 

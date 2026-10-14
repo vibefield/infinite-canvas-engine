@@ -592,7 +592,10 @@ engine names a kind:
   2. **drivers** — `defineObject({ drivers })` → a `KindDriver` made per desk from `KindDriverHost`, ticked before the kinds' clocks
      — for what FOLLOWS INPUT on one desk (a pen, a carry, a leaf, a typing session): the hand onto the kind's flux, writing facts only
      through the document's doors at the gesture's end. Desk-local because that flux is per view (two desks on one document have two
-     pens) and because a driver reads the builder (geometry as drawn, the hand), which core's systems never see;
+     pens) and because a driver reads the builder (geometry as drawn, the hand), which core's systems never see. Its `idle()` says
+     when there is nothing to follow — no object of ITS kind in hand, no gesture owed — and the host skips `follow`; one driver not
+     idle keeps the desk stepping every frame, so a driver that follows whatever is in hand keeps a desk awake under ANY held object
+     (petition I52: ICE's own three did, until `0.16.0`);
   3. **`defineBehavior`** — core's (design-009), passed through `defineObject({ behaviors })` as for any widget — for logic whose STATE
      IS A FACT the world must sync, undo or keep across views (`store: "durable"` data riding the object, `"runtime"` state every peer
      projects). Not for typing: a typing session's live text is flux written under the gesture's claim and committed whole at its end
