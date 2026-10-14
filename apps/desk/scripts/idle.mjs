@@ -5,7 +5,9 @@
 // `queue.submit` itself, installed before anything on the device could submit — and ZERO engine
 // steps: the loop SLEEPS (K7a, registered wakes); the page's main thread over 7 windows of 1 s
 // beside it. And a RESTING pointer's move re-sent at its own point — trusted, and re-dispatched by the
-// page — wakes nothing over 5 s (petition I33). Exit 0 = every check passed.
+// page — wakes nothing over 5 s (petition I33). And ANOTHER KIND'S OBJECT IN HAND, held still on a
+// desk with the three reference kinds laid, lets the desk sleep — no driver follows it (petition I52).
+// Exit 0 = every check passed.
 import { spawn } from "node:child_process";
 import { loadavg } from "node:os";
 import { resolve } from "node:path";
@@ -138,6 +140,53 @@ try {
     return window.__desk.submits().total - before;
   })()`, { awaitPromise: true, timeoutMs: 30000 });
   check(stillIdle === 0, `still: ${stillIdle} submits over 120 frames after a touch`);
+
+  // ANOTHER KIND'S OBJECT IN HAND (petition I52; VibeField PT-6a's C1): a desk with the three reference kinds laid — a whiteboard, a
+  // notebook, a desk calendar — and a FOREIGN kind's object picked up: the desk clock (a third-party kind, the rigs' `?plugins` page —
+  // no driver of its own, so whether the desk sleeps is the reference kinds' drivers' to say; its seconds hand off, its own wake a minute).
+  // Held STILL, the desk sleeps: once the pickup has flown in and any registered time due within the window is waited out, 240 frames
+  // pass with ZERO engine steps, the loop asleep, no driver following (the ledger's `following`). Before I52 the board's pen, the
+  // notebook's leaf and the calendar's hand each followed whatever was in hand — a step every frame (PT-6a: 481 steps, 0 sleeps).
+  const logsH = [];
+  const H = await openTab(chrome.port, `http://127.0.0.1:${PORT}/apps/desk/dist/rig.html?plugins`);
+  await H.send("Runtime.enable"); await H.send("Log.enable"); await H.send("Page.enable");
+  watchPage(H, logsH, { name: "I52" });
+  await H.send("Emulation.setDeviceMetricsOverride", { width: 1200, height: 800, deviceScaleFactor: 2, mobile: false });
+  for (let i = 0; i < 200; i++) { await H.send("Page.bringToFront"); if (await H.evaluate("typeof window.__desk === 'object' && window.__desk.state.ready", { timeoutMs: 20000 })) break; await sleep(200); }
+  const qh = async (js, ms = 30000) => { await H.send("Page.bringToFront"); return H.evaluate(js, { awaitPromise: true, timeoutMs: ms }); };
+  // the wind still (the drivers are this row's, the wind the rows above's); the desk at 0.3 so all four are drawn
+  await qh("window.__desk.ambient('still'); window.__desk.setCamera({ x: -2000, y: -1333, zoom: 0.3 }); window.__desk.settle(6000)");
+  const laid = await qh(`({
+    board: window.__desk.spawn("desk.board", {}, { x: -1100, y: -500 }),
+    book: window.__desk.spawn("desk.notebook", {}, { x: -1100, y: 500 }),
+    pad: window.__desk.spawn("desk.calendar", {}, { x: 900, y: 0 }),
+    clock: window.__desk.spawn("ice-examples.desk-clock", { seconds: false }, { x: -300, y: 0 }),
+  })`);
+  await qh("window.__desk.engine.ops.setSelection([], 'replace'); window.__desk.settle(6000)");
+  await qh(`window.__desk.engine.ops.open(${laid.clock})`);
+  await qh("window.__desk.settle(6000)");
+  // a registered TIME due within the window (the layers let go LAYER_IDLE_MS after they were last drawn; the clock's minute) is waited
+  // out first — a step it starts is the sleep's own; a desk due NOW (a driver following) is measured as it is
+  let waited = 0;
+  for (let i = 0; i < 6; i++) {
+    // (null: nothing due at all — `Infinity` crosses CDP as no value)
+    const soonH = await qh("(() => { const now = performance.now(); const at = window.__desk.handle.due(now).at; return Number.isFinite(at) ? at - now : null; })()");
+    if (soonH === null || soonH <= 0 || soonH >= 6500) break;
+    await sleep(Math.max(0, soonH) + 150);
+    waited += 1;
+  }
+  const heldStill = await qh(`(async () => {
+    const d = window.__desk; const F = d.engine.engine.frame; const s0 = F.sleepStats(); const asks0 = d.handle.perf().driverAsks;
+    await new Promise((r) => { let n = 0; const f = () => { if (++n >= 240) r(); else requestAnimationFrame(f); }; requestAnimationFrame(f); });
+    const s1 = F.sleepStats();
+    return { held: d.handle.hand()?.entity ?? null, steps: s1.steps - s0.steps, timed: s1.timed - s0.timed, asleep: s1.asleep, asks: d.handle.perf().driverAsks - asks0, following: d.handle.due(performance.now()).following };
+  })()`, 60000);
+  check(heldStill.held === laid.clock && heldStill.steps === 0 && heldStill.asleep === true && heldStill.following.length === 0,
+    `ANOTHER KIND'S OBJECT IN HAND, still, the desk sleeps (petition I52): the desk clock in hand (${heldStill.held === laid.clock}) over a whiteboard, a notebook and a desk calendar — ${heldStill.steps} engine steps over 240 frames (${heldStill.timed} a registered time's, ${heldStill.asks} driver asks; asleep ${heldStill.asleep}), following ${JSON.stringify(heldStill.following)}; ${waited} registered time${waited === 1 ? "" : "s"} waited out first`);
+  await qh("window.__desk.engine.ops.putDown(); window.__desk.settle(6000)");
+  logs.push(...logsH, ...(await faultsOf(H, "I52")));
+  await front();
+
   logs.push(...(await faultsOf(tab)));   // the faults the engine CONTAINED — a skipped frame is an error too (D7)
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
   check(logs.length === 0, "no page errors");
