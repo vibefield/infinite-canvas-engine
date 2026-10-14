@@ -189,3 +189,34 @@ describe("put down and picked up again", () => {
     expect(r.books.strokesOn(r.book, 7)).toHaveLength(1);
   });
 });
+
+// PETITION I52 (notebook-hand.test.ts has the stroke's rows): put down MID-TURN — the sheet in the hand — with another kind's object
+// taken up, the hand is not idle until the turn is let go; then the whiteboard in hand is not its to follow. Stepped as the layer
+// steps a driver: `follow` only when the hand is not idle.
+describe("put down MID-TURN, another kind's object taken up (petition I52)", () => {
+  it("not idle until the turn in the hand is let go — a put-down is no turn: nothing written — then idle", async () => {
+    const r = bookRig();
+    const board = r.ce.ops.spawnWidget("desk.board", { x: 900, y: 600, undoable: false });
+    r.ce.world.sync();
+    r.hosted(); r.ce.ops.open(r.book); r.build(); r.hosted(); r.hosted();
+    // a pinch that travels: the sheet taken, over the gutter in the hand
+    const [ax, ay] = r.screen(...RIGHT_TURN);
+    r.mouse("move", ax, ay, 0); r.hosted();
+    r.mouse("down", ax, ay, 1); r.hosted();
+    for (let i = 1; i <= 12; i++) { const [x, y] = r.screen(RIGHT_TURN[0] + ((-200 - RIGHT_TURN[0]) * i) / 12, 0); r.mouse("move", x, y, 1); r.hosted(); }
+    expect(r.hand.turning()).toMatchObject({ book: r.book, side: 0, sheet: 0 });
+    // the book leaves the hand mid-turn and the whiteboard comes into it, between two frames
+    r.ce.ops.putDown();
+    r.ce.ops.open(board);
+    r.step();
+    expect(heldEntity(r.ce.world)).toBe(board);
+    expect(r.hand.idle()).toBe(false);   // the turn in the hand is owed its end
+    r.hand.follow(r.now());
+    r.build();
+    expect(r.hand.turning()).toBeNull();
+    expect(r.hand.idle()).toBe(true);    // let go: the whiteboard in hand is not the hand's to follow
+    await r.settle();
+    expect(r.spread()).toBe(0);
+    expect(r.hand.turns()).toBe(0);
+  });
+});

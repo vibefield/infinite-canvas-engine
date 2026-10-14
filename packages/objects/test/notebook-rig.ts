@@ -8,7 +8,7 @@ import { type Books, type NotebookGeometry, NotebookKind, notebookKind, type Not
 import { FLUX_REST, type ObjectContext, rectOf, DEFAULT_GRID, MAT_GRID, kindPalette } from "@ice/desk";
 import { NOTEBOOK } from "../src/notebook/law";
 import type { NotebookPass } from "../src/notebook/pass";
-import { BoardStroke, createNotebookHand, Notebook } from "../src";
+import { Board, BoardStroke, createNotebookHand, Notebook } from "../src";
 import { lampOf } from "../src/paper/paper";
 import { NOTEBOOK_LOOK, notebookRuleInk, PALETTE, PENS, THEMES } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
@@ -22,7 +22,8 @@ const H = NOTEBOOK.cover.height;
 const pointerQ = defineQuery([Pointer, LocalPointer]);
 
 export function bookRig(props: Record<string, unknown> = {}, vp: { readonly w: number; readonly h: number } = { w: 1200, h: 800 }, defer?: (fn: () => void) => void) {
-  const ce = createCanvasEngine({ widgets: [Notebook] });
+  // (the whiteboard: another kind's object the hand can hold — petition I52's rows)
+  const ce = createCanvasEngine({ widgets: [Notebook, Board] });
   ce.docs.create();
   ce.world.setResource(Viewport, { w: vp.w, h: vp.h, dpr: 1 });
   const book = ce.ops.spawnWidget("desk.notebook", { x: -W / 2, y: -H / 2, props: { seed: 7, ...props }, undoable: false });
@@ -52,6 +53,10 @@ export function bookRig(props: Record<string, unknown> = {}, vp: { readonly w: n
   let now = 1000;
   /** A frame as the layer runs it: the tick, the hand, then the build; `settle` lets the hand's transactions land (microtasks). */
   const frame = (dt = 16): void => { now += dt; ce.step(now); hand.follow(now); build(); };
+  /** A frame as the desk layer runs it (host/layer.ts): the tick, `follow` only when the hand is NOT idle, then the build. */
+  const hosted = (dt = 16): void => { now += dt; ce.step(now); if (!hand.idle()) hand.follow(now); build(); };
+  /** The tick alone — what the layer asks `idle` after; `follow` is the test's to call. */
+  const step = (dt = 16): void => { now += dt; ce.step(now); };
   const mouse = (kind: "down" | "move" | "up", x: number, y: number, buttons: number): void => {
     ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: NO_MODS });
   };
@@ -61,5 +66,5 @@ export function bookRig(props: Record<string, unknown> = {}, vp: { readonly w: n
   const settle = async (): Promise<void> => { await Promise.resolve(); await Promise.resolve(); ce.world.sync(); };
   const open = (): void => { frame(); ce.ops.open(book); build(); frame(); frame(); };
   const partUnder = () => ce.world.get(ce.world.firstOf(pointerQ) as Entity, HeldPointer)?.part;
-  return { ce, book, books, hand, frame, mouse, screen, strokes, settle, open, sent, partUnder, geometry: () => must(G), spread };
+  return { ce, book, books, hand, frame, hosted, step, build, now: () => now, mouse, screen, strokes, settle, open, sent, partUnder, geometry: () => must(G), spread };
 }

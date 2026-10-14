@@ -7,7 +7,7 @@
 // with its caret) and the bar's today (a `home` bump) rolls the pad home — its month, one transaction OFF the undo stack — and
 // selects today. And the pad's PARTS through the desk eye (the tape, the roll, the corner, the foot, a line, a day, the paper) —
 // at rest the paper is no hit (a drag there pans), in hand the whole sheet is the pen's `content`; the bar's tools are live.
-import { ChildOf, createCanvasEngine, Editing, type Entity, type GuardedTx, guardedTransaction, HeldTool, PrefabId } from "@ice/core";
+import { ChildOf, createCanvasEngine, Editing, type Entity, type GuardedTx, guardedTransaction, heldEntity, HeldTool, NO_MODS, PrefabId, Viewport } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { dayOfKey, keyOf } from "../src/calendar/month";
 import { CALENDAR } from "../src/calendar/law";
@@ -17,7 +17,7 @@ import { sheetOf } from "../src/calendar/sheet";
 import { monthGrid, monthIndex, phasesBetween } from "../src/calendar/month";
 import { calendarKind, type CalendarGeometry, createPads, DRAFT_ID, type Pads, partAt } from "../src/calendar/kind";
 import { FLUX_REST, type ObjectContext, rectOf, MAT_GRID, DEFAULT_GRID, kindPalette } from "@ice/desk";
-import { addEvent, Calendar, CalendarEvent, createCalendarHand, createCalendarWriting, Note, PadSelection } from "../src";
+import { addEvent, Board, Calendar, CalendarEvent, createCalendarHand, createCalendarWriting, Note, PadSelection } from "../src";
 import { lampOf } from "../src/paper/paper";
 import { createServices, type HandMetrics, HAND, PRINT_RASTER, service } from "@ice/desk/kit";
 import { CALENDAR_LOOK, calendarPrint, PALETTE, PENS, THEMES } from "../oracle/fixtures/vf-theme";
@@ -332,5 +332,81 @@ describe("the marks on the sheet (the local's `draw` → the record's `sel` · `
     expect(must(R.caret)[0]).toBeGreaterThan(line.ox);
     pads.mark(ctx.entity, { entry: 51, writing: { entry: 51, index: 3, on: false } });
     expect(kind.record(G, ctx).caret).toBeNull();               // the blink's off phase
+  });
+});
+
+// PETITION I52: the hand follows a PAD in hand — another kind's object in hand is not its to follow (there its follow does less than
+// with nothing in hand: the desk behind the hand is inert, so it lifts no corner), so it idles and the desk may sleep. Stepped as the
+// layer steps a driver: `follow` only when the hand is not idle — so an idle said too soon skips the follow that lays a corner down.
+describe("the hand idles while ANOTHER KIND's object is in hand (petition I52)", () => {
+  /**
+   * A desk with the pad and another kind's object the hand can hold (a whiteboard); the hand told what the builder would tell it — the
+   * pad's geometry, the hand's frame, and every point of the pad in hand on its FOOT (where a pointer lifts the corner); its peeks
+   * spied; a frame as the desk layer runs it: core's step, then `follow` only when the hand is not idle.
+   */
+  function heldRig() {
+    const ce = createCanvasEngine({ widgets: [Calendar, Note, Board] });
+    ce.docs.create();
+    ce.world.setResource(Viewport, { w: 1200, h: 800, dpr: 1 });
+    const pad = ce.ops.spawnWidget("desk.calendar", { x: -PAD.W / 2, y: -PAD.H / 2, props: { month: "2026-09" }, undoable: false });
+    const board = ce.ops.spawnWidget("desk.board", { x: 3000, y: 0, undoable: false });
+    ce.world.sync();
+    const pads = createPads({ pass: () => undefined, children: { stamp: () => 0, rows: () => [], entries: () => [] } });
+    pads.sheets(pad, monthIndex(2026, 9));   // the draw path's word: the pad is on the desk
+    const peeks: boolean[] = [];
+    const peek = pads.peek.bind(pads);
+    pads.peek = (e, on) => { if (e === pad) peeks.push(on); peek(e, on); };
+    // the pad's geometry at rest (the parts' own), and the desk point of its foot through the desk eye
+    const G = kind.resolve(ctxOf()) as CalendarGeometry;
+    const f = G.eye.h / (G.eye.h - PAD.zt - G.lift);
+    const foot = [G.eye.ex + (G.cx - PAD.W / 2 + 800 - G.eye.ex) * f, G.eye.ey + (G.cy - PAD.H / 2 + PAD.H - 10 - G.eye.ey) * f] as const;
+    expect(partAt(G, foot[0], foot[1])?.part).toBe("foot");
+    ce.stack.heldPose.current = { frame: (e) => (e === pad ? { cx: 600, cy: 400, hx: 500, hy: 500, s: 1, settled: true } : undefined) };
+    const writing = createCalendarWriting({ world: ce.world, docs: ce.docs, pads: () => pads });
+    const hand = createCalendarHand({
+      world: ce.world, docs: ce.docs, pads: () => pads, writing, caret: () => null, defer: () => {},
+      geometryOf: (e) => (e === pad ? G : undefined), heldToWorld: (e) => (e === pad ? foot : undefined), isPad: (e) => e === pad,
+      hand: () => (heldEntity(ce.world) === pad ? { entity: pad, landing: false, frame: { cx: 600, cy: 400, s: 1 } } : undefined),
+    });
+    let now = 1000;
+    const step = (): void => { now += 16; ce.step(now); };
+    const hosted = (): void => { step(); if (!hand.idle()) hand.follow(now); };
+    const mouse = (kind: "down" | "move" | "up", x: number, y: number, buttons: number): void => {
+      ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: NO_MODS });
+    };
+    return { ce, pad, board, hand, peeks, step, hosted, mouse, now: () => now };
+  }
+
+  it("another kind's object in hand: idle; its own pad in hand: following — through the layer's frames", () => {
+    const r = heldRig();
+    r.hosted(); r.hosted();   // the pad on the desk: the hand reads the pointer and the camera once, then idles (K7a)
+    expect(r.hand.idle()).toBe(true);
+    r.ce.ops.open(r.board);
+    r.hosted(); r.hosted();
+    expect(heldEntity(r.ce.world)).toBe(r.board);
+    expect(r.hand.idle()).toBe(true);
+    r.ce.ops.putDown();
+    r.ce.ops.open(r.pad);
+    r.hosted();
+    expect(r.hand.idle()).toBe(false);
+    // …and it follows the pad: the pointer over it in hand lifts its corner (the peek through the pose)
+    r.mouse("move", 620, 420, 0); r.hosted();
+    expect(r.peeks).toEqual([true]);
+  });
+
+  it("put down with its corner lifted, another kind's object taken up in the same frame: not idle until the corner lies down — then idle", () => {
+    const r = heldRig();
+    r.hosted(); r.ce.ops.open(r.pad); r.hosted();
+    r.mouse("move", 620, 420, 0); r.hosted();
+    expect(r.peeks).toEqual([true]);
+    // the pad leaves the hand with its corner lifted and the whiteboard comes into it, between two frames
+    r.ce.ops.putDown();
+    r.ce.ops.open(r.board);
+    r.step();
+    expect(heldEntity(r.ce.world)).toBe(r.board);
+    expect(r.hand.idle()).toBe(false);   // the corner is owed its lying down
+    r.hand.follow(r.now());
+    expect(r.peeks).toEqual([true, false]);
+    expect(r.hand.idle()).toBe(true);    // laid down: the whiteboard in hand is not the hand's to follow
   });
 });

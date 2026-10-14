@@ -491,7 +491,11 @@ export interface KindDriverHost {
 /** A kind's driver on one desk: ticked once a frame before the kinds' clocks; idle when it has nothing to follow (D7 #14). */
 export interface KindDriver {
   follow(now: number): void;
-  /** Nothing to follow this frame — nothing in hand, no press, no rest or roll owed: the host may skip `follow` (the idle-tick budget). Absent: never skipped. */
+  /**
+   * Nothing to follow this frame — no object of ITS kind in hand, no press, no rest or roll owed: the host may skip `follow` (the
+   * idle-tick budget). Absent: never skipped. Another kind's object in hand is not its to follow: a driver that is not idle while ANY
+   * object is held keeps the desk stepping every frame for as long as one is (petition I52 — ICE's three reference drivers did).
+   */
   idle?(): boolean;
   dispose?(): void;
 }

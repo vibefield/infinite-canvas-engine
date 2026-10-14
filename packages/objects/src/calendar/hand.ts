@@ -42,7 +42,11 @@ export interface CalendarHandOptions {
 export interface CalendarHand {
   /** Once a frame, before the kinds' clocks: the marks on every pad; the bar's today acted on. */
   follow(now: number): void;
-  /** Nothing to follow (D7 #14): no pad on the desk, nothing in hand, no press, no selection, no note carried, no glide owed. */
+  /**
+   * Nothing to follow (D7 #14, K7a): no PAD in hand (another kind's object in hand is not the hand's — petition I52), no hand on a
+   * roll, no corner lifted, no marks, no selection, no note carried, no glide or roll owed, no press — and, a pad on the desk, neither
+   * the pointer nor the camera moved since the last follow.
+   */
   idle(): boolean;
   /** Leave the document's commit door (the landing's extender). */
   dispose(): void;
@@ -362,7 +366,10 @@ export function createCalendarHand(opts: CalendarHandOptions): CalendarHand {
       for (const pad of [...homes.keys()]) if (!world.isAlive(pad) || !world.has(pad, PadSelection)) homes.delete(pad);
     },
     idle() {
-      if (heldEntity(world) !== undefined || hands.size > 0 || peeked.size > 0 || marked.size > 0 || homes.size > 0 || glides.length > 0) return false;
+      // a PAD in hand is the hand's (its roll and its peek through the pose); another kind's object in hand is not — there `follow` does
+      // less than with nothing in hand (the desk behind the hand is inert: no corner lifts), and whatever it still owes, the rest below says
+      const held = heldEntity(world);
+      if ((held !== undefined && opts.isPad?.(held) === true) || hands.size > 0 || peeked.size > 0 || marked.size > 0 || homes.size > 0 || glides.length > 0) return false;
       const pads = opts.pads();
       if (pads?.rollOwed() === true) return false;   // a roll finished: the hand commits it (K7a — once asked every frame)
       if (pads?.busy() === true && (world.resourceStamp(PointerVersion) !== seenPointer || world.resourceStamp(Camera) !== seenCamera)) return false;
