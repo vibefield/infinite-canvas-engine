@@ -27,7 +27,7 @@ export interface FakeSlotSpec {
 /** A slot of logging kinds; its `stats` carry its name (drawFrame hands them back). */
 export function fakeSlot(log: string[], name: string, spec: FakeSlotSpec): DrawSlot {
   return {
-    mat: { draw: () => log.push(`${name} mat`) } as unknown as DrawSlot["mat"],
+    mat: { drawSurface: () => log.push(`${name} mat`), drawRulers: () => {} } as unknown as DrawSlot["mat"],
     kinds: new Map(spec.kinds.map(([kind, stratum, over, composite]) => [kind, loggingKind(log, name, kind, stratum, over ?? false, composite ?? false)])),
     ...(spec.objects ? { objects: spec.objects.map((kind) => ({ kind })) } : {}),
     ...(spec.underlays ? { underlays: Array.from({ length: spec.underlays }, (_, i) => ({ draw: () => log.push(`${name} underlay ${i}`) })) } : {}),

@@ -498,15 +498,17 @@ export class SlotPool {
  * it, then the objects stratum by stratum: within a stratum in paint order, one
  * `drawRange` per RUN of one kind (each kind counting its own records), the run
  * cut after an object with a live inside — the inside over its face (restoring
- * this slot's scissor), then that object's marks over the inside. Returns
+ * this slot's scissor), then that object's marks over the inside. The edge
+ * rulers finish the slot above its objects. Returns
  * whether it drew.
  */
 export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number; readonly h: number }, dpr: number, slot: DrawSlot): boolean {
   if (!visible(slot.present)) return false;
-  const [x, y, w, h] = scissorOf(slot.present, dpr, size);
+  const scissor = scissorOf(slot.present, dpr, size);
+  const [x, y, w, h] = scissor;
   if (w === 0 || h === 0) return false;   // the portal is off screen: nothing to shade
   pass.setScissorRect(x, y, w, h);
-  if (slot.bare !== true) slot.mat.draw(pass);
+  if (slot.bare !== true) slot.mat.drawSurface(pass, scissor);
   // the layers a host laid on the mat (the desk calendar, CALENDAR.md), each setting its own scissor
   if (slot.underlays?.length) { for (const u of slot.underlays) u.draw(pass); pass.setScissorRect(x, y, w, h); }
   // the live insides by the object each lies in (two on one object draw in the order they came)
@@ -588,6 +590,9 @@ export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number;
   }
   // an inside whose `at` names no object this slot draws has nothing to lie in: it draws over them all
   for (const children of insides.values()) for (const child of children) inside(child);
+  // The printed edge stays above objects and their live insides. Bare slots
+  // (tray specimens and the reading hand) have no mat or rulers.
+  if (slot.bare !== true) slot.mat.drawRulers(pass, scissor);
   return true;
 }
 

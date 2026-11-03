@@ -4,7 +4,8 @@
 // triangle: lines, grain, the gobo projected onto the desk, the reference's
 // grade). `prepare()` uploads the uniforms and records the wind pass when the
 // gobo time moved; `draw()` records the mat into the render pass the ground
-// opened, where the desk's objects follow.
+// opened. The ground uses `drawSurface()` before objects and `drawRulers()`
+// after them; both share the same pipeline and shade disjoint regions.
 //
 // One CuttingMat is one SLOT: its own uniforms and bind groups. The pipelines,
 // the samplers, the plates, the blue noise and the WIND TARGETS are shared by
@@ -31,6 +32,7 @@ import { type GlyphAtlasMeta, GLYPHS, type MatConfig, type MatFrame, MatUniforms
 import { DAY_LIGHT, type MatLight } from "./night";
 import type { MatPass } from "../kit/view";
 import type { MatShaders } from "./shaders";
+import { type MatRegion, type RulerRegions, rulerRegions } from "./ruler-regions";
 
 const PLATE_NAMES: readonly PlateName[] = ["c", "b"];
 
@@ -77,6 +79,7 @@ export class CuttingMat implements MatPass {
   /** The view block as last uploaded (K7a: uploaded only when its bytes moved; a layered kind compares a layer's view by it). */
   private readonly sentView = new Uint8Array(MatUniforms.size);
   private viewSent = false;
+  private ruler: RulerRegions | null = null;
   private readonly device: GPUDevice;
   private readonly shared: MatShared;
 
@@ -235,6 +238,7 @@ export class CuttingMat implements MatPass {
    * wind pass if the silhouette it holds is stale. Returns whether it ran.
    */
   prepare(encoder: GPUCommandEncoder, view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame, present?: Presentation, light: MatLight = DAY_LIGHT, lit?: SlotLight): boolean {
+    this.ruler = cfg.ruler.on ? rulerRegions(view, cfg.ruler, this.ruler) : null;
     const plate = PLATE_NAMES.includes(cfg.gobo.plate) ? cfg.gobo.plate : "c";
     const strength = MAT_GRID.gobo.plates[plate].strength;
     this.uniforms.set(matUniformValues(view, fadeIn, { ...cfg, gobo: { ...cfg.gobo, plate } }, frame, strength, present, light, this.shared.glyphMeta, lit));
@@ -275,6 +279,37 @@ export class CuttingMat implements MatPass {
     pass.setPipeline(this.shared.matPipeline);
     pass.setBindGroup(0, this.matGroup);
     pass.draw(3);
+  }
+
+  /** The mat beneath objects; enabled ruler strips are reserved for the foreground. */
+  drawSurface(pass: GPURenderPassEncoder, clip: MatRegion): void {
+    if (!this.ruler) { this.draw(pass); return; }
+    this.drawRegions(pass, this.ruler.surface, clip);
+  }
+
+  /** The edge bands and frame above every object in this slot, within its portal. */
+  drawRulers(pass: GPURenderPassEncoder, clip: MatRegion): void {
+    if (this.ruler) this.drawRegions(pass, this.ruler.edges, clip);
+  }
+
+  private drawRegions(pass: GPURenderPassEncoder, regions: readonly MatRegion[], clip: MatRegion): void {
+    const [cx, cy, cw, ch] = clip;
+    let bound = false;
+    for (const [rx, ry, rw, rh] of regions) {
+      const x = Math.max(cx, rx);
+      const y = Math.max(cy, ry);
+      const right = Math.min(cx + cw, rx + rw);
+      const bottom = Math.min(cy + ch, ry + rh);
+      if (right <= x || bottom <= y) continue;
+      if (!bound) {
+        pass.setPipeline(this.shared.matPipeline);
+        pass.setBindGroup(0, this.matGroup);
+        bound = true;
+      }
+      pass.setScissorRect(x, y, right - x, bottom - y);
+      pass.draw(3);
+    }
+    if (bound) pass.setScissorRect(cx, cy, cw, ch);
   }
 
   /** This slot's buffers; the shared plates go with the last slot standing. */

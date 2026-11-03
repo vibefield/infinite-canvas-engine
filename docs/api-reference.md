@@ -438,6 +438,8 @@ LINEAR.
   after it rides in its tail; `mat4x4f` column-major; `array<vec4f, N>` at stride 16) and `defineStruct`'s the placement: each
   field at its alignment, the struct rounded up to 16 so one record is a legal uniform member and storage element alike.
 
+Enabled cutting-mat rulers draw above the slot's objects and nested canvases, below selection marks and tray chrome. Their edge strips reuse the mat pipeline, uniforms and lighting; the background and foreground cover disjoint pixels, so fades do not double-blend and the mat has no extra fragment shading. Bare tray and reading-hand slots do not draw rulers.
+
 **The host's chrome on the desk (petitions I20, I21, I26)** — beside `grid` (the root's mat config — its rulers, its gobo; `configureMat`
 live), `deskLayer` takes the numbers a host's own chrome sets, read at the mount, each the desk's own when absent: **`hold: { top?,
 band?, travelMs? }`** — the held object's reading fit keeps `top` CSS px under the view's top (56; a phone keeps its 60) and `band`

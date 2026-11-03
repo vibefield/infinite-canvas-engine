@@ -251,7 +251,7 @@ describe("the photo pass on a fake device (no pixels: the oracle has those)", ()
     const calls: unknown[][] = [];
     const rp = { ...objectPass(calls), draw: (...a: number[]) => { calls.push(["draw", ...a]); log.push(`photo draw ${a[3]}×${a[1]}`); } } as unknown as GPURenderPassEncoder;
     const slot: DrawSlot = {
-      mat: { draw: () => log.push("mat") } as unknown as CuttingMat,
+      mat: { drawSurface: () => log.push("mat"), drawRulers: () => {} } as unknown as CuttingMat,
       kinds: new Map([[PHOTO_KIND, { name: PHOTO_KIND, stratum: "things", pass: kind }], ["paper", loggingKind(log, "desk", "paper", "things")]]),
       objects: [{ kind: PHOTO_KIND }, { kind: "paper" }, { kind: PHOTO_KIND }],
       stats: { k0: 0, fade: 0, wind: false },
