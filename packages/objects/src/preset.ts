@@ -1,8 +1,8 @@
 // The desk's ENGINE PRESET (design-015 §9, D2a-core's settings; SHIPPED at D7, D-D7-C.1): what
 // `createCanvasEngine` needs for the desk the README describes — the reference objects, infinite
 // zoom, two-axis scroll panning and native-scale pinch zoom about the pointer, the
-// zoom-through, and the desk's SELECT tool — a drag on the bare mat pans
-// (shift draws the marquee) — as the root canvas type's default. Core registers no desk tool or settings (its
+// zoom-through, and the desk's SELECT tool — a drag on the bare mat draws a marquee
+// (shift adds to the selection) — as the root canvas type's default. Core registers no desk tool or settings (its
 // defaults are the plain canvas's: a wheel that pans, a bare drag that marquees, zoom 0.1–5); until
 // D7 this lived in apps/desk only, so the published quickstart could not do what it said.
 // Importing this module DEFINES the tool and the canvas type (core's registries are process-global).
@@ -26,11 +26,11 @@ function builtin(id: string): Tool {
 }
 
 /**
- * The desk's select tool: the bare mat pans, shift-drag draws the vellum marquee; a drag on an object moves it. It answers `v` — core's
+ * The desk's select tool: the bare mat draws a marquee, shift-drag adds to the selection; a drag on an object moves it. It answers `v` — core's
  * select's letter — since core's select is compiled but never legal on the desk, and the keymap binds a letter only to a tool legal in
  * the current canvas (K9 S8: `v` threw on the desk, and `h` left it in pan with no letter back).
  */
-export const deskSelect: Tool = defineTool({ id: "desk.select", shortcut: "v", route: { canvasDrag: "pan", canvasDragShift: "marquee" } });
+export const deskSelect: Tool = defineTool({ id: "desk.select", shortcut: "v", route: { canvasDrag: "marquee" } });
 
 /** The tools the engine compiles — a typed engine must name `select` even when no canvas allows it. */
 export const DESK_TOOLS: readonly Tool[] = [builtin("select"), deskSelect, builtin("pan")];

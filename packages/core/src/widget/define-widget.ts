@@ -28,6 +28,7 @@ import {
   Container,
   LongPressDrag,
   Movable,
+  SelectionMovable,
   Opacity,
   Position,
   Provides,
@@ -144,7 +145,8 @@ export interface WidgetBehaviorEntry {
 
 export interface WidgetInteraction {
   readonly selectable?: boolean;
-  readonly movable?: boolean;
+  /** "selection": core moves it with a group; a custom driver owns its solo drag. */
+  readonly movable?: boolean | "selection";
   /**
    * May this widget be dropped INTO an accepting container (design-015 §9, D-D6 — D2b)?
    * `"into"` (default): yes — for a GPU object, when its centre is let go over the container's
@@ -684,7 +686,8 @@ export function defineWidget(def: WidgetDef): WidgetType {
   const interaction = def.interaction ?? {};
   const capabilityTags: Tag[] = [];
   if (interaction.selectable !== false) capabilityTags.push(Selectable);
-  if (interaction.movable !== false) capabilityTags.push(Movable);
+  if (interaction.movable === "selection") capabilityTags.push(SelectionMovable);
+  else if (interaction.movable !== false) capabilityTags.push(Movable);
   if (interaction.resizable === true) capabilityTags.push(Resizable);
   if (interaction.solid === true) capabilityTags.push(Solid);
   if (interaction.dragOn === "longPress") capabilityTags.push(LongPressDrag);

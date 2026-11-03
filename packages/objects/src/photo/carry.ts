@@ -3,8 +3,8 @@
 // each finger is) and drives the photo kind's bodies (kinds/photo.ts `Prints`), and it WRITES exactly one thing,
 // once per carry: the print's rest.
 //
-// A print is not core-movable (a press on it claims the pointer and drives no core behaviour — core's own
-// grammar for a widget that is not `Movable`). While a pointer is down and its press captured a print, the
+// A solo print uses its own carry; a multi-selection yields to core's group move before lifting. While a
+// solo pointer is down and its press captured a print, the
 // print is HELD: its grab point is a kinematic pin on the finger (`hold` at the press, `move` every frame — a
 // pan or a zoom under a held print moves it too), it rises to the hand's height, tips toward the fingers and
 // droops away from them; the swing about the grab point stays OFF (ruled: "do not make them rotate"). Let go
@@ -26,7 +26,7 @@
 // and the rest commits the turn with the place; a press on a print in the AIR catches it where it is drawn (the pick asks
 // what the kind draws lifted first), and a print carried, gliding or flying home paints above its siblings like a `Grab`.
 
-import { CancelRequest, ChildOf, type Component, defineQuery, Drag, type Entity, GestureActive, GestureCancelled, GestureEnded, GestureFailed, guardedTransaction, LocalPointer, Locked, Pointer, PointerButtons, PointerWorld, Position, PressWheel, Size, Captures, Watches, type World } from "@ice/core";
+import { CancelRequest, ChildOf, type Component, defineQuery, Drag, type Entity, GestureActive, Grab, Drags, MovesSelection, RoutedMove, GestureCancelled, GestureEnded, GestureFailed, guardedTransaction, LocalPointer, Locked, Pointer, PointerButtons, PointerWorld, Position, PressWheel, Size, Captures, Watches, type World } from "@ice/core";
 import type { Prints } from "./kind";
 import { type TypingDocs, writable } from "@ice/desk";
 
@@ -60,6 +60,7 @@ export interface PhotoCarry {
 }
 
 const pointersQ = defineQuery([Pointer, LocalPointer, PointerWorld, PointerButtons]);
+const coreMovesQ = defineQuery([Drag, RoutedMove, GestureActive]);
 /** The lab's wheel: a wheel unit turns a held print by this many radians (lab/photo.ts). */
 export const TWIST_PER_WHEEL = 0.0035;
 
@@ -67,6 +68,7 @@ export function createPhotoCarry(opts: PhotoCarryOptions): PhotoCarry {
   const { world, docs } = opts;
   const defer = opts.defer ?? ((fn: () => void) => queueMicrotask(fn));
   const held = new Set<Entity>();
+  const coreMoves = new Set<Entity>();
   /** The drags on taped prints already told of (their recognizers), so each gesture gives once. */
   const refusing = new Set<Entity>();
   /** Each held print's wheel as its pointer's `PressWheel` last read (the twist is the difference). */
@@ -100,8 +102,29 @@ export function createPhotoCarry(opts: PhotoCarryOptions): PhotoCarry {
     follow(now) {
       const prints = opts.prints();
       if (prints === undefined) return;
-      // last frame's rests: each its one transaction, out of the frame
-      for (const r of prints.rests()) defer(() => prints.settle(r.entity, commit(r.entity, r.x, r.y, r.angle)));
+      // Hand physics back to Position once per core move. JustActive is already
+      // cleared before the reflector runs, so remember the live recognizer.
+      for (const rec of coreMoves) if (!world.isAlive(rec) || !world.hasTag(rec, GestureActive)) coreMoves.delete(rec);
+      world.query(coreMovesQ).each(b => {
+        for (const row of b) {
+          const rec = b.entity(row);
+          if (coreMoves.has(rec)) continue;
+          coreMoves.add(rec);
+          for (const e of world.getRelations(rec, Drags)) {
+            if (!opts.isPrint(e)) continue;
+            prints.settle(e, false);
+            held.delete(e);
+            wheel.delete(e);
+          }
+        }
+      });
+      // last frame's rests: each its one transaction, unless a group now owns it
+      for (const r of prints.rests()) {
+        if (world.has(r.entity, Grab)) continue;
+        defer(() => {
+          if (!world.has(r.entity, Grab)) prints.settle(r.entity, commit(r.entity, r.x, r.y, r.angle));
+        });
+      }
       const stamp = world.resourceStamp(CancelRequest);
       const cancelled = stamp !== cancelStamp;
       cancelStamp = stamp;
@@ -113,7 +136,12 @@ export function createPhotoCarry(opts: PhotoCarryOptions): PhotoCarry {
         for (const row of b) {
           const p = b.entity(row);
           if ((world.read(p, PointerButtons).buttons & 1) === 0) continue;
-          for (const rec of world.getReverse(p, Watches)) {
+          const watchers = world.getReverse(p, Watches);
+          // Group intent exists from down, before any lift. Check the pointer's
+          // drag before its competing tap/hold, which capture the same print.
+          if (watchers.some(rec => (world.hasTag(rec, MovesSelection) || world.hasTag(rec, RoutedMove)) &&
+            !world.hasTag(rec, GestureCancelled) && !world.hasTag(rec, GestureFailed) && !world.hasTag(rec, GestureEnded))) continue;
+          for (const rec of watchers) {
             // a recognizer past its gesture (cancelled, failed, ended) holds nothing: it lingers a frame before the reap, and a
             // cancelled one must let go on the very frame the cancel lands (D3t-a — Esc puts the print back)
             if (world.hasTag(rec, GestureCancelled) || world.hasTag(rec, GestureFailed) || world.hasTag(rec, GestureEnded)) continue;

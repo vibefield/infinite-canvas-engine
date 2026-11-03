@@ -45,6 +45,9 @@ import {
   HadSequence,
   HandledByWidget,
   LocalPointer,
+  Keyboard,
+  MovesSelection,
+  PointerMods,
   LongPress,
   LongPressDrag,
   MultiTap,
@@ -69,7 +72,8 @@ import {
   WheelZoom,
 } from "../catalog";
 import { ActiveTool } from "../catalog/camera-derived";
-import { toolTypeFor } from "../canvas/engine-catalog";
+import { resolveToolFor, toolTypeFor } from "../canvas/engine-catalog";
+import { selectionDragAt } from "../ops/selection-drag";
 import { CanvasIntentScope, CanvasSession } from "../canvas/session";
 import { FrameInfo } from "../engine/frame-info";
 import { GestureSettings } from "../catalog/settings-resources";
@@ -201,6 +205,11 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
         if (button === "secondary" || (button === "middle" && !middlePans(ctx, captureTarget))) continue;
         // The part under the down (design-014, B3b): copied onto every recognizer this down spawns.
         const downPart = ctx.get(pointer, PointerPart)?.part ?? "";
+        // Latch group intent at the original press, before crossing the drag
+        // threshold. A custom solo carry can yield immediately, without a jump.
+        const movesSelection = button === "primary" && downPart === "" && profile.includes("drag") &&
+          ctx.read(pointer, Pointer).device !== "touch" && ctx.getResource(Keyboard)?.space !== true &&
+          selectionDragAt(ctx, captureTarget, screen.x, screen.y, resolveToolFor(world, tool), ctx.get(pointer, PointerMods)?.shift === true);
 
         // Gesture timing anchors on the CLOCK at ingest. The 2026-07-12
         // event-timestamp anchor is retired (2026-07-17): event.timeStamp and
@@ -308,6 +317,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
               tags: [...tags],
             });
           }
+          if (kind === "drag" && movesSelection) ctx.addTag(rec, MovesSelection);
           ctx.addRelation(rec, Watches, pointer);
           if (downPart !== "") ctx.addComponent(rec, DownPart, { part: downPart });
           if (captureTarget !== undefined) {

@@ -29,8 +29,8 @@ export interface ToolRoute {
   /** Drag starting on empty canvas (after device overrides: touch/space/middle → pan). */
   readonly canvasDrag?: CanvasDragRoute;
   /**
-   * The same drag with SHIFT held (design-015 §9, D-D11 — D2a-core): the desk's
-   * select tool pans the bare mat and draws its marquee on shift —
+   * The same drag with SHIFT held. For example, a custom tool can pan normally
+   * and draw its marquee on shift —
    * `{ canvasDrag: "pan", canvasDragShift: "marquee" }`. Omitted: the tool's
    * own `canvasDrag`, so shift changes nothing (every tool before this field).
    * The device conventions (touch / space / middle → pan) still sit above it.

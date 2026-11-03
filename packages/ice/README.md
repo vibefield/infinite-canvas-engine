@@ -29,8 +29,8 @@ import { DESK_ENGINE, DESK_OBJECTS, deskPalette, deskTheme } from "@vibecook/ice
 import { Desk, EngineProvider } from "@vibecook/ice/react";
 import { createRoot } from "react-dom/client";
 
-// The desk's preset: the six objects, the desk's select tool (a bare-mat drag pans, shift draws
-// the marquee), two-axis scroll panning, pinch / Cmd-or-Ctrl-wheel zoom about the pointer,
+// The desk's preset: the six objects, the desk's select tool (a bare-mat drag marquees, shift adds
+// to the selection), two-axis scroll panning, pinch / Cmd-or-Ctrl-wheel zoom about the pointer,
 // scale-free zoom and zoom-through.
 const engine = createCanvasEngine(DESK_ENGINE);
 engine.docs.create(); // a local-first document

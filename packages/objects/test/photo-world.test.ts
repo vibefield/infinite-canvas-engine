@@ -4,7 +4,7 @@
 // print); the FLICK LAW (the finger's last 70 ms, the cap, a stopped finger throws nothing, the glide's Coulomb
 // grip); and the carry: a press, a flick, a glide — ONE transaction when the print comes to rest, one undo step; a
 // TAPED print is never carried, and a press-drag on it gives as every taped object does (D4a's give, through the marks).
-import { Captures, ChildOf, createCanvasEngine, Drag, type Entity, GestureActive, LocalPointer, Movable, Pointer, PointerButtons, PointerWorld, Position, Selectable, Size, Viewport, Watches, CancelRequest, GestureCancelled, PressWheel } from "@ice/core";
+import { Captures, ChildOf, createCanvasEngine, Drag, type Entity, GestureActive, LocalPointer, Movable, NO_MODS, SelectionMovable, Pointer, PointerButtons, PointerWorld, Position, Selectable, Size, Viewport, Watches, CancelRequest, GestureCancelled, PressWheel } from "@ice/core";
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { createDeskBuilder, FLUX_REST, type KindHost, type ObjectContext, DEFAULT_GRID, objectKindOf, MARKS, MAT_GRID } from "@ice/desk";
 import { BLOB_STORE, createMemoryBlobStore, createServices, hashBytes, PICTURE_DECODER, type PictureDecoder, RGBA_TYPE, service } from "@ice/desk/kit";
@@ -54,12 +54,13 @@ beforeAll(async () => { const o = await fakeOracle({ photo: META }); oracle = o.
 afterAll(() => undoGpu());
 
 describe("the Photo object (design-015 §6)", () => {
-  it("desk.photo — blob · width · height · border · angle; things; selectable but NOT core-movable (its carry is its own); offered to a mini mat", () => {
+  it("desk.photo — blob · width · height · border · angle; things; selectable; core moves it with a group, its own carry moves it solo; offered to a mini mat", () => {
     expect(Photo.type).toBe(PHOTO_TYPE);
     expect(objectKindOf(Photo)?.name).toBe(PHOTO_KIND);
     expect(Photo.stratum).toBe("things");
     expect(Object.keys(Photo.propToGroup).sort()).toEqual(["angle", "blob", "border", "height", "width"]);
     expect(Photo.capabilityTags).not.toContain(Movable);
+    expect(Photo.capabilityTags).toContain(SelectionMovable);
     expect(Photo.capabilityTags).toContain(Selectable);
     expect(Photo.provides).toContain(PHOTO_TYPE);
   });
@@ -242,7 +243,7 @@ describe("the CARRY — ONE transaction when the print comes to rest", () => {
     const { world } = ce;
     const at = printRect(400, 300, META.w, META.h);
     const e = ce.ops.spawnWidget(PHOTO_TYPE, { x: at.x, y: at.y, w: at.w, h: at.h, props: { width: META.w, height: META.h }, undoable: false });
-    ce.ops.spawnWidget(PHOTO_TYPE, { x: -900, y: -900, w: at.w, h: at.h, props: { width: META.w, height: META.h }, undoable: false });   // a print above it
+    const other = ce.ops.spawnWidget(PHOTO_TYPE, { x: -900, y: -900, w: at.w, h: at.h, props: { width: META.w, height: META.h }, undoable: false });   // a print above it
     ce.step(now);
     const stub = stubPass();
     const prints = must(kind.local)({ pass: () => stub.kindPass }) as Prints;
@@ -273,7 +274,7 @@ describe("the CARRY — ONE transaction when the print comes to rest", () => {
     /** The wheel the press has turned (core's `PressWheel` sum on the pointer). */
     const wheelTo = (dy: number) => { if (world.has(p, PressWheel)) world.edit(p).set(PressWheel, { dx: 0, dy }); else world.addComponent(p, PressWheel, { dx: 0, dy }); };
     const angleProp = (): number => (world.get(e, Photo.groups[0]?.component as never) as { angle: number }).angle;
-    return { ce, world, e, carry, prints, frame, press, moveTo, up, flush, rect, undoSteps, cancelEsc, wheelTo, angleProp, now: () => now, stepEngine: () => { now += 16; ce.step(now); } };
+    return { ce, world, e, other, carry, prints, frame, press, moveTo, up, flush, rect, undoSteps, cancelEsc, wheelTo, angleProp, now: () => now, stepEngine: () => { now += 16; ce.step(now); } };
   }
 
   it("a press lifts it (the kinematic pin: the grab point stays under the finger), the document does not move while it is carried", () => {
@@ -289,6 +290,40 @@ describe("the CARRY — ONE transaction when the print comes to rest", () => {
     expect(d.rect().cx).toBeCloseTo(400, 9);   // flux, not a fact
     expect(G.eye[0]).toBe(530);   // the local eye stands over the finger
     expect(d.carry.commits()).toBe(0);
+  });
+
+  it.each([false, true])("a selected print follows the core group with no solo lift, flick or extra commit (already gliding=%s)", gliding => {
+    const d = desk();
+    try {
+      d.frame();
+      if (gliding) {
+        d.press(450, 320); d.frame();
+        d.moveTo(510, 340); d.frame(); d.up(); d.frame();
+        expect(d.prints.lifted(d.e)).toBe(true);
+      }
+      d.ce.ops.setSelection([d.e, d.other]);
+      const before = d.rect();
+      const mouse = (kind: "down" | "move" | "up", x: number, y: number, buttons: number) => {
+        d.ce.stack.queue.enqueue({ kind, pointerId: "group", device: "mouse", screenX: x, screenY: y, buttons, mods: NO_MODS });
+        d.stepEngine(); return d.frame();
+      };
+      mouse("move", 450, 320, 0); mouse("down", 450, 320, 1);
+      expect(d.carry.held()).toEqual([]);
+      mouse("move", 482, 320, 1);
+      const geometry = mouse("move", 562, 360, 1);
+      expect(d.rect().cx).toBeCloseTo(before.cx + 80, 6);
+      expect(d.rect().cy).toBeCloseTo(before.cy + 40, 6);
+      expect(geometry.centre[0]).toBeCloseTo(d.rect().cx, 6);
+      expect(geometry.centre[1]).toBeCloseTo(d.rect().cy, 6);
+      expect(d.prints.body(d.e)?.hold).toBeNull();
+      expect(d.prints.lifted(d.e)).toBe(false);
+      mouse("up", 562, 360, 0);
+      for (let i = 0; i < 40; i++) { d.frame(); d.flush(); }
+      expect(d.carry.commits()).toBe(0);
+      expect(d.undoSteps()).toBe(1);
+      must(d.ce.docs.current()).store.undo(); d.stepEngine(); d.frame();
+      expect(d.rect()).toEqual(before);
+    } finally { d.ce.dispose(); }
   });
 
   it("a flick glides it on and grips; at rest ONE transaction lands it where the law does, raised to the top — one undo step, ⌘Z puts it back", () => {

@@ -5,10 +5,10 @@
 // (until D7 the only complete palette was the oracle's fixture, and `deskLayer` threw at the mount on the
 // documented `{ canvasBg, select }`); a mount whose palette cannot answer leaves NOTHING behind (the canvas,
 // the reduced-motion listener); and `DESK_ENGINE` is the desk the README promises — the plain wheel pans, pinch zooms
-// about the pointer, a bare-mat drag pans, the zoom is scale-free, the zoom-through is on.
+// about the pointer, a bare-mat drag marquees, the zoom is scale-free, the zoom-through is on.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { ActiveTool, Camera, CameraLimits, createCanvasEngine, GestureSettings, NO_MODS, Viewport, ZoomThroughSettings } from "@ice/core";
+import { ActiveTool, Camera, CameraLimits, createCanvasEngine, GestureSettings, NO_MODS, selectedEntities, Viewport, ZoomThroughSettings } from "@ice/core";
 import { screenToWorld } from "@ice/kernel";
 import { describe, expect, it } from "vitest";
 import { looksOf } from "../../desk/src/compose/reflector";
@@ -138,7 +138,35 @@ describe("the published quickstart (design-015 D7)", () => {
     }
   });
 
-  it("DESK_ENGINE is the desk the README promises: the plain wheel pans, pinch zooms, a bare-mat drag pans (shift marquees), the zoom is scale-free, the zoom-through is on", () => {
+  it.each([false, true])("dragging empty desk selects with a marquee, without panning (shift=%s)", (shift) => {
+    const ce = createCanvasEngine(DESK_ENGINE);
+    try {
+      ce.docs.create();
+      const inside = ce.ops.spawnWidget("desk.note", { x: 100, y: 100, w: 200, h: 200 });
+      const outside = ce.ops.spawnWidget("desk.note", { x: 550, y: 400, w: 200, h: 200 });
+      ce.step(16);
+      ce.world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
+      ce.world.setResource(Viewport, { w: 800, h: 600, dpr: 1 });
+      ce.ops.setSelection([outside]);
+      let time = 32;
+      const mouse = (kind: "down" | "move" | "up", x: number, y: number, buttons: number): void => {
+        ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: { ...NO_MODS, shift } });
+        ce.step(time); time += 16;
+      };
+      mouse("move", 50, 50, 0);
+      mouse("down", 50, 50, 1);
+      mouse("move", 65, 65, 1); // cross the drag threshold before extending the marquee
+      mouse("move", 350, 350, 1);
+      expect(ce.stack.marqueeBuffer.rect).not.toBeNull();
+      mouse("up", 350, 350, 0);
+      expect([...selectedEntities(ce.world)].sort()).toEqual((shift ? [inside, outside] : [inside]).sort());
+      expect(ce.world.getResource(Camera)).toMatchObject({ x: 0, y: 0, zoom: 1 });
+    } finally {
+      ce.dispose();
+    }
+  });
+
+  it("DESK_ENGINE is the desk the README promises: the plain wheel pans, pinch zooms, a bare-mat drag marquees (shift adds), the zoom is scale-free, the zoom-through is on", () => {
     const ce = createCanvasEngine(DESK_ENGINE);
     ce.docs.create();
     expect(ce.world.getResource(GestureSettings)).toMatchObject({ wheel: "pan", wheelZoomCurve: "exponential" });
@@ -147,7 +175,7 @@ describe("the published quickstart (design-015 D7)", () => {
     expect(Math.abs((limits?.maxZoom ?? 0) / ZOOM_MAX - 1)).toBeLessThan(1e-6);
     expect(ce.world.getResource(ZoomThroughSettings)?.enabled).toBe(true);
     expect(ce.world.getResource(ActiveTool)?.id).toBe(deskSelect.id);
-    expect(deskSelect.route).toMatchObject({ canvasDrag: "pan", canvasDragShift: "marquee" });
+    expect(deskSelect.route).toMatchObject({ canvasDrag: "marquee", canvasDragShift: "marquee" });
     ce.dispose();
   });
 });
