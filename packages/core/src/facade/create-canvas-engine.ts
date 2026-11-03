@@ -150,6 +150,8 @@ import {
 export interface CanvasEngineOpts {
   /** Registered widget types (definition happens at defineWidget; this list is validated). */
   readonly widgets?: readonly { readonly type: string }[];
+  /** Preserve these schemas in old documents without loading their runtime or showing their objects. */
+  readonly retiredWidgets?: readonly { readonly type: string }[];
   /** Registered tools (definition happens at defineTool; validated). */
   readonly tools?: readonly Tool[];
   /** Explicit Canvas SDK definitions. Supplying any typed field enables typed mode. */
@@ -530,6 +532,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
   registerBuiltinTools();
   const catalog = compileEngineCatalog({
     ...(opts.widgets === undefined ? {} : { widgets: opts.widgets }),
+    ...(opts.retiredWidgets === undefined ? {} : { retiredWidgets: opts.retiredWidgets }),
     ...(opts.tools === undefined ? {} : { tools: opts.tools }),
     ...(opts.canvasTypes === undefined ? {} : { canvasTypes: opts.canvasTypes }),
     ...(opts.rootCanvas === undefined ? {} : { rootCanvas: opts.rootCanvas }),

@@ -103,7 +103,7 @@ import { SelectionVersion } from "../helpers/version-stamps";
 import { writeRuntimeResource } from "../guards/resource-writer";
 import { ChildOf } from "../catalog/scene";
 import { WidgetEquipped } from "../widget/define-widget";
-import { widgetTypeFor } from "../canvas/engine-catalog";
+import { engineCatalogFor, widgetTypeFor } from "../canvas/engine-catalog";
 import type { CanvasRect } from "../canvas/frame-view";
 import type {
   FrameSwitchRequest,
@@ -254,6 +254,7 @@ export interface NestedCanvasOpts {
  * PER IDLE FRAME at 100k widgets nested 8 deep.
  */
 export function createActiveMembership(world: World): TickSystem {
+  const catalog = engineCatalogFor(world);
   // Created lazily on the FIRST run: both installWidgetRuntime and
   // createNestedCanvas construct an instance but rigs install only one — an
   // un-installed instance must never accumulate an undrained journal.
@@ -293,7 +294,11 @@ export function createActiveMembership(world: World): TickSystem {
       let deselected = false;
 
       const classify = (e: Entity): void => {
-        const member = firstContainerAncestor(world, e) === frame;
+        // Retired rows remain durable, but never enter picking, drawing, or the active selection.
+        // Membership is journal-driven: this does no work on idle frames.
+        const type = world.get(e, PrefabId)?.id;
+        const retired = typeof type === "string" && catalog?.retiredWidget(type) !== undefined;
+        const member = !retired && firstContainerAncestor(world, e) === frame;
         if (member) {
           if (!ctx.hasTag(e, Active)) {
             ctx.addTag(e, Active); // cull re-classifies Visible next pass

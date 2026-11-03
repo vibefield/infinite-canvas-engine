@@ -38,11 +38,16 @@ published bytes rather than trusting the last local build.
 ### The facade
 
 ```ts
-const ce = createCanvasEngine({ widgets?, tools?, canvasTypes?, rootCanvas?, behaviors?, budgets?, settings?, policy?, compositorDevice?, onGuestFault?, onReflectorFault? });
+const ce = createCanvasEngine({ widgets?, retiredWidgets?, tools?, canvasTypes?, rootCanvas?, behaviors?, budgets?, settings?, policy?, compositorDevice?, onGuestFault?, onReflectorFault? });
 // the desk's preset: createCanvasEngine(DESK_ENGINE) — @vibecook/ice/desk/objects
 // ce: { world, engine, behaviors, stack, runtime, nav, ops, docs, stage, frame,
 //       budgets, step(now), dispose() }
 ```
+
+`retiredWidgets` retains registered widget schemas and their data-prefab versions for existing documents without
+compiling those widgets into the active catalog. Retired objects stay out of canvas membership, selection and placement;
+no tray specimen or kind runtime is mounted. Their saved cells and peer updates remain intact, and their packs are not
+stamped on new documents. A widget cannot appear in both `widgets` and `retiredWidgets`.
 
 - `ce.ops` — `setTool · spawnWidget · deleteSelection · duplicateSelection ·
   setSelection/clearSelection/selectAll · reorder(ids, "top"|"bottom") ·
