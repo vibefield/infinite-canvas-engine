@@ -3,7 +3,7 @@
 // the photo, the notebook and the calendar size themselves by their laws, never by their rect) seen through the drawer at the scale its
 // hang asks: its slot's view block is the DRAWER'S CAMERA — the face's top-left, the shown scroll, the band in it — scaled about the
 // specimen (zoom = hang ÷ natural), so a scroll of Δ moves it Δ on screen exactly as it moves the board. Its lamp is the board's (the
-// research's HOME lamp, D-K3.4): its shadow falls on the board as the accessories' do. Its hover is the kinds' own `lift` and `hover`
+// research's HOME lamp, D-K3.4): its shadow falls on the board. Its hover is the kinds' own `lift` and `hover`
 // (flux — the tray's springs). A PURE module for the frames; `TraySlots` holds the GPU half — one slot per specimen, each kind's pass
 // SPAWNED from the root's, a composite kind's (root only, D-D18) made from its program the first time the tray shows one.
 
@@ -36,7 +36,7 @@ export interface TraySpecimen {
   /** Where it hangs, board px (x from the drawer's left edge, y down from the board's top at scroll 0): its `Position` and `Size`. */
   readonly rect: { readonly x: number; readonly y: number; readonly w: number; readonly h: number };
   readonly props: Readonly<Record<string, unknown>>;
-  /** Its hang's accessory and pegs (pitches from its hang point) — the entry's. */
+  /** Layout metadata from the entry. Mounting hardware is not rendered. */
   readonly accessory: TrayAccessory;
   readonly pegs: readonly (readonly [number, number])[];
   readonly label: string;
@@ -46,7 +46,7 @@ export interface TraySpecimen {
   readonly asset?: unknown;
 }
 
-/** One specimen this frame: its kind's record under its own view block, where it is on screen, its accessory's pegs on screen, its tag. */
+/** One specimen this frame: its kind's record under its own view block, where it is on screen, and its tag. */
 export interface TraySpecimenFrame {
   readonly type: string;
   /** The kind's registry name, and the record its `record` made for this frame. */
@@ -60,9 +60,6 @@ export interface TraySpecimenFrame {
   readonly screen: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
   /** Its OBJECT as drawn on screen (the kernel's fit inside the hang), CSS px (K5b — what a take grabs, where one put back lands). */
   readonly object: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
-  /** Its pegs' hole centres on screen, CSS px. */
-  readonly pegs: readonly (readonly [number, number])[];
-  readonly accessory: TrayAccessory;
   readonly label: string;
 }
 
@@ -170,61 +167,14 @@ export function specimenFrames(specimens: readonly TraySpecimen[], drawn: TrayDr
     };
     const record = recordOf(s.kind, ctx, env.faults);
     if (record === undefined) continue;
-    // the hang point: the top edge's centre, or a shelf's bottom edge's; the pegs from it
-    const hx = x0 + s.rect.w / 2;
-    const hy = s.accessory === "shelf" ? y0 + s.rect.h : y0;
     out.push({
       type: s.type, kind: s.kind.name, record, key: s.key, view, grid,
       screen: { x0, y0, x1: x0 + s.rect.w, y1: y0 + s.rect.h },
       object: { x0: drawn.rect.x + fit.x, y0: drawn.rect.y + fit.y - drawn.scroll, x1: drawn.rect.x + fit.x + fit.w, y1: drawn.rect.y + fit.y + fit.h - drawn.scroll },
-      pegs: s.pegs.map(([dx, dy]) => [hx + dx * P, hy + dy * P] as const),
-      accessory: s.accessory, label: s.label,
+      label: s.label,
     });
   }
   return out;
-}
-
-/** The accessories' numbers (theme.ts `TRAY.accessory`): the kind index the shader reads, each's standing-off in pitches. */
-export const ACCESSORY_INDEX: Readonly<Record<TrayAccessory, number>> = { hook: 0, shelf: 1, clip: 2, rail: 3 };
-
-/**
- * One specimen's accessory record (tray.wgsl `TrayAccessory`), screen CSS px: its quad the ACCESSORY's own parts — the plugs and what they
- * hold, a shelf's plank, a rail's bar, never the specimen's body between — grown by the shadow's push and blur (down and right, away
- * from the lamp) and a pixel.
- */
-export function accessoryOf(f: TraySpecimenFrame): { readonly box: number[]; readonly kind: number[]; readonly rect: number[]; readonly pegs0: number[]; readonly pegs1: number[] } {
-  const P = DRAWER.pitch;
-  const lift = TRAY_LOOK.accessoryHeight[f.accessory] * P;
-  const L = TRAY_LOOK.lamp;
-  const blur = (TRAY_LOOK.lampSize * lift) / L[2] + 2;
-  const pushX = Math.max(0, (-L[0] / L[2]) * lift);
-  const pushY = Math.max(0, (-L[1] / L[2]) * lift);
-  const r = f.screen;
-  let x0 = Number.POSITIVE_INFINITY;
-  let y0 = Number.POSITIVE_INFINITY;
-  let x1 = Number.NEGATIVE_INFINITY;
-  let y1 = Number.NEGATIVE_INFINITY;
-  const add = (a: number, b: number, c: number, d: number): void => { x0 = Math.min(x0, a); y0 = Math.min(y0, b); x1 = Math.max(x1, c); y1 = Math.max(y1, d); };
-  for (const [x, y] of f.pegs) {
-    add(x - 0.35 * P, y - 0.4 * P, x + 0.35 * P, y + 0.4 * P);
-    if (f.accessory === "hook") add(x - 0.15 * P, y, x + 0.15 * P, y + 0.7 * P);
-    if (f.accessory === "clip") add(x - 0.3 * P, y - 0.3 * P, x + 0.3 * P, Math.max(y, r.y0) + 0.6 * P);
-    if (f.accessory === "shelf") add(x - 0.15 * P, Math.min(y, r.y1), x + 0.15 * P, Math.max(y, r.y1) + 0.1 * P);
-  }
-  if (f.accessory === "shelf") add(r.x0 - 0.35 * P, r.y1 - 0.05 * P, r.x1 + 0.35 * P, r.y1 + 0.3 * P);
-  if (f.accessory === "rail" && f.pegs.length > 0) {
-    const xs = f.pegs.map((q) => q[0]);
-    const y = (f.pegs[0] as readonly [number, number])[1];
-    add(Math.min(...xs) - 0.45 * P, y - 0.2 * P, Math.max(...xs) + 0.45 * P, y + 0.2 * P);
-  }
-  const peg = (i: number): readonly [number, number] => f.pegs[i] ?? [0, 0];
-  return {
-    box: [x0 - blur, y0 - blur, x1 + pushX + blur, y1 + pushY + blur],
-    kind: [ACCESSORY_INDEX[f.accessory], Math.min(f.pegs.length, 4), lift, 0],
-    rect: [r.x0, r.y0, r.x1, r.y1],
-    pegs0: [...peg(0), ...peg(1)],
-    pegs1: [...peg(2), ...peg(3)],
-  };
 }
 
 /** A carried object this frame (K5b — tray/carry.ts): its kind's record under its pose's view, the slot it is drawn in, where it is on screen. */

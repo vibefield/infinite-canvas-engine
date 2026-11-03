@@ -19,7 +19,7 @@ import { shaderText } from "../src/shaders";
 import { band, DRAWER, drawerRect, drawerSize, SHADOW_REACH, scrollRange, slideEase } from "../src/tray/drawer";
 import { carry, cellOf, holeCentre, holeSdf, PEG, type PegPoint, pointAt, punched, rotCell } from "../src/tray/lattice";
 import { HASH_SIZE, hashTexels, keep } from "../src/tray/pass";
-import { TrayAccessoryStruct, TrayUniforms } from "../src/tray/layout";
+import { TrayUniforms } from "../src/tray/layout";
 import { TRAY_SHADER_FILES, trayShaders } from "../src/tray/shaders";
 import { TRAY_LOOK } from "../src/tray/look";
 import { type Palette, TRAY, themeFrom } from "../src/theme";
@@ -253,16 +253,16 @@ describe("the tray's program (tray/shaders.ts — the mat's light through the ki
   it("asks the kit by name for the view block's struct, the primitives and the mat's light; its own map lists only its own files", () => {
     expect(Object.values(TRAY_SHADER_FILES).filter((f) => !f.startsWith("tray/"))).toEqual([]);
     const c = trayShaders(shaderText);
-    expect((c.structs ?? []).map((s) => s.name)).toEqual(["MatUniforms", "TrayUniforms", "TrayAccessory"]);
+    expect((c.structs ?? []).map((s) => s.name)).toEqual(["MatUniforms", "TrayUniforms"]);
     expect((c.modules ?? []).map((m) => m.label)).toEqual([KIT_WGSL_FILES.sdf, KIT_WGSL_FILES.light, "tray/tray.wgsl"]);
     expect(c.entry.label).toBe("tray/tray-pass.wgsl");
   });
 
-  it("composes, byte for byte, the program composed from the mat's files by hand (K3's, and K5a's accessory record)", () => {
+  it("composes, byte for byte, the program composed from the mat's files by hand (the board and its veil)", () => {
     const raw = shaderText({ primitives: "primitives.wgsl", mat: "mat/mat.wgsl", tray: "tray/tray.wgsl", trayPass: "tray/tray-pass.wgsl" });
     const part = (label: string, text: string) => ({ label, text });
     const byHand = compose({
-      structs: [MatUniforms, TrayUniforms, TrayAccessoryStruct],
+      structs: [MatUniforms, TrayUniforms],
       modules: [part("primitives.wgsl", raw.primitives), part("mat/mat.wgsl", raw.mat), part("tray/tray.wgsl", raw.tray)],
       entry: part("tray/tray-pass.wgsl", raw.trayPass),
     });

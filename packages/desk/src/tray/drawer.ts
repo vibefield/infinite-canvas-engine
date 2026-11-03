@@ -27,13 +27,13 @@ export const DRAWER = {
   /**
    * The HEADER (design-018 R4 — James, 2026-09-28: "make the fade stronger and more gap, and design the filters nicely at that empty
    * safe top space instead"): a CLEAR band this high under the face's top edge (inside the arris) where what hangs on the board — the
-   * specimens, their shadows, their accessories and their tags — and the holes are wholly gone: the plain face, on which the bar lays
+   * specimens, their shadows and their tags — and the holes are wholly gone: the plain face, on which the bar lays
    * its category chips as label tape (`<TrayBar>`, @ice/react — the handle's `anchor().drawer.header`). The face's portal clip starts
    * this far down, so nothing of the content is even drawn above it.
    */
   header: 48,
   /**
-   * The CONTENT's fade under the header (design-018 §4, R4): the specimens, their shadows, their accessories, their tags and the holes
+   * The CONTENT's fade under the header (design-018 §4, R4): the specimens, their shadows, their tags and the holes
    * fade in over this band (CSS px, 0.8 pitch) — `smoothstep(top + header, top + header + fade, y)`, `top` the face's top edge — the
    * feather on the face's portal clip (R1's 28 px band at the edge itself, stretched and moved down: D-R4.1). The board does not fade.
    */
@@ -58,13 +58,15 @@ export const DRAWER = {
 
 /**
  * The drawer as a HOST sets it (petition I21 — `deskLayer({ tray })`, read at the mount): its FOOT inset, CSS px (default 0) — the lay's
- * visible content ends this far above the board's bottom edge, where a host's chrome floats over the board's own face (VibeField's line,
- * 88). There nothing of the content shows and no hole opens — the mirror of the HEADER: the face's portal clip ends at it, the VEIL lays
- * the plain board over it whole and fades out over `DRAWER.fade` above it — and the scroll's range grows by it, so the last line is
+ * visible content ends this far above the board's bottom edge, where a host's chrome floats over the board's own face.
+ * There nothing of the content shows and no hole opens — the mirror of the HEADER: the face's portal clip ends at it, the VEIL lays
+ * the plain board over it whole and fades out over `footFade` above it — and the scroll's range grows by it, so the last line is
  * still reached. The board itself runs to its edge.
  */
 export interface TrayOptions {
   readonly foot?: number;
+  /** Fade above the foot inset, CSS px (default 32). Independent of the header; 0 gives a hard edge. */
+  readonly footFade?: number;
 }
 
 /**
@@ -100,15 +102,17 @@ export function drawerRect(vw: number, vh: number, p: number): DrawerRect {
 
 /**
  * What of the board's CONTENT shows at screen `y` under a drawer drawn at `rect` (design-018 §4, R4) — the shaders' law on the CPU (the
- * face's feather in `portal_cover`, `tray_board`'s holes, `tray_accessory`, the tags' draw): 0 above the face and in its header, the
+ * face's feather in `portal_cover`, `tray_board`'s holes, the tags' draw): 0 above the face and in its header, the
  * smoothstep over `fade` under it, 1 past it — and with a host's `foot` (I21) the same mirrored at the board's bottom edge: 1 down to
- * `fade` above the foot's line, the smoothstep down to 0 at it, 0 in the foot (`tray_veil`'s two quads, one law).
+ * `footFade` above the foot's line, the smoothstep down to 0 at it, 0 in the foot (`tray_veil`'s two quads, one law).
  */
-export function contentShown(rect: DrawerRect, y: number, foot = 0): number {
+export function contentShown(rect: DrawerRect, y: number, foot = 0, footFade: number = DRAWER.fade): number {
   const t = Math.min(Math.max((y - rect.y - DRAWER.arris - DRAWER.header) / DRAWER.fade, 0), 1);
   const top = t * t * (3 - 2 * t);
   if (!(foot > 0)) return top;
-  const b = Math.min(Math.max((rect.y + rect.h - foot - y) / DRAWER.fade, 0), 1);
+  const line = rect.y + rect.h - foot;
+  if (footFade <= 0) return y < line ? top : 0;
+  const b = Math.min(Math.max((line - y) / footFade, 0), 1);
   return Math.min(top, b * b * (3 - 2 * b));   // the veil lays the larger of its two ramps' alphas — a short drawer's may meet
 }
 

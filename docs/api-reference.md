@@ -431,10 +431,13 @@ LINEAR.
 live), `deskLayer` takes the numbers a host's own chrome sets, read at the mount, each the desk's own when absent: **`hold: { top?,
 band?, travelMs? }`** — the held object's reading fit keeps `top` CSS px under the view's top (56; a phone keeps its 60) and `band`
 above its foot (72), and the held bar travels `travelMs` (M1; 340) — the bar being the host's, the selection's anchor carries it
-(`anchor().held.travelMs`, present only when set; `<SelectionMenu>` follows it); **`tray: { foot? }`** — the pegboard's laid content
+(`anchor().held.travelMs`, present only when set; `<SelectionMenu>` follows it); **`tray: { foot?, footFade? }`** — the pegboard's laid content
 ends `foot` CSS px above the board's bottom edge (0), the header's mirror: the face's clip and the tags end there, the veil lays the
 plain board over the foot and feathers it, the scroll's range grows by it so the last line is still reached, and core never hovers or
-takes a specimen there (the pose seam's `TrayScreenFrame.foot`); the board runs to its edge. A malformed number throws at the mount.
+takes a specimen there (the pose seam's `TrayScreenFrame.foot`); the board runs to its edge. `footFade` sets the fade above this inset
+(default 32 CSS px, 0 for a hard edge) independently of the header. A malformed number throws at the mount.
+Tray specimens retain their entry's `hang` metadata for layout, but the renderer draws only the objects and their labels: no hooks,
+clips, shelves, rails, or mounting shadows.
 And **`cursors?: boolean`** (petition I26; `true` when absent) — a host that draws the room's people itself (VibeField, each by face,
 from `usePresencePeers`) passes `false`, and the host the layer is mounted in (`createDeskHost`, `<Desk>`) mounts no remote cursors:
 no plane, no reflector. The layer says it on its handle (`DeskLayerHandle.cursors`, read at the mount), where the host reads it

@@ -854,7 +854,7 @@ function trayRectOf(inputs: GroundFrameInputs): ReturnType<typeof drawerRect> {
 
 /**
  * THE TRAY, drawn (design-017 §5, §8; K5a) — shared by `Ground.render` and the Node oracle: the drawer UNDER its specimens (the dim, its
- * shadows, the board to its edge, the accessories), each specimen by its own kind through the drawer's face (inside the edge — the rim
+ * shadows, the board to its edge), each specimen by its own kind through the drawer's face (inside the edge — the rim
  * laid over them all retired, design-018 §2), their name tags (the marks' pills), then the VEIL over them all at the top (design-018
  * rev 5: the plain board, whole in the header and fading out over its ramp — what hangs there fades into the board, never see-through
  * over a hole); then what the tray carries, whole. Shut (p 0) the drawer draws nothing (its pass laid no quad) and only a carried copy
@@ -1090,10 +1090,10 @@ export class Ground {
 }
 
 
-/** The specimens' name tags this frame (K5a): each label centred under its specimen — below a shelf's plank — in screen px. */
+/** The specimens' name tags this frame (K5a): each label centred under its specimen, in screen px. */
 export function tagsOf(tray: TrayFrameInputs | undefined): { readonly label: string; readonly x: number; readonly y: number }[] {
   const P = DRAWER.pitch;
-  return (tray?.specimens ?? []).map((f) => ({ label: f.label, x: (f.screen.x0 + f.screen.x1) / 2, y: f.screen.y1 + (f.accessory === "shelf" ? 0.24 * P : 0) + 0.45 * P }));
+  return (tray?.specimens ?? []).map((f) => ({ label: f.label, x: (f.screen.x0 + f.screen.x1) / 2, y: f.screen.y1 + 0.45 * P }));
 }
 
 /** The desk copy's cache between held frames (D4b): the `stamp` it was made for (null: none yet), the stats of that frame, and how many copies were ever made (the "once per settled state" witness). */

@@ -1,10 +1,9 @@
 // THE SPECIMENS, DRAWN (design-017 §8; K5a): each specimen is its object at its natural size recorded by its OWN kind under a view block
 // of its own — the drawer's camera (the face's top-left, the shown scroll) scaled about it — lit by the board's lamp, lifted by its hover
 // (the kinds' `lift`/`hover`), never handed the desk's local; culled where the face cannot show it; a scroll of Δ moves it Δ on screen
-// and nothing else. Its accessory is a record of the tray pass (its quad holds its pegs, its specimen and its shadow). The flux takes the
-// scroll's range from the laid content and springs each hover. The ground draws the drawer UNDER the specimens (the board, then the
-// accessories), each specimen in its slot, the name tags, the RIM last; a composite kind's slot is made from its program.
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+// and nothing else. The flux takes the scroll's range from the laid content and springs each hover. The ground draws the board,
+// each specimen in its slot, the name tags, and the edge veil; a composite kind's slot is made from its program.
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { layTray, TRAY_SPACING, type TrayHang, worldToScreen } from "@ice/kernel";
 import { Ground, type GroundFrameInputs } from "../src/ground";
 import type { KindPass, KindProgram } from "../src/kind";
@@ -20,7 +19,7 @@ import { createTrayFlux } from "../src/tray/flux";
 import { TRAY_LOOK } from "../src/tray/look";
 import { TrayUniforms } from "../src/tray/layout";
 import { trayShaders } from "../src/tray/shaders";
-import { accessoryOf, faceClip, specimenFrames, type TraySpecimen, type TraySpecimenEnv } from "../src/tray/specimens";
+import { faceClip, specimenFrames, type TraySpecimen, type TraySpecimenEnv } from "../src/tray/specimens";
 import { LAYER_IDLE_MS } from "../src/kit/layer";
 import { fakeDevice, fakeSurface, installGpuFlags } from "./fake-gpu";
 
@@ -67,8 +66,6 @@ describe("a specimen, recorded by its own kind", () => {
     expect(c.x).toBeCloseTo(open.x + 100 + 80, 9);
     expect(c.y).toBeCloseTo(open.y + 80 + 40 - 30, 9);
     expect(f.screen).toEqual({ x0: open.x + 100, y0: open.y + 80 - 30, x1: open.x + 260, y1: open.y + 160 - 30 });
-    // the pegs from the hang point (the top edge's centre)
-    expect(f.pegs).toEqual([[open.x + 180 - P, open.y + 50 - P / 2], [open.x + 180 + P, open.y + 50 - P / 2]]);
     const ctx = k.seen[0] as ObjectContext;
     expect(ctx.rect).toEqual({ cx: 0, cy: 0, w: 400, h: 200 });
     expect(ctx.props).toEqual({ seed: 3 });
@@ -99,7 +96,6 @@ describe("a specimen, recorded by its own kind", () => {
     expect(b.view.camY - a.view.camY).toBeCloseTo(17 / a.view.zoom, 9);
     expect(b.view.camX).toBe(a.view.camX);
     expect(b.view.zoom).toBe(a.view.zoom);
-    expect(b.pegs.map(([x, y]) => [x, y + 17])).toEqual(a.pegs);
   });
 
   it("is culled where the face cannot show it — scrolled above the drawer, or below the view", () => {
@@ -107,23 +103,6 @@ describe("a specimen, recorded by its own kind", () => {
     expect(specimenFrames([specimen(k)], { rect: open, scroll: 400 }, env())).toEqual([]);
     expect(specimenFrames([specimen(k, { rect: { x: 100, y: 900, w: 160, h: 80 } })], { rect: open, scroll: 0 }, env())).toEqual([]);
     expect(specimenFrames([specimen(k)], { rect: open, scroll: 110 }, env()).length).toBe(1);   // its foot at the header's: its tag and shadow still show
-  });
-
-  it("its accessory's record: the quad holds its pegs and the accessory's own parts and shadow, not the specimen's body; the kind by index; up to four pegs", () => {
-    const k = fakeKind("fake");
-    const [f] = specimenFrames([specimen(k)], { rect: open, scroll: 0 }, env());
-    if (f === undefined) throw new Error("no frame");
-    const a = accessoryOf(f);
-    const [x0, y0, x1, y1] = a.box as [number, number, number, number];
-    for (const [x, y] of f.pegs) expect(x > x0 && x < x1 && y > y0 && y < y1).toBe(true);
-    // the accessory's own parts, never the specimen's body: a hook's quad (its shadow in it) ends a little below the pegs, far above the specimen's foot
-    expect(y1).toBeLessThan(f.screen.y0 + 1.2 * P);
-    const shelf = accessoryOf({ ...f, accessory: "shelf", pegs: [[f.screen.x0 + 10, f.screen.y1 + 20]] });
-    expect((shelf.box[1] as number) > f.screen.y0 + (f.screen.y1 - f.screen.y0) / 2 && (shelf.box[3] as number) > f.screen.y1).toBe(true);
-    expect(a.kind).toEqual([0, 2, TRAY_LOOK.accessoryHeight.hook * P, 0]);
-    expect(a.rect).toEqual([f.screen.x0, f.screen.y0, f.screen.x1, f.screen.y1]);
-    expect(a.pegs0).toEqual([...(f.pegs[0] ?? []), ...(f.pegs[1] ?? [])]);
-    expect(accessoryOf({ ...f, accessory: "rail" }).kind[0]).toBe(3);
   });
 
   it("its name tag is a strip of embossed label tape (K5b, D-K5b.7), centred under it — K5a's pill one word away", () => {
@@ -221,13 +200,17 @@ describe("the ground draws the specimens over the board, inside its edge", () =>
   beforeAll(() => { undo.push(installGpuFlags()); });
   afterAll(() => { for (const u of undo.splice(0)) u(); });
 
-  it("the drawer under them (the board to its edge, then each accessory), each in its own slot, their tags last — no rim over them; a composite kind's slot made from its program", async () => {
+  it("the board under the specimens, without mounting hardware or its GPU resources, each in its own slot, their tags last — no rim over them; a composite kind's slot made from its program", async () => {
     const log: string[] = [];
     const { device } = fakeDevice(log);
+    const buffers = vi.spyOn(device, "createBuffer");
+    const pipelines = vi.spyOn(device, "createRenderPipelineAsync");
     const plain = fakeKind("fake");
     const layered = fakeKind("layered", true);
     const programs: KindProgram[] = [plain, layered];
     const ground = await Ground.create({ device, surface: fakeSurface(2400, 1600), mat: matShaders(shaderText(MAT_SHADER_FILES)), kinds: programs, tray: trayShaders(shaderText), marks: marksShaders(shaderText(MARKS_SHADER_FILES)) });
+    expect(buffers.mock.calls.map(([d]) => d.label).filter((l) => l?.startsWith("tray/"))).toEqual(["tray/pegboard/uniforms", "tray/pegboard/light"]);
+    expect(pipelines.mock.calls.map(([d]) => d.label).filter((l) => l?.startsWith("tray/"))).toEqual(["tray/pegboard", "tray/pegboard/veil"]);
     expect(layered.made).toEqual(["layered"]);   // the root's
     const view = { camX: 0, camY: 0, zoom: 1, width: 1200, height: 800, dpr: 2 };
     const frames = specimenFrames([specimen(plain), specimen(layered, { key: 8, type: "t:layered", rect: { x: 400, y: 80, w: 160, h: 80 } })], { rect: open, scroll: 0 }, env());
@@ -238,7 +221,7 @@ describe("the ground draws the specimens over the board, inside its edge", () =>
     // the band under the header (design-018 §4, R4) in the tray's block — the veil's; the tags have NO fade of their own (design-018 rev 5:
     // the veil lays the plain board over them, as over the specimens)
     const f32 = (label: string, byte: number): number[] => { const w = writes.filter((x) => x.label === label).at(-1); if (w === undefined) throw new Error(`no ${label} upload`); return [...new Float32Array(w.bytes.buffer, byte, 4)]; };
-    expect(f32("tray/pegboard/uniforms", TrayUniforms.slots.fade.byte)).toEqual([DRAWER.fade, DRAWER.header, 0, 0]);
+    expect(f32("tray/pegboard/uniforms", TrayUniforms.slots.fade.byte)).toEqual([DRAWER.fade, DRAWER.header, 0, DRAWER.fade]);
     expect(f32("marks/uniforms", MarksUniformsStruct.slots.fade.byte)).toEqual([0, 0, 0, 0]);
     // the VEIL is laid LAST — after every specimen's slot and their tags (design-018 rev 5)
     const veilAt = log.indexOf("debug tray/pegboard/veil");
@@ -247,7 +230,8 @@ describe("the ground draws the specimens over the board, inside its edge", () =>
     expect(log.slice(veilAt, veilAt + 5)).toEqual(["debug tray/pegboard/veil", "pipeline tray/pegboard/veil", "group 0 tray/pegboard", "draw 6,1,0,0", "debug end"]);
     // the plain kind's slot is spawned at once; the layered one's waits for its program
     let at = log.indexOf("debug tray/pegboard");
-    expect(log.slice(at, at + 7)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "pipeline tray/pegboard/accessories", "draw 6,2,0,1", "debug end"]);
+    expect(log.slice(at, at + 5)).toEqual(["debug tray/pegboard", "pipeline tray/pegboard", "group 0 tray/pegboard", "draw 6,1,0,0", "debug end"]);
+    expect(writes.some((w) => w.label.includes("accessories"))).toBe(false);
     expect(log.filter((l) => l.startsWith("debug kind "))).toEqual(["debug kind fake+ 0-1"]);
     let ready = false;
     await new Promise<void>((r) => ground.warmTray([["t:layered", "layered"]], () => { ready = true; r(); }));
@@ -260,7 +244,7 @@ describe("the ground draws the specimens over the board, inside its edge", () =>
     const kinds = log.map((l, i) => [l, i] as const).filter(([l]) => l.startsWith("debug kind ")).map(([l, i]) => [l, i] as const);
     expect(kinds.map(([l]) => l)).toEqual(["debug kind fake+ 0-1", "debug kind layered 0-1"]);
     const tags = log.indexOf("pipeline marks", at);   // the name tags: the marks' pipeline, under the face's scissor
-    expect(kinds.every(([, i]) => i > at + 6)).toBe(true);
+    expect(kinds.every(([, i]) => i > at + 4)).toBe(true);
     expect(tags).toBeGreaterThan(kinds[1]?.[1] ?? 0);
     // the rim laid over them all retired (design-018 §2): of the drawer, only the VEIL is drawn after the specimens (design-018 rev 5 —
     // the plain board over its top, so what hangs there fades into the board, never see-through over a hole)

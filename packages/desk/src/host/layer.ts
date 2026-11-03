@@ -306,14 +306,12 @@ export interface DeskLayerBoot {
  * The pegboard tray's door (design-017; K3) — the app's `a` and a rig's hand: the facts through core's tray ops (the one writer beside
  * the tray's input), the flux's pins and its state.
  */
-/** A specimen as the last frame drew it (K5a — the tray door's witness): its type, kind, tag and accessory, its rect and pegs on screen (CSS px), the scale its kind drew it at. */
+/** A specimen as the last frame drew it (K5a — the tray door's witness): its type, kind, tag and rect on screen (CSS px), the scale its kind drew it at. */
 export interface TraySpecimenSeen {
   readonly type: string;
   readonly kind: string;
   readonly label: string;
-  readonly accessory: string;
   readonly screen: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
-  readonly pegs: readonly (readonly [number, number])[];
   readonly zoom: number;
   /** K5b: its object as drawn on screen (the fit inside the hang). */
   readonly object: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number };
@@ -672,6 +670,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     looksOf(objectKinds, opts.palette, opts.theme);
     const hold = holdOf(opts.hold);
     const foot = hostNumber("tray.foot", opts.tray?.foot);
+    const footFade = hostNumber("tray.footFade", opts.tray?.footFade);
     const cursors = opts.cursors !== false;   // the host's word on the room's other people (I26), told it on the handle
     const canvas = doc.createElement("canvas");
     canvas.style.position = "absolute";
@@ -899,7 +898,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       attach: { resize: (w, h) => { if (canvas.width !== w || canvas.height !== h) { canvas.width = w; canvas.height = h; } } },
       theme: opts.theme, palette: opts.palette, grid, locals,
       ...(opts.maxDpr !== undefined ? { maxDpr: opts.maxDpr } : {}),
-      ...(foot !== undefined ? { tray: { foot } } : {}),
+      ...(foot !== undefined || footFade !== undefined ? { tray: { ...(foot !== undefined ? { foot } : {}), ...(footFade !== undefined ? { footFade } : {}) } } : {}),
       ...(opts.name !== undefined ? { name: opts.name } : {}),
       // a frame asked for outside the flush — a pin, an ink landing, the ground arriving, a theme: a sleeping loop wakes (K7a)
       onWake: (reason) => frame?.wake(`desk:${reason}`),
@@ -1390,8 +1389,8 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         },
         state: () => ({
           ...compose.tray.state(), frame: compose.tray.frame(), laid: ground?.tray?.laid ?? null,
-          // K5a: the specimens as the last frame drew them — each on screen, its pegs on screen, the scale its kind drew it at — its tags, its slots
-          specimens: compose.traySpecimens().map((f) => ({ type: f.type, kind: f.kind, label: f.label, accessory: f.accessory, screen: f.screen, pegs: f.pegs, zoom: f.view.zoom, object: f.object })),
+          // K5a: the specimens as the last frame drew them — each on screen, the scale its kind drew it at — its tags, its slots
+          specimens: compose.traySpecimens().map((f) => ({ type: f.type, kind: f.kind, label: f.label, screen: f.screen, zoom: f.view.zoom, object: f.object })),
           tags: ground?.marks?.tagsLaid.length ?? 0,
           slots: ground?.traySlots?.size ?? 0,
           // K5b: what the tray carried last frame — the copy, a ghost growing or flying home — and the ghosts it drew for the desk

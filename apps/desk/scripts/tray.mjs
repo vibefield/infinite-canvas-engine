@@ -27,7 +27,7 @@ import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 import { decodePng } from "./png.mjs";
 import { hostLoad, median, minOf, watchdog } from "./timing.mjs";
-import { layTray, PEG_LATTICE } from "../../../packages/kernel/src/tray.ts";
+import { layTray } from "../../../packages/kernel/src/tray.ts";
 import { carry, cellOf, holeSdf, pointAt, punched } from "../../../packages/desk/src/tray/lattice.ts";
 import { contentShown, DRAWER } from "../../../packages/desk/src/tray/drawer.ts";
 
@@ -528,11 +528,7 @@ try {
   const placedOk = want.placed.every((p) => held.some((h) => h.type === p.type && h.x === p.x && h.y === p.y && h.w === p.w && h.h === p.h));
   check(held.length === 6 && want.placed.length === 6 && placedOk && held.every((h) => !h.active && !h.selected && !h.durable),
     `the world holds ${held.length} specimens, each at its lattice place (${held.map((h) => `${h.type.replace("desk.", "")} ${h.x},${h.y}`).join(" · ")}) — none Active, selected or durable`);
-  // S2. every peg on a punched hole's centre, as drawn: back from the screen to the board (the frame's x, top and shown scroll)
   s = await tray();
-  const pegs = s.specimens.flatMap((q) => q.pegs.map(([x, y]) => [(x - s.frame.x) / 40, (y - s.frame.y + s.frame.scroll) / 40]));
-  const onHole = ([x, y]) => { const r = Math.round(y - PEG_LATTICE.rowPhase); const c = x - PEG_LATTICE.colPhase - ((r & 1) !== 0 ? 0.5 : 0); return Math.abs(y - PEG_LATTICE.rowPhase - r) < 1e-9 && Math.abs(c - Math.round(c)) < 1e-9 && x >= PEG_LATTICE.border && x <= s.frame.w / 40 - PEG_LATTICE.border; };
-  check(pegs.length >= 6 && pegs.every(onHole), `every peg on a punched hole's centre: ${pegs.length} pegs of ${s.specimens.length} specimens in view (${pegs.slice(0, 4).map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ")} …)`);
   // S3. the scroll's range is the laid content's: its foot plus a pitch less the face (K3's 26-row stub retired)
   check(s.frame.max === s.facts.bottom + 40 - 352 && s.facts.bottom === want.bottom, `the range ${s.frame.max} px = the content's foot ${s.facts.bottom} + 40 − the face 352 (the whole drawer: its face runs to the outline — design-018 §2; the law's foot ${want.bottom})`);
   // S4. each is drawn by its own kind: its rect on screen is far from the bare board there — at the top, and scrolled to the end
@@ -663,7 +659,7 @@ try {
   const pOpen = await plug.evaluate("window.__desk.tray.isOpen()", { timeoutMs: 20000 });
   const plugFaults = await plug.evaluate("window.__desk.faults ?? []", { timeoutMs: 20000 });
   await plug.close?.();
-  check(plugHeld.length === 7 && plugOn !== undefined && plugWant !== undefined && plugOn.x === plugWant.x && plugOn.y === plugWant.y && plugDrawn?.kind === "paper" && plugDrawn.accessory === "clip" && plugFaults.length === 0 && held.every((h) => h.type !== "rig.swatch"),
+  check(plugHeld.length === 7 && plugOn !== undefined && plugWant !== undefined && plugOn.x === plugWant.x && plugOn.y === plugWant.y && plugDrawn?.kind === "paper" && plugFaults.length === 0 && held.every((h) => h.type !== "rig.swatch"),
     `a plugin kind by its entry alone: with it registered the world holds ${plugHeld.length} (rig.swatch at ${plugOn?.x},${plugOn?.y} — the law's ${plugWant?.x},${plugWant?.y}), drawn by its kind on its clip; without it, none (${held.length})`);
   check(pMade.length === 1 && pMade[0].type === "rig.swatch" && pMade[0].selected && pUndo === true && pGone,
     `…and TAKEN as the built-ins are (K5b): dragged off its clip to the desk, one made (${pMade.map((m) => `${m.type}${m.selected ? ", selected" : ""}`).join(" · ") || "none"}), one undo step takes it back (${pUndo}, gone ${pGone})`);
@@ -686,7 +682,7 @@ try {
   const plain = rounds.map((r) => r.bare.ms);
   const bare = rounds.map((r) => r.closed.ms);
   const aloneBare = rounds.map((r) => r.aloneBare.ms);
-  check(minOf(aloneBare) <= 0.3, `the drawer's GPU cost at 2400 × 1600, open: the board alone ${minOf(aloneBare).toFixed(3)} ms, the minimum of 7 warm rounds (≤ 0.3; median ${median(aloneBare).toFixed(3)}) · with its six accessories ${minOf(alone).toFixed(3)} (median ${median(alone).toFixed(3)}); whole frames open with the specimens ${minOf(whole).toFixed(3)} (${median(whole).toFixed(3)}) · open bare ${minOf(plain).toFixed(3)} (${median(plain).toFixed(3)}) — the specimens Δ ${(minOf(whole) - minOf(plain)).toFixed(3)} · closed ${minOf(bare).toFixed(3)} ms · load ${hostLoad()}`);
+  check(minOf(aloneBare) <= 0.3, `the drawer's GPU cost at 2400 × 1600, open: the board alone ${minOf(aloneBare).toFixed(3)} ms, the minimum of 7 warm rounds (≤ 0.3; median ${median(aloneBare).toFixed(3)}) · with its specimens ${minOf(alone).toFixed(3)} (median ${median(alone).toFixed(3)}); whole frames open with the specimens ${minOf(whole).toFixed(3)} (${median(whole).toFixed(3)}) · open bare ${minOf(plain).toFixed(3)} (${median(plain).toFixed(3)}) — the specimens Δ ${(minOf(whole) - minOf(plain)).toFixed(3)} · closed ${minOf(bare).toFixed(3)} ms · load ${hostLoad()}`);
   await settle();
 
   // 10. the night: the Moon on the board, the desk dimmed 40 %
@@ -1171,9 +1167,7 @@ try {
       let steep = 0; for (let i = 4; i < vis.length; i++) if (Number.isFinite(vis[i]) && Number.isFinite(vis[i - 4])) steep = Math.max(steep, (vis[i] - vis[i - 4]) / 4);
       fades.push({ type: s.type, above, quarter, off: Math.max(...quarter.map((v, k) => Math.abs(v - want4[k]))), steep, rows: vis.filter(Number.isFinite).length });
     }
-    // …and the TAGS and the ACCESSORIES take the same ramp (in the marks' tag draw, in `tray_accessory`): the photo's tag, then its
-    // clip, laid across the header's foot (its centre 8 px below it) — nothing of it in the header's last 6 px, and the rows 1…15 px
-    // below its foot, read as above, against the ramp
+    // The label tape follows the same fade as its specimen across the header ramp.
     const partRamp = async (type, locate) => {
       await fq("window.__desk.tray.pin({ p: 1, band: 0 })"); await fsettle();
       const st0 = await fq("window.__desk.tray.state()");
@@ -1204,8 +1198,7 @@ try {
       return { type, rows: got.length, got: mean(got), want: mean(exp), above };
     };
     const P = 40;
-    const tagFade = await partRamp("desk.photo", (st) => { const sp = st.specimens.find((q) => q.type === "desk.photo"); return sp === undefined ? null : { x: (sp.screen.x0 + sp.screen.x1) / 2, y: sp.screen.y1 + (sp.accessory === "shelf" ? 0.24 * P : 0) + 0.45 * P, hw: 12 }; });
-    const accFade = await partRamp("desk.photo", (st) => { const sp = st.specimens.find((q) => q.type === "desk.photo"); const peg = sp?.pegs[0]; return peg === undefined ? null : { x: peg[0], y: peg[1], hw: 9 }; });   // the clip's body either side of its hole
+    const tagFade = await partRamp("desk.photo", (st) => { const sp = st.specimens.find((q) => q.type === "desk.photo"); return sp === undefined ? null : { x: (sp.screen.x0 + sp.screen.x1) / 2, y: sp.screen.y1 + 0.45 * P, hw: 12 }; });
     const partOk = (r) => r !== null && r.rows >= 8 && Math.abs(r.got - r.want) < 0.15 && r.above < 1;
     // (f) NO HOLE SHOWS THROUGH WHAT HANGS IN THE RAMP (design-018 rev 5 — James, 2026-09-28: "at the edge fading, somehow the holes are
     //     displayed on top of objects"): the note laid across the ramp (its top 2 px under the header's foot); each device row of the ramp
@@ -1241,8 +1234,8 @@ try {
     await fq("window.__desk.tray.pin(null)");
     await ft.close?.();
     const fadeOk = (r) => !r.missing && r.above < 1 && r.rows >= 40 && r.quarter[0] < r.quarter[1] && r.quarter[1] < r.quarter[2] && r.quarter[2] < r.quarter[3] && r.off < 0.12 && r.steep < 0.07;
-    check(fades.length >= 7 && fades.some((r) => r.type === "ice-examples.desk-clock") && fades.every(fadeOk) && partOk(tagFade) && partOk(accFade),
-      `the fade: each kind straddling the header's foot is gone in the header and fades in over the ${F} px below it on the smoothstep — ${fades.map((r) => (r.missing ? `${r.type} not drawn` : `${r.type.replace(/^.*\./, "")} ${r.quarter.map((v) => v.toFixed(2)).join("·")} (off ${r.off.toFixed(2)}, steepest ${(r.steep * 100).toFixed(1)} %/row, in the header ${r.above.toFixed(0)})`)).join(" · ")} — its quarters of the same content shown whole; the print's tag ${tagFade?.got.toFixed(2)} and its clip ${accFade?.got.toFixed(2)} across the ramp's first 15 px (the ramp there ${tagFade?.want.toFixed(2)}, ${accFade?.want.toFixed(2)}; ${tagFade?.rows}, ${accFade?.rows} rows; in the header ${tagFade?.above.toFixed(0)}, ${accFade?.above.toFixed(0)})`);
+    check(fades.length >= 7 && fades.some((r) => r.type === "ice-examples.desk-clock") && fades.every(fadeOk) && partOk(tagFade),
+      `the fade: each kind straddling the header's foot is gone in the header and fades in over the ${F} px below it on the smoothstep — ${fades.map((r) => (r.missing ? `${r.type} not drawn` : `${r.type.replace(/^.*\./, "")} ${r.quarter.map((v) => v.toFixed(2)).join("·")} (off ${r.off.toFixed(2)}, steepest ${(r.steep * 100).toFixed(1)} %/row, in the header ${r.above.toFixed(0)})`)).join(" · ")} — its quarters of the same content shown whole; the print's tag ${tagFade?.got.toFixed(2)} across the ramp's first 15 px (the ramp there ${tagFade?.want.toFixed(2)}; ${tagFade?.rows} rows; in the header ${tagFade?.above.toFixed(0)})`);
     check(through.rows >= 10 && through.worst < 3,
       `no hole shows through what hangs in the ramp: the note laid across it, ${through.rows} device rows read inside it — over a punched hole and over the face one colour a row (worst |Δ| ${through.worst.toFixed(1)} of luminance)`);
   }
