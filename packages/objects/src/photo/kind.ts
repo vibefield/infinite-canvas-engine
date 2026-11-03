@@ -456,7 +456,8 @@ export function photoKind(opts: PhotoKindOptions = {}): ObjectKind<PhotoGeometry
     },
     record(G: PhotoGeometry, ctx: ObjectContext): PhotoInstance {
       const { w, h } = extentOf(ctx);
-      const border = borderOf(w / 2, h / 2, { ...law, border: numberProp(ctx.props, "border", law.border) });
+      // Saved border props predate edge-to-edge prints. The host's law styles old and new images alike.
+      const border = borderOf(w / 2, h / 2, law);
       const prints = ctx.local as Prints | undefined;
       const picture = prints?.pictureFor(ctx.entity, stringProp(ctx.props, "blob", ""), numberProp(ctx.props, "width", 0), numberProp(ctx.props, "height", 0)) ?? null;
       return { geometry: G, border, picture };

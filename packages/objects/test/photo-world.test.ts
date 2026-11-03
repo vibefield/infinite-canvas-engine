@@ -66,6 +66,15 @@ describe("the Photo object (design-015 §6)", () => {
 });
 
 describe("the print's world half = the oracle's `printOf` (parity by construction)", () => {
+  it("fills old and new prints edge to edge even when a saved print has a white border", () => {
+    for (const border of [undefined, 0.05]) {
+      const ctx = ctxOf({ x: 520, y: 330 }, { props: { width: META.w, height: META.h, border } });
+      const record = kind.record(kind.resolve(ctx), ctx);
+      expect(record.border).toBe(0);
+      expect(record.geometry.half[0] / record.geometry.half[1]).toBeCloseTo(META.w / META.h, 10);
+    }
+  });
+
   it("at rest, turned, by the scene's numbers: the geometry and the border, number for number (the extent is the picture's aspect, exact — never the f32 Size)", () => {
     for (const name of ["photo-rest-z1", "photo-night-z1"]) {
       const p = must((sceneOf<{ prints: Print[] }>(name).prints)[0]);
