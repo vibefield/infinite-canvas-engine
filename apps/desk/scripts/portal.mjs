@@ -46,7 +46,7 @@ try {
   const png = async () => { await tab.send("Page.bringToFront"); await settle(); return (await tab.send("Page.captureScreenshot", { format: "png", optimizeForSpeed: true })).data; };
   const land = async () => { let w = 0; while (w < 4000) { await sleep(50); w += 50; if (!(await q("window.__desk.flight()"))) return true; } return false; };
   const frame = () => q("(() => { const s = window.__desk.stats(); return { portals: s.frame ? s.frame.portals : -1, outgoing: s.frame ? s.frame.outgoing !== null : null, objects: s.objects, live: s.live }; })()");
-  const wheel = (x, y, dy) => tab.send("Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX: 0, deltaY: dy });
+  const wheel = (x, y, dy) => tab.send("Input.dispatchMouseEvent", { type: "mouseWheel", x, y, deltaX: 0, deltaY: dy, modifiers: 2 });
   /** Zoom about the screen point (x, y) to `zoom` — the prototype's `zoomAt`. */
   const zoomAt = (x, y, zoom) => q(`(() => { const c = window.__desk.camera(); const wx = c.x + ${x} / c.zoom, wy = c.y + ${y} / c.zoom; window.__desk.setCamera({ x: wx - ${x} / ${zoom}, y: wy - ${y} / ${zoom}, zoom: ${zoom} }); })()`);
   const still = { time: 3.7, goboTime: 57.14, noise: [0.37, 0.61] };

@@ -7,7 +7,7 @@
 //   · a TAP puts the editor on the note: the one screen-space textarea, its rect the sheet's screen rect;
 //   · keys through the platform land in the note LIVE (the document untouched until the session ends), the pen's
 //     wipe runs 110 ms and ends, the caret stands after the glyph and blinks — and nothing else draws;
-//   · a tap between two glyphs puts the caret between them; the editor follows a pan and a wheel zoom;
+//   · a tap between two glyphs puts the caret between them; the editor follows a pan and a pinch zoom;
 //   · the hand-off: the sheet before the focus and after the blur (its text put back) differs on 0 px;
 //   · typing is a GESTURE: 1 s without input commits the session (the focus stays), Escape commits it,
 //     ⌘Z takes a session back in ONE step, ⇧⌘Z redoes it;
@@ -188,18 +188,18 @@ try {
   const caret3 = await q("window.__desk.note.caret()");
   check(caret3?.index === 1 && (await q("window.__desk.note.editing()")) === id, `a tap between "h" and "i" puts the pen there: caret index ${caret3?.index}`);
 
-  // the editor follows the camera: a pan, then a wheel zoom about the pointer — its rect stays the sheet's
+  // the editor follows the camera: a pan, then a pinch zoom about the pointer — its rect stays the sheet's
   await q(`window.__desk.setCamera({ x: ${cam.x + 25}, y: ${cam.y}, zoom: ${cam.zoom} })`);
   await sleep(120);
   const r1 = await q("window.__desk.note.editorRect()");
   const box1 = await sheetBox(id);
   check(near(r1.x - r0.x, -25 * cam.zoom, 0.75) && sameBox(r1, box1), `a 25-unit pan at zoom ${cam.zoom} moves the editor ${(r1.x - r0.x).toFixed(1)} px (${(-25 * cam.zoom).toFixed(1)} expected) — still the sheet's rect`);
-  await tab.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: box1.cx, y: box1.cy, deltaX: 0, deltaY: -240 });
+  await tab.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: box1.cx, y: box1.cy, deltaX: 0, deltaY: -40, modifiers: 2 });
   await sleep(250);
   const cam2 = await q("window.__desk.camera()");
   const r2 = await q("window.__desk.note.editorRect()");
   const box2 = await sheetBox(id);
-  check(cam2.zoom > cam.zoom * 1.1 && sameBox(r2, box2) && (await q("window.__desk.note.editorFocused()")), `a wheel zoom (×${(cam2.zoom / cam.zoom).toFixed(3)}) keeps the editor on the sheet: ${fmt(r2)} vs ${fmt(box2)}, still focused`);
+  check(cam2.zoom > cam.zoom * 1.1 && sameBox(r2, box2) && (await q("window.__desk.note.editorFocused()")), `a pinch zoom (×${(cam2.zoom / cam.zoom).toFixed(3)}) keeps the editor on the sheet: ${fmt(r2)} vs ${fmt(box2)}, still focused`);
 
   // the hand-off: erase back to nothing (the pen to the end of the line first), Escape — the sheet is the still it was
   await key("End");
