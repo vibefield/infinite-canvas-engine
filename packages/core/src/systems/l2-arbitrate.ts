@@ -43,6 +43,7 @@ import {
   Keyboard,
   LongPress,
   Movable,
+  MovesSelection,
   Pinch,
   Pointer,
   PointerButtons,
@@ -215,7 +216,7 @@ export function createArbitrationSystems(world?: World): { arbitration: TickSyst
           // A press on a card program's PART (design-014, B3b) is a click on a control, never a move.
           const onPart = (ctx.get(e, DownPart)?.part ?? "") !== "";
           if (route === "move") {
-            if (!onPart && tool.gates.movable && ctx.hasTag(captured, Movable)) ctx.addTag(e, RoutedMove);
+            if (!onPart && tool.gates.movable && (ctx.hasTag(captured, Movable) || ctx.hasTag(e, MovesSelection))) ctx.addTag(e, RoutedMove);
           } else if (!onPart) {
             const t = routeTag(route);
             if (t !== undefined) ctx.addTag(e, t);
@@ -231,13 +232,14 @@ export function createArbitrationSystems(world?: World): { arbitration: TickSyst
         if (spaceHeld || middleButton || touch) {
           ctx.addTag(e, RoutedPan); // one-finger touch pans (Freeform default)
         } else {
-          // Shift takes the tool's shift route (design-015 §9, D-D11): the desk's
-          // select tool pans the bare mat and draws the marquee on shift. It is the
-          // tool's own canvasDrag unless declared, so every other tool is unchanged
+          // Shift takes the tool's shift route. It is the tool's own canvasDrag
+          // unless declared, so a selection tool still marquees while Shift adds
+          // to its selection; custom tools may choose a different route
           // (`??` for a Tool assembled outside defineTool).
           const shift = pointer !== undefined && ctx.get(pointer, PointerMods)?.shift === true;
           const route = shift ? (tool.route.canvasDragShift ?? tool.route.canvasDrag) : tool.route.canvasDrag;
-          const t = routeTag(route);
+          const t = ctx.hasTag(e, MovesSelection) && tool.gates.movable && tool.route.widgetDrag === "move" && route === "marquee"
+            ? RoutedMove : routeTag(route);
           if (t !== undefined) ctx.addTag(e, t);
         }
       }

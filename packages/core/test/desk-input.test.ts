@@ -18,6 +18,7 @@ import {
   ActiveTool,
   Camera,
   CameraLimits,
+  CameraZoomStep,
   Drag,
   FrameInfo,
   GESTURE_DEFAULTS,
@@ -35,10 +36,14 @@ import {
 import { createCameraSystems } from "../src/systems/camera-sim";
 import { createTraceRig } from "./trace/rig";
 
-function cameraRig(opts: { wheel?: "pan" | "zoom"; zoom?: number } = {}) {
+function cameraRig(opts: { wheel?: "pan" | "zoom"; curve?: "clamped" | "exponential"; zoom?: number } = {}) {
   const rig = createTraceRig();
   rig.world.setResource(Camera, { x: 0, y: 0, zoom: opts.zoom ?? 1, gesturing: false });
-  if (opts.wheel !== undefined) rig.world.setResource(GestureSettings, { ...GESTURE_DEFAULTS, wheel: opts.wheel });
+  if (opts.wheel !== undefined || opts.curve !== undefined) rig.world.setResource(GestureSettings, {
+    ...GESTURE_DEFAULTS,
+    wheel: opts.wheel ?? "pan",
+    wheelZoomCurve: opts.curve ?? (opts.wheel === "zoom" ? "exponential" : "clamped"),
+  });
   const cam = createCameraSystems(rig.world);
   rig.engine.addSystems("ctl:behave", cam.cameraControl);
   rig.engine.addSystems("simulate", cam.cameraInertia, cam.tweenSystem);
@@ -75,7 +80,7 @@ describe("the wheel mode — 'pan' is today, byte for byte (design-015 §9)", ()
   });
 });
 
-describe("the wheel mode — 'zoom' is the desk's law (design-015 §9, D-D11)", () => {
+describe("optional scroll-to-zoom retains the original desk response", () => {
   it("a plain wheel's Δy zooms about the pointer by exp(−Δy·0.0016); the anchor's world point holds", () => {
     const rig = cameraRig({ wheel: "zoom" });
     const before = camera(rig.world);
@@ -154,7 +159,7 @@ describe("WheelZoomStep — this frame's wheel zoom, one-tick and change-only (d
 describe("the facade wires the wheel through settings.gestures (design-015 §9)", () => {
   it("createCanvasEngine({ settings: { gestures: { wheel, wheelZoomRate } } }) seeds GestureSettings, and a wheel zooms", () => {
     const ce = createCanvasEngine({ settings: { gestures: { wheel: "zoom", wheelZoomRate: 0.002 } } });
-    expect(ce.world.getResource(GestureSettings)).toMatchObject({ wheel: "zoom", wheelZoomRate: 0.002 });
+    expect(ce.world.getResource(GestureSettings)).toMatchObject({ wheel: "zoom", wheelZoomRate: 0.002, wheelZoomCurve: "exponential" });
     ce.stack.queue.enqueue({
       kind: "wheel",
       pointerId: "mouse",
@@ -230,5 +235,60 @@ describe("ToolRoute.canvasDragShift — pan the mat, marquee on shift (design-01
     expect(routeOf("select", { shift: true })).toBe("marquee");
     expect(routeOf("pan")).toBe("pan");
     expect(routeOf("pan", { shift: true })).toBe("pan");
+  });
+});
+
+describe("pinch curve and user zoom observation", () => {
+  it("applies pan and pinch deltas even when they arrive in the same frame", () => {
+    const rig = cameraRig({ wheel: "pan", curve: "exponential" });
+    rig.wheel(400, 300, 20, 40);
+    rig.wheel(400, 300, 0, 0, -80);
+    rig.step();
+    const expected = zoomAtPoint({ x: 20, y: 40, zoom: 1 }, 400, 300, deskFactor(-80));
+    expect(camera(rig.world)).toMatchObject(expected);
+  });
+
+  it("keeps pinch sensitivity independent of scroll mode and event batching", () => {
+    const together = cameraRig({ wheel: "pan", curve: "exponential" });
+    const apart = cameraRig({ wheel: "zoom", curve: "exponential" });
+    for (let n = 0; n < 4; n++) {
+      together.wheel(400, 300, 0, 0, -8);
+      apart.wheel(400, 300, 0, 0, -8);
+      apart.step();
+    }
+    together.step();
+    expect(camera(together.world).zoom).toBeCloseTo(camera(apart.world).zoom, 12);
+    expect(camera(together.world).zoom).toBeCloseTo(Math.exp(32 * 0.0016), 12);
+  });
+
+  it("records gesture zoom once, without interpreting idle frames, pan or programmatic zoom as input", () => {
+    const rig = cameraRig({ wheel: "pan", curve: "exponential" });
+    rig.world.resourceStamp(CameraZoomStep);
+    rig.wheel(400, 300, 30, 40);
+    rig.step();
+    expect(rig.world.getResource(CameraZoomStep)).toBeUndefined();
+    rig.wheel(400, 300, 0, 0, -30);
+    rig.step();
+    expect(rig.world.getResource(CameraZoomStep)).toEqual({ from: 1, to: camera(rig.world).zoom, tick: rig.world.getResource(FrameInfo)?.tick });
+    const stamp = rig.world.resourceStamp(CameraZoomStep);
+    rig.step(20);
+    rig.world.setResource(Camera, { x: 0, y: 0, zoom: 3, gesturing: false });
+    rig.step();
+    expect(rig.world.resourceStamp(CameraZoomStep)).toBe(stamp);
+  });
+
+  it("reports touch pinch zoom as well as trackpad zoom", () => {
+    const rig = cameraRig();
+    rig.down("touch:1", 300, 300);
+    rig.down("touch:2", 500, 300);
+    rig.step();
+    rig.move("touch:2", 530, 300);
+    rig.step();
+    rig.move("touch:2", 580, 300);
+    rig.step();
+    const zoom = rig.world.getResource(CameraZoomStep);
+    expect(zoom).toBeDefined();
+    if (zoom === undefined) throw new Error("touch pinch emitted no zoom step");
+    expect(zoom.to).toBeGreaterThan(zoom.from);
   });
 });

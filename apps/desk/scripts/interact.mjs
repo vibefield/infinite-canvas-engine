@@ -6,8 +6,8 @@
 // intermediate frames; a hovered mini mat RISES (Q-j); a dragged note lifts while held, lands where
 // it was let go with its Position committed in ONE undo step, and ⌘Z restores it; ⌫ fades the
 // note out over 220 ms (a ghost, no entity) and the entity is gone — ⌘Z brings it back; shift-drag
-// on the bare mat draws the marquee and selects both notes; the wheel zooms about the pointer by
-// exp(−Δ · 0.0016) with the world point under it fixed; a bare drag pans; a click on the bare mat
+// on the bare mat draws the marquee and selects both notes; ordinary wheel scrolling pans, pinch
+// zooms by exp(−Δ · 0.01) about the pointer, a bare drag marquees, Space-drag pans; a click on the bare mat
 // deselects. D4a (*Marks on the Mat*, the desk's chrome on the GPU): a selection wears BRACKETS (the marks pass) and its
 // note no ring; the screen-space selection menu stands 10 px above them and steps aside during a drag, back 200 ms after;
 // a snap lights the laser along the aligned edge; the vellum draws, touches, then folds onto the union; a taped note refuses
@@ -152,30 +152,39 @@ try {
   const sel = await q("window.__desk.entities().filter((e) => e.selected).map((e) => e.type)");
   check(sel.length === 2 && sel.every((t) => t === "desk.note"), `shift-drag marquee selects the two notes (${sel.join(", ")})`);
 
-  // --- 6. the wheel zooms about the pointer by exp(−Δ · 0.0016): the world point under it stays put. Chrome hands a CDP
-  //     mouseWheel to the page DIVIDED by the emulated deviceScaleFactor (−120 → a DOM deltaY of −60 at dpr 2), so the law is
-  //     witnessed against the delta the page received, which is what the engine's WheelPan carries.
+  // --- 6. native scroll pans; Ctrl-wheel represents a trackpad pinch. CDP wheel deltas arrive divided by dpr.
   await q("window.__wheels = []; addEventListener('wheel', (e) => window.__wheels.push(e.deltaY), { capture: true, passive: true })");
-  const cam0 = await q("window.__desk.camera()");
-  const under0 = { x: cam0.x + 600 / cam0.zoom, y: cam0.y + 400 / cam0.zoom };
+  const beforeScroll = await q("window.__desk.camera()");
   await tab.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: 600, y: 400, deltaX: 0, deltaY: -120 });
+  await sleep(250);
+  const scrollDelta = await q("window.__wheels.reduce((sum, dy) => sum + dy, 0)");
+  const cam0 = await q("window.__desk.camera()");
+  check(scrollDelta < 0 && near(cam0.zoom, beforeScroll.zoom) && near(cam0.x, beforeScroll.x) && near(cam0.y - beforeScroll.y, scrollDelta / beforeScroll.zoom, 1e-4), "ordinary wheel scrolling pans by its native delta and preserves zoom");
+  await q("window.__wheels = []");
+  const under0 = { x: cam0.x + 600 / cam0.zoom, y: cam0.y + 400 / cam0.zoom };
+  await tab.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: 600, y: 400, deltaX: 0, deltaY: -24, modifiers: 2 });
   await sleep(250);
   const wheels = await q("window.__wheels");
   const dY = wheels.reduce((acc, v) => acc + v, 0);
   const cam1 = await q("window.__desk.camera()");
   const under1 = { x: cam1.x + 600 / cam1.zoom, y: cam1.y + 400 / cam1.zoom };
-  check(wheels.length >= 1 && dY < 0 && near(cam1.zoom, cam0.zoom * Math.exp(-dY * 0.0016), 1e-4), `a wheel the page received as Δy ${dY} (CDP sent −120; Chrome divides by the dpr) zooms ×${(cam1.zoom / cam0.zoom).toFixed(4)} = exp(${(-dY * 0.0016).toFixed(4)})`);
+  check(wheels.length >= 1 && dY < 0 && near(cam1.zoom, cam0.zoom * Math.exp(-dY * 0.01), 1e-4), `a pinch the page received as Δy ${dY} zooms ×${(cam1.zoom / cam0.zoom).toFixed(4)} = exp(${(-dY * 0.01).toFixed(4)})`);
   check(near(under1.x, under0.x, 1e-3) && near(under1.y, under0.y, 1e-3), `about the pointer: the world point under it stayed (${under1.x.toFixed(2)}, ${under1.y.toFixed(2)})`);
 
-  // --- 7. a bare drag pans: the camera moves against the finger by Δ/zoom
+  // --- 7. a primary drag marquees; Space-drag explicitly pans against the finger by Δ/zoom.
   const cam2 = await q("window.__desk.camera()");
   await drag([100, 700], [150, 740], {}, 8);
   await sleep(200);
+  const afterMarquee = await q("window.__desk.camera()");
+  check(near(afterMarquee.x, cam2.x) && near(afterMarquee.y, cam2.y) && near(afterMarquee.zoom, cam2.zoom), "a primary drag on empty canvas leaves the camera fixed");
+  await tab.send("Input.dispatchKeyEvent", { type: "keyDown", key: " ", code: "Space", windowsVirtualKeyCode: 32 });
+  await drag([100, 700], [150, 740], {}, 8);
+  await tab.send("Input.dispatchKeyEvent", { type: "keyUp", key: " ", code: "Space", windowsVirtualKeyCode: 32 });
+  await sleep(200);
   const cam3 = await q("window.__desk.camera()");
-  // against the finger by Δ/zoom, less the slop's samples (the same dead band as a move: the pan claims on the tick after 10 px)
   const dx = (cam3.x - cam2.x) * cam2.zoom;
   const dy = (cam3.y - cam2.y) * cam2.zoom;
-  check(dx < 0 && dy < 0 && near(dx / dy, 50 / 40, 0.02) && -dx <= 50 && -dx >= 50 * 0.5, `a drag on the bare mat pans against the finger: ${(-dx).toFixed(1)} of 50 px by ${(-dy).toFixed(1)} of 40 (ratio ${(dx / dy).toFixed(3)}), i.e. (${(cam3.x - cam2.x).toFixed(2)}, ${(cam3.y - cam2.y).toFixed(2)}) world at zoom ${cam2.zoom.toFixed(3)}`);
+  check(dx < 0 && dy < 0 && near(dx / dy, 50 / 40, 0.02) && -dx <= 50 && -dx >= 50 * 0.5, `Space-drag pans against the finger: ${(-dx).toFixed(1)} of 50 px by ${(-dy).toFixed(1)} of 40 (ratio ${(dx / dy).toFixed(3)})`);
   check(near(cam3.zoom, cam2.zoom), "a pan keeps the zoom");
 
   // --- 8. a click on the bare mat deselects
@@ -410,8 +419,8 @@ try {
   const flight8 = await q("window.__desk.flight()");
   await land();
   await settle();
-  // the entered camera off its 1:1 arrival by a real wheel (in, about a point off the note), so the witness sees its zoom too
-  await tab.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: 500, y: 330, deltaX: 0, deltaY: -240 });
+  // Move the entered camera off its 1:1 arrival by a pinch about a point off the note.
+  await tab.send("Input.dispatchMouseEvent", { type: "mouseWheel", x: 500, y: 330, deltaX: 0, deltaY: -40, modifiers: 2 });
   await sleep(250);
   await settle();
   const camClick = await q("window.__desk.camera()");
@@ -616,7 +625,7 @@ try {
     //     host's listener still hears it and `handle.pick` names what is there — the press is a POINT; a primary click on a note
     //     then does both (the control: the editor check can see one), and with the editor on a right-click on the bare mat still
     //     CLOSES it (its lease ends on the blur the press brings) while keeping the selection. Then, the mat's clocks pinned and the
-    //     pointer parked on the bare mat, a right drag on a note, a right drag on the bare mat (which a primary drag pans), a middle
+    //     pointer parked on the bare mat, a right drag on a note, a right drag on the bare mat (where Space-drag pans), a middle
     //     click and a middle drag on the note: the still is byte-identical before and after — nothing moved, nothing panned, nothing
     //     selected — and no commit left the tab. Each press is sent as the hardware sends it (`buttons` with `button`), and the page's
     //     own pointerdowns say so.

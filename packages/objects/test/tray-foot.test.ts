@@ -1,7 +1,7 @@
 // @vitest-environment node
 // THE DRAWER'S FOOT on the real layer (petition I21 — `deskLayer({ tray: { foot } })`), over the fake device (`desk-mount.ts`) with the
-// six hung: the drawer as drawn names the host's foot to core and grows the scroll's range by it, the pass laid it, and scrolled to
-// the range's end the last line of the six hangs whole a pitch above the foot's line — every specimen drawn above it. Without the
+// five creatable objects hung: the drawer as drawn names the host's foot to core and grows the scroll's range by it, the pass laid it, and scrolled to
+// the range's end the last line hangs whole a pitch above the foot's line — every specimen drawn above it. Without the
 // option the frame names no foot and the range is 0.14.0's.
 import { afterEach, describe, expect, it } from "vitest";
 import { DRAWER } from "@ice/desk";
@@ -18,7 +18,7 @@ async function run(d: DeskMount, ms = 500): Promise<void> {
 }
 
 describe("the drawer's foot on the layer (petition I21)", () => {
-  it("the drawer as drawn names the host's foot and a range grown by it; at its end the six's last line hangs whole a pitch above the foot's line", async () => {
+  it("the drawer as drawn names the host's foot and a range grown by it; at its end the last row's whiteboard hangs whole a pitch above the foot's line", async () => {
     desk = await mountDesk(undefined, { frameMs: FRAME_MS, layer: { tray: { foot: 88 } } });
     const door = desk.handle.tray;
     desk.toSleep();
@@ -37,7 +37,7 @@ describe("the drawer's foot on the layer (petition I21)", () => {
     await run(desk, 200);
     const drawn = door.state().specimens;
     const lowest = Math.max(...drawn.map((q) => q.screen.y1));
-    expect(drawn.length).toBeGreaterThanOrEqual(2);
+    expect(drawn.map((q) => q.type)).toEqual(["desk.board"]);
     expect(lowest).toBeLessThanOrEqual(line - DRAWER.pitch);   // the last line reached, whole, clear of the foot and its ramp
   });
 

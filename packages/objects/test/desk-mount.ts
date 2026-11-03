@@ -1,8 +1,9 @@
 // A DESK as a host mounts it, in Node (K7a): the desk layer on a fake device (every render pass it begins logged into `log`, a
-// texture's make and destroy counted), over an engine with the six objects, the engine's frame gate handed in — and stepped as the
-// SLEEPING loop steps it (a step, then `nextStep`). The objects' DOM halves mount on a page whose elements take anything.
+// texture's make and destroy counted), over an engine with the six objects (and any of a test's own beside them, as a plugin's),
+// the engine's frame gate handed in — and stepped as the SLEEPING loop steps it (a step, then `nextStep`). The objects' DOM halves
+// mount on a page whose elements take anything.
 
-import { createCanvasEngine, Viewport } from "@ice/core";
+import { createCanvasEngine, Viewport, type WidgetType } from "@ice/core";
 import { vi } from "vitest";
 import { deskLayer, type DeskLayerHandle, type DeskLayerOptions } from "@ice/desk";
 import { DESK_ENGINE, DESK_OBJECTS, deskPalette, deskTheme } from "../src";
@@ -25,7 +26,7 @@ export interface DeskMount {
   dispose(): void;
 }
 
-export async function mountDesk(view: { readonly w: number; readonly h: number; readonly dpr: number } = { w: 1200, h: 800, dpr: 1 }, opts: { readonly gpuLedger?: boolean; readonly frameMs?: number; readonly layer?: Pick<DeskLayerOptions, "hold" | "tray"> } = {}): Promise<DeskMount> {
+export async function mountDesk(view: { readonly w: number; readonly h: number; readonly dpr: number } = { w: 1200, h: 800, dpr: 1 }, opts: { readonly gpuLedger?: boolean; readonly frameMs?: number; readonly layer?: Pick<DeskLayerOptions, "hold" | "tray">; readonly objects?: readonly WidgetType[] } = {}): Promise<DeskMount> {
   const undo: (() => void)[] = [installGpuFlags()];
   const log: string[] = [];
   const { device } = fakeDevice(log);
@@ -58,10 +59,11 @@ export async function mountDesk(view: { readonly w: number; readonly h: number; 
   doc.createElement = (tag: string) => (tag === "canvas" ? canvas : element(tag));
   vi.stubGlobal("navigator", { gpu });
   undo.push(() => vi.unstubAllGlobals());
-  const ce = createCanvasEngine(DESK_ENGINE);
+  const own = opts.objects ?? [];
+  const ce = createCanvasEngine({ ...DESK_ENGINE, widgets: [...DESK_OBJECTS, ...own] });
   ce.docs.create();
   ce.world.setResource(Viewport, { w: view.w, h: view.h, dpr: view.dpr });
-  const handle = deskLayer({ gpu, theme: deskTheme("light"), palette: deskPalette("light"), objects: [...DESK_OBJECTS], docs: ce.docs, ...(opts.gpuLedger === true ? { gpuLedger: true } : {}), ...opts.layer })({ host: { container: page.container as unknown as HTMLElement }, world: ce.world, frame: ce.engine.frame, catalog: ce.catalog, trayPose: ce.stack.trayPose });
+  const handle = deskLayer({ gpu, theme: deskTheme("light"), palette: deskPalette("light"), objects: [...DESK_OBJECTS, ...own], docs: ce.docs, ...(opts.gpuLedger === true ? { gpuLedger: true } : {}), ...opts.layer })({ host: { container: page.container as unknown as HTMLElement }, world: ce.world, frame: ce.engine.frame, catalog: ce.catalog, trayPose: ce.stack.trayPose });
   undo.push(ce.engine.registerReflector(handle.reflector));
   for (let i = 0; i < 100 && handle.status().state === "pending"; i++) await new Promise((r) => setTimeout(r, 5));
   // the frame clock: the wall's, or (`frameMs`) a FRAME CLOCK of its own that each step advances by that much — a slide then spans the

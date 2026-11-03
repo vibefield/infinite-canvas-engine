@@ -22,24 +22,24 @@ async function run(d: DeskMount, ms = 500): Promise<void> {
 }
 
 describe("the tray door (design-018 §5–§6)", () => {
-  it("lists the six's categories and sets one — the drawer shows only its entries — falling back to all for an id no entry names", async () => {
+  it("lists the five creatable objects' categories and sets one — the drawer shows only its entries — falling back to all for an id no entry names", async () => {
     desk = await mountDesk(undefined, { frameMs: FRAME_MS });
     const door = desk.handle.tray;
     desk.toSleep();
-    expect(door.categories()).toEqual([{ id: "paper", label: "Paper", count: 4 }, { id: "surfaces", label: "Surfaces", count: 2 }]);
+    expect(door.categories()).toEqual([{ id: "paper", label: "Paper", count: 3 }, { id: "surfaces", label: "Surfaces", count: 2 }]);
     expect(door.category()).toBe("");
     expect(door.category("surfaces")).toBe("surfaces");
     door.open();
     await run(desk);
     expect(door.state().specimens.map((q) => q.type).sort()).toEqual(["desk.board", "desk.minimat"]);
-    expect(door.anchor()).toMatchObject({ open: true, held: false, entries: 6, category: "surfaces", view: { width: 1200, height: 800 } });
+    expect(door.anchor()).toMatchObject({ open: true, held: false, entries: 5, category: "surfaces", view: { width: 1200, height: 800 } });
     door.category("nope");
     await run(desk, 200);
     expect(door.category()).toBe("");
-    // all six laid again — the world's specimens: at scroll 0 the second line hangs below this 800 px view (design-018 R4 laid the
+    // all five creatable objects laid again — the world's specimens: at scroll 0 the second line hangs below this 800 px view (design-018 R4 laid the
     // first line under the drawer's header), so the drawn ones are the first line's four
     const tray = trayEntity(desk.ce.world);
-    expect(tray === undefined ? 0 : specimensOf(desk.ce.world, tray).length).toBe(6);
+    expect(tray === undefined ? 0 : specimensOf(desk.ce.world, tray).length).toBe(5);
     expect(door.state().specimens.length).toBe(4);
   });
 

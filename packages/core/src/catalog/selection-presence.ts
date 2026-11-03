@@ -22,6 +22,8 @@ export const Selected = defineTag("Selected");
 
 export const Selectable = defineTag("Selectable");
 export const Movable = defineTag("Movable");
+/** Core moves this widget with a selection; its own driver handles a solo drag. */
+export const SelectionMovable = defineTag("SelectionMovable");
 export const Resizable = defineTag("Resizable");
 export const SnapSource = defineTag("SnapSource");
 export const SnapTarget = defineTag("SnapTarget");

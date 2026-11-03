@@ -16,7 +16,11 @@ an archetype ECS with reactivity and opt-in Loro-CRDT durable + presence layers.
 > `<Desk>`; `defineWidget`'s `surface`/`component`/`chrome`/`animated`/`preview`/`instancePreview`/
 > `sizeMode` are refused; the entries `./r3f`, `./r3f/webgpu`, `./ground*` are gone and
 > `./desk`, `./desk/engine`, `./desk/objects` are new. The full list is the changelog's
-> `### Removed`. (The published 0.11.0 still describes the old surface.)
+> `### Removed` under the 0.14.0 release.
+
+**0.17.0** adds native-scale desk navigation, marquee and selected-group dragging,
+a simpler tray, passive borderless Prints, fixed viewport gobo lighting, foreground
+edge rulers, retired-widget data preservation, and change-only zoom feedback for hosts.
 
 ```sh
 pnpm add @vibecook/ice react react-dom     # react/react-dom are optional peers
@@ -29,8 +33,9 @@ import { DESK_ENGINE, DESK_OBJECTS, deskPalette, deskTheme } from "@vibecook/ice
 import { Desk, EngineProvider } from "@vibecook/ice/react";
 import { createRoot } from "react-dom/client";
 
-// The desk's preset: the six objects, the desk's select tool (a bare-mat drag pans, shift draws the
-// marquee), a plain wheel zooming about the pointer, the scale-free zoom and the zoom-through.
+// The desk's preset: the six objects, the desk's select tool (a bare-mat drag marquees, shift adds
+// to the selection), two-axis scroll panning, pinch / Cmd-or-Ctrl-wheel zoom about the pointer,
+// scale-free zoom and zoom-through.
 const engine = createCanvasEngine(DESK_ENGINE);
 engine.docs.create(); // a local-first document
 engine.ops.spawnWidget("desk.note", { x: 120, y: 120, props: { text: "Write something…" } });
@@ -50,8 +55,8 @@ createRoot(document.getElementById("root")).render(
 ```
 
 Everything above ships working out of the box: click/shift-click selection, the
-vellum marquee, drag with snap guides drawn as lasers, resize grips, wheel zoom
-about the pointer and bare-mat pan, mini mats you fly into and out of, a note you
+vellum marquee, drag with snap guides drawn as lasers, resize grips, pinch zoom
+about the pointer and two-axis scroll panning, mini mats you fly into and out of, a note you
 write on in place, pick-up into the hand, per-gesture undo, gesture-aware autosave,
 and live presence when you `docs.join()` a room.
 

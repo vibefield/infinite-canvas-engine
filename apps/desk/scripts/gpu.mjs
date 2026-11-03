@@ -21,7 +21,7 @@
 //   per-kind cost    the ablation's A/A control within its noise floor
 //   the drawer       (K3) armed with the pegboard drawer OPEN and at rest, 240 frames: 0 submits, 0 redraws, no frame; then a
 //                    scroll: its pipeline `tray/pegboard` is each frame's `tray` row — two draws (the board to its edge, the
-//                    accessories), inside the `ground` pass — its blocks uploaded (its light block never), the ledger's `tray` row
+//                    veil), inside the `ground` pass — its uniform uploaded (its light block never), the ledger's `tray` row
 //
 //   pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:gpu        (DESK_HEADED=1 to watch)
 // Exit 0 = every check passed; 1 = a check failed or a throw; 2 = the watchdog.
@@ -219,13 +219,8 @@ try {
 
   // ── THE DRAWER (K3, design-017) under the profiler. Armed with the drawer OPEN and at rest — the counter read before the arm —
   //    240 frames: no submit, no redraw, no GPU frame (K-L5 · K-L6: its motion is flux that runs only while it moves). Then a
-  //    scroll: its pipeline `tray/pegboard` is every frame's `tray` row — THREE draws inside the `ground` pass (it has no pass of its
-  //    own: it draws after the marks): the board under its specimens, its edge included (one instance — the rim laid over them all
-  //    retired, design-018 §2), the specimens' accessories (one each) — K5a — and the VEIL over them all at the top (one instance —
-  //    design-018 rev 5: the plain board, whole in the header, fading out over its ramp); the specimens themselves are their kinds' rows. Its
-  //    uploads the `tray` row's — its block and the accessories' records, both moving with the board — its blocks and hash texture
-  //    the ledger's. From 100 px down, where both of the six's lines are drawn (design-018 R4: the lay starts under the drawer's header,
-  //    so at 0 the second line hangs below an 800 px view, and a scroll from there brings its accessories in mid-run)
+  //    scroll: two draws in the ground pass — the board and the veil. Specimens use their own kinds' rows.
+  //    Only the tray uniform changes while scrolling. The tray owns two uniform buffers and its hash texture.
   await q("window.__desk.tray.open(); 0");
   await settle();
   await q("window.__desk.tray.scroll(100); 0");
@@ -238,22 +233,20 @@ try {
     return { open: d.tray.isOpen(), submits: d.submits().total - n0, redraws: d.handle.redraws() - r0, frames: d.perf.take().gpu.frames.length, armed: d.perf.gpu().armed() };
   })()`, 30000);
   check(openRest.open && openRest.armed && openRest.submits === 0 && openRest.redraws === 0 && openRest.frames === 0, `armed with the drawer OPEN at rest (the counter read before the arm), 240 frames: ${openRest.submits} submits, ${openRest.redraws} redraws, ${openRest.frames} GPU frames — arming adds no submit and never wakes the drawer`);
-  let run4 = await qa(`(async () => {
+  const run4 = await qa(`(async () => {
     const d = window.__desk; const s0 = d.tray.scroll();
     for (let i = 1; i <= 12; i++) { d.tray.scroll(s0 + i * 7); await new Promise((r) => requestAnimationFrame(r)); }
     await new Promise((r) => setTimeout(r, 250));
-    return { frames: d.perf.take().gpu.frames.filter((f) => f.kind === "frame"), accessories: d.tray.state().laid?.accessories.length ?? 0 };
+    return d.perf.take().gpu.frames.filter((f) => f.kind === "frame");
   })()`);
-  const nAcc = run4.accessories;
-  run4 = run4.frames;
   const last4 = run4.at(-1);
   const timed4 = run4.filter((f) => f.timing === "timed");
   const passes4 = [...new Set(timed4.flatMap((f) => f.passes.map((p) => p.label)))];
-  check(nAcc === 6 && run4.length > 0 && run4.every((f) => f.byKind.tray?.draws === 3 && f.byKind.tray?.instances === 2 + nAcc) && timed4.length > 0 && timed4.every((f) => f.passes.some((p) => p.label === "ground") && !f.passes.some((p) => p.label.startsWith("tray"))), `the drawer is every frame's "tray" row (pipeline tray/pegboard): THREE draws — the board to its edge, ${nAcc} accessories, the veil — of ${2 + nAcc} instances in each of ${run4.length} scroll frames (${JSON.stringify(last4?.byKind.tray)}), inside the ground pass — the timed frames' passes: ${passes4.join(" · ")}`);
+  check(run4.length > 0 && run4.every((f) => f.byKind.tray?.draws === 2 && f.byKind.tray?.instances === 2) && timed4.length > 0 && timed4.every((f) => f.passes.some((p) => p.label === "ground") && !f.passes.some((p) => p.label.startsWith("tray"))), `the drawer uses two draws and two instances per frame — the board and the veil — in ${run4.length} scroll frames (${JSON.stringify(last4?.byKind.tray)}), inside the ground pass: ${passes4.join(" · ")}`);
   // the wind is still (no pointer here), so the frame's light does not move: a scroll changes the drawer's own block alone
   const up4 = run4.map((f) => f.uploads.tray ?? { writes: 0, bytes: 0 });
   const mem4 = last4?.memory?.byLabel.tray;
-  check(up4.every((u) => u.writes === 2 && u.bytes === up4[0].bytes) && mem4?.textures === 1 && mem4?.buffers === 3 && mem4.bytes > 0, `its uploads and memory are the "tray" rows: a scroll writes TWO blocks a frame — its own and its accessories' records, moving with the board (${up4.map((u) => u.writes).join(" ")} × ${up4[0]?.bytes} B) — its light block, unchanged, never; the ledger's tray row ${mem4?.bytes} B — ${mem4?.textures} texture (the hash) and ${mem4?.buffers} buffers (its block, its light, its accessories)`);
+  check(up4.every((u) => u.writes === 1 && u.bytes === up4[0].bytes) && mem4?.textures === 1 && mem4?.buffers === 2 && mem4.bytes > 0, `a scroll writes one tray uniform per frame (${up4.map((u) => u.writes).join(" ")} × ${up4[0]?.bytes} B); the unchanged light has no upload. Tray memory: ${mem4?.bytes} B, ${mem4?.textures} hash texture, ${mem4?.buffers} uniform buffers`);
   await q("window.__gpuOff(); window.__desk.tray.close(); 0");
   await settle();
 

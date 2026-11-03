@@ -143,6 +143,8 @@ export const Simultaneous = defineTag("Simultaneous");
 
 // --- route tags (latched at drag activation; never change mid-gesture, design-003 §4.4) ---
 
+/** A group-move intent, latched at pointer-down so custom carries can yield before lifting. */
+export const MovesSelection = defineTag("MovesSelection");
 export const RoutedMove = defineTag("RoutedMove");
 export const RoutedResize = defineTag("RoutedResize");
 export const RoutedConnect = defineTag("RoutedConnect");

@@ -193,13 +193,13 @@ fn sample_blur(tex: texture_2d<f32>, samp: sampler, uv: vec2f, texel: vec2f, blu
 // The gobo term at a desk point (metres): 1 = lit. Outside the projector's
 // frame the plate is not consulted at all — the cone is finite, as the
 // reference's is.
-/// The lamp's dapple at a point of the desk.
+/// The lamp's dapple at a point already in the chosen projection space.
 /// `u` — the slot's view block (`u.goboMatrix` the projector, `u.gobo` its opacity and blur); `tex` — the slot's animated
 /// silhouette (`MatPass.silhouette`, r8, 1 = open); `samp` — a linear sampler; `desk` — the point in the projector's frame,
 /// metres, y up (`desk_of`, `lit_desk`, a kind's own desk point); `n` — blue noise 0..1 (the blur spiral's turn).
 /// → [0, 1]: 1 = fully lit. Exactly 1 outside the projector's frame and when the gobo is off (`u.gobo.x` ≤ 0); else
 ///   `mix(1, the silhouette blurred by depth, u.gobo.x)`.
-fn sample_gobo(u: MatUniforms, tex: texture_2d<f32>, samp: sampler, desk: vec3f, n: f32) -> f32 {
+fn project_gobo(u: MatUniforms, tex: texture_2d<f32>, samp: sampler, desk: vec3f, n: f32) -> f32 {
   if (u.gobo.x <= 0.0) { return 1.0; }
   var clip = u.goboMatrix * vec4f(desk, 1.0);
   let ndc = clip.xyz / clip.w;
@@ -208,6 +208,23 @@ fn sample_gobo(u: MatUniforms, tex: texture_2d<f32>, samp: sampler, desk: vec3f,
   if (uv.x < 0.0 || uv.x > 1.0 || uv.y < 0.0 || uv.y > 1.0) { return 1.0; }
   let g = sample_blur(tex, samp, uv, vec2f(1.0 / 512.0), blur_ratio(ndc.z, u.goboParams) * u.gobo.y, n);
   return mix(1.0, g, u.gobo.x);
+}
+
+// A viewport gobo is a light over the visible desk, independent of canvas navigation. All kinds
+// enter here with their own desk point, so their surfaces pass through the same light as the mat.
+/// The lamp's dapple at a point of the slot's desk, respecting `u.wind.z` (0 = world, 1 = viewport).
+/// `u`, `tex`, `samp`, `n` — as `project_gobo`'s; `desk` — metres in the slot's world frame, y up.
+/// → [0, 1]: the projected light, with camera pan/zoom removed in viewport mode. Height scales with
+///   the visible object; the shadow's ground footprint stays at its original CSS-pixel position and size.
+fn sample_gobo(u: MatUniforms, tex: texture_2d<f32>, samp: sampler, desk: vec3f, n: f32) -> f32 {
+  if (u.gobo.x <= 0.0) { return 1.0; }
+  var receiver = desk;
+  if (u.wind.z > 0.0) {
+    let origin = vec3f(u.plane.x, u.plane.w, u.plane.y);
+    let camera = vec3f(u.cam.x, 0.0, u.cam.y) * u.plane.z;
+    receiver = origin + (desk - origin - camera) * mat_zoom(u);
+  }
+  return project_gobo(u, tex, samp, receiver, n);
 }
 
 // World (CSS px at zoom 1, unwrapped) → the desk plane in the projector's frame.
@@ -245,10 +262,12 @@ fn lit_desk(u: MatUniforms, L: vec4f, p: vec2f, h: f32) -> vec3f {
 /// as the object computes it (metres, y up), read when the slot is lit by its own camera; `n` — blue noise 0..1.
 /// → [0, 1]: 1 = fully lit (`sample_gobo` at the point the light sees; cross-faded by `u.light.w` toward `u.light2`'s).
 fn lit_gobo(u: MatUniforms, tex: texture_2d<f32>, samp: sampler, p: vec2f, h: f32, own: vec3f, n: f32) -> f32 {
+  // The CPU selects the light camera, including a fixed (0, 0, 1) for viewport mode.
+  // lit_desk already maps into that projection space; no second camera transform is needed.
   var g = 0.0;
-  if (all(u.light.xyz == u.cam.xyz)) { g = sample_gobo(u, tex, samp, own, n); }
-  else { g = sample_gobo(u, tex, samp, lit_desk(u, u.light, p, h), n); }
-  if (u.light.w > 0.0) { g = mix(g, sample_gobo(u, tex, samp, lit_desk(u, u.light2, p, h), n), u.light.w); }
+  if (all(u.light.xyz == u.cam.xyz)) { g = project_gobo(u, tex, samp, own, n); }
+  else { g = project_gobo(u, tex, samp, lit_desk(u, u.light, p, h), n); }
+  if (u.light.w > 0.0) { g = mix(g, project_gobo(u, tex, samp, lit_desk(u, u.light2, p, h), n), u.light.w); }
   return g;
 }
 

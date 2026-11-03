@@ -45,6 +45,9 @@ import {
   HadSequence,
   HandledByWidget,
   LocalPointer,
+  Keyboard,
+  MovesSelection,
+  PointerMods,
   LongPress,
   LongPressDrag,
   MultiTap,
@@ -69,7 +72,8 @@ import {
   WheelZoom,
 } from "../catalog";
 import { ActiveTool } from "../catalog/camera-derived";
-import { toolTypeFor } from "../canvas/engine-catalog";
+import { resolveToolFor, toolTypeFor } from "../canvas/engine-catalog";
+import { selectionDragAt } from "../ops/selection-drag";
 import { CanvasIntentScope, CanvasSession } from "../canvas/session";
 import { FrameInfo } from "../engine/frame-info";
 import { GestureSettings } from "../catalog/settings-resources";
@@ -103,8 +107,8 @@ const pendingQ = defineQuery([Any(Tap, LongPress, Drag, Pinch), GesturePhases.ta
 
 const P = GesturePhases;
 
-/** Live-tunable gesture settings (design-005 §4): resource first, const fallback. The numeric ones — `wheel` is the camera's mode. */
-function gs(ctx: SystemCtx): Readonly<Record<Exclude<keyof typeof GESTURE_DEFAULTS, "wheel">, number>> {
+/** Live-tunable gesture settings (design-005 §4): resource first, const fallback. Only the numeric thresholds; camera mode and curve are separate settings. */
+function gs(ctx: SystemCtx): Readonly<Record<Exclude<keyof typeof GESTURE_DEFAULTS, "wheel" | "wheelZoomCurve">, number>> {
   return ctx.getResource(GestureSettings) ?? GESTURE_DEFAULTS;
 }
 
@@ -201,6 +205,11 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
         if (button === "secondary" || (button === "middle" && !middlePans(ctx, captureTarget))) continue;
         // The part under the down (design-014, B3b): copied onto every recognizer this down spawns.
         const downPart = ctx.get(pointer, PointerPart)?.part ?? "";
+        // Latch group intent at the original press, before crossing the drag
+        // threshold. A custom solo carry can yield immediately, without a jump.
+        const movesSelection = button === "primary" && downPart === "" && profile.includes("drag") &&
+          ctx.read(pointer, Pointer).device !== "touch" && ctx.getResource(Keyboard)?.space !== true &&
+          selectionDragAt(ctx, captureTarget, screen.x, screen.y, resolveToolFor(world, tool), ctx.get(pointer, PointerMods)?.shift === true);
 
         // Gesture timing anchors on the CLOCK at ingest. The 2026-07-12
         // event-timestamp anchor is retired (2026-07-17): event.timeStamp and
@@ -308,6 +317,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
               tags: [...tags],
             });
           }
+          if (kind === "drag" && movesSelection) ctx.addTag(rec, MovesSelection);
           ctx.addRelation(rec, Watches, pointer);
           if (downPart !== "") ctx.addComponent(rec, DownPart, { part: downPart });
           if (captureTarget !== undefined) {
@@ -363,7 +373,7 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
   );
 
   // Wheel recognizer spawn rides the same ctl:spawn slot: wheel deltas landed
-  // this tick (values — visible) and no live wheel recognizer watches the pointer.
+  // this tick (values — visible) and no live recognizer of that wheel kind watches the pointer.
   const wheelSpawn = defineSystem(
     wheelSourceQ,
     (b, ctx) => {
@@ -374,27 +384,39 @@ export function createL2Systems({ world, profiles = DEFAULT_SPAWN_PROFILES }: L2
         const zooming = wheel.pinch !== 0;
         const panning = wheel.dx !== 0 || wheel.dy !== 0;
         if (!zooming && !panning) continue;
-        const hasLive = ctx
-          .getReverse(pointer, Watches)
-          .some((rec) => (ctx.has(rec, WheelPan) || ctx.has(rec, WheelZoom)) && !isTerminal(ctx, rec));
-        if (hasLive) continue;
+        // Pan and zoom have independent lifecycles. A pinch may follow a pan
+        // before its silence timer expires, and both can land in one frame.
+        let needZoom = zooming;
+        let needPan = panning;
+        for (const rec of ctx.getReverse(pointer, Watches)) {
+          if (isTerminal(ctx, rec)) continue;
+          if (needZoom && ctx.has(rec, WheelZoom)) needZoom = false;
+          if (needPan && ctx.has(rec, WheelPan)) needPan = false;
+          if (!needZoom && !needPan) break;
+        }
+        // An ongoing gesture needs neither a temporary list nor a screen read.
+        if (!needZoom && !needPan) continue;
         const screen = ctx.read(pointer, PointerScreen);
-        const rec = zooming
-          ? ctx.spawn({
-              components: [
-                [WheelZoom, { pinch: 0, anchorX: screen.x, anchorY: screen.y }],
-                [Down, { x: screen.x, y: screen.y, ms: now }], // Down.ms = last wheel activity (silence timer)
-              ],
-              tags: [P.tags.Possible, Simultaneous],
-            })
-          : ctx.spawn({
-              components: [
-                [WheelPan, { dx: 0, dy: 0, anchorX: screen.x, anchorY: screen.y }],
-                [Down, { x: screen.x, y: screen.y, ms: now }],
-              ],
-              tags: [P.tags.Possible, Simultaneous],
-            });
-        ctx.addRelation(rec, Watches, pointer);
+        if (needZoom) {
+          const rec = ctx.spawn({
+            components: [
+              [WheelZoom, { pinch: 0, anchorX: screen.x, anchorY: screen.y }],
+              [Down, { x: screen.x, y: screen.y, ms: now }],
+            ],
+            tags: [P.tags.Possible, Simultaneous],
+          });
+          ctx.addRelation(rec, Watches, pointer);
+        }
+        if (needPan) {
+          const rec = ctx.spawn({
+            components: [
+              [WheelPan, { dx: 0, dy: 0, anchorX: screen.x, anchorY: screen.y }],
+              [Down, { x: screen.x, y: screen.y, ms: now }],
+            ],
+            tags: [P.tags.Possible, Simultaneous],
+          });
+          ctx.addRelation(rec, Watches, pointer);
+        }
       }
     },
     { name: "wheelSpawn" },

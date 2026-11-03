@@ -26,9 +26,9 @@ import { DAY_LIGHT, lightValues, type MatLight } from "./night";
  * attachment's texels, `CSS px · dpr` (a fragment's `@builtin(position).xy`); colours sRGB-encoded 0..1 unless marked LINEAR.
  * The fields, x · y · z · w:
  *
- * - `cam` — the camera: the world point at the attachment's top-left (x, y — UNWRAPPED world units: the projector is fixed in
- *   world), the zoom (z — CSS px per world unit, `mat_zoom`), the attachment's device px per CSS px (w — `mat_dpr`; below 1
- *   for a capture's thumbnail or the held desk copy, petition I29);
+ * - `cam` — the camera: the world point at the attachment's top-left (x, y — UNWRAPPED world units), the zoom (z — CSS px
+ *   per world unit, `mat_zoom`), the attachment's device px per CSS px (w — `mat_dpr`; below 1 for a capture's thumbnail or
+ *   the held desk copy, petition I29);
  * - `view` — the attachment's size (x, y — CSS px), the grain's clock (z — seconds), the OBJECTS' presentation opacity (w —
  *   0..1, the slot's × their own presence: what every kind multiplies its output by);
  * - `phase` — the camera wrapped to the lattice's coarse period (x, y — world units: the lattice's phase, which the lines are
@@ -49,7 +49,9 @@ import { DAY_LIGHT, lightValues, type MatLight } from "./night";
  *   0..1) and its dark floor (w — 0..1): `sample_gobo`, `shade_mat`;
  * - `grade` — the saturation bump in shade (x); y, z, w unused;
  * - `noise` — the blue noise's offset (x, y — uv, re-rolled while the wind blows), one tile texel in uv (z — 1 / 128); w unused;
- * - `wind` — the gobo's clock (x — seconds) and the plate's wind strength (y); z, w unused;
+ * - `wind` — the gobo's clock (x — seconds), the plate's wind strength (y), and projection space (z — 0 = world,
+ *   1 = viewport); w unused. Viewport shadows use CSS px at the original origin and scale, independent of the camera
+ *   and slot light handovers. The mode uses an existing spare lane so the shared view block does not grow;
  * - `night` — the NIGHT (mat/night.ts): its amount (x — 0..1, 0 = the day's chain exactly), the Moon's illuminance (y — lux),
  *   the exposure (z — scene → display), the snow (w — display units, peak to peak): `night_mat`, `mat_colour`;
  * - `moon` — the Moon's colour as the adapted eye takes it (xyz — LINEAR sRGB, Y = 1) and the sky's share in the shadow (w —
@@ -73,7 +75,8 @@ import { DAY_LIGHT, lightValues, type MatLight } from "./night";
  *   spacing (z); w unused;
  * - `box` — the slot's box on the attachment (x, y, w, h — CSS px): what is culled; the mat is fullscreen under the scissor;
  * - `light` — the camera the lamp's gobo is sampled under (`SlotLight`: x, y — world units at its top-left, z — its zoom) and
- *   the cross-fade toward `light2` (w — 0..1): `lit_desk`, `lit_gobo`;
+ *   the cross-fade toward `light2` (w — 0..1): `lit_desk`, `lit_gobo`. Viewport mode fixes this camera at (0, 0, 1)
+ *   with no handover, so the mat uses the same shader path as a world-space lamp;
  * - `light2` — the second light a flight hands the slot to (x, y, z as `light`'s); w unused;
  * - `presence` — the SLOT's presentation opacity (x — 0..1: what the mat itself is drawn at; `view.w` is its objects'); y, z,
  *   w unused.
@@ -159,6 +162,8 @@ export interface MatConfig {
   readonly ground: RGB;
   readonly ink: RGB;
   readonly gobo: {
+    /** World by default. Viewport keeps the projection at its original origin and 100% scale in CSS px while the canvas moves. */
+    readonly space?: "world" | "viewport";
     readonly opacity: number;
     readonly blurTexels: number;
     readonly shadeMix: number;
@@ -236,7 +241,7 @@ export function matUniformValues(view: View & { readonly dpr: number }, fadeIn: 
     gobo: [cfg.gobo.opacity, cfg.gobo.blurTexels, cfg.gobo.shadeMix, cfg.gobo.darkFloor],
     grade: [cfg.gobo.saturate, 0, 0, 0],
     noise: [f.noise[0], f.noise[1], 1 / NOISE_SIZE, 0],
-    wind: [f.goboTime, plateStrength, 0, 0],
+    wind: [f.goboTime, plateStrength, cfg.gobo.space === "viewport" ? 1 : 0, 0],
     ...lightValues(light),
     ...portalValues(present),
     ruler: [r.on ? 1 : 0, r.margin, r.band, r.line],
@@ -248,7 +253,7 @@ export function matUniformValues(view: View & { readonly dpr: number }, fadeIn: 
     rulerSites: levels.flatMap((L) => [L.spacing, L.tickLen, L.tickAlpha, L.labelAlpha]),
     rulerFormat: levels.flatMap((L) => [L.mult, L.exp, L.perWrap, 0]),
     box: boxValues(view),
-    ...slotLightValues(view, lit),
+    ...(cfg.gobo.space === "viewport" ? VIEWPORT_LIGHT : slotLightValues(view, lit)),
     // the slot's own opacity, which the mat is drawn at; `view.w` above is the objects' (what the ground's `objectsOf` hands the kinds'
     // `SlotContext.present`). One view block per slot carries both (K4a, design-016 K-L3), so every kind reads it as it always read its copy
     presence: [present?.opacity ?? 1, 0, 0, 0],
@@ -269,6 +274,10 @@ export function litByOwn(view: View, lit: SlotLight | undefined): boolean {
   const s = settleLight(lit);
   return !s || (!s.b && s.a.x === view.camX && s.a.y === view.camY && s.a.zoom === view.zoom);
 }
+
+// A fixed viewport lamp is the existing light camera at the origin and 100% scale.
+// Reuse these records: no per-frame light arrays or extra per-fragment mode branch on the mat.
+const VIEWPORT_LIGHT = { light: [0, 0, 1, 0], light2: [0, 0, 1, 0] } as const;
 
 /** The `light` / `light2` records: the slot's own camera unless it is lit from elsewhere (`SlotLight`). */
 function slotLightValues(view: View, lit: SlotLight | undefined): { light: number[]; light2: number[] } {

@@ -1,10 +1,7 @@
 // @vitest-environment node
-// THE PRINT'S SAMPLE (K5b, D-K5b.4 — photo/sample.ts): the picture the print on the pegboard shows, made from arithmetic alone so every
-// host makes the same bytes — its size, opaque, the same twice, a dusk (sky over water, warm at the horizon); and the print's tray
-// entry names it (its face) while one taken is blank (no `take`: it asks for a picture).
+// The deterministic sample picture used by the photo lab and rendering fixtures.
 import { describe, expect, it } from "vitest";
-import { Photo } from "../src";
-import { SAMPLE_PICTURE, SAMPLE_SIZE, samplePicture } from "../src/photo/sample";
+import { SAMPLE_SIZE, samplePicture } from "../src/photo/sample";
 
 const px = (b: Uint8Array, w: number, x: number, y: number): readonly [number, number, number, number] => {
   const i = (y * w + x) * 4;
@@ -31,9 +28,4 @@ describe("the print's sample picture", () => {
     expect(water[0] + water[1] + water[2]).toBeLessThan(horizon[0] + horizon[1] + horizon[2]);
   });
 
-  it("is the print specimen's face, drawn with the kind's pictures; one taken is blank", () => {
-    expect(Photo.tray?.props).toEqual({ blob: SAMPLE_PICTURE, width: SAMPLE_SIZE.w, height: SAMPLE_SIZE.h });
-    expect(Photo.tray?.local).toBe(true);
-    expect(Photo.tray?.take).toBeUndefined();
-  });
 });

@@ -47,7 +47,7 @@
 import type { Component, Entity, World } from "@vibecook/strata-ecs";
 import { defineQuery } from "@vibecook/strata-ecs";
 import type { DurableStore } from "@vibecook/strata-ecs/durable";
-import { dataPrefabFor, widgetTypeFor } from "../canvas/engine-catalog";
+import { dataPrefabFor, engineCatalogFor, widgetTypeFor } from "../canvas/engine-catalog";
 import { PrefabId } from "../schema/prefab";
 import type { DocVersionReport } from "./version-gate";
 
@@ -107,7 +107,7 @@ export function runMigrations(ctx: MigrationCtx, report: DocVersionReport): Migr
   for (const id of report.olderInDoc) {
     // a widget migrates by its widget's chain over its prop groups; an object's DATA prefab (design-015 §5.1, D3t-a — the
     // board's strokes) by its own chain over its essential components
-    const widget = widgetTypeFor(world, id);
+    const widget = widgetTypeFor(world, id) ?? engineCatalogFor(world)?.retiredWidget(id);
     const data = widget === undefined ? dataPrefabFor(world, id) : undefined;
     const chain = widget?.migrate ?? data?.migrate;
     if ((widget === undefined && data === undefined) || chain === undefined || Object.keys(chain).length === 0) {

@@ -1,5 +1,5 @@
 // @vitest-environment node
-// THE DRAWER'S FOOT (petition I21 — `deskLayer({ tray: { foot } })`): a host's line floats over the board's foot (VibeField's, 88 px),
+// THE DRAWER'S FOOT (petition I21 — `deskLayer({ tray: { foot } })`): a host can reserve the board's foot (88 px in this fixture),
 // so the lay's visible content ends `foot` above the board's bottom edge — the header's mirror. Over the kernel's lay and the drawer's
 // law: nothing laid shows in the board's bottom 88 px at any scroll (the CPU mirror of the veil, the face's clip ending at the foot's
 // line, the specimens there culled), and the scroll's range grows by the foot, so the last line is still reached, whole. The flux
@@ -88,6 +88,31 @@ describe("the drawer's foot over the kernel's lay (petition I21)", () => {
     expect(contentShown(open, open.y + last - own, FOOT)).toBe(0);
   });
 
+  it("a narrow foot changes only the bottom fade and still lets the last row reach clear space", () => {
+    const foot = 4;
+    const fade = 16;
+    const bottom = VH - foot;
+    expect(contentShown(open, VH - 20, foot, fade)).toBe(1);
+    expect(contentShown(open, bottom - 8, foot, fade)).toBeCloseTo(0.5, 12);
+    expect(contentShown(open, bottom, foot, fade)).toBe(0);
+    expect(contentShown(open, VH - 1, foot, fade)).toBe(0);
+    const headerMid = open.y + DRAWER.arris + DRAWER.header + DRAWER.fade / 2;
+    expect(contentShown(open, headerMid, foot, fade)).toBeCloseTo(0.5, 12);
+    const range = scrollRange(VW, VH, laid.bottom, foot);
+    const last = Math.max(...laid.placed.map((p) => p.box.y1));
+    expect(open.y + last - range).toBe(bottom - P);
+    expect(contentShown(open, open.y + last - range, foot, fade)).toBe(1);
+    const flux = createTrayFlux({ foot, footFade: fade });
+    flux.read({ open: true, scroll: 0, stretch: 0, bottom: laid.bottom });
+    expect(flux.step(0, VW, VH)).toMatchObject({ foot, footFade: fade });
+  });
+
+  it("a zero-width bottom fade is a hard edge, without an undefined ramp", () => {
+    expect(contentShown(open, line - 0.01, FOOT, 0)).toBe(1);
+    expect(contentShown(open, line, FOOT, 0)).toBe(0);
+    expect(contentShown(open, line + 0.01, FOOT, 0)).toBe(0);
+  });
+
   it("absent, the law is the header's alone — the content whole to the board's bottom edge — and the face's foot past the view", () => {
     for (const y of [open.y + 100, line, VH - 1]) expect(contentShown(open, y)).toBe(contentShown(open, y, 0));
     expect(contentShown(open, VH - 1)).toBe(1);
@@ -119,7 +144,7 @@ describe("the drawer's foot, published and drawn (petition I21)", () => {
   });
 
   it("the pass carries it in its block and lays the veil's foot in the SAME draw — the drawer's draws and instances unchanged; the tags' scissor ends at the line", async () => {
-    const draw = async (foot: number | undefined): Promise<{ readonly log: string[]; readonly fade: number[] }> => {
+    const draw = async (foot: number | undefined, footFade?: number): Promise<{ readonly log: string[]; readonly fade: number[] }> => {
       const log: string[] = [];
       const { device } = fakeDevice(log);
       const pass = (): KindPass => ({ spawn: () => pass(), prepare: (_e, _s, records) => records.length, drawRange: () => {}, dispose: () => {} });
@@ -132,23 +157,26 @@ describe("the drawer's foot, published and drawn (petition I21)", () => {
       const frames = specimenFrames([specimen(7, 100), specimen(8, 400)], drawn, { view: { width: VW, height: VH, dpr: 2 }, theme, grid: DEFAULT_GRID, looks: new Map(), lift: () => 0 });
       const writes: { label: string; bytes: Uint8Array }[] = [];
       (device.queue as { writeBuffer: unknown }).writeBuffer = (buf: { label: string }, _off: number, data: Uint8Array) => { writes.push({ label: buf.label, bytes: new Uint8Array(data.buffer.slice(data.byteOffset, data.byteOffset + data.byteLength)) }); };
-      const inputs: GroundFrameInputs = { view: { camX: 0, camY: 0, zoom: 1, width: VW, height: VH, dpr: 2 }, theme, tray: { p: 1, scroll: 0, specimens: frames, ...(foot !== undefined ? { foot } : {}) } };
+      const inputs: GroundFrameInputs = { view: { camX: 0, camY: 0, zoom: 1, width: VW, height: VH, dpr: 2 }, theme, tray: { p: 1, scroll: 0, specimens: frames, ...(foot !== undefined ? { foot } : {}), ...(footFade !== undefined ? { footFade } : {}) } };
       ground.render(inputs);
       const w = writes.filter((x) => x.label === "tray/pegboard/uniforms").at(-1);
       return { log, fade: w === undefined ? [] : [...new Float32Array(w.bytes.buffer, TrayUniforms.slots.fade.byte, 4)] };
     };
     const footed = await draw(FOOT);
     const plain = await draw(undefined);
-    expect(footed.fade).toEqual([DRAWER.fade, DRAWER.header, FOOT, 0]);
-    expect(plain.fade).toEqual([DRAWER.fade, DRAWER.header, 0, 0]);
-    /** The drawer's draws in order (the board, its accessories, the veil) and the tags' scissor (the one after the slots'). */
+    const narrow = await draw(4, 16);
+    expect(footed.fade).toEqual([DRAWER.fade, DRAWER.header, FOOT, DRAWER.fade]);
+    expect(plain.fade).toEqual([DRAWER.fade, DRAWER.header, 0, DRAWER.fade]);
+    expect(narrow.fade).toEqual([DRAWER.fade, DRAWER.header, 4, 16]);
+    /** The drawer's draws in order (the board and the veil) and the tags' scissor (the one after the slots'). */
     const drawer = (log: string[]): string[] => {
       const at = log.indexOf("debug tray/pegboard");
       const veil = log.indexOf("debug tray/pegboard/veil");
-      return [...log.slice(at, at + 7), ...log.slice(veil, veil + 5)].filter((l) => l.startsWith("draw "));
+      return [...log.slice(at, at + 5), ...log.slice(veil, veil + 5)].filter((l) => l.startsWith("draw "));
     };
-    expect(drawer(plain.log)).toEqual(["draw 6,1,0,0", "draw 6,2,0,1", "draw 6,1,0,0"]);
-    expect(drawer(footed.log)).toEqual(["draw 6,1,0,0", "draw 6,2,0,1", "draw 12,1,0,0"]);
+    expect(drawer(plain.log)).toEqual(["draw 6,1,0,0", "draw 6,1,0,0"]);
+    expect(drawer(footed.log)).toEqual(["draw 6,1,0,0", "draw 12,1,0,0"]);
+    expect(drawer(narrow.log)).toEqual(drawer(footed.log));
     // the tags' scissor: the face from under the header to the line (device px, the portal law's pad of one — under the veil's whole),
     // against the view's foot without one
     const tags = (log: string[]): string | undefined => { const veil = log.indexOf("debug tray/pegboard/veil"); return log.slice(0, veil).filter((l) => l.startsWith("scissor ")).at(-2); };
@@ -160,10 +188,10 @@ describe("the drawer's foot, published and drawn (petition I21)", () => {
 
   it("the layer refuses a malformed foot at the mount, by its name, before it touches the page", () => {
     const palette: Palette = { canvasBg: { token: "--bg", css: "#101010" }, select: { token: "--sel", css: "#3080ff" } };
-    for (const foot of [-1, Number.NaN]) {
+    for (const name of ["foot", "footFade"] as const) for (const value of [-1, Number.NaN, Number.POSITIVE_INFINITY]) {
       const ce = createCanvasEngine({});
       const page = fakePage();
-      expect(() => deskLayer({ theme: themeFrom("light", palette), palette, tray: { foot } })({ host: { container: page.container } as never, world: ce.world })).toThrow("tray.foot");
+      expect(() => deskLayer({ theme: themeFrom("light", palette), palette, tray: { [name]: value } })({ host: { container: page.container } as never, world: ce.world })).toThrow(`tray.${name}`);
       expect(page.children).toEqual([]);
       ce.dispose();
     }

@@ -10,8 +10,7 @@
 // its own HASH texture — every value-noise octave's four lattice corners pre-gathered in one texel (`hashTexels`), made once.
 // Both blocks are uploaded only when they change. Labelled `tray/pegboard` (the pipeline, the bind group, a debug group).
 
-import { bindGroup, bindLayout, renderPipeline, storageBuffer, uniformBuffer } from "../engine/pipeline";
-import type { StructBuffer } from "../engine/struct";
+import { bindGroup, bindLayout, renderPipeline, uniformBuffer } from "../engine/pipeline";
 import { compile, compose } from "../engine/shader";
 import type { View } from "../lattice/lod";
 import type { GridConfig } from "../mat/grid";
@@ -19,29 +18,26 @@ import { type MatFrame, MatUniforms, NOISE_SIZE } from "../mat/layout";
 import type { MatPass } from "../kit/view";
 import { lightValues } from "../mat/night";
 import type { GroundTheme } from "../theme";
-import { DRAWER, type DrawerRect, drawerRect } from "./drawer";
+import { DRAWER, type DrawerRect, drawerRect, type TrayOptions } from "./drawer";
 import { carry, PEG } from "./lattice";
-import { TrayAccessoryStruct, TrayUniforms } from "./layout";
+import { TrayUniforms } from "./layout";
 import { TRAY_LOOK } from "./look";
 import type { TrayShaders } from "./shaders";
-import { accessoryOf, type TrayCarriedFrame, type TraySpecimenFrame } from "./specimens";
+import type { TrayCarriedFrame, TraySpecimenFrame } from "./specimens";
 
 /** The tray this frame (the renderer's flux — design-017 §3): where the slide is, and the SHOWN scroll. */
-export interface TrayFrameInputs {
+export interface TrayFrameInputs extends TrayOptions {
   /** The slide as drawn: 0 closed (wholly off the view — nothing drawn) … 1 open. */
   readonly p: number;
   /** The SHOWN scroll — CSS px of board past its top, the band included; any size (its whole rows are carried on the CPU). */
   readonly scroll: number;
-  /** K5a: the specimens this frame (tray/specimens.ts) — their accessories are the pass's, their pixels their kinds'; absent = none. */
+  /** The specimens this frame (tray/specimens.ts), drawn by their own kinds. */
   readonly specimens?: readonly TraySpecimenFrame[];
   /** K5b: what is CARRIED this frame (tray/carry.ts) — the lifted copy, a ghost growing out of it or shrinking home — over the drawer, whole. */
   readonly carried?: readonly TrayCarriedFrame[];
-  /** I21: a host's FOOT inset, CSS px (drawer.ts `TrayOptions`) — the face's clip ends this far above the board's bottom edge, the veil lays the plain board over it; absent, 0. */
-  readonly foot?: number;
 }
 
 type TrayField = (typeof TrayUniforms.fields)[number][0];
-type AccessoryField = (typeof TrayAccessoryStruct.fields)[number][0];
 type MatField = (typeof MatUniforms.fields)[number][0];
 
 const BLEND_PREMUL: GPUBlendState = {
@@ -49,13 +45,12 @@ const BLEND_PREMUL: GPUBlendState = {
   alpha: { srcFactor: "one", dstFactor: "one-minus-src-alpha", operation: "add" },
 };
 
-/** What the last prepare laid (a rig's and a check's witness): the rect, the carry, the dim, the accessories' records (screen px) — and a host's foot inset (I21), when it has one. */
+/** What the last prepare laid (a rig's and a check's witness): the rect, the carry, the dim — and a host's foot inset (I21), when it has one. */
 export interface TrayLaid {
   readonly rect: DrawerRect;
   readonly rowBase: number;
   readonly frac: number;
   readonly dim: number;
-  readonly accessories: readonly ReturnType<typeof accessoryOf>[];
   readonly foot?: number;
 }
 
@@ -103,8 +98,6 @@ export class TrayPass {
   private readonly device: GPUDevice;
   private readonly mat: MatPass;
   private readonly pipeline: GPURenderPipeline;
-  /** K5a: the accessories' own fragment entry on the same layout (a branch in one entry slowed the board). */
-  private readonly accPipeline: GPURenderPipeline;
   /** The VEIL (design-018 rev 5): the plain board laid over everything the drawer holds at its top — its own entries on the same layout. */
   private readonly veilPipeline: GPURenderPipeline;
   private readonly layout: GPUBindGroupLayout;
@@ -124,21 +117,14 @@ export class TrayPass {
   private group: GPUBindGroup | null = null;
   private boundAssets = -1;
   private last: TrayLaid | null = null;
-  // the accessories (K5a): one record per specimen, grown by doubling; uploaded only when their bytes moved
-  private acc: StructBuffer<AccessoryField> = TrayAccessoryStruct.alloc(8) as StructBuffer<AccessoryField>;
-  private accBuf: GPUBuffer;
-  private accSent = new Uint8Array(0);
-  private accCount = 0;
-
-  private constructor(device: GPUDevice, mat: MatPass, pipelines: readonly [GPURenderPipeline, GPURenderPipeline, GPURenderPipeline], layout: GPUBindGroupLayout) {
+  private constructor(device: GPUDevice, mat: MatPass, pipelines: readonly [GPURenderPipeline, GPURenderPipeline], layout: GPUBindGroupLayout) {
     this.device = device;
     this.mat = mat;
-    [this.pipeline, this.accPipeline, this.veilPipeline] = pipelines;
+    [this.pipeline, this.veilPipeline] = pipelines;
     this.layout = layout;
     this.sampler = device.createSampler({ label: "tray/pegboard/noise", magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" });
     this.trayBuf = uniformBuffer(device, TrayUniforms.size, "tray/pegboard/uniforms");
     this.lightBuf = uniformBuffer(device, MatUniforms.size, "tray/pegboard/light");
-    this.accBuf = storageBuffer(device, TrayAccessoryStruct.size * 8, "tray/pegboard/accessories");
     this.hash = device.createTexture({ label: "tray/pegboard/hash", size: [HASH_SIZE, HASH_SIZE], format: "rgba8unorm", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
     device.queue.writeTexture({ texture: this.hash }, hashTexels(), { bytesPerRow: HASH_SIZE * 4 }, [HASH_SIZE, HASH_SIZE]);
   }
@@ -152,15 +138,13 @@ export class TrayPass {
       { binding: 2, stages: ["fragment"], texture: "float" },
       { binding: 3, stages: ["fragment"], sampler: "filtering" },
       { binding: 4, stages: ["fragment"], texture: "float" },
-      { binding: 5, stages: ["vertex", "fragment"], buffer: "read-only-storage" },
     ], "tray/pegboard");
     const pl = device.createPipelineLayout({ label: "tray/pegboard", bindGroupLayouts: [layout] });
     const pipelines = await Promise.all([
       renderPipeline(device, { label: "tray/pegboard", layout: pl, module, format, blend: BLEND_PREMUL }),
-      renderPipeline(device, { label: "tray/pegboard/accessories", layout: pl, module, format, blend: BLEND_PREMUL, fragment: "fs_accessory" }),
       renderPipeline(device, { label: "tray/pegboard/veil", layout: pl, module, format, blend: BLEND_PREMUL, vertex: "vs_veil", fragment: "fs_veil" }),
     ]);
-    return new TrayPass(device, mat, pipelines as [GPURenderPipeline, GPURenderPipeline, GPURenderPipeline], layout);
+    return new TrayPass(device, mat, pipelines as [GPURenderPipeline, GPURenderPipeline], layout);
   }
 
   /**
@@ -176,7 +160,7 @@ export class TrayPass {
     const foot = inputs.foot !== undefined && inputs.foot > 0 ? inputs.foot : 0;
     this.foot = foot;
     if (p <= 0) {
-      this.last = { rect, rowBase, frac, dim: 0, accessories: [], ...(foot > 0 ? { foot } : {}) };
+      this.last = { rect, rowBase, frac, dim: 0, ...(foot > 0 ? { foot } : {}) };
       this.quads = 0;
       return 0;
     }
@@ -203,8 +187,7 @@ export class TrayPass {
       // the flecks fade by their cell; their strokes are anti-aliased in the shader (tray.wgsl `peg_flecks`)
       keepFine: [keep(fp, 210), keep(fp, 42), keep(fp, 105), 0],
       keepEdge: [keep(fp, 9), keep(fp, 18), keep(fp, 36), 0],
-      accessory: [...T.accessory, T.accessoryShadow],
-      fade: [DRAWER.fade, DRAWER.header, foot, 0],
+      fade: [DRAWER.fade, DRAWER.header, foot, Math.max(0, inputs.footFade ?? DRAWER.fade)],
     };
     this.tray.set(values);
     const gobo = grid.mat.gobo;
@@ -219,33 +202,9 @@ export class TrayPass {
     this.upload(this.trayBuf, this.tray.view(), this.sentTray);
     this.upload(this.lightBuf, this.light.view(), this.sentLight);
     this.sent = true;
-    const accessories = (inputs.specimens ?? []).map(accessoryOf);
-    this.layAccessories(accessories);
-    this.last = { rect, rowBase, frac, dim, accessories, ...(foot > 0 ? { foot } : {}) };
+    this.last = { rect, rowBase, frac, dim, ...(foot > 0 ? { foot } : {}) };
     this.quads = 1;
     return 1;
-  }
-
-  /** The accessories' records to the GPU — grown by doubling, written only when their bytes moved (a drawer at rest costs no write). */
-  private layAccessories(list: readonly ReturnType<typeof accessoryOf>[]): void {
-    if (list.length > this.acc.count) {
-      let n = this.acc.count;
-      while (n < list.length) n *= 2;
-      this.acc = TrayAccessoryStruct.alloc(n) as StructBuffer<AccessoryField>;
-      this.accBuf.destroy();
-      this.accBuf = storageBuffer(this.device, TrayAccessoryStruct.size * n, "tray/pegboard/accessories");
-      this.accSent = new Uint8Array(0);
-      this.group = null;
-    }
-    for (let i = 0; i < list.length; i++) this.acc.set(list[i] as ReturnType<typeof accessoryOf>, i);
-    this.accCount = list.length;
-    if (list.length === 0) return;
-    const bytes = this.acc.view(list.length);
-    let same = bytes.length === this.accSent.length;
-    for (let i = 0; same && i < bytes.length; i++) if (bytes[i] !== this.accSent[i]) same = false;
-    if (same) return;
-    this.accSent = bytes.slice();
-    this.device.queue.writeBuffer(this.accBuf, 0, bytes);
   }
 
   /** A block to the GPU only when its bytes moved since the last upload (a drawer at rest costs no write). */
@@ -257,10 +216,10 @@ export class TrayPass {
     this.device.queue.writeBuffer(buf, 0, bytes);
   }
 
-  /** A pipeline and the group, bound (the group remade when the mat's assets or the accessories' buffer changed). */
+  /** A pipeline and the group, bound (the group remade when the mat's assets change). */
   private bind(pass: GPURenderPassEncoder, pipeline: GPURenderPipeline): void {
     if (this.group === null || this.boundAssets !== this.mat.assetVersion) {
-      this.group = bindGroup(this.device, this.layout, [this.lightBuf, this.trayBuf, this.mat.noiseTexture.createView(), this.sampler, this.hash.createView(), this.accBuf], "tray/pegboard");
+      this.group = bindGroup(this.device, this.layout, [this.lightBuf, this.trayBuf, this.mat.noiseTexture.createView(), this.sampler, this.hash.createView()], "tray/pegboard");
       this.boundAssets = this.mat.assetVersion;
     }
     pass.setPipeline(pipeline);
@@ -269,14 +228,13 @@ export class TrayPass {
 
   /**
    * The drawer UNDER its specimens into the open pass — over everything drawn so far (the caller left the scissor on the whole view):
-   * the dim, the drawer's shadows, the board to its edge; then each specimen's accessory with its shadow on the board (K5a).
+   * the dim, the drawer's shadows, and the board to its edge.
    */
   draw(pass: GPURenderPassEncoder): void {
     if (this.quads === 0) return;
     pass.pushDebugGroup("tray/pegboard");
     this.bind(pass, this.pipeline);
     pass.draw(6, 1, 0, 0);
-    if (this.accCount > 0) { pass.setPipeline(this.accPipeline); pass.draw(6, this.accCount, 0, 1); }
     pass.popDebugGroup();
   }
 
@@ -296,5 +254,5 @@ export class TrayPass {
   /** What the last prepare laid (a rig's witness). */
   get laid(): TrayLaid | null { return this.last; }
 
-  dispose(): void { this.trayBuf.destroy(); this.lightBuf.destroy(); this.accBuf.destroy(); this.hash.destroy(); }
+  dispose(): void { this.trayBuf.destroy(); this.lightBuf.destroy(); this.hash.destroy(); }
 }

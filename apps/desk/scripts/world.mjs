@@ -48,7 +48,7 @@ const needsPlugins = (sc) => JSON.stringify(sc.scene).includes('"objects":');
  * Petition I21 — a still whose drawer has a HOST's foot inset (`tray.foot`) is drawn on a page whose layer was MOUNTED with it
  * (`rig.html?trayFoot=…`, as VibeField mounts it): the foot is a mount option, never a pin. One page per mount the stills ask.
  */
-const queryOf = (sc) => { const q = [needsPlugins(sc) ? "plugins" : "", sc.scene.tray?.foot > 0 ? `trayFoot=${sc.scene.tray.foot}` : ""].filter((x) => x !== "").join("&"); return q === "" ? "" : `?${q}`; };
+const queryOf = (sc) => { const q = [needsPlugins(sc) ? "plugins" : "", sc.scene.tray?.foot > 0 ? `trayFoot=${sc.scene.tray.foot}` : "", sc.scene.tray?.footFade !== undefined ? `trayFootFade=${sc.scene.tray.footFade}` : ""].filter((x) => x !== "").join("&"); return q === "" ? "" : `?${q}`; };
 /**
  * design-015 D3w: the three inked-board scenes keep, from the world too, the bound rig:parity names for them (D-D3r-a.5): the
  * stamp pass compiled by Chrome's Dawn and by node-webgpu's quantises a handful of the raster's coverages one LSB apart — the

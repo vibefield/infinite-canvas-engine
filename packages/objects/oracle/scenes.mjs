@@ -403,6 +403,8 @@ export const FOOT_SCENES = [
   { name: "tray-foot", trayed: true, footed: "tray-scrolled", scene: { ...trayBase, tray: { p: 1, scroll: 240.4, foot: 88 } } },
 ];
 ORACLE_SCENES.push(...FOOT_SCENES);
+// The product uses only a 20 px bottom strip: a 16 px fade above a 4 px border.
+ORACLE_SCENES.push({ name: "tray-foot-narrow", trayed: true, footed: "tray-scrolled", scene: { ...trayBase, tray: { p: 1, scroll: 240.4, foot: 4, footFade: 16 } } });
 
 // THE KIND BOUNDARY (petition I24): the SHOWCASE — the capture door's desk (two mini mats, the first with a live inside; a selected note
 // and a blank one; a bare whiteboard; a print; a closed notebook) and a desk clock beside them — with the fault fixture's BROKEN clock

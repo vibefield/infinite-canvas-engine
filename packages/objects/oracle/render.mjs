@@ -136,13 +136,13 @@ const targetOf = (s) => {
  */
 async function render(s, opts = {}) {
   const { target, w, h } = targetOf(s);
-  const { theme, nav, prepared, marks } = await scoped(`frame ${++probe.frames}`, () => {
+  const { theme, nav, prepared, marks, specimens } = await scoped(`frame ${++probe.frames}`, () => {
     const encoder = device.createCommandEncoder();
     const r = desk.encode(encoder, target.view, { w, h }, s, { marks: false, ...opts });
     device.queue.submit([encoder.finish()]);
     return r;
   });
-  return { px: await readback(device, target.texture, 4), theme, nav, portals: prepared.portals, stats: prepared.incoming.stats, marks, w, h };
+  return { px: await readback(device, target.texture, 4), theme, nav, portals: prepared.portals, stats: prepared.incoming.stats, marks, specimens, w, h };
 }
 
 // ---------------------------------------------------------------- the checks
@@ -1093,12 +1093,12 @@ let failed = 0;
  * THE TRAY (design-017, K3) as pixels: beyond the drawer and its shadows' reach the frame is the tray-less frame dimmed — every byte
  * × (1 − dim), the premultiplied black laid over it, to the rounding — and the drawer's face is the pegboard's: its holes darken a
  * stadium's share of it (0.157 of a cell). With a host's FOOT inset (petition I21) the face is counted above the foot's ramp, and the
- * foot itself is held: there the still IS its bare board, byte for byte (no specimen, shadow, accessory or tag shows), no pixel of it
+ * foot itself is held: there the still IS its bare board, byte for byte (no specimen, shadow or tag shows), no pixel of it
  * is a hole's, and above the ramp the still is its footless twin (`footed`) byte for byte.
  */
 async function trayCheck(sc) {
   const s = sc.scene;
-  const { px: A, w, h } = await render(s, { marks: true });
+  const { px: A, w, h, specimens: frames } = await render(s, { marks: true });
   const laid = desk.tray.laid;
   const { tray: _tray, ...bare } = s;
   const { px: B } = await render(bare, { marks: true });
@@ -1116,14 +1116,14 @@ async function trayCheck(sc) {
       for (let c = 0; c < 3; c++) { const i = (y * w + x) * 4 + c; worst = Math.max(worst, Math.abs((A[i] ?? 0) - (B[i] ?? 0) * (1 - laid.dim))); }
     }
   }
-  // the SPECIMENS (K5a): each one's rect on screen, as the pass laid its accessory, is its kind's drawing — far from the bare board there,
+  // the SPECIMENS (K5a): each one's rect on screen is its kind's drawing — far from the bare board there,
   // below the face's top, its clear header and its fade band (design-018 §4, R4: in the header nothing hangs, within the band a specimen
   // dissolves into the board by design) — and above a host's foot and its ramp (I21: the same at the foot)
   const clear = r.y + DRAWER.arris + DRAWER.header + DRAWER.fade;
   const foot = laid.foot ?? 0;
   const line = r.y + r.h - foot;
-  const end = foot > 0 ? line - DRAWER.fade : h / d;
-  const specimens = laid.accessories.map((a) => a.rect);
+  const end = foot > 0 ? line - (s.tray.footFade ?? DRAWER.fade) : h / d;
+  const specimens = frames.map(({ screen: r }) => [r.x0, r.y0, r.x1, r.y1]);
   const { px: C } = await render({ ...s, tray: { ...s.tray, bare: true } }, { marks: true });
   let drawnBy = 0;
   let shown = 0;
@@ -1132,10 +1132,12 @@ async function trayCheck(sc) {
     const ye = Math.min(y1, end);
     if (ye <= ys || ys >= h / d) continue;   // wholly in a fade band or below the view: nothing of it to see whole
     shown++;
-    let sum = 0;
+    let changed = 0;
     let n = 0;
-    for (let y = Math.ceil(ys * d); y < Math.min(ye * d, h); y += 2) for (let x = Math.ceil(x0 * d); x < x1 * d; x += 2) { const i = (y * w + x) * 4; for (let c = 0; c < 3; c++) sum += Math.abs((A[i + c] ?? 0) - (C[i + c] ?? 0)); n += 3; }
-    if (n > 0 && sum / n > 12) drawnBy++;
+    for (let y = Math.ceil(ys * d); y < Math.min(ye * d, h); y += 2) for (let x = Math.ceil(x0 * d); x < x1 * d; x += 2) { const i = (y * w + x) * 4; for (let c = 0; c < 3; c++) if (Math.abs((A[i + c] ?? 0) - (C[i + c] ?? 0)) > 2) changed++; n += 3; }
+    // Presence is coverage above rounding noise, not mean brightness: the mini mat on the first
+    // row is intentionally close to the board's colour at night. The golden pins its exact drawing.
+    if (n > 0 && changed / n > 0.5) drawnBy++;
   }
   // a hole is darker than 0.6 of the face's own median — by day and under the Moon alike — on the bare board (its specimens cover some),
   // past the header and its ramp (R4: no hole opens in the header, and in the ramp they are opening), and above a host's foot's ramp

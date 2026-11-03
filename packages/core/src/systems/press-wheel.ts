@@ -9,7 +9,7 @@
  */
 import type { System, World } from "@vibecook/strata-ecs";
 import { defineQuery, defineSystem } from "@vibecook/strata-ecs";
-import { Captures, LocalPointer, Pointer, PointerButtons, PointerWheel, PressWheel, Watches, WheelHandled, WheelTurns } from "../catalog";
+import { Captures, LocalPointer, MovesSelection, RoutedMove, Pointer, PointerButtons, PointerWheel, PressWheel, Watches, WheelHandled, WheelTurns } from "../catalog";
 
 const pointersQ = defineQuery([Pointer, LocalPointer, PointerButtons]);
 
@@ -21,9 +21,14 @@ export function createPressWheel(world: World): System {
         const p = b.entity(r);
         let turns = false;
         if ((ctx.read(p, PointerButtons).buttons & 1) !== 0) {
-          for (const rec of world.getReverse(p, Watches)) {
-            const e = world.getRelation(rec, Captures);
-            if (e !== undefined && ctx.isAlive(e) && ctx.hasTag(e, WheelTurns)) { turns = true; break; }
+          const watchers = world.getReverse(p, Watches);
+          // A group move preserves each member's angle. Its wheel belongs to
+          // canvas navigation, even when the press began on a turning widget.
+          if (!watchers.some(rec => ctx.hasTag(rec, MovesSelection) || ctx.hasTag(rec, RoutedMove))) {
+            for (const rec of watchers) {
+              const e = world.getRelation(rec, Captures);
+              if (e !== undefined && ctx.isAlive(e) && ctx.hasTag(e, WheelTurns)) { turns = true; break; }
+            }
           }
         }
         const cur = ctx.get(p, PressWheel);

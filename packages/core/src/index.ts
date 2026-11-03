@@ -446,7 +446,7 @@ export * from "./settings/defaults";
 // runtime resource, exported so the DOM demo and integration can wire them.
 // `WheelZoomStep` (design-015 §9, D2a-core): this frame's wheel zoom, for the
 // systems after cameraControl (D2b's zoom-through).
-export { CameraInertia, WheelZoomStep, createCameraSystems, type CameraSystems } from "./systems/camera-sim";
+export { CameraInertia, CameraZoomStep, WheelZoomStep, createCameraSystems, type CameraSystems } from "./systems/camera-sim";
 
 // --- M5 app-facing doc kit slice (design-005 §6.5–6.6): autosave + dumb relay ---
 export {

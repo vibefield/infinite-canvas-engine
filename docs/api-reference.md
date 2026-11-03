@@ -24,25 +24,36 @@ published bytes rather than trusting the last local build.
 
 ## @ice/core
 
+The select tool moves a multi-selection from a selected object or the empty space inside its bounds;
+Shift-drag on empty canvas keeps drawing an additive marquee. Locked members stay fixed. Custom carry
+widgets can declare `interaction.movable: "selection"`: core moves them with the group while their own
+driver handles solo drags. `MovesSelection` is latched on the drag recognizer at pointer-down, so a
+custom driver can yield before lifting; `Drags` and `Grab` remain the authoritative claimed set.
+
 ### Definition primitives
 
 | Export | Shape | Notes |
 |---|---|---|
-| `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; the `object` kind binding (design-015 §5.2 — the FACE, optional: a widget without one is faceless and the desk draws nothing for it) and its `stratum` (`pads` · `sheets` · `things`) and `openable`; `ports`, `container`/`provides`, `interaction`, `renamedFrom`, `behaviors`, `migrate` chain, and a `tray` entry (design-017 §8, K5a — `{ label, props?, take?, local?, hang: { w, h, pegs, accessory }, order?, category? }`: the object's specimen on the pegboard tray, an object's only; validated at definition; K-L2 — a plugin kind declares the same, and the catalog's widgets that carry one ARE the tray's contents; design-018 §6: `category` is the entry's CHIP on the tray's bar — the built-ins file under `paper` (the note, the print, the notebook, the calendar) and `surfaces` (the mini mat, the whiteboard), the example clock under `things`; a plugin's string is its own chip or joins one it names, and an entry with none is laid under All alone. K5b: `props` is the specimen's FACE; `take` what one taken off the tray is made with — absent the widget's defaults, `"face"` the face's props, or a record (`trayTakeProps` reads it); `local: true` draws the specimen, and a copy lifted off it, with its kind's desk state, for a face that lives there — a note's writing, a print's pictures, a pad's print); `heldTools` (each a `mode`/`action` with keys and a `HeldGlyph` — a name of the bar's set or its own drawing `{ path, fill? }`, design-016 K8a) and `menu` (K8a — `MenuActionDef { id, label, glyph?, keys?, run(api) }`: the acts the selection menu shows for a selection all of whose types declare them, run by `ops.runMenuAction`; `menuActionsFor(entities, menuOf)` is the shared rule). RETIRED at design-015 D5b and refused at definition (the `presentation` precedent): `surface`, `component`, `chrome`, `animated`, `preview`, `instancePreview`, `sizeMode`, the container's `framePreview`, and the three `ice:surface.*` behaviours that chose where a card presented (`domAtRest` · `alwaysGpu` · `alwaysDom` — the S1 gesture-set promotion with them; `git show c5df2c9:docs/api-reference.md` keeps that row). `@ice/desk`'s `defineObject({ type, kind, size, props, container })` is the typed door. |
+| `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; the `object` kind binding (design-015 §5.2 — the FACE, optional: a widget without one is faceless and the desk draws nothing for it) and its `stratum` (`pads` · `sheets` · `things`) and `openable`; `ports`, `container`/`provides`, `interaction`, `renamedFrom`, `behaviors`, `migrate` chain, and a `tray` entry (design-017 §8, K5a — `{ label, props?, take?, local?, hang: { w, h, pegs, accessory }, order?, category? }`: the object's specimen on the pegboard tray, an object's only; validated at definition; K-L2 — a plugin kind declares the same, and the catalog's widgets that carry one ARE the tray's contents; design-018 §6: `category` is the entry's CHIP on the tray's bar — the built-ins file under `paper` (the note, the notebook, the calendar) and `surfaces` (the mini mat, the whiteboard), the example clock under `things`; a plugin's string is its own chip or joins one it names, and an entry with none is laid under All alone. K5b: `props` is the specimen's FACE; `take` what one taken off the tray is made with — absent the widget's defaults, `"face"` the face's props, or a record (`trayTakeProps` reads it); `local: true` draws the specimen, and a copy lifted off it, with its kind's desk state, for a face that lives there — a note's writing, a print's pictures, a pad's print); `heldTools` (each a `mode`/`action` with keys and a `HeldGlyph` — a name of the bar's set or its own drawing `{ path, fill? }`, design-016 K8a) and `menu` (K8a — `MenuActionDef { id, label, glyph?, keys?, run(api) }`: the acts the selection menu shows for a selection all of whose types declare them, run by `ops.runMenuAction`; `menuActionsFor(entities, menuOf)` is the shared rule). RETIRED at design-015 D5b and refused at definition (the `presentation` precedent): `surface`, `component`, `chrome`, `animated`, `preview`, `instancePreview`, `sizeMode`, the container's `framePreview`, and the three `ice:surface.*` behaviours that chose where a card presented (`domAtRest` · `alwaysGpu` · `alwaysDom` — the S1 gesture-set promotion with them; `git show c5df2c9:docs/api-reference.md` keeps that row). `@ice/desk`'s `defineObject({ type, kind, size, props, container })` is the typed door. |
 | `p` | `p.string/number/boolean/enum/json/entityKey` | Every field defaulted; `p.json` is the conflict-coarse escape hatch; `p.entityKey` is the ONLY legal cross-entity reference in durable data. Standard Schema v1. |
 | `defineBehavior(name, spec)` | → `BehaviorHandle` | Logic + state as ONE declaration; `store: "durable" \| "runtime" \| "ephemeral"` is REQUIRED and routes everything. See [Behaviors](#behaviors). |
-| `defineTool(def)` / `createDrawTool(type)` | → `Tool` | Pure config: `spawnProfile`, `route {canvasDrag, canvasDragShift, widgetDrag, portDrag}` (`canvasDragShift`: what a shift-drag on the bare canvas does — the desk's `deskSelect` pans on a bare drag and marquees on a shift-drag), `gates`, `cursor`, `shortcut`. Built-ins: `select`, `pan`, `connect`. |
+| `defineTool(def)` / `createDrawTool(type)` | → `Tool` | Pure config: `spawnProfile`, `route {canvasDrag, canvasDragShift, widgetDrag, portDrag}` (`canvasDragShift`: what a shift-drag on the bare canvas does — the desk's `deskSelect` marquees on both, with shift adding to the selection), `gates`, `cursor`, `shortcut`. Built-ins: `select`, `pan`, `connect`. |
 | `definePrefab(id, def)` | → `Prefab` | The base primitive `defineWidget` sugars over; `store: "durable" \| "runtime" \| "ephemeral"`. |
 | `defineComponent/Tag/Relation/Resource` | strata wrappers | Record metadata for sovereignty/devtools; catalog in `@ice/core` ships the full engine vocabulary. |
 
 ### The facade
 
 ```ts
-const ce = createCanvasEngine({ widgets?, tools?, canvasTypes?, rootCanvas?, behaviors?, budgets?, settings?, policy?, compositorDevice?, onGuestFault?, onReflectorFault? });
+const ce = createCanvasEngine({ widgets?, retiredWidgets?, tools?, canvasTypes?, rootCanvas?, behaviors?, budgets?, settings?, policy?, compositorDevice?, onGuestFault?, onReflectorFault? });
 // the desk's preset: createCanvasEngine(DESK_ENGINE) — @vibecook/ice/desk/objects
 // ce: { world, engine, behaviors, stack, runtime, nav, ops, docs, stage, frame,
 //       budgets, step(now), dispose() }
 ```
+
+`retiredWidgets` retains registered widget schemas and their data-prefab versions for existing documents without
+compiling those widgets into the active catalog. Retired objects stay out of canvas membership, selection and placement;
+no tray specimen or kind runtime is mounted. Their saved cells and peer updates remain intact, and their packs are not
+stamped on new documents. A widget cannot appear in both `widgets` and `retiredWidgets`.
 
 - `ce.ops` — `setTool · spawnWidget · deleteSelection · duplicateSelection ·
   setSelection/clearSelection/selectAll · reorder(ids, "top"|"bottom") ·
@@ -427,14 +438,19 @@ LINEAR.
   after it rides in its tail; `mat4x4f` column-major; `array<vec4f, N>` at stride 16) and `defineStruct`'s the placement: each
   field at its alignment, the struct rounded up to 16 so one record is a legal uniform member and storage element alike.
 
+Enabled cutting-mat rulers draw above the slot's objects and nested canvases, below selection marks and tray chrome. Their edge strips reuse the mat pipeline, uniforms and lighting; the background and foreground cover disjoint pixels, so fades do not double-blend and the mat has no extra fragment shading. Bare tray and reading-hand slots do not draw rulers.
+
 **The host's chrome on the desk (petitions I20, I21, I26)** — beside `grid` (the root's mat config — its rulers, its gobo; `configureMat`
 live), `deskLayer` takes the numbers a host's own chrome sets, read at the mount, each the desk's own when absent: **`hold: { top?,
 band?, travelMs? }`** — the held object's reading fit keeps `top` CSS px under the view's top (56; a phone keeps its 60) and `band`
 above its foot (72), and the held bar travels `travelMs` (M1; 340) — the bar being the host's, the selection's anchor carries it
-(`anchor().held.travelMs`, present only when set; `<SelectionMenu>` follows it); **`tray: { foot? }`** — the pegboard's laid content
+(`anchor().held.travelMs`, present only when set; `<SelectionMenu>` follows it); **`tray: { foot?, footFade? }`** — the pegboard's laid content
 ends `foot` CSS px above the board's bottom edge (0), the header's mirror: the face's clip and the tags end there, the veil lays the
 plain board over the foot and feathers it, the scroll's range grows by it so the last line is still reached, and core never hovers or
-takes a specimen there (the pose seam's `TrayScreenFrame.foot`); the board runs to its edge. A malformed number throws at the mount.
+takes a specimen there (the pose seam's `TrayScreenFrame.foot`); the board runs to its edge. `footFade` sets the fade above this inset
+(default 32 CSS px, 0 for a hard edge) independently of the header. A malformed number throws at the mount.
+Tray specimens retain their entry's `hang` metadata for layout, but the renderer draws only the objects and their labels: no hooks,
+clips, shelves, rails, or mounting shadows.
 And **`cursors?: boolean`** (petition I26; `true` when absent) — a host that draws the room's people itself (VibeField, each by face,
 from `usePresencePeers`) passes `false`, and the host the layer is mounted in (`createDeskHost`, `<Desk>`) mounts no remote cursors:
 no plane, no reflector. The layer says it on its handle (`DeskLayerHandle.cursors`, read at the mount), where the host reads it
@@ -592,7 +608,10 @@ engine names a kind:
   2. **drivers** — `defineObject({ drivers })` → a `KindDriver` made per desk from `KindDriverHost`, ticked before the kinds' clocks
      — for what FOLLOWS INPUT on one desk (a pen, a carry, a leaf, a typing session): the hand onto the kind's flux, writing facts only
      through the document's doors at the gesture's end. Desk-local because that flux is per view (two desks on one document have two
-     pens) and because a driver reads the builder (geometry as drawn, the hand), which core's systems never see;
+     pens) and because a driver reads the builder (geometry as drawn, the hand), which core's systems never see. Its `idle()` says
+     when there is nothing to follow — no object of ITS kind in hand, no gesture owed — and the host skips `follow`; one driver not
+     idle keeps the desk stepping every frame, so a driver that follows whatever is in hand keeps a desk awake under ANY held object
+     (petition I52: ICE's own three did, until `0.16.0`);
   3. **`defineBehavior`** — core's (design-009), passed through `defineObject({ behaviors })` as for any widget — for logic whose STATE
      IS A FACT the world must sync, undo or keep across views (`store: "durable"` data riding the object, `"runtime"` state every peer
      projects). Not for typing: a typing session's live text is flux written under the gesture's claim and committed whole at its end
@@ -644,6 +663,10 @@ the umbrella's BUILT `.d.ts` (`skipLibCheck: false`) and every name it imports i
 STILL (petition I30) is the first third-party still through the door: `test/still.ts` lays three dials through `createStill`, Dawn
 draws them (`pnpm still`, in gate:landing after the oracle — not in `test`: CI runs no Dawn) and `test/still.golden.json` holds them, by
 day and by night; `dts:check` compiles the still beside `src/`, and `test/held.types.ts` — the anchor's parts a host names (I36).
+
+`Photo` is an image-backed canvas object, created by paste, drop, or host placement; it has no tray entry.
+Images fill the sheet by default, including existing prints. The legacy saved `border` prop stays readable
+but no longer controls presentation; a custom `photoKind({ law })` may set `law.border` for host styling.
 
 **`@ice/objects`** is `@vibecook/ice/desk/objects` (design-016 K4b: the six reference kinds' own package, built on the three desk
 entries alone, exactly as a plugin kind is): `Note`/`NOTE_TYPE`, `MiniMat`, `Notebook`, `Board`, `Calendar`, `Photo`,

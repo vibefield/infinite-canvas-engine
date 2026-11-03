@@ -6,21 +6,43 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
-> **`0.16.0-portals.4` on the `next` dist-tag (cut 2026-10-10)** — a prerelease carrying everything below for VibeField's PORTALS
-> program (live surfaces back on the desk as object kinds) to pin exactly while its landing branch is open: `portals.1` (9 Oct, cut,
-> never published) M24 LT1, the live face (design-019) — `createLiveTexture` and the `LIVE` source a host lends, the sight,
-> `KindHost.redraw`/`keyOf`/`frames`, `mipsInto`, `stillLive`, the kit's `mat` name; `portals.2` (9 Oct) LT2, the hand's input to
-> a kind in hand — `KindLocal.held` and `HeldEvent`, `OpenBinding.wheel`/`cursor`/`escape`, the editor lease's `compose`/`commit`,
-> `LiveTexture.logical`; `portals.3` (9 Oct) LT3, the render half contained — a kind's pass, its drivers, `forget`, `keeps` and a
-> raster's eviction under petition I24's three strikes in every slot, the frame's encoder kept usable after a kind's throw, GPU
-> errors attributed by one scope a slot; `portals.4` adds LT4, the four asks VibeField's builders found using the seam — a held
-> tool says its state (`HeldToolDef.state`: disabled, another glyph, another label — petition I49), the sight believes only what
-> meets the slot's box (I50), the mat's cast colour as a palette role (`KindPalette` — I46), and the live face's host half off the
-> kit (I51). The section stays `[Unreleased]` until 0.16.0 is cut. **Two changes break a build:** (portals.2)
-> `interaction.keyboard`/`keyboardEscape` and the `KeyboardExclusive` tag are gone, and declaring either throws at definition,
-> naming the editor lease and `open.escape`; (portals.4) `createLiveTexture` and `stillLive` (with `LiveWriter`,
-> `LiveTextureOptions`, `LiveImage`, `LiveRect`, `LiveStill`) are imported from `@vibecook/ice/desk`, no longer from `/desk/kit`,
-> and a caller that asks a kind's `theme` itself passes `kindPalette(palette)`.
+## [0.17.0] — 2026-11-02
+
+### Added
+
+- `CameraZoomStep` reports user zoom changes for host feedback, including native haptic milestones.
+- `retiredWidgets` and `EngineCatalog.retiredWidget` preserve registered document data without loading a retired widget's active runtime.
+- `MatConfig.gobo.space` can keep lighting fixed in viewport coordinates. `tray.footFade` controls the bottom fade independently of the header.
+- Selection movement supports a selected group's bounds and custom interactions through `SelectionMovable` / `movable: "selection"`.
+
+### Changed
+
+- Wheel scrolling pans. The desk preset uses native-scale exponential pinch zoom; dragging empty desk draws a marquee. Space-drag and middle-button drag pan explicitly.
+- The pegboard consumes native wheel momentum without adding an edge bounce. Mounting hooks, clips, shelves, and rails are removed from its rendering.
+- Prints are passive, borderless image objects and are absent from the default tray. Their saved legacy border property remains readable.
+- Cutting-mat edge rulers draw above objects, including nested canvases, using the existing mat pipeline and cached non-overlapping drawing regions.
+
+### Fixed
+
+- Selected groups can be dragged from their bounds or a selected object, including Prints, with locked objects and control handles respected and movement kept in one undo gesture.
+- Panning and pinching have independent input lifecycles, preventing ordinary trackpad scrolling from becoming zoom.
+
+## [0.16.0] — 2026-10-14
+
+**VibeField's PORTALS program, the ICE half (M24, design-019 — the live face), released on `latest`.** Four prereleases on `next`
+carried it while VibeField's landing branch pinned each exactly: `portals.1` (9 Oct, cut, never published) LT1, the live face —
+`createLiveTexture` and the `LIVE` source a host lends, the sight, `KindHost.redraw`/`keyOf`/`frames`, `mipsInto`, `stillLive`, the
+kit's `mat` name; `portals.2` (9 Oct) LT2, the hand's input to a kind in hand — `KindLocal.held` and `HeldEvent`,
+`OpenBinding.wheel`/`cursor`/`escape`, the editor lease's `compose`/`commit`, `LiveTexture.logical`; `portals.3` (9 Oct) LT3, the
+render half contained — a kind's pass, its drivers, `forget`, `keeps` and a raster's eviction under petition I24's three strikes
+in every slot, the frame's encoder kept usable after a kind's throw, GPU errors attributed by one scope a slot; `portals.4` (10 Oct)
+LT4, the four asks VibeField's builders found using the seam — a held tool's state (I49), the sight's box (I50), the mat's cast
+colour as a palette role (I46), the live face's host half off the kit (I51). `0.16.0` adds LT5 (14 Oct), petition I52: the
+reference kinds' drivers follow only their OWN object in hand, so another kind's object held still lets the desk sleep (no API
+change). **Two changes break a build:** (portals.2) `interaction.keyboard`/`keyboardEscape` and the `KeyboardExclusive` tag are
+gone, and declaring either throws at definition, naming the editor lease and `open.escape`; (portals.4) `createLiveTexture` and
+`stillLive` (with `LiveWriter`, `LiveTextureOptions`, `LiveImage`, `LiveRect`, `LiveStill`) are imported from
+`@vibecook/ice/desk`, no longer from `/desk/kit`, and a caller that asks a kind's `theme` itself passes `kindPalette(palette)`.
 
 **M24 — the live face (design-019, PROPOSAL rev 1 — VibeField's PORTALS seam).** A kind's face may show a surface that lives outside
 the world — a web page, a captured window, a simulator's screen — as a texture on the desk's device that the HOST fills and the kind
@@ -30,7 +52,8 @@ composition, the displayed frame's logical size — and removes the keyboard cla
 `### Changed`). LT3 contains the render half: a kind's throw in a frame — any slot — and its GPU errors where a scope can name it are
 petition I24's strikes against that kind, never a lost frame (additive; a few types widen). LT4 lands the four asks VibeField's
 builders found using the seam — a held tool's state (I49), the sight's box (I50), the live face's host half off the kit (I51 — a
-MOVE: `### Changed`), the mat's cast colour as a palette role (I46).
+MOVE: `### Changed`), the mat's cast colour as a palette role (I46). LT5 lands petition I52: ICE's three reference kinds' drivers follow
+only their OWN object in hand, so another kind's object held still lets the desk sleep (`### Fixed`).
 
 ### Added
 
@@ -272,6 +295,19 @@ MOVE: `### Changed`), the mat's cast colour as a palette role (I46).
   forward (the `presentation` precedent): a kind takes keys by LEASING the desk's one editor (`EditorLease` — the lease is the claim),
   and an object in hand that owns Escape says `open.escape: "kind"`. The dom's claim marker stays (`data-canvas-keyboard`,
   `CLAIM_OWNS_ESCAPE`, `keyboardClaimOf`): the desk's editor carries it, and an app's own chrome may.
+
+### Fixed
+
+<!-- M24 LT5 — petition I52 (VibeField PT-6a's C1; 2026-10-14) -->
+- **ANOTHER KIND'S OBJECT IN HAND NO LONGER KEEPS THE DESK STEPPING** (petition I52): the whiteboard's pen, the notebook's leaf and
+  the desk calendar's hand were not idle while ANY object was in hand, so an object of any other kind held still — a plugin's;
+  VibeField's browser pane — kept all three following and the desk stepping every frame (VibeField measured 120 steps a second for 2
+  frames drawn, its desk never asleep). Each is idle now unless the object in hand is ITS OWN — a board; a book; a pad (the hand never
+  acts on a held note) — its other conditions unchanged: a stroke, a turn, a roll or a lifted corner in flight still keeps it awake,
+  and the moment its own object leaves the hand is still followed (the stroke lands, the marker lies down, the turn is let go, the
+  corner lies down). With another kind's object in hand each one's `follow` did what it does with nothing in hand, so nothing drawn
+  or written moves (the oracle's stills unchanged). `KindDriver.idle`'s contract now says what a driver's idle means — no object of
+  ITS kind in hand — since a plugin's driver that follows whatever is held keeps every desk stepping the same way. No API change.
 
 ## [0.15.0] — 2026-10-08
 

@@ -348,7 +348,7 @@ describe("Ground and the desk's passes on a fake device (no pixels: the oracle h
     // through the walker: a note laid on the first board splits the boards into two runs — the second draws board 3 alone
     log.length = 0;
     const slot: DrawSlot = {
-      mat: { draw: () => log.push("mat") } as unknown as CuttingMat,
+      mat: { drawSurface: () => log.push("mat"), drawRulers: () => {} } as unknown as CuttingMat,
       kinds: new Map([[BOARD_KIND, { name: BOARD_KIND, stratum: "things", pass: kind }], ["paper", loggingKind(log, "desk", "paper", "things")]]),
       objects: [{ kind: BOARD_KIND }, { kind: "paper" }, { kind: BOARD_KIND }, { kind: BOARD_KIND }],
       stats: { k0: 0, fade: 0, wind: false },

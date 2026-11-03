@@ -45,6 +45,8 @@ import {
   LeavesCopy,
   Locked,
   Movable,
+  MovesSelection,
+  SelectionMovable,
   NO_ENTITY,
   PointerMods,
   Position,
@@ -180,7 +182,8 @@ export function createClaimSystems(world: World): { moveClaim: System; resizeCla
       for (const r of b) {
         const rec = b.entity(r);
         const grabbed = ctx.getRelation(rec, Captures);
-        if (grabbed === undefined || !ctx.has(grabbed, Position)) continue;
+        const fromSelection = ctx.hasTag(rec, MovesSelection);
+        if (!fromSelection && (grabbed === undefined || !ctx.has(grabbed, Position))) continue;
 
         // Select-on-grab (design-003 §4.5). Selection tags flip via ctx (deferred),
         // so the dragged set is computed HERE, not re-queried. Modifiers come
@@ -188,10 +191,15 @@ export function createClaimSystems(world: World): { moveClaim: System; resizeCla
         const pointer = ctx.getRelations(rec, Watches)[0];
         const shift = pointer !== undefined && ctx.get(pointer, PointerMods)?.shift === true;
         // ⌥ as the drag starts: its release leaves a copy behind (design-015 D4a) — latched like a route, never mid-gesture
-        if (pointer !== undefined && ctx.get(pointer, PointerMods)?.alt === true && !ctx.has(grabbed, InsertGhost)) ctx.addTag(rec, LeavesCopy);
+        if (pointer !== undefined && ctx.get(pointer, PointerMods)?.alt === true && (grabbed === undefined || !ctx.has(grabbed, InsertGhost))) ctx.addTag(rec, LeavesCopy);
         const current = selectedEntities(world);
         let dragged: Entity[];
-        if (ctx.has(grabbed, InsertGhost)) {
+        if (fromSelection) {
+          // A press in the union's empty space keeps the selection intact.
+          dragged = current;
+        } else if (grabbed === undefined) {
+          continue;
+        } else if (ctx.has(grabbed, InsertGhost)) {
           // Tray-insert ghosts drag SOLO (2026-07-19): the shift branch below
           // would sweep the standing selection into the insert, and a
           // selected-set join makes no sense for a widget that does not exist
@@ -225,7 +233,8 @@ export function createClaimSystems(world: World): { moveClaim: System; resizeCla
 
         for (const w of dragged) {
           if (!ctx.isAlive(w) || !ctx.has(w, Position)) continue;
-          if (w !== grabbed && !ctx.hasTag(w, Movable)) continue;
+          if (ctx.hasTag(w, Culled) && !ctx.hasTag(w, Active)) continue;
+          if (w !== grabbed && !ctx.hasTag(w, Movable) && !ctx.hasTag(w, SelectionMovable)) continue;
           // Taped down (design-015 §5.1): no rider, so no move, no elevate and no
           // commit for it — whether it was grabbed, rode the selection or was
           // swept. Selection above is untouched: a taped widget stays selectable.

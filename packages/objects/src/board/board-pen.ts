@@ -43,7 +43,7 @@ export interface BoardPenOptions {
 }
 
 export interface BoardPen {
-  /** Nothing to follow (D7 #14): no board in hand, no stroke laid, no marker to lie down. */
+  /** Nothing to follow (D7 #14): no board in hand, no stroke laid, no marker to lie down — another kind's object in hand is not the pen's (petition I52). */
   idle(): boolean;
   /** Once a frame, before the kinds' clocks: the hand onto the board in hand, its stroke laid, lifted, committed. */
   follow(now: number): void;
@@ -85,6 +85,11 @@ export function createBoardPen(opts: BoardPenOptions): BoardPen {
   };
   /** A desk point on board `b`'s melamine, as the cell stores it (world units from its top-left, f32). */
   const onMelamine = (G: BoardGeometry, at: readonly [number, number]): [number, number] => { const [x, y] = toSurface(G, at[0], at[1]); return [f32(x), f32(y)]; };
+  /** The board in hand, the one object the pen follows — undefined with nothing in hand AND with another kind's object in hand: the pen's follow does nothing there either (petition I52). */
+  const boardInHand = (): Entity | undefined => {
+    const held = heldEntity(world);
+    return held !== undefined && world.isAlive(held) && opts.isBoard(held) ? held : undefined;
+  };
 
   /** The lift: the last sample, the stroke laid in WET, its ONE transaction out of the frame. */
   const lift = (s: Stroke, at: readonly [number, number] | undefined, now: number): void => {
@@ -119,8 +124,7 @@ export function createBoardPen(opts: BoardPenOptions): BoardPen {
 
   return {
     follow(now) {
-      const held = heldEntity(world);
-      const board = held !== undefined && world.isAlive(held) && opts.isBoard(held) ? held : undefined;
+      const board = boardInHand();
       if (last !== null && last.board !== board) {
         // the board was put down (or another taken up): the stroke in hand lands first, then the marker lies down
         if (stroke !== null && stroke.board === last.board) { lift(stroke, undefined, now); stroke = null; }
@@ -186,7 +190,7 @@ export function createBoardPen(opts: BoardPenOptions): BoardPen {
         ...(screen !== undefined ? { screen: [screen.x, screen.y] as const, t: now } : {}),
       });
     },
-    idle: () => stroke === null && last === null && heldEntity(world) === undefined,
+    idle: () => stroke === null && last === null && boardInHand() === undefined,
     live: () => (stroke === null ? null : { board: stroke.board, samples: stroke.points.length }),
     commits: () => commits,
   };

@@ -49,8 +49,8 @@ export const CAST: RGB = MAT_COLORS.cast;
 const PHOTO_SPEC = {
   /** The print's long side — a 6×4 at the note's scale. */
   long: 400,
-  /** The white border, as a fraction of the short side (a classic bordered print). 0 = borderless. */
-  border: 0.05,
+  /** Optional host styling, as a fraction of the short side. Images fill the sheet by default. */
+  border: 0,
   /** The die-cut corner. */
   radius: 2.5,
   /** The paper under the emulsion: a resin-coated white, a touch warm (sRGB), and its fibre ±/255. */

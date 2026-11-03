@@ -55,7 +55,7 @@ export interface NotebookHandOptions {
 export interface NotebookHand {
   /** Once a frame, before the kinds' clocks: the hand onto the book in hand — its stroke laid, lifted, committed. */
   follow(now: number): void;
-  /** Nothing to follow (D7 #14): no book in hand, no stroke laid, no turn in progress. */
+  /** Nothing to follow (D7 #14): no book in hand, no stroke laid, no turn in progress — another kind's object in hand is not the hand's (petition I52). */
   idle(): boolean;
   /** The stroke in hand: its book, its page and how many samples so far; null when none. */
   live(): { readonly book: Entity; readonly page: number; readonly samples: number } | null;
@@ -161,6 +161,12 @@ export function createNotebookHand(opts: NotebookHandOptions): NotebookHand {
     if (at !== spreadOf(books, book)) write(books, book, at);
   };
 
+  /** The book in hand, the one object the hand follows — undefined with nothing in hand AND with another kind's object in hand: the hand's follow does nothing there either (petition I52). */
+  const bookInHand = (): Entity | undefined => {
+    const held = heldEntity(world);
+    return held !== undefined && world.isAlive(held) && opts.isBook(held) ? held : undefined;
+  };
+
   /** The page point under a desk point — on `side`'s page of a resolved book, as the cell stores it (page units, f32); null off it. */
   const onPage = (G: NotebookGeometry, at: readonly [number, number], s: Stroke | null): { side: 0 | 1; page: number; s: number; y: number } | null => {
     const h = pageHitAt(G, at[0], at[1]);
@@ -200,10 +206,9 @@ export function createNotebookHand(opts: NotebookHandOptions): NotebookHand {
   };
 
   return {
-    idle: () => stroke === null && turn === null && inHand === null && heldEntity(world) === undefined,
+    idle: () => stroke === null && turn === null && inHand === null && bookInHand() === undefined,
     follow(now) {
-      const held = heldEntity(world);
-      const book = held !== undefined && world.isAlive(held) && opts.isBook(held) ? held : undefined;
+      const book = bookInHand();
       if (stroke !== null && !world.isAlive(stroke.book)) { opts.books()?.write(stroke.book, null); stroke = null; }
       // the book was put down (or another taken up) mid-stroke: the stroke lands first
       if (stroke !== null && stroke.book !== book) { lift(stroke, undefined, now); stroke = null; }

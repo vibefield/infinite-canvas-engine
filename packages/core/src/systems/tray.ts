@@ -13,9 +13,9 @@
  *  - OPEN, the desk is INERT: every local pointer gets the one-tick `HandledByWidget` and `WheelHandled`, each tick, as the hand's
  *    do — so "the wheel never moves the camera" is not a rule the camera keeps; it is a fact the camera never hears about. Over the
  *    drawer the wheel scrolls it (`dy`; the OS's momentum arrives as deltas and is applied as it comes — no inertia of ours; ⌘/ctrl
- *    and a pinch are swallowed) and a press-drag scrolls it; past an end the rest is the band's `stretch` (a reversal unwinds it
- *    first), which lets go once the scroll input has been quiet `letGoMs` — or (K9) once a FADING tail has pushed it `fadeDeltas`
- *    shrinking deltas, the rest of that tail spent (the OS's momentum no longer holds it for its second). A click on the dimmed desk — pressed and released there,
+ *    and a pinch are swallowed). Wheel scrolling stays within the content: excess deltas are discarded, so a reversal responds
+ *    immediately and an uneven momentum tail cannot restart an edge bounce. Only an intentional press-drag can pull the band's
+ *    `stretch`; its spring returns on release. A click on the dimmed desk — pressed and released there,
  *    unmoved — closes it. Shut, the wheel stays the tray's until it has been quiet `letGoMs` (K9): a flick's momentum still
  *    arriving as the drawer shuts never zooms the desk.
  *  - K5b, TAKING ONE (design-017 §9): a press on a SPECIMEN is `TrayPress specimen` — its type, the grab point across the object as the
@@ -89,8 +89,13 @@ export interface TrayPoseSource {
 /** The stack's slot for the pose source — a mutable box, so the renderer can arrive after install (as `heldPose`). */
 export interface TrayPoseSlot { current: TrayPoseSource | null }
 
-/** The tray's input numbers (design-017 §7): a click's slop, how long the scroll input must be quiet before the band lets go — and (K9, D-K9-c.3) how many shrinking deltas in a row a fading tail pushes the band before it lets go. (design-018 §5: the lip's drag, handle and pad retired with it.) */
-export const TRAY_INPUT = { slopPx: 4, letGoMs: 120, fadeDeltas: 3 } as const;
+/** The tray's input numbers: a click's slop and the quiet period for a drag's band and the wheel latch after closing. */
+export const TRAY_INPUT = {
+  slopPx: 4,
+  letGoMs: 120,
+  /** @deprecated Wheel input no longer estimates momentum from shrinking deltas. Kept for source compatibility. */
+  fadeDeltas: 3,
+} as const;
 
 const trayQ = defineQuery([Tray]);
 /** A tray press on no specimen (K5b): its take fields at rest. */
@@ -161,8 +166,6 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       let scroll = t.scroll;
       let stretch = t.stretch;
       let wheelAt = t.wheelAt;
-      let wheelDy = t.wheelDy;
-      let fade = t.fade;
       let hover = "";
       let dragging = false;
       let take = t.take ?? "";
@@ -222,21 +225,15 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
         if (frame !== undefined && over(s.x, s.y, 0) && shows(s.y) && ctx.read(p, Pointer).device === "mouse") hover = specimenAt(world, tray, s.x - frame.x, s.y - frame.y + frame.scroll)?.type ?? "";
         const w = ctx.get(p, PointerWheel);
         if (w !== undefined && (w.dy !== 0 || w.dx !== 0 || w.pinch !== 0)) {
-          // every wheel is the tray's while it is out — its clock is the band's let-go and the latch after a close (K9)
-          const quiet = now - wheelAt > TRAY_INPUT.letGoMs;
+          // Every wheel is the tray's while it is out; keep its momentum latched here after a close.
           wheelAt = now;
           const mods = ctx.get(p, PointerMods);
           if (over(s.x, s.y, 0) && w.pinch === 0 && mods?.ctrl !== true && mods?.meta !== true && w.dy !== 0) {
-            // K9 (S11, D-K9-c.3): the band lets go on a FADING tail, not only after it — a delta pushing the band further that is
-            // smaller than the one before counts (an equal one neither counts nor resets: slowing deltas plateau as integers), a
-            // larger one, a reversal or quiet start the count over; at `fadeDeltas` the band lets go, and each later delta of that
-            // tail lets it go again in the tick it pulls (the fact never shows it: the tail is spent) until it reverses, grows or rests
-            const same = Math.sign(w.dy) === Math.sign(wheelDy);
-            if (quiet || !same || Math.abs(w.dy) > Math.abs(wheelDy)) fade = 0;
-            ({ scroll, stretch } = scrollBy(scroll, stretch, w.dy, max));
-            if (stretch !== 0 && Math.sign(stretch) === Math.sign(w.dy) && same && Math.abs(w.dy) < Math.abs(wheelDy)) fade += 1;
-            if (fade >= TRAY_INPUT.fadeDeltas) stretch = 0;
-            wheelDy = w.dy;
+            // macOS already sends the eased momentum tail as wheel deltas. Apply it once, in CSS px,
+            // without guessing gesture phases or adding another spring. Discard overscroll instead of
+            // banking it: even a small reversal must move immediately, including on a non-scrolling tray.
+            scroll = Math.min(Math.max(Math.min(Math.max(scroll, 0), max) + w.dy, 0), max);
+            stretch = 0;
           }
         }
         if (down) {
@@ -310,9 +307,8 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
       if (stretch !== 0 && ((!dragging && now - wheelAt > TRAY_INPUT.letGoMs) || !open)) stretch = 0;
       if (!open) { hover = ""; if (handed === t.handed) take = ""; }
       if (open !== t.open || scroll !== t.scroll || stretch !== t.stretch || wheelAt !== t.wheelAt || hover !== t.hover
-        || take !== t.take || takeU !== t.takeU || takeV !== t.takeV || takeX !== t.takeX || takeY !== t.takeY || handed !== t.handed
-        || wheelDy !== t.wheelDy || fade !== t.fade) {
-        ctx.edit(tray).set(Tray, { ...t, open, scroll, stretch, wheelAt, wheelDy, fade, hover, take, takeU, takeV, takeX, takeY, handed });
+        || take !== t.take || takeU !== t.takeU || takeV !== t.takeV || takeX !== t.takeX || takeY !== t.takeY || handed !== t.handed) {
+        ctx.edit(tray).set(Tray, { ...t, open, scroll, stretch, wheelAt, hover, take, takeU, takeV, takeX, takeY, handed });
       }
     },
     { name: "trayInput", access: { write: [Tray, TrayPress] } },

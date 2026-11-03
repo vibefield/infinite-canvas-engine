@@ -369,7 +369,7 @@ export async function kindsRig(t) {
   await settle();
   const camAfter = await q("window.__desk.camera()");
   c = await entity(pad);
-  check(camAfter.x < camBefore.x && near(c.cx, 4000) && near(c.cy, 6000), "pad: a drag on its paper PANS the desk; the pad stays");
+  check(near(camAfter.x, camBefore.x) && near(camAfter.y, camBefore.y) && near(camAfter.zoom, camBefore.zoom) && near(c.cx, 4000) && near(c.cy, 6000), "pad: a drag on its paper marquees; the camera and pad stay fixed");
   await click(600, 400 + (tapeY - 400) + (camAfter.y - camBefore.y) * -z);
   await settle();
   const sel = await entity(pad);

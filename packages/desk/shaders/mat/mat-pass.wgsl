@@ -32,9 +32,10 @@ fn fs(in: VSOut) -> @location(0) vec4f {
   let ruler = ruler_ink(u, screen, frag, glyph_tex, gobo_samp);
   let albedo = mat_albedo(u, u.phase.xy + screen / zoom, px, frag, bn, ruler);
   // the lamp's gobo where the LIGHT sees this pixel (MINIMAT.md §4): the slot's own camera at rest
-  // (`light` = `cam`, so this is the desk under the pixel), the host desk's through a mini mat's face
-  var gobo = sample_gobo(u, gobo_tex, gobo_samp, desk_of(u, u.light.xy + screen / max(u.light.z, 1e-12)), bn.z);
-  if (u.light.w > 0.0) { gobo = mix(gobo, sample_gobo(u, gobo_tex, gobo_samp, desk_of(u, u.light2.xy + screen / max(u.light2.z, 1e-12)), bn.z), u.light.w); }
+  // (`light` = `cam`, so this is the desk under the pixel), the host desk's through a mini mat's face.
+  // A viewport lamp uses (0, 0, 1): its projection stays in CSS pixels without an extra fragment branch.
+  var gobo = project_gobo(u, gobo_tex, gobo_samp, desk_of(u, u.light.xy + screen / max(u.light.z, 1e-12)), bn.z);
+  if (u.light.w > 0.0) { gobo = mix(gobo, project_gobo(u, gobo_tex, gobo_samp, desk_of(u, u.light2.xy + screen / max(u.light2.z, 1e-12)), bn.z), u.light.w); }
   // Straight alpha: the presentation's opacity through the portal clip — both 1 at rest,
   // when "source over" reduces to a plain write.
   return vec4f(mat_colour(u, albedo, gobo, bn.y), u.presence.x * portal_cover(screen, u.portals, u.clips, dpr));

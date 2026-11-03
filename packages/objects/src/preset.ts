@@ -1,8 +1,8 @@
 // The desk's ENGINE PRESET (design-015 §9, D2a-core's settings; SHIPPED at D7, D-D7-C.1): what
 // `createCanvasEngine` needs for the desk the README describes — the reference objects, infinite
-// zoom, the prototype's wheel (a plain wheel zooms about the pointer by exp(−Δ · 0.0016)), the
-// zoom-through, and the desk's SELECT tool — a drag on the bare mat PANS, shift draws the marquee
-// (D-D11) — as the root canvas type's default. Core registers no desk tool or settings (its
+// zoom, two-axis scroll panning and native-scale pinch zoom about the pointer, the
+// zoom-through, and the desk's SELECT tool — a drag on the bare mat draws a marquee
+// (shift adds to the selection) — as the root canvas type's default. Core registers no desk tool or settings (its
 // defaults are the plain canvas's: a wheel that pans, a bare drag that marquees, zoom 0.1–5); until
 // D7 this lived in apps/desk only, so the published quickstart could not do what it said.
 // Importing this module DEFINES the tool and the canvas type (core's registries are process-global).
@@ -26,11 +26,11 @@ function builtin(id: string): Tool {
 }
 
 /**
- * The desk's select tool: the bare mat pans, shift-drag draws the vellum marquee; a drag on an object moves it. It answers `v` — core's
+ * The desk's select tool: the bare mat draws a marquee, shift-drag adds to the selection; a drag on an object moves it. It answers `v` — core's
  * select's letter — since core's select is compiled but never legal on the desk, and the keymap binds a letter only to a tool legal in
  * the current canvas (K9 S8: `v` threw on the desk, and `h` left it in pan with no letter back).
  */
-export const deskSelect: Tool = defineTool({ id: "desk.select", shortcut: "v", route: { canvasDrag: "pan", canvasDragShift: "marquee" } });
+export const deskSelect: Tool = defineTool({ id: "desk.select", shortcut: "v", route: { canvasDrag: "marquee" } });
 
 /** The tools the engine compiles — a typed engine must name `select` even when no canvas allows it. */
 export const DESK_TOOLS: readonly Tool[] = [builtin("select"), deskSelect, builtin("pan")];
@@ -53,7 +53,7 @@ export const DeskCanvas = defineCanvasType({
 /**
  * THE PRESET — `createCanvasEngine(DESK_ENGINE)` is the desk the README describes: the six reference objects, the desk's
  * tools with `desk.select` in hand, the desk canvas as the root, the scale-free zoom (design-015 §9: `ZOOM_MIN`–`ZOOM_MAX`),
- * the plain wheel zooming about the pointer, and the zoom-through ON (a wheel that leaves a face covering the view cuts into it).
+ * two-axis scrolling, pointer-anchored pinch/modifier zoom, and zoom-through ON (zooming a face to cover the view enters it).
  * Spread it to add to it: `createCanvasEngine({ ...DESK_ENGINE, widgets: [...DESK_OBJECTS, Mine] })`.
  */
 export const DESK_ENGINE = {
@@ -62,5 +62,11 @@ export const DESK_ENGINE = {
   canvasTypes: [DeskCanvas],
   rootCanvas: DeskCanvas,
   presentationFallback: DeskCanvas,
-  settings: { zoom: { min: ZOOM_MIN, max: ZOOM_MAX }, gestures: { wheel: "zoom" }, nav: { zoomThrough: { enabled: true } } },
+  settings: {
+    zoom: { min: ZOOM_MIN, max: ZOOM_MAX },
+    // Chromium encodes native pinch scale as deltaY = -100 * log(scale).
+    // exp(-deltaY * 0.01) restores that scale without damping the macOS gesture.
+    gestures: { wheel: "pan", wheelZoomCurve: "exponential", wheelZoomRate: 0.01 },
+    nav: { zoomThrough: { enabled: true } },
+  },
 } as const satisfies CanvasEngineOpts;

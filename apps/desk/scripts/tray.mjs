@@ -5,7 +5,7 @@
 // holes); the wheel over the drawer scrolls it and never moves the camera — nor does the rest of a flick shut mid-way (K9); the desk inert while open; 0 submits at rest open and
 // closed (240 frames each), one frame per frame of motion; the drawer's GPU cost at 2400 × 1600 (≤ 0.3 ms: a saturated batch of it
 // alone, drained around, medians and minima of 7 rounds with the load beside them); the night; no page errors. K5a — THE SPECIMENS:
-// the six kinds in the world where the lattice law lays them (read back; never Active, selected or durable), every peg on a punched
+// the five tray kinds in the world where the lattice law lays them (read back; never Active, selected or durable), each slot on a punched
 // hole's centre, the scroll's range from the laid content, each drawn by its own kind, a scroll of Δ moving board and specimens by Δ,
 // the band carrying them, the hover lifting one and settling, a PLUGIN fixture kind on the tray by its entry alone, idle with them
 // open and closed, and what they cost. K5b — TAKING ONE: each kind dragged off its specimen made where it is dropped (the grab point kept,
@@ -27,7 +27,7 @@ import { resolve } from "node:path";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 import { decodePng } from "./png.mjs";
 import { hostLoad, median, minOf, watchdog } from "./timing.mjs";
-import { layTray, PEG_LATTICE } from "../../../packages/kernel/src/tray.ts";
+import { layTray } from "../../../packages/kernel/src/tray.ts";
 import { carry, cellOf, holeSdf, pointAt, punched } from "../../../packages/desk/src/tray/lattice.ts";
 import { contentShown, DRAWER } from "../../../packages/desk/src/tray/drawer.ts";
 
@@ -369,34 +369,25 @@ try {
     await q("window.__desk.tray.scroll(0)"); await settle();
   }
 
-  // 6d (K9, S11). the band lets go on a FADING tail — p9's fling, measured frame by frame in the page: 70 synthetic deltas decaying ×0.95
-  //    from 60, a frame apart, toward the top from scroll 120 (the fact's pull and the band as shown, each frame). K5's band held for the
-  //    whole tail (p9: its last delta at 3.4 s, the band home 0.2 s after it); now it lets go on the third shrinking delta it takes, is
-  //    home while the tail still arrives, and the rest of the tail never pulls it again. A run with a frame gap ≥ `letGoMs` (the quiet
-  //    let-go would blur the two rules) is tried again, ≤ 3
-  {
+  // Native wheel momentum is consumed once and clamped at both ends. It never starts the pointer-drag elastic band.
+  for (const edge of ["top", "bottom"]) {
+    const max = (await tray()).frame.max;
     let m = null;
     for (let tries = 1; tries <= 3; tries++) {
-      await q("window.__desk.tray.scroll(120)"); await settle();
-      m = await qa(`new Promise((res) => { const el = document.elementFromPoint(1100, 650); const rec = []; let i = 0; let dy = -60; let last = 0; let gap = 0; let end = -1;
+      await q(`window.__desk.tray.scroll(${edge === "top" ? Math.min(120, max) : Math.max(0, max - 120)})`); await settle();
+      m = await qa(`new Promise((res) => { const el = document.elementFromPoint(1100, 650); const rec = []; let i = 0; let dy = ${edge === "top" ? -60 : 60}; let last = 0; let gap = 0; let end = -1;
         const f = (t) => { if (last > 0) gap = Math.max(gap, t - last); last = t;
           if (i < 70) { el.dispatchEvent(new WheelEvent("wheel", { clientX: 1100, clientY: 650, deltaX: 0, deltaY: Math.round(dy), deltaMode: 0, bubbles: true, cancelable: true })); dy *= 0.95; i += 1; if (i === 70) end = t; }
-          rec.push({ t, s: window.__desk.tray.facts().stretch, b: window.__desk.tray.state().band });
-          if (end < 0 || t - end < 500) requestAnimationFrame(f); else res({ rec, gap, end, tries: ${tries} }); };
+          const facts = window.__desk.tray.facts(); rec.push({ v: facts.scroll, s: facts.stretch, b: window.__desk.tray.state().band });
+          if (end < 0 || t - end < 500) requestAnimationFrame(f); else res({ rec, gap }); };
         requestAnimationFrame(f); })`, 60000);
       if (m.gap < 120) break;
     }
-    const r = m.rec;
-    const i0 = r.findIndex((x) => x.s !== 0);
-    const i1 = i0 < 0 ? -1 : r.findIndex((x, i) => i > i0 && x.s === 0);
-    const i2 = i1 < 0 ? -1 : r.findIndex((x, i) => i > i1 && Math.abs(x.b) < 0.5);
-    const again = i1 < 0 || r.some((x, i) => i > i1 && x.s !== 0);
-    const peak = Math.max(...r.map((x) => Math.abs(x.b)));
-    const ms = (i) => (i < 0 ? Number.NaN : r[i].t - r[i0].t);
-    check(m.gap < 120 && i0 >= 0 && i1 > i0 && i1 - i0 <= 4 && i2 > i1 && r[i2].t < m.end && !again,
-      `a fading tail lets the band go on its third shrinking delta: pulled for ${i1 - i0} frames (${ms(i1).toFixed(0)} ms, the band ${peak.toFixed(1)} px at most), home ${ms(i2).toFixed(0)} ms after the pull began — the tail's last delta ${(m.end - r[i0].t).toFixed(0)} ms after it; never pulled again (${!again}); frame gaps ≤ ${m.gap.toFixed(0)} ms${m.tries > 1 ? ` (${m.tries} tries)` : ""}`);
-    await q("window.__desk.tray.scroll(0)"); await settle();
+    const target = edge === "top" ? 0 : max;
+    check(m.gap < 120 && m.rec.every((x) => x.v >= 0 && x.v <= max && x.s === 0 && x.b === 0) && m.rec.at(-1).v === target,
+      `native momentum clamps at the ${edge} (${target} px) with no stretch or extra bounce throughout ${m.rec.length} frames`);
   }
+  await q("window.__desk.tray.scroll(0)"); await settle();
 
   // 7. the desk inert while open: a drag on the note moves nothing and selects nothing; the drawer stays
   const p0 = await q(`window.__desk.entity(${note})`);
@@ -447,15 +438,15 @@ try {
   s = await tray(); b = await bar();
   check(s.facts.open === true && s.facts.category === "surfaces" && s.facts.scroll === 0 && surfHeld.length === 2 && surfWant.every((w) => surfHeld.some((h) => h.type === w.type && h.x === w.x && h.y === w.y)) && b.chips.find((c) => c.id === "surfaces")?.pressed === "true",
     `a click on the Surfaces chip lays only its entries where the law lays them alone (${surfHeld.map((h) => `${h.type} ${h.x},${h.y}`).join(" · ")}), the board at its top (scroll ${s.facts.scroll} from 120), the chip pressed — and the drawer still open: a chip is no click on the dim`);
-  // scrolled while Surfaces shows (the door takes any value until the range next moves): All's change must zero it — the six's range
+  // scrolled while Surfaces shows (the door takes any value until the range next moves): All's change must zero it — the five's range
   // (their foot + a pitch − the face, ≈ 300 px) would keep 120, so no clamp can stand in for the change here (Surfaces alone ranges 0)
   await q("window.__desk.tray.scroll(120)"); await settle();
   const allChip = b.chips.find((c) => c.id === "");
   await click(allChip.x, allChip.y); await sleep(150); await settle();
   const allHeld = await q("window.__desk.tray.specimens()");
   s = await tray();
-  check(s.facts.open === true && s.facts.category === "" && s.facts.scroll === 0 && allHeld.length === 6,
-    `…and All lays the six again (${allHeld.length}), the board back at its top (scroll ${s.facts.scroll} from 120 — the six's range would keep 120: the change zeroed it), the drawer open`);
+  check(s.facts.open === true && s.facts.category === "" && s.facts.scroll === 0 && allHeld.length === 5,
+    `…and All lays the five again (${allHeld.length}), the board back at its top (scroll ${s.facts.scroll} from 120 — the five's range would keep 120: the change zeroed it), the drawer open`);
   const barRest = await idle(120);
   check(barRest === 0, `open at rest with the bar over the desk: ${barRest} submits over 120 frames`);
   // no rAF of its own (design-018 §5): the page's every ask for a frame counted over 1 s at rest — the loop's own included (it
@@ -498,7 +489,8 @@ try {
   let restMax = 0; let restMoved = 0; let restN = 0; const restTypes = [];
   for (const p of restLay) {
     const kind = kindOf.get(p.type);
-    if (kind === undefined || kind === "notebook" || kind === "calendar") continue;
+    // Mini-mat vinyl grain is anchored to screen pixels, so translating its image changes that grain.
+    if (kind === undefined || kind === "notebook" || kind === "calendar" || kind === "minimat") continue;
     const y0 = Math.ceil((s.frame.y + p.box.y0) * 2);
     const y1 = Math.min(Math.floor((s.frame.y + p.box.y1) * 2), 1600 - 81);
     if (y1 <= y0) continue;
@@ -515,24 +507,20 @@ try {
   const firstUnder = restLay.filter((p) => p.line === 0).some((p) => { const y0 = s.frame.y + p.y - 100; return y0 < s.frame.y + HEAD && y0 + p.h > s.frame.y + DRAWER.arris && b.chips.some((c) => c.x1 > s.frame.x + p.x && c.x0 < s.frame.x + p.x + p.w); });
   // (max |Δ| ≤ 3: a specimen's shading moved a pitch rounds a level or two either way — its fade at 99 % would be ~2 on its contrast,
   //  and a footprint in the ramp tens)
-  check(restMin >= 0.99 && restTypes.length >= 2 && restMax <= 3 && chipsRest < 1 && chipsUnder < 1 && firstUnder,
+  check(restMin >= 0.99 && restTypes.includes("note") && restMax <= 3 && chipsRest < 1 && chipsUnder < 1 && firstUnder,
     `at rest nothing laid is faded: every footprint at ≥ ${restMin.toFixed(4)} of the ramp (the law's first line under the header's ${HEAD} + ${DRAWER.fade}); the ${restTypes.join(", ")} footprints the same pixels 40 px lower (max |Δ| ${restMax.toFixed(2)}, ${restMoved} of ${restN.toLocaleString()} past 1) — and under the chips the bare board: max |Δ| ${chipsRest.toFixed(2)} at rest, ${chipsUnder.toFixed(2)} with the first line run up under them (scroll 100)`);
   await settle();
 
   // K5a — THE SPECIMENS (design-017 §8)
   await q("window.__desk.tray.scroll(0)"); await settle();
-  // S1. the world holds the six, each exactly where the lattice law lays them — read back from core's facts, the law run here
+  // S1. the world holds the five tray entries, each exactly where the lattice law lays them — read back from core's facts, the law run here
   const law = await q("window.__desk.tray.law()");
   const want = layTray(law.items, law.width, law.pitch);
   const held = await q("window.__desk.tray.specimens()");
   const placedOk = want.placed.every((p) => held.some((h) => h.type === p.type && h.x === p.x && h.y === p.y && h.w === p.w && h.h === p.h));
-  check(held.length === 6 && want.placed.length === 6 && placedOk && held.every((h) => !h.active && !h.selected && !h.durable),
-    `the world holds ${held.length} specimens, each at its lattice place (${held.map((h) => `${h.type.replace("desk.", "")} ${h.x},${h.y}`).join(" · ")}) — none Active, selected or durable`);
-  // S2. every peg on a punched hole's centre, as drawn: back from the screen to the board (the frame's x, top and shown scroll)
+  check(held.length === 5 && want.placed.length === 5 && held.every((h) => h.type !== "desk.photo") && placedOk && held.every((h) => !h.active && !h.selected && !h.durable),
+    `the world holds ${held.length} specimens, each at its lattice place (${held.map((h) => `${h.type.replace("desk.", "")} ${h.x},${h.y}`).join(" · ")}) — no Print, none Active, selected or durable`);
   s = await tray();
-  const pegs = s.specimens.flatMap((q) => q.pegs.map(([x, y]) => [(x - s.frame.x) / 40, (y - s.frame.y + s.frame.scroll) / 40]));
-  const onHole = ([x, y]) => { const r = Math.round(y - PEG_LATTICE.rowPhase); const c = x - PEG_LATTICE.colPhase - ((r & 1) !== 0 ? 0.5 : 0); return Math.abs(y - PEG_LATTICE.rowPhase - r) < 1e-9 && Math.abs(c - Math.round(c)) < 1e-9 && x >= PEG_LATTICE.border && x <= s.frame.w / 40 - PEG_LATTICE.border; };
-  check(pegs.length >= 6 && pegs.every(onHole), `every peg on a punched hole's centre: ${pegs.length} pegs of ${s.specimens.length} specimens in view (${pegs.slice(0, 4).map(([x, y]) => `${x.toFixed(2)},${y.toFixed(2)}`).join(" ")} …)`);
   // S3. the scroll's range is the laid content's: its foot plus a pitch less the face (K3's 26-row stub retired)
   check(s.frame.max === s.facts.bottom + 40 - 352 && s.facts.bottom === want.bottom, `the range ${s.frame.max} px = the content's foot ${s.facts.bottom} + 40 − the face 352 (the whole drawer: its face runs to the outline — design-018 §2; the law's foot ${want.bottom})`);
   // S4. each is drawn by its own kind: its rect on screen is far from the bare board there — at the top, and scrolled to the end
@@ -552,7 +540,7 @@ try {
   await q(`window.__desk.tray.scroll(${s.frame.max})`); await settle();
   const end = await drawnBy();
   const every = [...top, ...end];
-  check(new Set(every.map(([t]) => t)).size === 6 && every.every(([, d]) => d > 12), `all six drawn by their own kinds (mean |Δ| from the bare board over each rect): ${every.map(([t, d]) => `${t.replace("desk.", "")} ${d.toFixed(0)}`).join(" · ")}`);
+  check(new Set(every.map(([t]) => t)).size === 5 && every.every(([, d]) => d > 12), `all five tray entries drawn by their own kinds (mean |Δ| from the bare board over each rect): ${every.map(([t, d]) => `${t.replace("desk.", "")} ${d.toFixed(0)}`).join(" · ")}`);
   await q("window.__desk.tray.scroll(0)"); await settle();
   // S5. a scroll of Δ moves board and specimens by Δ: every rect on screen by exactly Δ (read back); the pixels Δ·dpr up — the board and
   //     the flat kinds to a float's rounding; the notebook and the calendar are seen through the desk eye (their kinds' own 3D law: a
@@ -562,7 +550,7 @@ try {
   await q(`window.__desk.tray.scroll(${S0 + D})`); await settle();
   const SB = await shot(); const rb = (await tray()).specimens;
   const rectsOk = ra.length > 0 && ra.every((a) => { const b = rb.find((q) => q.type === a.type); return b !== undefined && b.screen.y0 === a.screen.y0 - D && b.screen.x0 === a.screen.x0 && b.screen.y1 === a.screen.y1 - D; });
-  const eyed = ra.filter((q) => q.kind === "notebook" || q.kind === "calendar").map((q) => [q.screen.x0 - 12, q.screen.x1 + 40]);   // and the shadow the lamp throws right (R4: the book nearer the view's centre)
+  const eyed = ra.filter((q) => q.kind === "notebook" || q.kind === "calendar" || q.kind === "minimat").map((q) => [q.screen.x0 - 12, q.screen.x1 + 40]);   // Perspective shading and mini-mat screen grain are not translation-invariant; include their shadow reach.
   let flatMax = 0; let flatMoved = 0; let flatN = 0; let eyeMax = 0;
   const sRect = (await tray()).frame;
   for (let y = below(sRect); y < 1560 - 2 * D; y += 1) for (let x = 140; x < 2260; x += 2) {
@@ -572,16 +560,17 @@ try {
     flatMax = Math.max(flatMax, d); flatN++; if (d > 1) flatMoved++;
   }
   const rectsSaid = ra.map((a) => { const b = rb.find((q) => q.type === a.type); return b === undefined ? `${a.type} gone` : `${a.type.replace("desk.", "")} ${a.screen.y0}→${b.screen.y0}`; }).join(" · ");
-  check(rectsOk && flatMax < 2.5 && flatMoved / flatN < 1e-2, `a scroll of ${D} px: every specimen's rect ${D} px up exactly (${rectsSaid}); the board and the flat kinds the same pixels ${2 * D} device px up (max |Δ| ${flatMax.toFixed(2)}, ${flatMoved} of ${flatN.toLocaleString()} px past 1); the notebook and the calendar through the desk eye: max |Δ| ${eyeMax.toFixed(1)}`);
+  check(rectsOk && flatMax < 2.5 && flatMoved / flatN < 1e-2, `a scroll of ${D} px: every specimen's rect ${D} px up exactly (${rectsSaid}); the board and the flat kinds the same pixels ${2 * D} device px up (max |Δ| ${flatMax.toFixed(2)}, ${flatMoved} of ${flatN.toLocaleString()} px past 1); perspective shading and screen-anchored mini-mat grain: max |Δ| ${eyeMax.toFixed(1)}`);
   await q("window.__desk.tray.scroll(0)"); await settle();
-  // S6. the band carries them: a wheel past the end pulls the board AND the specimens by the band's shown pull, then lets them go
+  // S6. pointer dragging may stretch the board and specimens together; native wheel momentum never stretches them.
   await q(`window.__desk.tray.scroll(${s.frame.max})`); await settle();
   await mouse("mouseMoved", 1100, 650);
-  // the PULL read IN THE PAGE, every frame from before the first wheel (K-H): the band lets go 120 ms of `now` after the last wheel,
-  // and a read two frames after the wheels' round trips came after it at load 400 (pulled 0 px). The frame of the deepest pull is read
+  // Record the pointer pull in the page so the deepest stretch is observed before release settles it.
   await qa("(() => { const out = (window.__bandFrames = []); let seen = -1; const f = () => { const st = window.__desk.tray.state(); out.push(st); if (st.facts.stretch > 0) seen = out.length; if ((seen < 0 || out.length - seen < 20) && out.length < 900) requestAnimationFrame(f); }; requestAnimationFrame(f); return 0; })()");
   await qa("new Promise((r) => { const f = () => (window.__bandFrames.length > 0 ? r(0) : requestAnimationFrame(f)); f(); })");
-  for (let i = 0; i < 4; i++) { await mouse("mouseWheel", 1100, 650, { deltaX: 0, deltaY: 60 }); await sleep(12); }
+  await mouse("mousePressed", 1100, 650, { buttons: 1 });
+  for (let i = 1; i <= 4; i++) { await mouse("mouseMoved", 1100, 650 - i * 15, { buttons: 1 }); await sleep(20); }
+  await mouse("mouseReleased", 1100, 590, { buttons: 0 });
   const bandFrames = await qa("new Promise((r) => { const f = () => { const o = window.__bandFrames; const seen = o.findLastIndex((x) => x.facts.stretch > 0); if (o.length >= 900 || (seen >= 0 && o.length - 1 - seen >= 20)) r(o); else requestAnimationFrame(f); }; f(); })", 60000);
   const pulled = bandFrames.reduce((a, b) => (b.facts.stretch > a.facts.stretch ? b : a));
   const carried = pulled.specimens.length > 0 && pulled.specimens.every((q) => { const w = held.find((h) => h.type === q.type); return w !== undefined && Math.abs(q.screen.y0 - (pulled.frame.y + w.y - pulled.frame.scroll)) < 1e-9; }) && Math.abs(pulled.frame.scroll - (pulled.facts.scroll + pulled.band)) < 1e-9;
@@ -649,7 +638,7 @@ try {
   const pTakes = await plug.evaluate(`window.__desk.engine.placement.canIngress("rig.swatch", ${pmm}).ok`, { timeoutMs: 20000 });
   await pqa(`(async () => { window.__desk.tray.close(); await window.__desk.settle(4000); window.__desk.engine.ops.exitContainer({ transition: "none" }); await window.__desk.settle(4000); window.__desk.tray.open(); await window.__desk.settle(4000); })()`);
   const pBack = (await plug.evaluate("window.__desk.tray.specimens()", { timeoutMs: 20000 })).map((s) => s.type);
-  // design-018 §6 (R2): the plugin's category is ITS OWN CHIP — a real click on it lays the swatch alone, one on All lays the seven again
+  // design-018 §6 (R2): the plugin's category is ITS OWN CHIP — a real click on it lays the swatch alone, one on All lays the six again
   const pbar = () => plug.evaluate(BAR, { timeoutMs: 20000 });
   const pclick = async (c) => { await pm("mouseMoved", c.x, c.y); await pm("mousePressed", c.x, c.y, { buttons: 1 }); await sleep(30); await pm("mouseReleased", c.x, c.y); await pqa("window.__desk.settle(4000)"); };
   const pb0 = await pbar();
@@ -663,14 +652,14 @@ try {
   const pOpen = await plug.evaluate("window.__desk.tray.isOpen()", { timeoutMs: 20000 });
   const plugFaults = await plug.evaluate("window.__desk.faults ?? []", { timeoutMs: 20000 });
   await plug.close?.();
-  check(plugHeld.length === 7 && plugOn !== undefined && plugWant !== undefined && plugOn.x === plugWant.x && plugOn.y === plugWant.y && plugDrawn?.kind === "paper" && plugDrawn.accessory === "clip" && plugFaults.length === 0 && held.every((h) => h.type !== "rig.swatch"),
+  check(plugHeld.length === 6 && plugOn !== undefined && plugWant !== undefined && plugOn.x === plugWant.x && plugOn.y === plugWant.y && plugDrawn?.kind === "paper" && plugFaults.length === 0 && held.every((h) => h.type !== "rig.swatch"),
     `a plugin kind by its entry alone: with it registered the world holds ${plugHeld.length} (rig.swatch at ${plugOn?.x},${plugOn?.y} — the law's ${plugWant?.x},${plugWant?.y}), drawn by its kind on its clip; without it, none (${held.length})`);
   check(pMade.length === 1 && pMade[0].type === "rig.swatch" && pMade[0].selected && pUndo === true && pGone,
     `…and TAKEN as the built-ins are (K5b): dragged off its clip to the desk, one made (${pMade.map((m) => `${m.type}${m.selected ? ", selected" : ""}`).join(" · ") || "none"}), one undo step takes it back (${pUndo}, gone ${pGone})`);
   check(pTakes === false && !pInside.includes("rig.swatch") && pInside.includes("desk.note") && pBack.includes("rig.swatch"),
     `…and judged as the built-ins are (K9): inside an entered mini mat — whose ingress refuses it (${pTakes}) — it does not hang (${pInside.join(", ")}); at the desk it does (${pBack.length} hung)`);
-  check(pb0?.chips.map((c) => c.label).join(" · ") === "All · Paper · Plugin · Surfaces" && pAlone.join() === "rig.swatch" && pb1?.chips.find((c) => c.id === "plugin")?.pressed === "true" && pSeven === 7 && pOpen === true,
-    `…and its category is its own chip (design-018 §6): ${pb0?.chips.map((c) => c.label).join(" · ")} — a click on Plugin lays the swatch alone (${pAlone.join(", ")}), one on All the seven (${pSeven}), the drawer open`);
+  check(pb0?.chips.map((c) => c.label).join(" · ") === "All · Paper · Plugin · Surfaces" && pAlone.join() === "rig.swatch" && pb1?.chips.find((c) => c.id === "plugin")?.pressed === "true" && pSeven === 6 && pOpen === true,
+    `…and its category is its own chip (design-018 §6): ${pb0?.chips.map((c) => c.label).join(" · ")} — a click on Plugin lays the swatch alone (${pAlone.join(", ")}), one on All the six (${pSeven}), the drawer open`);
   await front();
 
   // 9. THE COST (design-017 §6.7): the drawer open at 2400 × 1600 — n of it alone per batch, and whole frames with it open and closed,
@@ -686,7 +675,7 @@ try {
   const plain = rounds.map((r) => r.bare.ms);
   const bare = rounds.map((r) => r.closed.ms);
   const aloneBare = rounds.map((r) => r.aloneBare.ms);
-  check(minOf(aloneBare) <= 0.3, `the drawer's GPU cost at 2400 × 1600, open: the board alone ${minOf(aloneBare).toFixed(3)} ms, the minimum of 7 warm rounds (≤ 0.3; median ${median(aloneBare).toFixed(3)}) · with its six accessories ${minOf(alone).toFixed(3)} (median ${median(alone).toFixed(3)}); whole frames open with the specimens ${minOf(whole).toFixed(3)} (${median(whole).toFixed(3)}) · open bare ${minOf(plain).toFixed(3)} (${median(plain).toFixed(3)}) — the specimens Δ ${(minOf(whole) - minOf(plain)).toFixed(3)} · closed ${minOf(bare).toFixed(3)} ms · load ${hostLoad()}`);
+  check(minOf(aloneBare) <= 0.3, `the drawer's GPU cost at 2400 × 1600, open: the board alone ${minOf(aloneBare).toFixed(3)} ms, the minimum of 7 warm rounds (≤ 0.3; median ${median(aloneBare).toFixed(3)}) · with its specimens ${minOf(alone).toFixed(3)} (median ${median(alone).toFixed(3)}); whole frames open with the specimens ${minOf(whole).toFixed(3)} (${median(whole).toFixed(3)}) · open bare ${minOf(plain).toFixed(3)} (${median(plain).toFixed(3)}) — the specimens Δ ${(minOf(whole) - minOf(plain)).toFixed(3)} · closed ${minOf(bare).toFixed(3)} ms · load ${hostLoad()}`);
   await settle();
 
   // 10. the night: the Moon on the board, the desk dimmed 40 %
@@ -754,8 +743,7 @@ try {
     if (release) { await mouse("mouseReleased", to[0], to[1], { buttons: 0 }); await frames(6); }
     return g;
   };
-  // THE FACES (K5b, live — drawn with the kinds' own desk state, `tray.local`): the note carries its word in its own hand, the print the
-  // kind's sample picture, the pad the month of its today — each counted in the specimen's own pixels (K5a's were blank)
+  // THE FACES: the note carries its word and the pad its month, counted in their own pixels. Prints have no tray specimen.
   {
     await q("window.__desk.tray.open()"); await settle();
     // the pad's print is the host's raster, tile by tile over frames (S9 shut the drawer long enough for its state to be let go): until none is pending
@@ -774,7 +762,6 @@ try {
     };
     const L = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
     const word = count("desk.note", { l: 0.08, r: 0.08, t: 0.08, b: 0.08 }, (r, g, b) => b > r + 25 && L(r, g, b) < 150);        // the pen's blue ink on the yellow
-    const picture = count("desk.photo", { l: 0.12, r: 0.12, t: 0.12, b: 0.12 }, (r, g, b) => b > r + 30);                     // the dusk's blues on the white
     const month = count("desk.calendar", { l: 0.06, r: 0.06, t: 0.16, b: 0.06 }, (r, g, b) => L(r, g, b) < 200);             // the print's ink on the paper (a blank pad has none this dark)
     // over K6b's frame raster queue: the note specimen's word was ASKED as a desk note's first raster is, and RUN (the queue's `shows` is
     // the builder's and the tray's) — none let go, and at rest nothing is asked again
@@ -783,11 +770,11 @@ try {
     const qa1 = await q("window.__desk.handle.rasters()");
     check(qa0.ran >= 1 && qa0.dropped === 0 && qa1.ran === qa0.ran && qa1.turns === qa0.turns && qa1.waiting === 0 && qa1.held === 0,
       `the specimens' rasters ride K6b's queue: ${qa0.ran} run, ${qa0.dropped} let go; at rest 120 frames on, ${qa1.ran - qa0.ran} more runs, ${qa1.turns - qa0.turns} turns, ${qa1.waiting} waiting, ${qa1.held} held`);
-    check(word > 60 && picture > 2000 && month > 150, `the specimens read as the real objects (live — K5a's were blank): the note's word ${word} px of ink, the print's sample ${picture} px of sky and water, the pad's month ${month} px of print (its tiles ${printed?.drawn ?? "?"} drawn, ${printed?.pending ?? "?"} pending)`);
+    check(word > 60 && month > 150, `the specimens read as the real objects (live — K5a's were blank): the note's word ${word} px of ink, the pad's month ${month} px of print (its tiles ${printed?.drawn ?? "?"} drawn, ${printed?.pending ?? "?"} pending)`);
   }
 
   // each kind taken: made where it is dropped, the grab point kept, selected, one undo step (undo removes it, redo restores it)
-  const TAKEN = ["desk.note", "desk.photo", "desk.notebook", "desk.calendar", "desk.minimat", "desk.board"];
+  const TAKEN = ["desk.note", "desk.notebook", "desk.calendar", "desk.minimat", "desk.board"];
   const takeRows = [];
   for (const type of TAKEN) {
     const before = new Set((await ents()).map((e) => e.id));
@@ -807,25 +794,12 @@ try {
     takeRows.push({ type, n: made.length, made: m?.type, at, selected: m !== undefined && sel.length === 1 && sel[0] === m.id, root: m?.parent === rootParent, shut, u1, goneAfterUndo, r1, back, props: madeProps });
   }
   const snapTol = 12;
-  // what one taken is made with (D-K5b.1): not the face — a note blank, a print without a picture (it asks for one), a pad on its today's month
+  // what one taken is made with (D-K5b.1): not the face — a note blank, a pad on its today's month
   const propsOf = (type) => takeRows.find((r) => r.type === type)?.props ?? {};
-  check(propsOf("desk.note").text === "" && propsOf("desk.photo").blob === "" && propsOf("desk.calendar").month === "",
-    `one taken is made with the entry's take, never its face: the note's text "${propsOf("desk.note").text}" (its specimen says hello), the print's picture "${propsOf("desk.photo").blob}" (its specimen shows the sample), the pad's month "${propsOf("desk.calendar").month}" (its today's)`);
+  check(propsOf("desk.note").text === "" && propsOf("desk.calendar").month === "",
+    `one taken is made with the entry's take, never its face: the note's text "${propsOf("desk.note").text}" (its specimen says hello), the pad's month "${propsOf("desk.calendar").month}" (its today's)`);
   check(takeRows.every((r) => r.n === 1 && r.made === r.type && r.at !== null && Math.abs(r.at[0]) <= snapTol && Math.abs(r.at[1]) <= snapTol && r.selected && r.root && r.shut && r.u1 && r.goneAfterUndo && r.r1 && r.back),
     `each kind taken (press at 0.3, 0.2 of its specimen, dropped at 640,260): made where dropped with the grab point kept (|Δ| ≤ ${snapTol}, the drag's snap — a centre-snap is 20–30 % of the object), selected, the drawer away, ONE undo step (undo removes it, redo restores it): ${takeRows.map((r) => `${r.type.replace("desk.", "")} ${r.at === null ? "—" : r.at.map((x) => x.toFixed(1)).join(",")}${r.n === 1 && r.selected && r.u1 && r.goneAfterUndo && r.r1 && r.back ? "" : ` ✗${JSON.stringify(r)}`}`).join(" · ")}`);
-
-  // the ghost is CORE'S while it is carried: no kind's driver takes it — the print's own carry (its physics) never holds a ghost print
-  {
-    const before = new Set((await ents()).map((e) => e.id));
-    await carryOut("desk.photo", 0.5, 0.5, [600, 250], { release: false });
-    await frames(10);
-    const held = await q("(() => { const p = window.__desk.handle.local('photo'); return window.__desk.entities().filter((e) => e.type === 'desk.photo').map((e) => ({ id: e.id, lifted: p.lifted(e.id), grabbed: e.grabbed })); })()");
-    await mouse("mouseReleased", 600, 250, { buttons: 0 }); await frames(6);
-    const made = (await ents()).filter((e) => !before.has(e.id));
-    await undo(); await frames(2);
-    check(held.length === 1 && held[0].grabbed && !held[0].lifted && made.length === 1,
-      `the ghost is core's while it is carried: the print's ghost grabbed by the ordinary drag (${held[0]?.grabbed}), its kind's own carry not holding it (lifted ${held[0]?.lifted}); dropped, one print`);
-  }
 
   // the lift: past 4 px the copy lifts (×1.06 of its specimen, under the grab point), the specimen stays hung; the drawer slides away as it leaves
   {
@@ -1171,9 +1145,7 @@ try {
       let steep = 0; for (let i = 4; i < vis.length; i++) if (Number.isFinite(vis[i]) && Number.isFinite(vis[i - 4])) steep = Math.max(steep, (vis[i] - vis[i - 4]) / 4);
       fades.push({ type: s.type, above, quarter, off: Math.max(...quarter.map((v, k) => Math.abs(v - want4[k]))), steep, rows: vis.filter(Number.isFinite).length });
     }
-    // …and the TAGS and the ACCESSORIES take the same ramp (in the marks' tag draw, in `tray_accessory`): the photo's tag, then its
-    // clip, laid across the header's foot (its centre 8 px below it) — nothing of it in the header's last 6 px, and the rows 1…15 px
-    // below its foot, read as above, against the ramp
+    // The label tape follows the same fade as its specimen across the header ramp.
     const partRamp = async (type, locate) => {
       await fq("window.__desk.tray.pin({ p: 1, band: 0 })"); await fsettle();
       const st0 = await fq("window.__desk.tray.state()");
@@ -1204,8 +1176,7 @@ try {
       return { type, rows: got.length, got: mean(got), want: mean(exp), above };
     };
     const P = 40;
-    const tagFade = await partRamp("desk.photo", (st) => { const sp = st.specimens.find((q) => q.type === "desk.photo"); return sp === undefined ? null : { x: (sp.screen.x0 + sp.screen.x1) / 2, y: sp.screen.y1 + (sp.accessory === "shelf" ? 0.24 * P : 0) + 0.45 * P, hw: 12 }; });
-    const accFade = await partRamp("desk.photo", (st) => { const sp = st.specimens.find((q) => q.type === "desk.photo"); const peg = sp?.pegs[0]; return peg === undefined ? null : { x: peg[0], y: peg[1], hw: 9 }; });   // the clip's body either side of its hole
+    const tagFade = await partRamp("desk.note", (st) => { const sp = st.specimens.find((q) => q.type === "desk.note"); return sp === undefined ? null : { x: (sp.screen.x0 + sp.screen.x1) / 2, y: sp.screen.y1 + 0.45 * P, hw: 12 }; });
     const partOk = (r) => r !== null && r.rows >= 8 && Math.abs(r.got - r.want) < 0.15 && r.above < 1;
     // (f) NO HOLE SHOWS THROUGH WHAT HANGS IN THE RAMP (design-018 rev 5 — James, 2026-09-28: "at the edge fading, somehow the holes are
     //     displayed on top of objects"): the note laid across the ramp (its top 2 px under the header's foot); each device row of the ramp
@@ -1241,8 +1212,8 @@ try {
     await fq("window.__desk.tray.pin(null)");
     await ft.close?.();
     const fadeOk = (r) => !r.missing && r.above < 1 && r.rows >= 40 && r.quarter[0] < r.quarter[1] && r.quarter[1] < r.quarter[2] && r.quarter[2] < r.quarter[3] && r.off < 0.12 && r.steep < 0.07;
-    check(fades.length >= 7 && fades.some((r) => r.type === "ice-examples.desk-clock") && fades.every(fadeOk) && partOk(tagFade) && partOk(accFade),
-      `the fade: each kind straddling the header's foot is gone in the header and fades in over the ${F} px below it on the smoothstep — ${fades.map((r) => (r.missing ? `${r.type} not drawn` : `${r.type.replace(/^.*\./, "")} ${r.quarter.map((v) => v.toFixed(2)).join("·")} (off ${r.off.toFixed(2)}, steepest ${(r.steep * 100).toFixed(1)} %/row, in the header ${r.above.toFixed(0)})`)).join(" · ")} — its quarters of the same content shown whole; the print's tag ${tagFade?.got.toFixed(2)} and its clip ${accFade?.got.toFixed(2)} across the ramp's first 15 px (the ramp there ${tagFade?.want.toFixed(2)}, ${accFade?.want.toFixed(2)}; ${tagFade?.rows}, ${accFade?.rows} rows; in the header ${tagFade?.above.toFixed(0)}, ${accFade?.above.toFixed(0)})`);
+    check(fades.length >= 6 && fades.some((r) => r.type === "ice-examples.desk-clock") && fades.every(fadeOk) && partOk(tagFade),
+      `the fade: each kind straddling the header's foot is gone in the header and fades in over the ${F} px below it on the smoothstep — ${fades.map((r) => (r.missing ? `${r.type} not drawn` : `${r.type.replace(/^.*\./, "")} ${r.quarter.map((v) => v.toFixed(2)).join("·")} (off ${r.off.toFixed(2)}, steepest ${(r.steep * 100).toFixed(1)} %/row, in the header ${r.above.toFixed(0)})`)).join(" · ")} — its quarters of the same content shown whole; the note's tag ${tagFade?.got.toFixed(2)} across the ramp's first 15 px (the ramp there ${tagFade?.want.toFixed(2)}; ${tagFade?.rows} rows; in the header ${tagFade?.above.toFixed(0)})`);
     check(through.rows >= 10 && through.worst < 3,
       `no hole shows through what hangs in the ramp: the note laid across it, ${through.rows} device rows read inside it — over a punched hole and over the face one colour a row (worst |Δ| ${through.worst.toFixed(1)} of luminance)`);
   }

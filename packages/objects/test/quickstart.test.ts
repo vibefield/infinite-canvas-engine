@@ -4,11 +4,12 @@
 // an export of that entry; the shipped default palette answers every reference kind's look in both themes
 // (until D7 the only complete palette was the oracle's fixture, and `deskLayer` threw at the mount on the
 // documented `{ canvasBg, select }`); a mount whose palette cannot answer leaves NOTHING behind (the canvas,
-// the reduced-motion listener); and `DESK_ENGINE` is the desk the README promises — the plain wheel zooms
-// about the pointer, a bare-mat drag pans, the zoom is scale-free, the zoom-through is on.
+// the reduced-motion listener); and `DESK_ENGINE` is the desk the README promises — the plain wheel pans, pinch zooms
+// about the pointer, a bare-mat drag marquees, the zoom is scale-free, the zoom-through is on.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
-import { ActiveTool, CameraLimits, createCanvasEngine, GestureSettings, ZoomThroughSettings } from "@ice/core";
+import { ActiveTool, Camera, CameraLimits, createCanvasEngine, GestureSettings, NO_MODS, selectedEntities, Viewport, ZoomThroughSettings } from "@ice/core";
+import { screenToWorld } from "@ice/kernel";
 import { describe, expect, it } from "vitest";
 import { looksOf } from "../../desk/src/compose/reflector";
 import { deskLayer, type KindPalette, MAT_COLORS, objectKindOf, type ObjectKind, rgb } from "@ice/desk";
@@ -102,16 +103,79 @@ describe("the published quickstart (design-015 D7)", () => {
     ce.dispose();
   });
 
-  it("DESK_ENGINE is the desk the README promises: the plain wheel zooms, a bare-mat drag pans (shift marquees), the zoom is scale-free, the zoom-through is on", () => {
+  it.each([0.5, 2])("DESK_ENGINE preserves native pinch scale %s and the pointer anchor, independent of event splitting", (scale) => {
+    // Native macOS magnification is encoded by Chromium as deltaY = -100 * log(scale):
+    // https://chromium.googlesource.com/chromium/src/+/main/components/input/touchpad_pinch_event_queue.cc
+    for (const events of [1, 8]) {
+      const ce = createCanvasEngine(DESK_ENGINE);
+      try {
+        ce.docs.create();
+        ce.step(16);
+        const initial = { x: 80, y: -40, zoom: 1.5, gesturing: false };
+        ce.world.setResource(Camera, initial);
+        ce.world.setResource(Viewport, { w: 800, h: 600, dpr: 1 });
+        const anchor = { x: 420, y: 310 };
+        const held = screenToWorld(anchor.x, anchor.y, initial);
+        for (let i = 0; i < events; i++) {
+          ce.stack.queue.enqueue({
+            kind: "wheel", pointerId: "mouse", device: "mouse",
+            screenX: anchor.x, screenY: anchor.y, buttons: 0,
+            mods: { ...NO_MODS, ctrl: true },
+            wheel: { dx: 0, dy: 0, pinch: -100 * Math.log(scale) / events },
+          });
+          ce.step(32 + i * 16);
+        }
+        const camera = ce.world.getResource(Camera);
+        expect(camera).toBeDefined();
+        if (camera === undefined) throw new Error("Camera unset");
+        expect(camera.zoom).toBeCloseTo(initial.zoom * scale, 6);
+        const after = screenToWorld(anchor.x, anchor.y, camera);
+        expect(after.x).toBeCloseTo(held.x, 6);
+        expect(after.y).toBeCloseTo(held.y, 6);
+      } finally {
+        ce.dispose();
+      }
+    }
+  });
+
+  it.each([false, true])("dragging empty desk selects with a marquee, without panning (shift=%s)", (shift) => {
+    const ce = createCanvasEngine(DESK_ENGINE);
+    try {
+      ce.docs.create();
+      const inside = ce.ops.spawnWidget("desk.note", { x: 100, y: 100, w: 200, h: 200 });
+      const outside = ce.ops.spawnWidget("desk.note", { x: 550, y: 400, w: 200, h: 200 });
+      ce.step(16);
+      ce.world.setResource(Camera, { x: 0, y: 0, zoom: 1, gesturing: false });
+      ce.world.setResource(Viewport, { w: 800, h: 600, dpr: 1 });
+      ce.ops.setSelection([outside]);
+      let time = 32;
+      const mouse = (kind: "down" | "move" | "up", x: number, y: number, buttons: number): void => {
+        ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: { ...NO_MODS, shift } });
+        ce.step(time); time += 16;
+      };
+      mouse("move", 50, 50, 0);
+      mouse("down", 50, 50, 1);
+      mouse("move", 65, 65, 1); // cross the drag threshold before extending the marquee
+      mouse("move", 350, 350, 1);
+      expect(ce.stack.marqueeBuffer.rect).not.toBeNull();
+      mouse("up", 350, 350, 0);
+      expect([...selectedEntities(ce.world)].sort()).toEqual((shift ? [inside, outside] : [inside]).sort());
+      expect(ce.world.getResource(Camera)).toMatchObject({ x: 0, y: 0, zoom: 1 });
+    } finally {
+      ce.dispose();
+    }
+  });
+
+  it("DESK_ENGINE is the desk the README promises: the plain wheel pans, pinch zooms, a bare-mat drag marquees (shift adds), the zoom is scale-free, the zoom-through is on", () => {
     const ce = createCanvasEngine(DESK_ENGINE);
     ce.docs.create();
-    expect(ce.world.getResource(GestureSettings)?.wheel).toBe("zoom");
+    expect(ce.world.getResource(GestureSettings)).toMatchObject({ wheel: "pan", wheelZoomCurve: "exponential" });
     const limits = ce.world.getResource(CameraLimits);
     expect(Math.abs((limits?.minZoom ?? 0) / ZOOM_MIN - 1)).toBeLessThan(1e-6);
     expect(Math.abs((limits?.maxZoom ?? 0) / ZOOM_MAX - 1)).toBeLessThan(1e-6);
     expect(ce.world.getResource(ZoomThroughSettings)?.enabled).toBe(true);
     expect(ce.world.getResource(ActiveTool)?.id).toBe(deskSelect.id);
-    expect(deskSelect.route).toMatchObject({ canvasDrag: "pan", canvasDragShift: "marquee" });
+    expect(deskSelect.route).toMatchObject({ canvasDrag: "marquee", canvasDragShift: "marquee" });
     ce.dispose();
   });
 });

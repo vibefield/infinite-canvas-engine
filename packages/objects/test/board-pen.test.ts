@@ -5,12 +5,12 @@
 // it as ONE `desk.stroke` child with its samples' times, whose replay lays the SAME stamps the live pen laid (the seed is the
 // next op's, the samples the cell's f32s). The eraser in hand (or a pen's eraser end) erases; put down mid-stroke, the stroke
 // lands first and the marker lies down in the ink last used — the cap, off the undo stack; ⌘Z is the document's.
-import { ChildOf, createCanvasEngine, type Entity, guardedTransaction, HeldPointer, LocalPointer, NO_MODS, Pointer, Viewport, defineQuery } from "@ice/core";
+import { ChildOf, createCanvasEngine, type Entity, guardedTransaction, heldEntity, HeldPointer, LocalPointer, NO_MODS, Pointer, Viewport, defineQuery } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { pickBoard, resolveBoard, toSurface } from "../src/board/board";
 import type { StrokeBuilder } from "../src/board/stroke";
 import { type BoardInk, boardKind, type BoardObjectLook, type PenHand } from "../src/board/kind";
-import { addStroke, Board, BoardStroke, boardOps, createBoardPen, decodePoints, decodeTimes } from "../src";
+import { addStroke, Board, BoardStroke, boardOps, createBoardPen, decodePoints, decodeTimes, Notebook } from "../src";
 import { lampOf } from "../src/paper/paper";
 import { MAT_GRID, kindPalette } from "@ice/desk";
 import { BOARD_LOOK, MARKERS, PALETTE } from "../oracle/fixtures/vf-theme";
@@ -21,7 +21,8 @@ const look = must(boardKind().theme)(kindPalette(palette), "light") as BoardObje
 const pointerQ = defineQuery([Pointer, LocalPointer]);
 
 function rig(props: Record<string, unknown> = {}, readOnly?: () => boolean) {
-  const ce = createCanvasEngine({ widgets: [Board] });
+  // (the notebook: another kind's object the hand can hold — petition I52's rows)
+  const ce = createCanvasEngine({ widgets: [Board, Notebook] });
   ce.docs.create();
   ce.world.setResource(Viewport, { w: 1200, h: 800, dpr: 1 });
   // the board's rect at (100, 100) — centre (340, 260); in hand it sits at the screen's (600, 400) at 1 px a unit
@@ -53,13 +54,15 @@ function rig(props: Record<string, unknown> = {}, readOnly?: () => boolean) {
   });
   let now = 1000;
   const frame = (dt = 16): void => { now += dt; ce.step(now); pen.follow(now); };
+  /** A frame as the desk layer runs it (host/layer.ts): core's step, then `follow` only when the pen is NOT idle. */
+  const hosted = (dt = 16): void => { now += dt; ce.step(now); if (!pen.idle()) pen.follow(now); };
   const mouse = (kind: "down" | "move" | "up", x: number, y: number, buttons: number): void => {
     ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons, mods: NO_MODS });
   };
   const strokes = () => ce.world.getReverse(board, ChildOf).map((k) => ce.world.get(k, BoardStroke)).filter((s) => s !== undefined);
   const settle = async (): Promise<void> => { await Promise.resolve(); await Promise.resolve(); ce.world.sync(); };
   const cap = () => (ce.world.get(board, Board.groups[0]?.component as never) as { cap: string }).cap;
-  return { ce, board, pen, frame, mouse, strokes, settle, laid, committed, hands, cap, cancels: () => cancels, now: () => now };
+  return { ce, board, pen, frame, hosted, mouse, strokes, settle, laid, committed, hands, cap, cancels: () => cancels, now: () => now, step: () => { now += 16; ce.step(now); } };
 }
 
 describe("the pen in hand lays a stroke and commits it as ONE child with its samples' times", () => {
@@ -213,5 +216,55 @@ describe("the pen idles at rest (D7 #14)", () => {
     r.ce.ops.putDown();
     for (let i = 0; i < 200 && !r.pen.idle(); i++) r.frame();
     expect(r.pen.idle()).toBe(true);
+  });
+});
+
+// PETITION I52: the pen follows a BOARD in hand — another kind's object in hand is not its to follow (its follow, there, does what it
+// does with nothing in hand: nothing), so it idles and the desk may sleep. Stepped as the layer steps a driver: `follow` only when
+// the pen is not idle — so an idle said too soon skips the very follow that lands a stroke.
+describe("the pen idles while ANOTHER KIND's object is in hand (petition I52)", () => {
+  it("another kind's object in hand: idle; its own board in hand: following — through the layer's frames", () => {
+    const r = rig();
+    const book = r.ce.ops.spawnWidget("desk.notebook", { x: 900, y: 100, undoable: false });
+    r.ce.world.sync();
+    r.hosted();
+    expect(r.pen.idle()).toBe(true);
+    r.ce.ops.open(book);
+    r.hosted(); r.hosted();
+    expect(heldEntity(r.ce.world)).toBe(book);
+    expect(r.pen.idle()).toBe(true);
+    r.ce.ops.putDown();
+    r.ce.ops.open(r.board);
+    r.hosted();
+    expect(r.pen.idle()).toBe(false);
+    // …and it follows the board: a stroke laid through the layer's frames
+    r.mouse("move", 560, 380, 0); r.hosted();
+    r.mouse("down", 560, 380, 1); r.hosted();
+    expect(r.pen.live()?.board).toBe(r.board);
+  });
+
+  it("put down MID-STROKE, another kind's object taken up in the same frame: not idle until the stroke lands and the marker lies down — then idle", async () => {
+    const r = rig({ cap: "black" });
+    const book = r.ce.ops.spawnWidget("desk.notebook", { x: 900, y: 100, undoable: false });
+    r.ce.world.sync();
+    r.hosted(); r.ce.ops.open(r.board); r.hosted(); r.hosted();
+    r.ce.ops.useHeldTool("marker:red");
+    r.mouse("move", 560, 380, 0); r.hosted();
+    r.mouse("down", 560, 380, 1); r.hosted();
+    r.mouse("move", 620, 390, 1); r.hosted();
+    expect(r.pen.live()?.samples).toBe(2);
+    // the board leaves the hand mid-stroke and the notebook comes into it, between two frames
+    r.ce.ops.putDown();
+    r.ce.ops.open(book);
+    r.step();
+    expect(heldEntity(r.ce.world)).toBe(book);
+    expect(r.pen.idle()).toBe(false);   // the stroke is owed its landing, the marker its lying down
+    r.pen.follow(r.now());
+    expect(r.pen.live()).toBeNull();
+    expect(r.committed).toHaveLength(1);
+    expect(r.pen.idle()).toBe(true);    // landed: the notebook in hand is not the pen's to follow
+    await r.settle();
+    expect(r.strokes().map((s) => s?.ink)).toEqual(["red"]);
+    expect(r.cap()).toBe("red");        // the marker lay down in the ink last used
   });
 });

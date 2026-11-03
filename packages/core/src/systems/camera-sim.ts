@@ -5,7 +5,7 @@
  * zoom, never total/zoomAtClaim — mid-pan wheel-zoom keeps content under cursor).
  *
  * `cameraControl` is a PURE value consumer: it reads active camera-gesture
- * recognizers and writes ONLY the `Camera` resource (resources are access-exempt,
+ * recognizers and writes the `Camera` and input-zoom resources (resources are access-exempt,
  * design-003 §10 — hence no `access.write`). It NEVER touches an entity's
  * components. It is a TICK system (strata 0.5.0): the scheduler runs the body
  * EXACTLY once per frame — the camera is a whole-frame aggregate over every
@@ -23,21 +23,18 @@
  *    opposite). This is the Figma/Freeform convention for both mouse wheels and
  *    macOS natural-scroll trackpads; the sign was inverted until James's field
  *    report (2026-07-10) and is now pinned by a trace.
- *  - WheelZoom (Active): anchored zoom, `zoomAtPoint(cam, anchor,
- *    zoom·2^(−clamp(pinch, ±maxStep)·sens))` (the v2 curve below — this line
- *    said `e^(−pinch·k)` until D2a-core corrected it; the code never did).
+ *  - WheelZoom (Active): anchored zoom, with an independently selected
+ *    exponential or bounded legacy curve (`GestureSettings.wheelZoomCurve`).
  *  - Pinch (Active): zoom `startZoom · spread/startDist`, anchored at the live centroid.
  * `Camera.gesturing` is true while ANY of these is Active (compositor DPR gate).
  * On pan JustEnded, inertia is seeded from the Drag's release velocity.
  *
- * THE WHEEL MODE (design-015 §9, D-D11 — D2a-core, 2026-09-25):
- * `GestureSettings.wheel` is `"pan"` by default — everything above, byte for
- * byte. `"zoom"` is the desk's law, the prototype's (vibe-field/draft/ground
- * lab/main.ts): a PLAIN wheel's Δy zooms about the pointer by
- * `zoom · exp(−Δy · wheelZoomRate)` and its Δx moves nothing; a pinch
- * (WheelZoom) zooms by the same law instead of the v2 curve; CameraLimits
- * clamps both as ever. Either mode records each frame's WHEEL zoom in the
- * one-tick `WheelZoomStep` (below) for the systems that run after this one.
+ * `GestureSettings.wheel` defaults to "pan". The optional "zoom" mode uses
+ * a plain wheel's Δy to zoom about the pointer by `zoom · exp(−Δy · rate)`.
+ * Pinch / modifier-wheel uses `wheelZoomCurve` independently; the desk selects
+ * exponential pinch with ordinary scrolling to pan. CameraLimits clamps both.
+ * WheelZoomStep feeds zoom-through; CameraZoomStep also includes touch pinch
+ * and lets feedback distinguish user input from fits, flights and restoration.
  */
 import { field } from "@vibecook/strata-ecs";
 import type { Entity, System, TickSystem, World } from "@vibecook/strata-ecs";
@@ -114,6 +111,20 @@ export const WheelZoomStep = defineResource(
   { durable: false },
 );
 
+/** Latest user-driven camera zoom, including touch pinch. Presentation hosts
+ * can acknowledge scale crossings without mistaking a fit, flight, document
+ * restore or zoom-through rebase for a gesture. Values describe cameraControl's
+ * zoom before later navigation systems run. Idle frames never write it. */
+export const CameraZoomStep = defineResource(
+  "CameraZoomStep",
+  {
+    from: field("f64", { default: 1 }),
+    to: field("f64", { default: 1 }),
+    tick: field("u32", { default: 0 }),
+  },
+  { durable: false },
+);
+
 export interface CameraSystems {
   cameraControl: TickSystem;
   cameraInertia: TickSystem;
@@ -175,8 +186,7 @@ export function createCameraSystems(world: World): CameraSystems {
       let y = cam0.y;
       let zoom = cam0.zoom;
       let anyActive = false;
-      // The wheel mode (design-015 §9): "zoom" is the desk's law for a plain
-      // wheel AND a pinch; "pan" (default) leaves 2) and 3) exactly as they were.
+      // Ordinary wheel behavior and the pinch curve are independent.
       const gmode = world.getResource(GestureSettings);
       const wheelZooms = (gmode?.wheel ?? GESTURE_DEFAULTS.wheel) === "zoom";
       const zoomRate = gmode?.wheelZoomRate ?? GESTURE_DEFAULTS.wheelZoomRate;
@@ -220,7 +230,7 @@ export function createCameraSystems(world: World): CameraSystems {
           const w = world.read(rec, WheelPan);
           if (w.dx === 0 && w.dy === 0) continue;
           if (wheelZooms) {
-            // The desk (design-015 §9): a plain wheel's Δy ZOOMS about the
+            // Optional scroll-to-zoom: a plain wheel's Δy zooms about the
             // pointer by the prototype's law; its Δx is not the camera's.
             if (w.dy === 0) continue;
             const next = zoomAtPoint(
@@ -251,8 +261,9 @@ export function createCameraSystems(world: World): CameraSystems {
           const wz = world.read(rec, WheelZoom);
           if (wz.pinch === 0) continue;
           let factor: number;
-          if (wheelZooms) {
-            // The desk: a pinch zooms by the same law as its plain wheel.
+          if ((gmode?.wheelZoomCurve ?? GESTURE_DEFAULTS.wheelZoomCurve) === "exponential") {
+            // Continuous pinch zoom: integrating the same deltas in one frame
+            // or several gives the same scale. Plain scrolling is independent.
             factor = Math.exp(-wz.pinch * zoomRate);
           } else {
             const gset = world.getResource(GestureSettings);
@@ -304,6 +315,14 @@ export function createCameraSystems(world: World): CameraSystems {
 
       if (x !== cam0.x || y !== cam0.y || zoom !== cam0.zoom || anyActive !== cam0.gesturing) {
         world.setResource(Camera, { x, y, zoom, gesturing: anyActive });
+      }
+
+      if (zoom !== cam0.zoom) {
+        world.setResource(CameraZoomStep, {
+          from: cam0.zoom,
+          to: zoom,
+          tick: world.getResource(FrameInfo)?.tick ?? 0,
+        });
       }
 
       // WheelZoomStep (design-015 §9), change-only: this frame's wheel zoom, or

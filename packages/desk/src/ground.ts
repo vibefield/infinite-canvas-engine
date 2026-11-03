@@ -498,15 +498,17 @@ export class SlotPool {
  * it, then the objects stratum by stratum: within a stratum in paint order, one
  * `drawRange` per RUN of one kind (each kind counting its own records), the run
  * cut after an object with a live inside — the inside over its face (restoring
- * this slot's scissor), then that object's marks over the inside. Returns
+ * this slot's scissor), then that object's marks over the inside. The edge
+ * rulers finish the slot above its objects. Returns
  * whether it drew.
  */
 export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number; readonly h: number }, dpr: number, slot: DrawSlot): boolean {
   if (!visible(slot.present)) return false;
-  const [x, y, w, h] = scissorOf(slot.present, dpr, size);
+  const scissor = scissorOf(slot.present, dpr, size);
+  const [x, y, w, h] = scissor;
   if (w === 0 || h === 0) return false;   // the portal is off screen: nothing to shade
   pass.setScissorRect(x, y, w, h);
-  if (slot.bare !== true) slot.mat.draw(pass);
+  if (slot.bare !== true) slot.mat.drawSurface(pass, scissor);
   // the layers a host laid on the mat (the desk calendar, CALENDAR.md), each setting its own scissor
   if (slot.underlays?.length) { for (const u of slot.underlays) u.draw(pass); pass.setScissorRect(x, y, w, h); }
   // the live insides by the object each lies in (two on one object draw in the order they came)
@@ -588,6 +590,9 @@ export function drawSlot(pass: GPURenderPassEncoder, size: { readonly w: number;
   }
   // an inside whose `at` names no object this slot draws has nothing to lie in: it draws over them all
   for (const children of insides.values()) for (const child of children) inside(child);
+  // The printed edge stays above objects and their live insides. Bare slots
+  // (tray specimens and the reading hand) have no mat or rulers.
+  if (slot.bare !== true) slot.mat.drawRulers(pass, scissor);
   return true;
 }
 
@@ -854,7 +859,7 @@ function trayRectOf(inputs: GroundFrameInputs): ReturnType<typeof drawerRect> {
 
 /**
  * THE TRAY, drawn (design-017 §5, §8; K5a) — shared by `Ground.render` and the Node oracle: the drawer UNDER its specimens (the dim, its
- * shadows, the board to its edge, the accessories), each specimen by its own kind through the drawer's face (inside the edge — the rim
+ * shadows, the board to its edge), each specimen by its own kind through the drawer's face (inside the edge — the rim
  * laid over them all retired, design-018 §2), their name tags (the marks' pills), then the VEIL over them all at the top (design-018
  * rev 5: the plain board, whole in the header and fading out over its ramp — what hangs there fades into the board, never see-through
  * over a hole); then what the tray carries, whole. Shut (p 0) the drawer draws nothing (its pass laid no quad) and only a carried copy
@@ -1090,10 +1095,10 @@ export class Ground {
 }
 
 
-/** The specimens' name tags this frame (K5a): each label centred under its specimen — below a shelf's plank — in screen px. */
+/** The specimens' name tags this frame (K5a): each label centred under its specimen, in screen px. */
 export function tagsOf(tray: TrayFrameInputs | undefined): { readonly label: string; readonly x: number; readonly y: number }[] {
   const P = DRAWER.pitch;
-  return (tray?.specimens ?? []).map((f) => ({ label: f.label, x: (f.screen.x0 + f.screen.x1) / 2, y: f.screen.y1 + (f.accessory === "shelf" ? 0.24 * P : 0) + 0.45 * P }));
+  return (tray?.specimens ?? []).map((f) => ({ label: f.label, x: (f.screen.x0 + f.screen.x1) / 2, y: f.screen.y1 + 0.45 * P }));
 }
 
 /** The desk copy's cache between held frames (D4b): the `stamp` it was made for (null: none yet), the stats of that frame, and how many copies were ever made (the "once per settled state" witness). */

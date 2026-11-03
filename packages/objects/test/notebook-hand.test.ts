@@ -5,6 +5,7 @@
 // the SAME desk eye the book was drawn with (`pageHitAt` on the geometry in hand) — and commits it as ONE `desk.stroke` child of
 // the book on its page, in page units with its samples' times, which the page's raster ADOPTS (the replay of its row lays the live
 // pen's bytes). Put down mid-stroke, the stroke lands first; ⌘Z is the document's; the case and a turn's share take no ink.
+import { heldEntity } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { pageHitAt } from "../src/notebook/kind";
 import { INK_H, INK_W } from "../src/notebook/ink";
@@ -146,6 +147,56 @@ describe("the pen in hand writes on a page and commits ONE child with its page a
     expect(r.partUnder()).toBe("turn");
     await r.settle();
     expect(r.strokes()).toHaveLength(1);
+    expect(r.hand.commits()).toBe(1);
+  });
+});
+
+// PETITION I52: the hand follows a BOOK in hand — another kind's object in hand is not its to follow (its follow, there, does what it
+// does with nothing in hand: nothing), so it idles and the desk may sleep. Stepped as the layer steps a driver: `follow` only when
+// the hand is not idle — so an idle said too soon skips the very follow that lands a stroke.
+describe("the hand idles while ANOTHER KIND's object is in hand (petition I52)", () => {
+  it("another kind's object in hand: idle; its own book in hand: following — through the layer's frames", () => {
+    const r = rig();
+    const board = r.ce.ops.spawnWidget("desk.board", { x: 900, y: 600, undoable: false });
+    r.ce.world.sync();
+    r.hosted();
+    expect(r.hand.idle()).toBe(true);
+    r.ce.ops.open(board);
+    r.hosted(); r.hosted();
+    expect(heldEntity(r.ce.world)).toBe(board);
+    expect(r.hand.idle()).toBe(true);
+    r.ce.ops.putDown();
+    r.ce.ops.open(r.book);
+    r.build(); r.hosted();
+    expect(r.hand.idle()).toBe(false);
+    // …and it follows the book: a stroke laid through the layer's frames
+    r.hosted();
+    r.mouse("move", 650, 380, 0); r.hosted();
+    r.mouse("down", 650, 380, 1); r.hosted();
+    expect(r.hand.live()).toMatchObject({ book: r.book, page: 1, samples: 1 });
+  });
+
+  it("put down MID-STROKE, another kind's object taken up in the same frame: not idle until the stroke lands — then idle", async () => {
+    const r = rig();
+    const board = r.ce.ops.spawnWidget("desk.board", { x: 900, y: 600, undoable: false });
+    r.ce.world.sync();
+    r.hosted(); r.ce.ops.open(r.book); r.build(); r.hosted(); r.hosted();
+    r.mouse("move", 650, 380, 0); r.hosted();
+    r.mouse("down", 650, 380, 1); r.hosted();
+    r.mouse("move", 690, 390, 1); r.hosted();
+    expect(r.hand.live()?.samples).toBe(2);
+    // the book leaves the hand mid-stroke and the whiteboard comes into it, between two frames
+    r.ce.ops.putDown();
+    r.ce.ops.open(board);
+    r.step();
+    expect(heldEntity(r.ce.world)).toBe(board);
+    expect(r.hand.idle()).toBe(false);   // the stroke is owed its landing
+    r.hand.follow(r.now());
+    r.build();
+    expect(r.hand.live()).toBeNull();
+    expect(r.hand.idle()).toBe(true);    // landed: the whiteboard in hand is not the hand's to follow
+    await r.settle();
+    expect(r.strokes().map((s) => s?.page)).toEqual([1]);
     expect(r.hand.commits()).toBe(1);
   });
 });

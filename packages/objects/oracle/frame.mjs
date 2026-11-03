@@ -758,7 +758,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
    */
   function trayInputsOf(s, view, theme, grid) {
     const t = s.tray;
-    const base = { p: t.p ?? 1, scroll: t.scroll ?? 0, ...(t.foot > 0 ? { foot: t.foot } : {}) };
+    const base = { p: t.p ?? 1, scroll: t.scroll ?? 0, ...(t.foot > 0 ? { foot: t.foot } : {}), ...(t.footFade !== undefined ? { footFade: t.footFade } : {}) };
     if (t.bare === true) return base;
     const items = hung.map((w) => ({ type: w.type, hang: w.tray.hang, category: w.tray.category ?? "", order: w.tray.order ?? 0 }));
     const laid = layTray(items, drawerSize(view.width, view.height).w, DRAWER.pitch);
@@ -856,7 +856,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     // capture door go through (I23); the host submits
     const { theme, nav, rootGrid, inputs } = inputsOf(s, opts);
     const { prepared, marked } = encodeFrame(encoder, passesOn(rootGrid), inputs, { view: () => target, size: () => size });
-    return { theme, nav, prepared, marks: marked > 0 ? marks.laid : [] };
+    return { theme, nav, prepared, specimens: inputs.tray?.specimens ?? [], marks: marked > 0 ? marks.laid : [] };
   }
 
   /**

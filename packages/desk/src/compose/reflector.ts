@@ -215,7 +215,7 @@ export function createDeskReflector(opts: DeskReflectorOptions): DeskReflector {
   let pinGen = 0;
   const wakes: Record<keyof DeskWakes, number> = { world: 0, removed: 0, reset: 0, order: 0, hover: 0, marks: 0, camera: 0, viewport: 0, nav: 0, theme: 0, grid: 0, pin: 0, ambient: 0, live: 0, ink: 0, tray: 0 };
   /** The pegboard drawer's motion (design-017 §3): the facts are core's `Tray`, polled each tick; the slide and the band are here. */
-  const tray = createTrayFlux(opts.tray?.foot !== undefined ? { foot: opts.tray.foot } : {});
+  const tray = createTrayFlux(opts.tray);
   // the tray's specimens (K5a): read from the world each frame the drawer shows (a handful of facts — a lay, a reset or a prop moves them)
   let drawnSpecimens: readonly TraySpecimenFrame[] = [];
   /** The take's motion (K5b): the copy, the ghost's grow, its flight home — and what it drew last. */

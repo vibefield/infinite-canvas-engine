@@ -34,6 +34,8 @@ import {
 
 export interface EngineCatalogCompileOpts {
   readonly widgets?: readonly { readonly type: string }[];
+  /** Schema compatibility only: no placement, runtime, tray, or canvas presentation. */
+  readonly retiredWidgets?: readonly { readonly type: string }[];
   readonly tools?: readonly Tool[];
   readonly canvasTypes?: readonly CanvasType[];
   readonly rootCanvas?: CanvasType;
@@ -49,6 +51,8 @@ export interface EngineCatalog {
   readonly rootCanvas: CanvasType;
   readonly presentationFallback: CanvasType;
   widget(id: string): WidgetType | undefined;
+  /** A dormant schema retained for saved documents, outside the active widget catalog. */
+  retiredWidget(id: string): WidgetType | undefined;
   widgetTypes(): readonly WidgetType[];
   tool(id: string): Tool | undefined;
   toolTypes(): readonly Tool[];
@@ -199,6 +203,11 @@ export function compileEngineCatalog(opts: EngineCatalogCompileOpts = {}): Engin
   }
 
   const widgetList = resolveWidgets(opts.widgets);
+  const retiredList = resolveWidgets(opts.retiredWidgets ?? []);
+  const retiredMap = new Map(retiredList.map((w) => [w.type, w] as const));
+  for (const widget of widgetList) {
+    if (retiredMap.has(widget.type)) throw new Error(`ice: widget "${widget.type}" cannot be both active and retired.`);
+  }
   const toolList = resolveTools(opts.tools, typed);
   const widgetMap = new Map(widgetList.map((w) => [w.type, w] as const));
   const toolMap = new Map(toolList.map((t) => [t.id, t] as const));
@@ -587,16 +596,16 @@ export function compileEngineCatalog(opts: EngineCatalogCompileOpts = {}): Engin
 
   // an object's DATA prefabs (design-015 §5.1, D3t-a): tracked with the widget that declares them — one prefab per id, whoever declares it
   const dataPrefabs = new Map<string, Prefab>();
-  for (const widget of widgetList) {
+  for (const widget of [...widgetList, ...retiredList]) {
     for (const d of widget.data) {
       const had = dataPrefabs.get(d.id);
       if (had !== undefined && had !== d) throw new Error(`ice: data prefab "${d.id}" is declared twice with different definitions.`);
-      if (widgetMap.has(d.id) || d.id === WirePrefab.id) throw new Error(`ice: data prefab "${d.id}" collides with a widget's own prefab.`);
+      if (widgetMap.has(d.id) || retiredMap.has(d.id) || d.id === WirePrefab.id) throw new Error(`ice: data prefab "${d.id}" collides with a widget's own prefab.`);
       dataPrefabs.set(d.id, d);
     }
   }
   const localPacks: Record<string, number> = { [WirePrefab.id]: WirePrefab.version ?? 1 };
-  for (const widget of widgetList) localPacks[widget.prefab.id] = widget.prefab.version ?? 1;
+  for (const widget of [...widgetList, ...retiredList]) localPacks[widget.prefab.id] = widget.prefab.version ?? 1;
   for (const d of dataPrefabs.values()) localPacks[d.id] = d.version ?? 1;
   for (const canvas of normalizedCanvasList) {
     localPacks[canvasPackId(canvas.id)] = canvas.semanticVersion;
@@ -606,7 +615,7 @@ export function compileEngineCatalog(opts: EngineCatalogCompileOpts = {}): Engin
   }
   const initialPacks: Record<string, number> = { [WirePrefab.id]: WirePrefab.version ?? 1 };
   for (const widget of widgetList) initialPacks[widget.prefab.id] = widget.prefab.version ?? 1;
-  for (const d of dataPrefabs.values()) initialPacks[d.id] = d.version ?? 1;
+  for (const widget of widgetList) for (const d of widget.data) initialPacks[d.id] = d.version ?? 1;
   for (const id of requiredCanvasIds) {
     const canvas = canvasMap.get(id) as CanvasType;
     initialPacks[canvasPackId(id)] = canvas.semanticVersion;
@@ -645,6 +654,7 @@ export function compileEngineCatalog(opts: EngineCatalogCompileOpts = {}): Engin
     rootCanvas,
     presentationFallback,
     widget: (id: string) => widgetMap.get(id),
+    retiredWidget: (id: string) => retiredMap.get(id),
     widgetTypes: () => frozenWidgets,
     tool: (id: string) => toolMap.get(id),
     toolTypes: () => frozenTools,
@@ -731,7 +741,7 @@ export function resolveToolFor(world: World, id: string): Tool {
 export function durablePrefabFor(world: World, id: string): Prefab | undefined {
   const catalog = byWorld.get(world);
   if (catalog !== undefined) {
-    return catalog.widget(id)?.prefab ?? catalog.dataPrefab(id) ?? (id === WirePrefab.id ? WirePrefab : undefined);
+    return catalog.widget(id)?.prefab ?? catalog.retiredWidget(id)?.prefab ?? catalog.dataPrefab(id) ?? (id === WirePrefab.id ? WirePrefab : undefined);
   }
   return prefabs.get(id);
 }

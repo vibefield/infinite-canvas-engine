@@ -4,8 +4,9 @@
 // the layer's own (`perf().kindTicks`, `driverAsks`): a step a registered time alone starts (`frame.settled()`) asks no driver and
 // ticks no kind but one due; and each kind's `due` answers now while it moves, a time when it has one, never at rest.
 
-import { closeTray, type Entity, openTray } from "@ice/core";
-import { afterAll, beforeAll, describe, expect, it } from "vitest";
+import { closeTray, type Entity, heldEntity, openTray } from "@ice/core";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
+import { DESK_OBJECT, defineObject, type KindPass, type ObjectKind, type ObjectRect } from "@ice/desk";
 import { LAYER_IDLE_MS } from "@ice/desk/kit";
 import type { BoardInk } from "../src/board/kind";
 import type { Pads } from "../src/calendar/kind";
@@ -177,4 +178,54 @@ describe("the tray's layers under the sleeping loop (K7a over K5a)", () => {
     // …and the desk's due is the kinds' own again (since K5b the calendar's local prints for the tray's pad: its day turns at midnight)
     expect(after.at).toBe(Math.min(Number.POSITIVE_INFINITY, ...Object.values(after.kinds)));
   }, 20_000);
+});
+
+// PETITION I52 (VibeField PT-6a's C1): an object in hand kept the desk stepping at display rate whatever its kind — the board's pen,
+// the notebook's leaf and the calendar's hand each followed while ANYTHING was in hand. Each follows its OWN object in hand: the
+// ledger's `following` names the held object's own driver alone, and another kind's object in hand — a kind of the test's own, as a
+// plugin's (VibeField's browser pane), openable, with no driver and no desk state — leaves none following: the loop sleeps.
+const passOf = (): KindPass => ({ spawn: () => passOf(), prepare: (_e, _s, records) => records.length, drawRange: () => {}, dispose: () => {} });
+const foreignKind: ObjectKind<ObjectRect> = {
+  name: "foreign", stratum: "things", reach: 0, create: async () => passOf(), resolve: (c) => c.rect, record: () => ({}),
+  hit: (G, wx, wy) => (Math.abs(wx - G.cx) <= G.w / 2 && Math.abs(wy - G.cy) <= G.h / 2 ? "content" : null), open: { extent: (c) => c.rect },
+};
+const Foreign = defineObject({ type: "test.foreign", version: 1, props: {}, size: { w: 240, h: 160 }, kind: foreignKind, interaction: { selectable: true, movable: true }, provides: [DESK_OBJECT] });
+
+describe("the reference kinds' drivers follow their OWN object in hand, no other (petition I52)", () => {
+  // a desk a row: no row inherits another's hand, nor the lead its frame clock took over the wall's (each step 16 ms of it — the
+  // kinds' registered times are the wall's, so a clock run seconds ahead reads them all as due now)
+  let desk: DeskMount;
+  const ids: Record<string, Entity> = {};
+  beforeEach(async () => {
+    // a frame clock of its own: a pickup's flight settles in the same steps on a loaded host as on an idle one
+    desk = await mountDesk(undefined, { frameMs: 16, objects: [Foreign] });
+    ids.board = desk.ce.ops.spawnWidget("desk.board", { x: 400, y: 100 });
+    ids.book = desk.ce.ops.spawnWidget("desk.notebook", { x: 300, y: 500 });
+    ids.pad = desk.ce.ops.spawnWidget("desk.calendar", { x: 900, y: 500 });
+    ids.foreign = desk.ce.ops.spawnWidget("test.foreign", { x: 100, y: 100 });
+    expect(desk.toSleep()).toBeLessThan(400);
+  });
+  afterEach(() => { desk?.dispose(); });
+  const following = (): readonly string[] => desk.handle.due(performance.now()).following;
+
+  it("another kind's object in hand, still: the loop sleeps — no driver follows", () => {
+    desk.ce.ops.open(ids.foreign as Entity);
+    // the pickup flies in, then nothing moves: asleep within its flight's steps (the cap: 400 steps, over six seconds of frames)
+    const steps = desk.toSleep();
+    expect(steps, `the loop never slept with another kind's object in hand — following ${JSON.stringify(following())}`).toBeLessThan(400);
+    expect(heldEntity(desk.ce.world)).toBe(ids.foreign);
+    expect(following()).toEqual([]);
+    desk.ce.ops.putDown();
+    expect(desk.toSleep()).toBeLessThan(400);
+  });
+
+  it("each reference kind's object in hand: its own driver follows, and no other", () => {
+    for (const [e, type] of [[ids.board, "desk.board"], [ids.book, "desk.notebook"], [ids.pad, "desk.calendar"]] as const) {
+      desk.ce.ops.open(e as Entity);
+      desk.step(); desk.step();
+      expect(following(), `${type} in hand`).toEqual([type]);
+      desk.ce.ops.putDown();
+      expect(desk.toSleep()).toBeLessThan(400);
+    }
+  });
 });
