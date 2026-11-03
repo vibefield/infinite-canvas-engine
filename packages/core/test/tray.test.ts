@@ -2,7 +2,7 @@
 // THE TRAY (design-017 §2, §4; K3): `Tray` is the pegboard drawer's fact — one runtime entity per view, ensured at install and after a
 // reset — and its ops and `trayInput` its only writers. Closed, the drawer takes no pointer (design-018 §5 — the lip's handle, its
 // hover and its press retired: the bottom centre is the desk's); open, the desk is INERT (no pick, no selection, no move, no camera — each negative with its control), the wheel over the
-// drawer scrolls it (⌘-wheel and pinch swallowed), past an end into the band that lets go when the wheel is quiet, a drag on the board
+// drawer scrolls it (⌘-wheel and pinch swallowed), stopping cleanly at both ends with the OS's momentum intact; a drag on the board
 // scrolls it, a click on the dimmed desk closes it, a press on DOM chrome stays the chrome's. Opening cancels a gesture in flight and is
 // refused with an object in hand. Through the REAL stack; the pose seam is what the renderer would publish.
 import { describe, expect, it } from "vitest";
@@ -45,7 +45,7 @@ const VP = { w: 800, h: 600, dpr: 1 };
 const META: InputMods = { ...NO_MODS, meta: true };
 const activeQ = defineQuery([GestureActive]);
 
-function rig() {
+function rig(max = 600) {
   const ce = createCanvasEngine({ widgets: [NOTE, BOOK], settings: { gestures: { wheel: "zoom" } } });
   ce.docs.create();
   ce.world.setResource(Viewport, VP);
@@ -72,7 +72,6 @@ function rig() {
     mouse("up", to[0], to[1], 0); step(2);
   };
   // what the renderer would publish: the drawer 720 × 252 open (its top at 348), its 12 px lip closed; a scroll range of 600
-  const max = 600;
   const shown = (): number => { const e = trayEntity(ce.world); return e === undefined ? 0 : ce.world.read(e, Tray).scroll; };
   const frame = (): TrayScreenFrame => (trayOpen(ce.world) ? { x: 40, y: 348, w: 720, h: 252, p: 1, max, pitch: 40, scroll: shown() } : { x: 40, y: 588, w: 720, h: 252, p: 0, max, pitch: 40, scroll: shown() });
   ce.stack.trayPose.current = { frame };
@@ -230,23 +229,20 @@ describe("open — the desk is inert, the drawer scrolls (design-017 §4)", () =
     expect(r.cam()).toEqual(c1);
   });
 
-  it("past an end the rest is the band; a reversal unwinds it first; it lets go once the wheel is quiet — and as the drawer closes", () => {
+  it("stops at both wheel boundaries without banking overscroll, and reverses immediately", () => {
     const r = rig();
     openTray(r.world); r.step();
     r.wheel(400, 500, { dy: r.max - 10 });
-    r.wheel(400, 500, { dy: 50 });
-    expect(r.tray().scroll).toBe(r.max);
-    expect(r.tray().stretch).toBe(40);
-    r.wheel(400, 500, { dy: -30 });
-    expect(r.tray().scroll).toBe(r.max);
-    expect(r.tray().stretch).toBe(10);
-    r.step(Math.ceil(TRAY_INPUT.letGoMs / 16) + 1);
-    expect(r.tray().stretch).toBe(0);
-    r.wheel(400, 500, { dy: -r.max - 25 });
-    expect(r.tray().scroll).toBe(0);
-    expect(r.tray().stretch).toBe(-25);
-    closeTray(r.world);
-    expect(r.tray().stretch).toBe(0);
+    r.wheel(400, 500, { dy: 5000 });
+    expect(r.tray()).toMatchObject({ scroll: r.max, stretch: 0 });
+    r.wheel(400, 500, { dy: -0.25 });
+    expect(r.tray()).toMatchObject({ scroll: r.max - 0.25, stretch: 0 });
+    r.wheel(400, 500, { dy: -5000 });
+    expect(r.tray()).toMatchObject({ scroll: 0, stretch: 0 });
+    r.wheel(400, 500, { dy: 0.25 });
+    expect(r.tray()).toMatchObject({ scroll: 0.25, stretch: 0 });
+    r.step(30);
+    expect(r.tray()).toMatchObject({ scroll: 0.25, stretch: 0 });
   });
 
   it("shut mid-flick, the rest of its momentum stays the tray's until the wheel goes quiet — the desk never zooms (K9 S7); quiet, the wheel is the desk's again", () => {
@@ -278,26 +274,52 @@ describe("open — the desk is inert, the drawer scrolls (design-017 §4)", () =
     expect(r.cam()).not.toEqual(c0);
   });
 
-  it("past an end, a FADING tail — each delta smaller than the last — lets the band go after three and spends the rest (K9 S11); a steady push holds it until the wheel is quiet", () => {
+  it.each([-1, 1])("an uneven momentum tail cannot restart a bounce at the %s boundary", (sign) => {
     const r = rig();
     openTray(r.world); r.step();
-    scrollTray(r.world, r.max - 30); r.step();
-    const pulls: number[] = [];
-    let dy = 40;
-    for (let i = 0; i < 12; i++) { r.wheel(400, 500, { dy: Math.round(dy) }); pulls.push(r.tray().stretch); dy *= 0.9; }
-    // 40 fills the scroll's last 30 and pulls 10; 36 and 32, each smaller, pull on; 29 — the third smaller — lets it go
-    expect(pulls.slice(0, 4)).toEqual([10, 46, 78, 0]);
-    expect(pulls.slice(4).every((s) => s === 0)).toBe(true);   // the rest of the tail is spent: the band stays home
-    expect(r.tray().scroll).toBe(r.max);
-    r.wheel(400, 500, { dy: -20 });                             // a reversal ends the spent tail: it scrolls back
-    expect(r.tray().scroll).toBe(r.max - 20);
-    // control: a steady push past the end (equal deltas, a hand holding it there) keeps the band until the wheel is quiet
-    r.step(Math.ceil(TRAY_INPUT.letGoMs / 16) + 1);
-    scrollTray(r.world, r.max); r.step();
-    for (let i = 0; i < 6; i++) r.wheel(400, 500, { dy: 20 });
-    expect(r.tray().stretch).toBe(120);
-    r.step(Math.ceil(TRAY_INPUT.letGoMs / 16) + 1);
-    expect(r.tray().stretch).toBe(0);
+    scrollTray(r.world, sign > 0 ? r.max - 30 : 30); r.step();
+    // Decay, integer plateaus, a coalesced larger event, then subpixel deltas: no phase guessing.
+    for (const dy of [40, 36, 32, 29, 29, 18, 20, 12, 5, 1, 1, 0.5, 0.25]) {
+      r.wheel(400, 500, { dy: dy * sign });
+      expect(r.tray()).toMatchObject({ scroll: sign > 0 ? r.max : 0, stretch: 0 });
+    }
+    r.step(30);
+    r.wheel(400, 500, { dy: -0.5 * sign });
+    expect(r.tray()).toMatchObject({ scroll: sign > 0 ? r.max - 0.5 : 0.5, stretch: 0 });
+  });
+
+  it("preserves every fractional momentum delta in range without adding a second coast", () => {
+    const r = rig();
+    openTray(r.world); r.step();
+    let expected = 0;
+    for (const dy of [48, 32, 24, 16, 8, 4, 2, 1, 0.5, 0.25, 0.125]) {
+      expected += dy;
+      r.wheel(400, 500, { dy });
+      expect(r.tray()).toMatchObject({ scroll: expected, stretch: 0 });
+    }
+    r.step(30);
+    expect(r.tray()).toMatchObject({ scroll: expected, stretch: 0 });
+  });
+
+  it("does not move or bounce when all the tray's content already fits", () => {
+    const r = rig(0);
+    openTray(r.world); r.step();
+    const camera = r.cam();
+    for (const dy of [100, 70, 70, 75, 5, -100, -70, -75, -0.25]) {
+      r.wheel(400, 500, { dy });
+      expect(r.tray()).toMatchObject({ scroll: 0, stretch: 0 });
+    }
+    r.step(30);
+    expect(r.cam()).toEqual(camera);
+    expect(r.tray()).toMatchObject({ scroll: 0, stretch: 0 });
+  });
+
+  it("discards a stale out-of-range scroll before applying the next wheel delta", () => {
+    const r = rig();
+    openTray(r.world); r.step();
+    scrollTray(r.world, r.max + 10000); r.step();
+    r.wheel(400, 500, { dy: -1 });
+    expect(r.tray()).toMatchObject({ scroll: r.max - 1, stretch: 0 });
   });
 
   it("a drag on the board scrolls it by the pointer's travel, into the band past an end, which lets go after the release", () => {
