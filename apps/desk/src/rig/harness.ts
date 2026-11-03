@@ -29,10 +29,11 @@ const plugins = [...(query.has("trayPlugin") ? [TRAY_PLUGIN] : []), ...(query.ha
 // before its next remount, and that generation mounts clean)
 const hold = query.get("hold")?.split(",").map(Number);
 const foot = query.get("trayFoot");
+const footFade = query.get("trayFootFade");
 const cursors = query.get("cursors");
 const layer: RigLayer = {
   ...(hold !== undefined ? { hold: { top: hold[0] ?? Number.NaN, band: hold[1] ?? Number.NaN, travelMs: hold[2] ?? Number.NaN } } : {}),
-  ...(foot !== null ? { tray: { foot: Number(foot) } } : {}),
+  ...(foot !== null || footFade !== null ? { tray: { ...(foot !== null ? { foot: Number(foot) } : {}), ...(footFade !== null ? { footFade: Number(footFade) } : {}) } } : {}),
   ...(cursors !== null ? { cursors: cursors !== "false" } : {}),
   ...(query.has("kindFaults") ? { objects: KIND_FAULTS } : {}),
   ...(live !== undefined ? { services: [service(LIVE, live.sources)], onDevice: (device: GPUDevice) => live.device(device) } : {}),

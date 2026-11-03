@@ -56,7 +56,7 @@ export interface OracleScene extends KindScene {
    * `foot` (petition I21): the host's foot inset the still is drawn under — a MOUNT option of the layer, so the page must have been
    * mounted with it (`rig.html?trayFoot=…`); a still on a page with another foot is refused by name.
    */
-  readonly tray?: { readonly p?: number; readonly scroll?: number; readonly foot?: number };
+  readonly tray?: { readonly p?: number; readonly scroll?: number; readonly footFade?: number; readonly foot?: number };
 }
 export interface OracleNav { readonly kind: "enter" | "exit"; readonly container: number; readonly p: number }
 export interface OracleHold {
