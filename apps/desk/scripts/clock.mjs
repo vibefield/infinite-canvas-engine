@@ -230,7 +230,7 @@ try {
     `it rides INTO a mini mat (parent ${inMat.parent} = the mat ${mat.id}, off the root ${!inMat.active}); far away (zoom 0.25) the face draws it as its CHIP — a disc (hx ${chip?.hx?.toFixed(2)} = hy = radius) of its ivory dial (chips ${JSON.stringify(far.chips)}) — no live inside (${far.live}), no clock drawn by its own pass (${JSON.stringify(far.kinds)}), unchipped ${far.unchipped}`);
   await q("window.__desk.setCamera({ x: 0, y: 0, zoom: 1 })"); await settle();
 
-  // 9. taken off the pegboard tray: its own specimen (its entry's hook, laid by the lattice law) dragged out makes one, selected, showing
+  // 9. taken off the pegboard tray: its own specimen (laid by the lattice law without mounting hardware) dragged out makes one, selected, showing
   //    the desk's own time; one undo takes it back
   await q("window.__desk.tray.open()"); await settle(); await sleep(600); await settle();
   const law = await q("window.__desk.tray.law()");
@@ -247,8 +247,8 @@ try {
   const takenShown = taken.length === 1 ? await q(`(() => { const s = window.__desk.handle.local("desk-clock").shown(${taken[0].id}); const n = new Date(); return { s, tod: n.getHours() * 3600 + n.getMinutes() * 60 + n.getSeconds() }; })()`) : null;
   const undoTake = await q("window.__desk.engine.docs.undo()"); await settle();
   const gone = (await clocks()).every((c) => before.has(c.id));
-  check(onBoard !== undefined && lawAt !== undefined && onBoard.x === lawAt.x && onBoard.y === lawAt.y && drawn?.accessory === "hook" && taken.length === 1 && taken[0].selected && taken[0].active && Math.abs(taken[0].cx - 200) < 4 && Math.abs(taken[0].cy - 160) < 4 && takenShown !== null && takenShown.s?.pinned === false && Math.abs((takenShown.s?.tod ?? -99) - takenShown.tod) <= 2 && undoTake === true && gone,
-    `taken off the TRAY: its specimen hangs where the lattice law puts it (${onBoard?.x},${onBoard?.y} = ${lawAt?.x},${lawAt?.y}) on its ${drawn?.accessory}; dragged out to open mat, ${taken.length} made at ${taken[0]?.cx.toFixed(0)},${taken[0]?.cy.toFixed(0)} on the desk (selected ${taken[0]?.selected}) showing the desk's time (tod ${takenShown?.s?.tod} vs the host's ${takenShown?.tod}); one undo takes it back (${undoTake}, gone ${gone})`);
+  check(onBoard !== undefined && lawAt !== undefined && onBoard.x === lawAt.x && onBoard.y === lawAt.y && drawn !== undefined && !("accessory" in drawn) && taken.length === 1 && taken[0].selected && taken[0].active && Math.abs(taken[0].cx - 200) < 4 && Math.abs(taken[0].cy - 160) < 4 && takenShown !== null && takenShown.s?.pinned === false && Math.abs((takenShown.s?.tod ?? -99) - takenShown.tod) <= 2 && undoTake === true && gone,
+    `taken off the TRAY: its specimen hangs where the lattice law puts it (${onBoard?.x},${onBoard?.y} = ${lawAt?.x},${lawAt?.y}) without mounting hardware; dragged out to open mat, ${taken.length} made at ${taken[0]?.cx.toFixed(0)},${taken[0]?.cy.toFixed(0)} on the desk (selected ${taken[0]?.selected}) showing the desk's time (tod ${takenShown?.s?.tod} vs the host's ${takenShown?.tod}); one undo takes it back (${undoTake}, gone ${gone})`);
   await q("window.__desk.tray.close()"); await settle();
 
   // 10. two tabs in a room agree on its props (the room's document; each reads its own wall clock)
