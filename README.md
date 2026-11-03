@@ -14,11 +14,12 @@ an archetype ECS with reactivity and opt-in Loro-CRDT durable + ephemeral
 **docs** <https://vibefield.github.io/infinite-canvas-engine/> ·
 MIT license
 
-> **design-015 — the desk (2026-09-25/26).** ICE 0.14.0 (the `[Unreleased]` section of the
-> changelog; the release cut is pending) deleted the DOM/R3F widget hybrid: no `three`, no
-> presentation profiles, no React widget faces, one app. `<InfiniteCanvas>` became `<Desk>`; a
-> widget's face is its `object` kind. The published 0.11.0 and the 0.13.0 git release point still
-> describe the old surface — the break list, export by export, is `CHANGELOG.md › ### Removed`.
+> **0.17.0 — desk interactions and presentation.** Scroll to pan, pinch with native-scale
+> zoom, marquee empty canvas, and drag selected groups. The tray has simpler rendering and
+> bounded native scrolling; Prints are passive and borderless. Viewport gobo lighting,
+> foreground edge rulers, retired-widget data, and zoom feedback are supported.
+> Upgrading from before 0.14.0 also replaces the DOM/R3F presentation with the GPU desk;
+> see the 0.14.0 removal list in `CHANGELOG.md`.
 
 ```sh
 pnpm add @vibecook/ice react react-dom   # react/react-dom are optional peers
@@ -199,9 +200,8 @@ drive headless Chrome against the oracle's bytes (`rig:parity`: maxΔ 0 per scen
 
 ## Status
 
-**On npm: 0.11.0.** 0.12.0 and 0.13.0 are git release points, not published;
-0.14.0 — the desk — is `[Unreleased]` in the changelog, its version bump and
-publish being the release cut. Documents written by 0.1.0 migrate automatically
+**Current release: 0.17.0.** The desk interaction and presentation changes build on
+0.16.0's live surfaces and idle-driver improvements. Documents written by 0.1.0 migrate automatically
 on open (schema 2 — ordered `ChildOf` replaces scalar z); a 0.1.0 build opening
 a migrated document still gets a correct read-only view.
 

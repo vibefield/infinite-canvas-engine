@@ -16,7 +16,11 @@ an archetype ECS with reactivity and opt-in Loro-CRDT durable + presence layers.
 > `<Desk>`; `defineWidget`'s `surface`/`component`/`chrome`/`animated`/`preview`/`instancePreview`/
 > `sizeMode` are refused; the entries `./r3f`, `./r3f/webgpu`, `./ground*` are gone and
 > `./desk`, `./desk/engine`, `./desk/objects` are new. The full list is the changelog's
-> `### Removed`. (The published 0.11.0 still describes the old surface.)
+> `### Removed` under the 0.14.0 release.
+
+**0.17.0** adds native-scale desk navigation, marquee and selected-group dragging,
+a simpler tray, passive borderless Prints, fixed viewport gobo lighting, foreground
+edge rulers, retired-widget data preservation, and change-only zoom feedback for hosts.
 
 ```sh
 pnpm add @vibecook/ice react react-dom     # react/react-dom are optional peers

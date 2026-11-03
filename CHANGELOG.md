@@ -6,6 +6,27 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.17.0] — 2026-11-02
+
+### Added
+
+- `CameraZoomStep` reports user zoom changes for host feedback, including native haptic milestones.
+- `retiredWidgets` and `EngineCatalog.retiredWidget` preserve registered document data without loading a retired widget's active runtime.
+- `MatConfig.gobo.space` can keep lighting fixed in viewport coordinates. `tray.footFade` controls the bottom fade independently of the header.
+- Selection movement supports a selected group's bounds and custom interactions through `SelectionMovable` / `movable: "selection"`.
+
+### Changed
+
+- Wheel scrolling pans. The desk preset uses native-scale exponential pinch zoom; dragging empty desk draws a marquee. Space-drag and middle-button drag pan explicitly.
+- The pegboard consumes native wheel momentum without adding an edge bounce. Mounting hooks, clips, shelves, and rails are removed from its rendering.
+- Prints are passive, borderless image objects and are absent from the default tray. Their saved legacy border property remains readable.
+- Cutting-mat edge rulers draw above objects, including nested canvases, using the existing mat pipeline and cached non-overlapping drawing regions.
+
+### Fixed
+
+- Selected groups can be dragged from their bounds or a selected object, including Prints, with locked objects and control handles respected and movement kept in one undo gesture.
+- Panning and pinching have independent input lifecycles, preventing ordinary trackpad scrolling from becoming zoom.
+
 ## [0.16.0] — 2026-10-14
 
 **VibeField's PORTALS program, the ICE half (M24, design-019 — the live face), released on `latest`.** Four prereleases on `next`
