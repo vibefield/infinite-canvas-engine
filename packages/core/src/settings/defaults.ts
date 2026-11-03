@@ -24,19 +24,21 @@ export const GESTURE_DEFAULTS = {
   // so both devices share one feel.
   wheelZoomSensitivity: 0.01,
   wheelZoomMaxStep: 10,
-  // What a PLAIN wheel does (design-015 §9, D-D11 — D2a-core, 2026-09-25).
-  // "pan" is today's camera, byte for byte: a plain wheel scrolls it and a
-  // pinch zooms by the curve above. "zoom" is the desk's law — the prototype's
-  // `zoom · exp(−Δy · wheelZoomRate)` about the pointer, for a plain wheel and
-  // a pinch alike, Δx ignored (vibe-field/draft/ground/lab/main.ts's wheel).
+  // Ordinary wheel / two-finger scrolling pans. Apps can opt into
+  // exponential plain-wheel zoom without changing the pinch response.
   wheel: "pan",
-  // The desk's zoom rate, per wheel-delta unit (the prototype's 0.0016). Read
-  // in "zoom" mode only; the pan mode keeps the curve above.
+  // Pinch / modifier-wheel response is independent of a plain wheel's job.
+  // The desk opts into continuous exponential zoom; the bounded legacy curve
+  // remains available to consumers that use notch-sized zoom steps.
+  wheelZoomCurve: "clamped",
+  // Continuous zoom rate per normalized wheel-delta unit. Used by plain-wheel
+  // zoom and by the exponential pinch curve, independently of the wheel mode.
   wheelZoomRate: 0.0016,
 } as const;
 
 /** What a plain wheel does to the camera (`GestureSettings.wheel`, design-015 §9). */
 export type WheelMode = "pan" | "zoom";
+export type WheelZoomCurve = "clamped" | "exponential";
 
 /** Pick radii + retarget dead-band (design-003 §3 L1 targeting). */
 export const POINTER_DEFAULTS = {

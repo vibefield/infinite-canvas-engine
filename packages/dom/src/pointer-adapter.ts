@@ -30,7 +30,7 @@
  *    `data-canvas-keyboard` claim it cedes the pan SEMANTICS but keeps killing
  *    the page-scroll default (the key still reaches the widget's own listener —
  *    preventDefault is not stopPropagation); elsewhere it pans, as ever;
- *  - wheel: ctrl-wheel / trackpad pinch is ALWAYS `preventDefault` + the canvas
+ *  - wheel: Cmd/Ctrl-wheel / trackpad pinch is ALWAYS `preventDefault` + the canvas
  *    zoom signal (`wheel.pinch`) — a browser page-zoom over a widget is
  *    catastrophic, claimed or not. A PLAIN wheel over a scroller-with-room
  *    inside a claim/`data-canvas-interactive`/editable subtree (`wheelCede`,
@@ -325,16 +325,26 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     atRest.delete("mouse");
     mouseBack();
     const { x, y } = relative(e.clientX, e.clientY);
-    const scale = e.deltaMode === 1 ? WHEEL_LINE_PX : 1; // DOM_DELTA_LINE → px
-    if (e.ctrlKey) {
-      // Pinch/ctrl-wheel: ALWAYS the canvas's zoom (design-007 F4) — the
+    // WheelEvent units are CSS pixels, lines, or pages. A pinch is already
+    // a pixel-mode ctrl-wheel; modifier mouse wheels need the same conversion.
+    const page = e.deltaMode === 2 ? container.getBoundingClientRect() : undefined;
+    const scaleX = e.deltaMode === 1 ? WHEEL_LINE_PX : page?.width ?? 1;
+    const scaleY = e.deltaMode === 1 ? WHEEL_LINE_PX : page?.height ?? 1;
+    const dx = e.deltaX * scaleX;
+    const dy = e.deltaY * scaleY;
+    if (!Number.isFinite(dx) || !Number.isFinite(dy)) return;
+    if (e.ctrlKey || e.metaKey) {
+      // Pinch/Cmd/Ctrl-wheel: ALWAYS the canvas's zoom (design-007 F4) — the
       // browser's page pinch-zoom must never fire, claimed content or not.
       e.preventDefault();
-      enqueue({ kind: "wheel", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e), wheel: { dx: 0, dy: 0, pinch: e.deltaY } });
+      enqueue({ kind: "wheel", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: e.buttons, mods: pointerMods(e), wheel: { dx: 0, dy: 0, pinch: dy } });
       return;
     }
-    const wheel = { dx: e.deltaX * scale, dy: e.deltaY * scale, pinch: 0 };
-    if (wheelCede(e.target, container, e.deltaX, e.deltaY)) {
+    // Chromium may already put Shift-wheel motion on X. Only remap a purely
+    // vertical delta, preserving real horizontal and diagonal trackpad input.
+    const horizontal = e.shiftKey && dx === 0;
+    const wheel = { dx: horizontal ? dy : dx, dy: horizontal ? 0 : dy, pinch: 0 };
+    if (wheelCede(e.target, container, wheel.dx, wheel.dy)) {
       // Ceded to widget scroll (I4): no preventDefault — native scroll consumes
       // the deltas. The fact still lands (the one input path is absolute),
       // flagged so recognizers treat the tick as wheel silence. The room-check

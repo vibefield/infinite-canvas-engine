@@ -143,6 +143,7 @@ import {
   POINTER_DEFAULTS,
   SNAP_DEFAULTS,
   type WheelMode,
+  type WheelZoomCurve,
   ZOOM_THROUGH_DEFAULTS,
 } from "../settings/defaults";
 
@@ -208,12 +209,14 @@ export interface CanvasEngineOpts {
      */
     readonly zoom?: { readonly min?: number; readonly max?: number };
     /**
-     * GestureSettings seeds. `wheel` is a plain wheel's job (design-015 §9,
-     * D-D11): "pan" (default) or the desk's "zoom" about the pointer by
-     * `zoom · exp(−Δ · wheelZoomRate)` (default rate 0.0016, the prototype's).
+     * GestureSettings seeds. `wheel` selects ordinary scroll pan (default)
+     * or zoom. `wheelZoomCurve` selects pinch/modifier zoom independently.
+     * Omitted curves preserve the initial wheel mode's legacy response.
      */
-    readonly gestures?: Partial<Record<Exclude<keyof typeof GESTURE_DEFAULTS, "wheel">, number>> & {
+    readonly gestures?: Partial<Record<Exclude<keyof typeof GESTURE_DEFAULTS, "wheel" | "wheelZoomCurve">, number>> & {
       readonly wheel?: WheelMode;
+      /** Pinch and modifier-wheel response; changing `wheel` never changes this curve. */
+      readonly wheelZoomCurve?: WheelZoomCurve;
     };
     readonly pointers?: Partial<Record<keyof typeof POINTER_DEFAULTS, number>>;
     readonly snap?: { readonly enabled?: boolean; readonly thresholdPx?: number };
@@ -876,7 +879,13 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       minZoom: st.zoom?.min ?? CAMERA_DEFAULTS.minZoom,
       maxZoom: st.zoom?.max ?? CAMERA_DEFAULTS.maxZoom,
     },
-    gestures: { ...GESTURE_DEFAULTS, ...st.gestures },
+    gestures: {
+      ...GESTURE_DEFAULTS,
+      ...st.gestures,
+      // Preserve existing scroll-to-zoom consumers at construction. Once
+      // seeded, changing the wheel mode cannot change the pinch response.
+      wheelZoomCurve: st.gestures?.wheelZoomCurve ?? (st.gestures?.wheel === "zoom" ? "exponential" : GESTURE_DEFAULTS.wheelZoomCurve),
+    },
     pointers: { ...POINTER_DEFAULTS, ...st.pointers },
     snap: {
       enabled: st.snap?.enabled ?? SNAP_DEFAULTS.enabled,

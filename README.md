@@ -32,8 +32,8 @@ import { Desk, EngineProvider } from "@vibecook/ice/react";
 
 // The desk's preset: the engine knows the desk's object kinds — the note, the mini mat,
 // the notebook, the whiteboard, the calendar, the photo print — as widget types, with the
-// desk's select tool (a bare-mat drag pans, shift draws the marquee), a plain wheel zooming
-// about the pointer, the scale-free zoom and the zoom-through.
+// desk's select tool (a bare-mat drag pans, shift draws the marquee), two-axis scroll panning,
+// pinch / Cmd-or-Ctrl-wheel zoom about the pointer, scale-free zoom and zoom-through.
 const engine = createCanvasEngine(DESK_ENGINE);
 engine.docs.create();                     // local-first document; .open()/.join() for load/collab
 

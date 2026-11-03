@@ -45,9 +45,11 @@ export const GestureSettings = defineResource("GestureSettings", {
   multiTapSlopPx: field("f32", { default: GESTURE_DEFAULTS.multiTapSlopPx }),
   wheelZoomSensitivity: field("f32", { default: GESTURE_DEFAULTS.wheelZoomSensitivity }),
   wheelZoomMaxStep: field("f32", { default: GESTURE_DEFAULTS.wheelZoomMaxStep }),
-  /** A plain wheel's job (design-015 §9, D-D11): "pan" (default, today) or the desk's "zoom" about the pointer. */
+  /** Ordinary scrolling pans by default; apps can opt into cursor-anchored wheel zoom. */
   wheel: field(enumOf(["pan", "zoom"]), { default: GESTURE_DEFAULTS.wheel }),
-  /** "zoom" mode's law: `zoom · exp(−Δ · wheelZoomRate)` for a plain wheel and a pinch. f64: the prototype's 0.0016, exactly. */
+  /** Pinch/modifier zoom response, independent of the plain wheel's job. */
+  wheelZoomCurve: field(enumOf(["clamped", "exponential"]), { default: GESTURE_DEFAULTS.wheelZoomCurve }),
+  /** Continuous zoom: `zoom · exp(−Δ · wheelZoomRate)`. f64 keeps the configured rate exact. */
   wheelZoomRate: field("f64", { default: GESTURE_DEFAULTS.wheelZoomRate }),
 });
 
