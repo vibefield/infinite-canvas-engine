@@ -27,7 +27,10 @@
  *    ordinary drag from there. The press becomes `carry`: released back over the drawer as drawn — still sliding away, its open rect
  *    the desk's once it has shut (K9) — the ghost's gesture is CANCELLED
  *    (`CancelRequest` — the ctl sweep reads it this tick, before the release can commit) and it flies home. Released inside the drawer,
- *    or the drawer shut under it (Esc, the key), the take is put back: nothing was made, nothing enters undo.
+ *    or the drawer shut under it (Esc, the key), the take is put back: nothing was made, nothing enters undo. So is a take whose
+ *    specimen hangs no more while it is lifted (petition I54: its type hidden, or left out of a set — and so too another category
+ *    shown under it) — never handed to the desk: a type the board does not hang takes no press. A frame that comes to refuse the
+ *    kind under the lift is not the view's word: that take is refused at the hand-off, the reason said (K9 S13), as before.
  *
  * Where the drawer is comes through the SEAM `TrayPoseSlot` beside `heldPose`: the renderer's word on the drawer as it DREW it this
  * frame (its rect mid-slide, the scroll range its layout gives), so a hit and the clamp agree with the pixels. Nothing here reads a
@@ -45,6 +48,7 @@ import { engineCatalogFor, widgetTypeFor } from "../canvas/engine-catalog";
 import { Viewport } from "../catalog/camera-derived";
 import { FrameInfo } from "../engine/frame-info";
 import { cancelActiveGestures } from "../ops/gestures";
+import { trayTypesOf } from "../ops/tray";
 import { type ComponentInit, type FieldWrite, PrefabId } from "../schema/prefab";
 import { WidgetEquipped, type WidgetType, widgets } from "../widget/define-widget";
 import { widgetSpawnInits } from "../widget/spawn";
@@ -81,7 +85,8 @@ export interface TrayPoseSource {
   /**
    * Petition I38 — the renderer's word on what it can DRAW on the board: a hung type it answers `false` of (a kind the desk was not
    * mounted with — `@ice/desk` answers by the kind set it compiled) is not laid, so it hangs nothing, offers no category it would
-   * leave empty and takes no press. Absent, every hung type (as before).
+   * leave empty and takes no press. Absent, every hung type (as before). It is the renderer's word alone: a type a HOST keeps off the
+   * board while the desk still draws it is the world's fact `Tray.hidden` (petition I54, `setTrayHidden`), never an answer here.
    */
   draws?(type: string): boolean;
 }
@@ -260,6 +265,10 @@ export function createTrayInput(world: World, opts: { readonly pose: TrayPoseSlo
         const moved = press.moved || Math.hypot(s.x - press.x, s.y - press.y) > TRAY_INPUT.slopPx;
         const ended = ctx.hasTag(p, WentUp) || ctx.hasTag(p, WentCancelled);
         if (press.kind === "specimen") {
+          // petition I54: its specimen hangs no more BY THE VIEW (the host hid its type, a set left it out, another category is shown —
+          // the lay destroyed it): the copy goes back, never handed — a type the board does not hang takes no press. A frame that came
+          // to refuse the kind (K9 S13) is not the view's: that take goes on to the hand-off, refused there with its reason
+          if (!specimensOf(world, tray).some((e) => world.get(e, PrefabId)?.id === press.type) && offTheView(world, t.hidden ?? "", t.only ?? "", t.category ?? "", press.type ?? "")) { take = ""; ctx.removeComponent(p, TrayPress); continue; }
           // K5b — TAKING ONE. Released (or cancelled) inside the drawer: the copy goes back on its peg — nothing was made.
           if (ended) { take = ""; ctx.removeComponent(p, TrayPress); continue; }
           if (!moved) continue;
@@ -328,6 +337,18 @@ const itemOf = (t: WidgetType): TrayItem => {
 };
 /** A hung type's tray category ("" — its entry names none). */
 const categoryOf = (t: WidgetType): string => t.tray?.category ?? "";
+/**
+ * Petition I54: whether the VIEW keeps `type` off the board — the host hides it, a standing set leaves it out, or another category
+ * than its own is shown. Read only for a lifted take whose specimen has gone (never per tick), so the facts are parsed here.
+ */
+function offTheView(world: World, hidden: string, only: string, category: string, type: string): boolean {
+  if (trayTypesOf(hidden).includes(type)) return true;
+  const set = trayTypesOf(only);
+  if (set.length > 0 && !set.includes(type)) return true;
+  if (category === "") return false;
+  const w = widgetTypeFor(world, type);
+  return w === undefined || categoryOf(w) !== category;
+}
 /** The categories among `types` in the lay's order (category, order, type), each with how many of them it holds (design-018 §6). */
 function presentOf(types: readonly WidgetType[]): [string, number][] {
   const out: [string, number][] = [];
@@ -364,16 +385,40 @@ function presentOf(types: readonly WidgetType[]): [string, number][] {
  * Petition I37 — THE KEYBOARD FOCUS (`Tray.focus`, the op `focusTray`): when it moves to a specimen, the board scrolls the least that
  * shows that specimen whole between the header and the foot (once — a wheel may then take it out of view again); a focus on a type
  * the board no longer lays is let go.
+ * Petition I54 — THE HIDDEN (`Tray.hidden`, the op `setTrayHidden`): before everything else it lays by, a type the host hides is not
+ * a hung type at all — no specimen, no count, no category it alone would fill — while its objects on the desk are untouched (no system
+ * but the tray's reads the fact); a change re-lays, the scroll kept (clamped as any move of the range is). THE SET (`Tray.only`, the op
+ * `setTrayOnly`): of what the frame hangs, only the set's types, in the lay's order — no tape per category: the order alone — and it
+ * WINS over the filter: while it stands the category is written back "", so the fact says what is shown. A move of the set re-lays
+ * and starts the board at its top, as a category's does — then a focus that still hangs is scrolled into the face again, once (a
+ * category's move keeps I37's "once"); a set the frame hangs none of is dropped (""), written back — the category's own rule, so a host
+ * says it again. `TrayContent.present` stays what the frame hangs before the filter and the set (a host's chips, quiet while a set
+ * shows). Both facts are read through `trayTypesOf` and memoised by their raw strings: parsed when they change, never every tick.
  */
 export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot; readonly placement?: DropPlacementPolicy | undefined }): TickSystem {
   let laidKey = "";
   let rangeKey = "";
-  // the category the last lay showed, and on which tray entity (R2): a move of it starts the board again at its top
+  // the category the last lay showed, and on which tray entity (R2): a move of it starts the board again at its top — and the set
+  // it showed (I54), the same
   let laidTray: Entity | undefined;
   let laidCategory = "";
+  let laidOnly = "";
   // the focus the board last scrolled to (I37): a move of it scrolls once; and the types the last lay laid, in its order
   let focusedFor = "";
   let laidTypes: readonly string[] = [];
+  // the set and the hidden types (I54) as last parsed, by their raw strings: a fact is parsed when it changes, never every tick
+  let onlyRaw = "";
+  let onlySet: ReadonlySet<string> = new Set();
+  let hiddenRaw = "";
+  let hiddenSet: ReadonlySet<string> = new Set();
+  const setOf = (raw: string): ReadonlySet<string> => {
+    if (raw !== onlyRaw) { onlyRaw = raw; onlySet = new Set(trayTypesOf(raw)); }
+    return onlySet;
+  };
+  const hiddenOf = (raw: string): ReadonlySet<string> => {
+    if (raw !== hiddenRaw) { hiddenRaw = raw; hiddenSet = new Set(trayTypesOf(raw)); }
+    return hiddenSet;
+  };
   const clampToRange = (ctx: SystemCtx, tray: Entity, frame: TrayScreenFrame, bottom: number): void => {
     if (frame.face === undefined) return;
     const range = trayScrollMax(bottom, frame.face - (frame.foot ?? 0), frame.pitch);
@@ -426,17 +471,31 @@ export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot;
         policy === undefined ? true : inside !== undefined ? policy.canIngress(type, inside) : root === undefined || policy.canPlace === undefined || policy.canPlace(type, root);
       // …of the types the renderer can draw (I38): a kind the desk was not mounted with is not laid — every hung type when it says nothing
       const draws = (type: string): boolean => source.draws === undefined || source.draws(type);
-      const types = hungTypes(world).filter((t) => takes(t.type) && draws(t.type));
-      // THE FILTER (design-018 §6): the category asked, or all when the frame hangs none of it — written back, so the fact says
-      // what is shown; a move of what is shown zeroes the scroll and the band (the board starts again at its top)
+      // …and of the types the host does not HIDE (I54): a hidden type hangs nothing, counts nowhere, fills no category — its objects
+      // on the desk are untouched (no system but the tray's reads `hidden`)
       const t = ctx.read(tray, Tray);
-      const asked = t.category ?? "";
+      const hidden = hiddenOf(t.hidden ?? "");
+      const types = hungTypes(world).filter((q) => takes(q.type) && draws(q.type) && !hidden.has(q.type));
+      // THE SET (I54): of those, only its types — or none when the frame hangs none of it (dropped, written back, as the category's
+      // fallback is). It wins over THE FILTER (design-018 §6): the category asked, or all when the frame hangs none of it or a set
+      // stands — written back, so the fact says what is shown; a move of what is shown zeroes the scroll and the band (the board
+      // starts again at its top)
+      const set = setOf(t.only ?? "");
+      const inSet: WidgetType[] = set.size === 0 ? [] : types.filter((q) => set.has(q.type));
+      const only = inSet.length > 0 ? (t.only ?? "") : "";
+      const asked = only !== "" ? "" : (t.category ?? "");
       const category = asked !== "" && !types.some((q) => categoryOf(q) === asked) ? "" : asked;
-      const moved = laidTray === tray && category !== laidCategory;
-      if (category !== asked || (moved && (t.scroll !== 0 || t.stretch !== 0))) ctx.edit(tray).set(Tray, { ...t, category, ...(moved ? { scroll: 0, stretch: 0 } : {}) });
-      const key = `${tray}|${content?.laid ?? 0}|${frame.w}|${frame.pitch}|${types.map((q) => q.type).join(",")}|${category}`;
+      const setMoved = laidTray === tray && only !== laidOnly;
+      const moved = setMoved || (laidTray === tray && category !== laidCategory);
+      if (category !== (t.category ?? "") || only !== (t.only ?? "") || (moved && (t.scroll !== 0 || t.stretch !== 0))) {
+        ctx.edit(tray).set(Tray, { ...t, category, only, ...(moved ? { scroll: 0, stretch: 0 } : {}) });
+      }
+      // …and after a move of the SET (I54) a focus that still hangs is scrolled into the face again, once, from the board's top — the
+      // set is what a host raises and clears around its focus (MK-D8); a category's move keeps I37's "once"
+      if (setMoved) focusedFor = "";
+      const key = `${tray}|${content?.laid ?? 0}|${frame.w}|${frame.pitch}|${types.map((q) => q.type).join(",")}|${category}|${only}`;
       if (key === laidKey) { clampToRange(ctx, tray, frame, content?.bottom ?? 0); focusInView(ctx, tray, frame, content?.bottom ?? 0); return; }
-      const shown = category === "" ? types : types.filter((q) => categoryOf(q) === category);
+      const shown = only !== "" ? inSet : category === "" ? types : types.filter((q) => categoryOf(q) === category);
       const items: TrayItem[] = shown.map(itemOf);
       const layout = layTray(items, frame.w, frame.pitch);
       const have = new Map<string, Entity>();
@@ -464,9 +523,10 @@ export function createTrayLay(world: World, opts: { readonly pose: TrayPoseSlot;
       const next = { width: frame.w, bottom: layout.bottom, laid: (content?.laid ?? 0) + 1, present: JSON.stringify(presentOf(types)), order: JSON.stringify(layout.placed.map((q) => q.type)) };
       if (content === undefined) ctx.addComponent(tray, TrayContent, next);
       else ctx.edit(tray).set(TrayContent, next);
-      laidKey = `${tray}|${next.laid}|${frame.w}|${frame.pitch}|${types.map((q) => q.type).join(",")}|${category}`;
+      laidKey = `${tray}|${next.laid}|${frame.w}|${frame.pitch}|${types.map((q) => q.type).join(",")}|${category}|${only}`;
       laidTray = tray;
       laidCategory = category;
+      laidOnly = only;
       laidTypes = layout.placed.map((q) => q.type);
       clampToRange(ctx, tray, frame, layout.bottom);
       focusInView(ctx, tray, frame, layout.bottom);

@@ -238,16 +238,37 @@ export const Tray = defineComponent("Tray", {
    * design-018 §6 (R2) — THE FILTER: the tray category the drawer shows ("" — all), a tray entry's `category` string (`defineObject({
    * tray: { category } })`). A fact of the view beside `open` — never durable, never synced (each tab its own). Writers: the op
    * `setTrayCategory` (the bar's chips, the desk handle's door) and `trayLay` — which lays only that category's entries, zeroes the
-   * scroll and the band when it moves, and falls back to all ("") when the frame hangs none of it.
+   * scroll and the band when it moves, and falls back to all ("") when the frame hangs none of it — or while a SET stands (petition
+   * I54, `only`: the set wins, and the category reads "" — from the next lay: one asked meanwhile reads as asked until the next
+   * step's lay writes it back).
    */
   category: field("string", { default: "" }),
   /**
    * Petition I37 — THE KEYBOARD FOCUS on the board: the type of the specimen it is on ("" — none), a fact of the view like `hover`.
    * Its writer is the op `focusTray` (next/prev/first/last along the lay's order, or a type by its id); `trayLay` scrolls the
-   * specimen it moves to into the board's face, and lets it go when what it was on is laid no more (a category, a frame). The
-   * renderer draws no ring for it: a host does, from the desk handle's `TrayAnchor.focused`.
+   * specimen it moves to into the board's face, and lets it go when what it was on is laid no more (a category, a frame, a set, a
+   * type hidden — I54); after a move of the SET (I54) a focus that still hangs is scrolled into the face again, once. The renderer
+   * draws no ring for it: a host does, from the desk handle's `TrayAnchor.focused`.
    */
   focus: field("string", { default: "" }),
+  /**
+   * Petition I54 — THE SET: the object types the drawer lays, across their categories ("" — none: the drawer lays what its category
+   * says), JSON `string[]`, sorted, each once — the set AS ASKED (what hangs of it is `TrayContent.order`). A fact of the view beside
+   * `category` — never durable, never synced: a desk remounted on one engine keeps it, a new world (a new engine, a document switch)
+   * starts with none. It WINS over the category: while it stands the category reads "". Writers: the op `setTrayOnly` (which writes
+   * the category "" with it) and `trayLay` — which lays only the set's types the frame hangs, in the lay's order; re-lays from the
+   * board's top when it moves (a focus that still hangs scrolled back into the face); writes the category back "" while it stands; and
+   * drops it ("") when the frame hangs none of it — destructive, as the category's fallback is: the host says it again.
+   */
+  only: field("string", { default: "" }),
+  /**
+   * Petition I54 — THE HIDDEN: the object types the board does not hang ("" — none), JSON `string[]`, sorted, each once. A host's
+   * word (a person's per-object switch), never durable, never synced: a desk remounted on one engine keeps it, a new world starts with
+   * none. Its one writer is the op `setTrayHidden` (the desk door's `hide`); `trayLay` reads it before everything else it lays by: a
+   * hidden type gets no specimen (so no hover, no press, no take), no count and no category it would leave empty. No system but the
+   * tray's own reads it: the type's objects on the desk draw, select, duplicate and work as before.
+   */
+  hidden: field("string", { default: "" }),
 });
 
 /**
@@ -279,8 +300,9 @@ export const TrayIntent = defineResource(
  * Runtime, on the TRAY entity (design-017 §8; K5a): what the lattice law last laid (systems/tray.ts `createTrayLay`) — the drawer's
  * width it laid for (CSS px, the renderer's word through the pose seam), the content's foot (board px — the scroll's range is that
  * plus a pitch less the face, the renderer's to say) and how many lays so far (a renderer re-reads the specimens when it moves).
- * design-018 §6 (R2): `present`, what the frame could hang before the category's filter — its entries' categories in the lay's
- * order with their counts, JSON `[id, count][]` ("" for an entry that names none); `trayCategories` reads it. Petition I37:
+ * design-018 §6 (R2): `present`, what the frame could hang before the category's filter and the set (petition I54; a hidden type
+ * counted nowhere) — its entries' categories in the lay's order with their counts, JSON `[id, count][]` ("" for an entry that names
+ * none); `trayCategories` reads it. Petition I37:
  * `order`, the types laid, in the lay's order (row by row) — JSON `string[]`; what the keyboard focus walks (`focusTray`). The
  * specimens' sibling order is not it: a re-lay keeps a specimen where it hangs and appends the new ones.
  */

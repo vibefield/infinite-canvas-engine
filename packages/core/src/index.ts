@@ -500,9 +500,10 @@ export { createNavTap, NavTapMemo, type NavTapOpts } from "./systems/nav-tap";
 export { createHeldInput, heldEntity, HOLD_INPUT, type HeldPoseSlot, type HeldPoseSource, type HeldScreenFrame } from "./systems/held";
 export { createPressWheel } from "./systems/press-wheel";
 // design-017 (K3): the pegboard tray's input — the pose seam (`stack.trayPose`), its numbers, the band's arithmetic — and its ops;
-// design-018 §6 (R2): its category (the filter) and the categories its frame hangs.
+// design-018 §6 (R2): its category (the filter) and the categories its frame hangs; petition I54: the set it lays across them, and
+// the types it does not hang.
 export { createTrayInput, createTrayLay, hungTypes, scrollBy, specimensOf, TRAY_INPUT, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame } from "./systems/tray";
-export { closeTray, ensureTray, focusTray, openTray, scrollTray, setTrayCategory, toggleTray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayFocus, type TrayFocusMove, trayHung, trayOpen } from "./ops/tray";
+export { closeTray, ensureTray, focusTray, openTray, scrollTray, setTrayCategory, setTrayHidden, setTrayOnly, toggleTray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayFocus, type TrayFocusMove, trayHidden, trayHung, trayOnly, trayOpen } from "./ops/tray";
 export { createZoomThrough, type ZoomThroughOpts } from "./systems/zoom-through";
 // design-006 T1: the flight resource (T2's reflector consumes it) + system factory.
 export {

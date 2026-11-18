@@ -118,7 +118,7 @@ import { arrangeWidgets, type ArrangeOpts } from "../ops/arrange";
 import { insertByDrag, type InsertByDragOpts } from "../ops/insert";
 import { cascadeDestroy } from "../ops/cascade";
 import { clearSelection, selectedEntities, setSelection } from "../ops/selection";
-import { closeTray, trayHung } from "../ops/tray";
+import { closeTray, trayHidden, trayHung, trayOnly } from "../ops/tray";
 import { installWidgetRuntime, type WidgetRuntime } from "../widget/mount-store";
 import { spawnWidget, type SpawnWidgetOpts } from "../widget/spawn";
 import { setWidgetProps } from "../widget/set-props";
@@ -272,8 +272,9 @@ export interface CanvasOps {
    * what a specimen dragged off the board makes, with no drag — the type at its natural size, made with what its entry says one taken
    * carries (`trayTakeProps`), CENTRED on `at` (a world point of the current frame), in ONE transaction (one undo step), selected;
    * and the board folds as a handed take's does (`closeTray`). Only a type the board hangs now (`trayHung` — the frame takes it, the
-   * renderer draws it, the drawer shows its category); refused (undefined) for any other and while an object is in hand. Throws as
-   * `spawnWidget` does (no document, a read-only one). Laid in the current frame, never consumed by a container under the point —
+   * renderer draws it, the drawer shows its category or its set) and the host hides not; refused (undefined) for any other and while
+   * an object is in hand — a type hidden or left out of a set (petition I54) at once, on the facts, before the next lay has moved
+   * `trayHung`. Throws as `spawnWidget` does (no document, a read-only one). Laid in the current frame, never consumed by a container under the point —
    * a drop's consume is the drag's.
    */
   layFromTray(type: string, at: { readonly x: number; readonly y: number }): Entity | undefined;
@@ -1617,6 +1618,10 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
         throw new Error(`ice: ops.layFromTray — the point is ${JSON.stringify(at) ?? String(at)}: { x, y }, a world point of the current frame, two finite numbers.`);
       }
       if (heldNow() !== undefined || !trayHung(world).includes(type)) return undefined;
+      // petition I54: refused AT ONCE on the facts — a type the host hides, or one a standing set leaves out — never only from the lay's
+      // record (`trayHung`), which a hide or a set asked between two steps has not moved yet
+      const set = trayOnly(world);
+      if (trayHidden(world).includes(type) || (set !== null && !set.includes(type))) return undefined;
       const widget = catalog.widget(type);
       const entry = widget?.tray;
       if (widget === undefined || entry === undefined) return undefined;

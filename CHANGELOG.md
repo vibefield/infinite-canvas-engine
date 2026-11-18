@@ -6,6 +6,58 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+<!-- petition I54 — the board shows a set and hides a type (2026-11-17; VibeField MK, the plugin market) -->
+- **THE BOARD'S SET AND ITS HIDDEN TYPES — `handle.tray.only(types?)`, `handle.tray.hide(types?)`, `TrayAnchor.only`** (petition
+  I54 — VibeField's plugin market raises the board on exactly the set a plugin brought, "Desk things · 4 new", and gives each object
+  a pegboard switch; the category filter could say neither). THE SET: core's `setTrayOnly(world, types | null)` and `trayOnly(world)`
+  beside `setTrayCategory` (a new runtime fact, `Tray.only`), the door's `only(types?)` — set when given, returned (sorted, each
+  once; `null` or `[]` clears it). The lay hangs only the set's types the frame hangs, in its usual (category, order, type) order
+  across the categories — the board draws no tape per category, so the petition's "each over its own category's tape" is the
+  order alone (a host that wants a tape draws it from each type's `tray.category`). The set WINS over the category: the op writes the
+  category "" with the set, and the next step's lay writes back "" over one asked meanwhile (until then `category()` reads it as
+  asked), so clearing the set shows every object, never the category before it. `categories()` and `anchor().entries` stay the
+  frame's whole hang. A move of the set re-lays from the board's top (the scroll and the band zeroed), scrolls a focus that still
+  hangs back into the face and lets go one that no longer hangs. A set the frame hangs none of — unknown ids, every one hidden, a
+  container entered that takes none of them, kinds the mounted desk cannot draw (I38) — is DROPPED at the next lay, as the category's
+  fallback is, and the category it replaced is not restored: the host says it again, and says a set over new kinds only once the
+  desk that draws them is mounted and `subscribe` reports them. `only()` and `anchor().only` are the set as asked; what hangs is
+  the lay's record (`focus` walks it). After every set asked through the door the next frame publishes the anchor, so `subscribe`
+  hears the board's answer even when the set was dropped at once. THE HIDDEN: core's `setTrayHidden(world, types)` and
+  `trayHidden(world)` (a new runtime fact, `Tray.hidden`), the door's `hide(types?)`. A hidden type is no hung type at all: no
+  specimen (so no hover, no press and no take — one in flight when its specimen goes, hidden, left out of a set or under another
+  category, is put back, never handed to the desk), no
+  count and no category it alone would fill; with every type hidden `entries` is 0. A change re-lays with the scroll kept (clamped
+  when the range shrank under it) and lets go a focus on the hidden type. `ops.layFromTray` refuses a hidden type, and one a standing
+  set leaves out, at once — on the facts, before the next lay has moved `trayHung`. No system but the tray's own reads either fact, so a
+  hidden type's objects on the desk draw, select, duplicate and work as before; the desk's anchor reports the set. Both are facts of
+  the view, never durable or synced: a desk remounted on one engine keeps them, a new world (a new engine, a document switch) starts
+  with none. A list that is not an array of strings throws at the call; a fact written by hand that is no list reads as none (the lay
+  parses each fact once per change, never per tick, and never throws in it). Why a fact and not a `TrayPoseSource.hangs?`: the pose
+  seam is the renderer's word on what it drew and can draw (`draws`, I38), and a person's switch is not; as a world fact it is one
+  source the lay reads, and the input and `layFromTray` follow it. Witnesses: `packages/core/test/tray-specimens.test.ts` (nine rows:
+  the facts, their reset, a refusal that writes nothing over facts that stand and a hand-written fact that reads as none; the set
+  across two categories and an entry with none, laid where the law lays them alone, winning over a category asked before and during
+  it, the chips and the count unmoved, the scroll and the band zeroed in one step with the drawer out, the same set changing nothing;
+  the drop, by an unknown id, inside a container that takes none of the set and by a malformed fact; the drop over kinds the
+  renderer cannot draw and the set said again once it can; a hidden type with no specimen, chip, count, hover, take or lay while its
+  desk object stays a member, selects and duplicates, every type hidden, and `[]` hanging it again at its peg; a hide's scroll
+  clamped by K9's rule; a take in flight put back; `layFromTray` refusing before any step; a hidden type of the set),
+  `packages/core/test/tray-focus.test.ts` (the walk under a set from a measured scroll, a focus let go by the set and by a hide, and
+  one kept across a clear scrolled back into the face; `layFromTray` refusing both), `packages/desk/test/tray-set.test.ts` (the
+  doors on a mounted desk: the specimens drawn, the anchor and its chips, `subscribe` told when only the set moves and when a set is
+  dropped with nothing re-laid, the set's first specimen focused the step after; a hidden type's object drawn by its own kind, no
+  kind faulted, picked and duplicated; the refusals, writing nothing over facts that stand).
+
+### Changed
+
+<!-- petition I54 -->
+- **Types widen** (I54) — a member added to an interface a host may implement or construct by hand: `DeskTrayDoor.only` and `.hide`
+  (a fake tray door in a host's test names both); `TrayAnchor.only` (required: `null` with no set); core's `Tray` component gains `only`
+  and `hidden` (defaulted "" — a `Tray` value written whole by hand, rather than spread from a read, names both); `DeskReflector.wake`
+  takes `"tray"` (a host's word to the tray, I54).
+
 ## [0.17.0] — 2026-11-02
 
 ### Added
