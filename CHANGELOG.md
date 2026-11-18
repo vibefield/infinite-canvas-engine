@@ -6,6 +6,13 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.18.0] — 2026-11-18
+
+**VibeField's plugin market, the ICE half (M25, petition I54), released on `latest`.** The pegboard lays a SET of object types
+across their categories (`handle.tray.only`, core's `setTrayOnly`) and keeps HIDDEN types off the board while the desk still draws
+their objects (`handle.tray.hide`, core's `setTrayHidden`): two facts of the view beside the category. A host that implements
+`DeskTrayDoor`, or builds a `TrayAnchor` or a `Tray` by hand, names the new members (`### Changed`).
+
 ### Added
 
 <!-- petition I54 — the board shows a set and hides a type (2026-11-17; VibeField MK, the plugin market) -->

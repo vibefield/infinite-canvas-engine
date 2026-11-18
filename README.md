@@ -14,10 +14,10 @@ an archetype ECS with reactivity and opt-in Loro-CRDT durable + ephemeral
 **docs** <https://vibefield.github.io/infinite-canvas-engine/> ·
 MIT license
 
-> **0.17.0 — desk interactions and presentation.** Scroll to pan, pinch with native-scale
-> zoom, marquee empty canvas, and drag selected groups. The tray has simpler rendering and
-> bounded native scrolling; Prints are passive and borderless. Viewport gobo lighting,
-> foreground edge rulers, retired-widget data, and zoom feedback are supported.
+> **0.18.0 — the pegboard's set and its hidden types.** `handle.tray.only(types)` lays a set
+> of object types across their categories, and `handle.tray.hide(types)` keeps types off the
+> board while their objects on the desk draw and work as before. A host that implements the
+> tray's door, or builds its anchor or a `Tray` by hand, names the new members (`CHANGELOG.md`).
 > Upgrading from before 0.14.0 also replaces the DOM/R3F presentation with the GPU desk;
 > see the 0.14.0 removal list in `CHANGELOG.md`.
 
@@ -200,8 +200,8 @@ drive headless Chrome against the oracle's bytes (`rig:parity`: maxΔ 0 per scen
 
 ## Status
 
-**Current release: 0.17.0.** The desk interaction and presentation changes build on
-0.16.0's live surfaces and idle-driver improvements. Documents written by 0.1.0 migrate automatically
+**Current release: 0.18.0.** The pegboard's set and its hidden types build on 0.17.0's
+desk interactions and presentation. Documents written by 0.1.0 migrate automatically
 on open (schema 2 — ordered `ChildOf` replaces scalar z); a 0.1.0 build opening
 a migrated document still gets a correct read-only view.
 

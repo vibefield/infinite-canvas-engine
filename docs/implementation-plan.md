@@ -2313,7 +2313,7 @@ file:line). Three slices — and a fourth for the asks VibeField's builders foun
   - **Not here**: the `0.16.0` FINAL cut and its version bump (the orchestrator's); VibeField's half (the pane's driver idle once
     still, `77d402d2` reverted as `c64fdc61`, back at the FINAL's pin with its SLEEP row); any strata edit.
 
-## M25 — The board's set and its hidden types (petition I54) — **LANDED 2026-11-18 on main e682bd22acff** (`0.18.0`'s release follows)
+## M25 — The board's set and its hidden types (petition I54) — **LANDED 2026-11-18 on main e682bd22acff** · **CUT as `0.18.0` 2026-11-18 (`latest`)**
 
 VibeField's plugin market (track MK; `docs/downstream-petitions.md` I54) asks the pegboard two things its category filter (design-018
 §6) cannot say: the board shows ONE SET of types across their categories — after an install, the set the plugin brought (MK-D8) —
