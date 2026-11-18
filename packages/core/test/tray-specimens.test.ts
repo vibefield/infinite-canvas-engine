@@ -5,7 +5,9 @@
 // Never Active (the desk's stack never picks, selects or culls one), never durable; re-laid on a width change, laid afresh after a
 // reset. Open, the mouse over one is `Tray.hover` — the hover that lifts it. design-018 §6 (R2): THE FILTER — the view's category
 // ("" all) lays only its entries, a change zeroes the scroll and the band, one the frame hangs none of falls back to all, and the
-// categories the frame hangs are listed in the lay's order. Through the REAL stack; the pose is the renderer's word.
+// categories the frame hangs are listed in the lay's order. Petition I54: THE SET (`setTrayOnly`) lays only its types across their
+// categories and wins over the category; THE HIDDEN (`setTrayHidden`) hang nothing while their objects on the desk stay whole.
+// Through the REAL stack; the pose is the renderer's word.
 import { describe, expect, it } from "vitest";
 import { layTray, trayScrollMax } from "@ice/kernel";
 import {
@@ -13,12 +15,18 @@ import {
   Camera,
   createCanvasEngine,
   defineWidget,
+  FrameInfo,
   openTray,
   scrollTray,
   setTrayCategory,
+  setTrayHidden,
+  setTrayOnly,
   trayCategories,
   trayCategory,
   trayEntryCount,
+  trayHidden,
+  trayHung,
+  trayOnly,
   p,
   Position,
   Selectable,
@@ -28,6 +36,7 @@ import {
   specimensOf,
   Tray,
   TrayContent,
+  TrayIntent,
   trayEntity,
   trayOpen,
   PrefabId,
@@ -398,5 +407,296 @@ describe("the filter (design-018 §6)", () => {
     r.ce.stack.queue.enqueue({ kind: "move", pointerId: "mouse", device: "mouse", screenX: x + 12, screenY: y + 12, buttons: 1, mods: NO_MODS });
     r.step();
     expect(r.world.read(r.tray(), Tray).take).toBe("plugin:swatch");
+  });
+});
+
+describe("the set and the hidden (petition I54)", () => {
+  const law = (types: readonly WidgetType[]) => layTray(types.map((t) => ({ type: t.type, hang: hangOf(t), ...(t.tray?.category !== undefined ? { category: t.tray.category } : {}), ...(t.tray?.order !== undefined ? { order: t.tray.order } : {}) })), 720, 40).placed;
+  const rect = (r: ReturnType<typeof rig>, type: string) => { const e = r.byType()[type]; return e === undefined ? undefined : { ...r.world.read(e as never, Position), ...r.world.read(e as never, Size) }; };
+  /** The drawer out, a mouse over a screen point, pressed, moved past the slop and released inside it — its hover, and what it took. */
+  const pressAt = (r: ReturnType<typeof rig>, x: number, y: number): readonly [string, string] => {
+    r.mouse(x, y);
+    const hover = r.world.read(r.tray(), Tray).hover;
+    r.ce.stack.queue.enqueue({ kind: "down", pointerId: "mouse", device: "mouse", screenX: x, screenY: y, buttons: 1, mods: NO_MODS });
+    r.step();
+    r.ce.stack.queue.enqueue({ kind: "move", pointerId: "mouse", device: "mouse", screenX: x + 12, screenY: y + 12, buttons: 1, mods: NO_MODS });
+    r.step();
+    const take = r.world.read(r.tray(), Tray).take;
+    r.ce.stack.queue.enqueue({ kind: "up", pointerId: "mouse", device: "mouse", screenX: x + 12, screenY: y + 12, buttons: 0, mods: NO_MODS });
+    r.step();
+    return [hover ?? "", take ?? ""];   // a Tray string field reads as string | null, as the system reads it
+  };
+
+  it("are facts of the view — none at install, set by their ops (sorted, each once; [] or null clears), none again after a document switch; a list that is not one throws", () => {
+    const r = rig();
+    expect([trayOnly(r.world), trayHidden(r.world)]).toEqual([null, []]);
+    expect([r.world.read(r.tray(), Tray).only, r.world.read(r.tray(), Tray).hidden]).toEqual(["", ""]);
+    setTrayOnly(r.world, ["spec:pad", "plugin:swatch", "spec:pad"]);
+    expect(trayOnly(r.world)).toEqual(["plugin:swatch", "spec:pad"]);
+    expect(r.world.read(r.tray(), Tray).only).toBe(JSON.stringify(["plugin:swatch", "spec:pad"]));
+    setTrayOnly(r.world, []);
+    expect(trayOnly(r.world)).toBeNull();
+    setTrayOnly(r.world, ["spec:pad"]);
+    setTrayOnly(r.world, null);
+    expect(trayOnly(r.world)).toBeNull();
+    setTrayHidden(r.world, ["plugin:swatch", "plugin:swatch"]);
+    expect(trayHidden(r.world)).toEqual(["plugin:swatch"]);
+    setTrayHidden(r.world, []);
+    expect(trayHidden(r.world)).toEqual([]);
+    // runtime facts: never in the document, and a reset (a document switch) starts with none
+    setTrayOnly(r.world, ["spec:pad"]);
+    setTrayHidden(r.world, ["plugin:swatch"]);
+    expect(r.ce.docs.current()?.store.keyOf(r.tray())).toBeUndefined();
+    r.ce.docs.create();
+    r.world.setResource(Viewport, VP);
+    r.step(2);
+    expect([trayOnly(r.world), trayHidden(r.world)]).toEqual([null, []]);
+    // a refusal writes nothing — from facts that stand: a set, a hidden type, a category (written after the set, by hand)
+    setTrayOnly(r.world, ["spec:pad"]);
+    setTrayHidden(r.world, ["plugin:swatch"]);
+    r.ce.world.edit(r.tray()).set(Tray, { ...r.world.read(r.tray(), Tray), category: "paper" });
+    expect(() => setTrayOnly(r.world, "spec:pad" as never)).toThrow(/only — .*an array of object types/);
+    expect(() => setTrayOnly(r.world, ["spec:card", 3] as never)).toThrow(/only — .*an array of object types/);
+    expect(() => setTrayHidden(r.world, [7] as never)).toThrow(/hide — .*an array of object types/);
+    expect([trayOnly(r.world), trayHidden(r.world), trayCategory(r.world)]).toEqual([["spec:pad"], ["plugin:swatch"], "paper"]);
+    // a fact written by hand that is no list reads as none — never a throw (the lay reads them inside the tick)
+    r.ce.world.edit(r.tray()).set(Tray, { ...r.world.read(r.tray(), Tray), only: "spec:pad", hidden: "{" });
+    expect([trayOnly(r.world), trayHidden(r.world)]).toEqual([null, []]);
+  });
+
+  it("the SET lays only its types, across their categories, where the law lays them alone and in its order; it wins over the category (written \"\" with it, written back \"\" over one asked meanwhile); the chips and the count stay the frame's whole hang; a move zeroes the scroll and the band, the same set again changes nothing; cleared, every object — never the category before it", () => {
+    const r = rig({ w: 720 }, [CARD, LOOSE]);
+    r.pose(true);
+    r.step(2);
+    openTray(r.world);   // out: the input lets a band go only once the wheel has been quiet — so a band zeroed in ONE step is the lay's
+    r.step(2);
+    const t = () => r.world.read(r.tray(), Tray);
+    const laid = () => r.world.read(r.tray(), TrayContent).laid;
+    setTrayCategory(r.world, "paper");
+    r.step(2);
+    expect(Object.keys(r.byType()).sort()).toEqual(["spec:card", "spec:pad"]);
+    // a pull on the band this instant (the wheel's clock now): only the lay's move can zero it within the next step
+    r.ce.world.edit(r.tray()).set(Tray, { ...t(), scroll: 77, stretch: 12, wheelAt: r.world.getResource(FrameInfo)?.now ?? 0 });
+    // a set over two categories and the entry that names none
+    setTrayOnly(r.world, ["spec:loose", "plugin:swatch", "spec:card"]);
+    expect(trayCategory(r.world)).toBe("");   // written with it: the set wins at once
+    r.step();
+    expect([t().scroll, t().stretch]).toEqual([0, 0]);
+    r.step();
+    expect(Object.keys(r.byType()).sort()).toEqual(["plugin:swatch", "spec:card", "spec:loose"]);
+    const set = law([CARD, PLUGIN, LOOSE]);
+    for (const q of set) expect(rect(r, q.type), q.type).toEqual({ x: q.x, y: q.y, w: q.w, h: q.h });
+    expect(trayHung(r.world)).toEqual(set.map((q) => q.type));   // the lay's order, across the categories
+    expect([t().category, t().only, t().scroll, t().stretch]).toEqual(["", JSON.stringify(["plugin:swatch", "spec:card", "spec:loose"]), 0, 0]);
+    // the frame's whole hang, as before the set: a host's chips quiet themselves on `only`, not on a count that moved
+    expect(trayCategories(r.world)).toEqual([{ id: "paper", label: "Paper", count: 2 }, { id: "plugin", label: "Plugin", count: 1 }]);
+    expect(trayEntryCount(r.world)).toBe(4);
+    // a category asked while the set stands: written back "" — nothing re-laid, the scroll kept
+    r.ce.world.edit(r.tray()).set(Tray, { ...t(), scroll: 30 });
+    const n = laid();
+    setTrayCategory(r.world, "paper");
+    r.step(2);
+    expect([t().category, laid(), t().scroll, Object.keys(r.byType()).length]).toEqual(["", n, 30, 3]);
+    // the same set again, in another order with a repeat: no write, no re-lay, the scroll kept
+    setTrayOnly(r.world, ["spec:card", "spec:loose", "plugin:swatch", "spec:card"]);
+    r.step(2);
+    expect([laid(), t().scroll]).toEqual([n, 30]);
+    // another set: re-laid where the law lays it alone, the board at its top
+    setTrayOnly(r.world, ["spec:pad"]);
+    r.step(2);
+    expect(Object.keys(r.byType())).toEqual(["spec:pad"]);
+    const alone = law([PAD])[0];
+    expect(rect(r, "spec:pad")).toEqual({ x: alone?.x, y: alone?.y, w: alone?.w, h: alone?.h });
+    expect(t().scroll).toBe(0);
+    // cleared: every object, laid as the law lays them all — not the paper the drawer showed before the set — the board at its top
+    r.ce.world.edit(r.tray()).set(Tray, { ...t(), scroll: 40 });
+    setTrayOnly(r.world, null);
+    r.step(2);
+    expect(Object.keys(r.byType()).sort()).toEqual(["plugin:swatch", "spec:card", "spec:loose", "spec:pad"]);
+    for (const q of law([PAD, CARD, PLUGIN, LOOSE])) expect(rect(r, q.type), q.type).toEqual({ x: q.x, y: q.y, w: q.w, h: q.h });
+    expect([t().category, t().only, t().scroll]).toEqual(["", "", 0]);
+  });
+
+  it("a SET the frame hangs none of falls back to none — ids no entry names, and a set whose types the frame leaves behind (inside a container that takes none of them) — written back, the board at its top; an id no entry names beside one it does is passed over", () => {
+    const r = rig();
+    r.pose(true);
+    r.step(2);
+    setTrayOnly(r.world, ["spec:nothing"]);
+    r.step(2);
+    expect(trayOnly(r.world)).toBeNull();
+    expect(Object.keys(r.byType()).sort()).toEqual(["plugin:swatch", "spec:pad"]);
+    const bin = r.ce.ops.spawnWidget("spec:bin", { x: 300, y: 300, undoable: false });
+    setTrayOnly(r.world, ["spec:pad", "spec:nothing"]);
+    r.step(2);
+    expect(Object.keys(r.byType())).toEqual(["spec:pad"]);
+    expect(trayOnly(r.world)).toEqual(["spec:nothing", "spec:pad"]);   // the set stands as asked
+    r.ce.world.edit(r.tray()).set(Tray, { ...r.world.read(r.tray(), Tray), scroll: 25 });
+    r.ce.ops.enterContainer(bin, { transition: "none" });   // the bin takes the swatch alone: none of the set hangs in it
+    r.step(3);
+    const t = r.world.read(r.tray(), Tray);
+    expect([t.only, t.category, t.scroll]).toEqual(["", "", 0]);
+    expect(Object.keys(r.byType())).toEqual(["plugin:swatch"]);
+    r.ce.ops.exitContainer({ transition: "none" });
+    r.step(3);
+    expect(trayOnly(r.world)).toBeNull();   // it stays none: the fallback is the fact — the host says the set again
+    expect(Object.keys(r.byType()).sort()).toEqual(["plugin:swatch", "spec:pad"]);
+    // a set written by hand that is no list (never by the op) reads as none: the lay drops it — never a throw inside the tick
+    r.ce.world.edit(r.tray()).set(Tray, { ...r.world.read(r.tray(), Tray), only: "spec:pad" });
+    r.step(2);
+    expect([r.world.read(r.tray(), Tray).only, Object.keys(r.byType()).sort()]).toEqual(["", ["plugin:swatch", "spec:pad"]]);
+  });
+
+  it("a SET over kinds the renderer cannot draw (I38 — a kind this desk was not mounted with) is dropped at the next lay, the category it replaced not restored; said again once the desk draws them, it stands", () => {
+    const r = rig();
+    r.ce.stack.trayPose.current = { frame: r.frame, draws: (type: string): boolean => type !== "plugin:swatch" };
+    r.step(2);
+    setTrayCategory(r.world, "paper");
+    r.step(2);
+    setTrayOnly(r.world, ["plugin:swatch"]);   // a plugin's new kind, asked before the desk that draws it is mounted
+    r.step(2);
+    expect([trayOnly(r.world), trayCategory(r.world), Object.keys(r.byType())]).toEqual([null, "", ["spec:pad"]]);
+    // the remount that draws it (the renderer's word changes), then the set said again: it stands, laid alone
+    r.ce.stack.trayPose.current = { frame: r.frame };
+    r.step(2);
+    setTrayOnly(r.world, ["plugin:swatch"]);
+    r.step(2);
+    expect([trayOnly(r.world), Object.keys(r.byType())]).toEqual([["plugin:swatch"], ["plugin:swatch"]]);
+  });
+
+  it("a HIDDEN type hangs nothing — no specimen, no count, no category it alone would fill, no hover or take at its would-be peg, no lay — the scroll kept; its objects on the desk stay members, select and duplicate; every type hidden, nothing to offer; [] hangs it again at its peg", () => {
+    const r = rig();
+    const desk = r.ce.ops.spawnWidget("plugin:swatch", { x: 300, y: 300, undoable: false });   // one on the desk
+    r.pose(true);
+    r.step(2);
+    const t = () => r.world.read(r.tray(), Tray);
+    const swatch = r.byType()["plugin:swatch"] as number;
+    const peg = rect(r, "plugin:swatch");
+    const n = r.world.read(r.tray(), TrayContent).laid;
+    expect(trayCategories(r.world).map((c) => c.id)).toEqual(["paper", "plugin"]);   // the control
+    r.ce.world.edit(r.tray()).set(Tray, { ...t(), scroll: 20 });
+    setTrayHidden(r.world, ["plugin:swatch"]);
+    r.step(2);
+    expect(Object.keys(r.byType())).toEqual(["spec:pad"]);
+    expect(r.world.isAlive(swatch as never)).toBe(false);
+    expect(r.world.read(r.tray(), TrayContent).laid).toBe(n + 1);   // re-laid
+    expect(trayCategories(r.world).map((c) => c.id)).toEqual(["paper"]);
+    expect(trayEntryCount(r.world)).toBe(1);
+    expect(t().scroll).toBe(20);   // a hide is no move of what the drawer shows: the scroll kept
+    setTrayCategory(r.world, "plugin");   // a host's stale chip: the frame hangs none of it — all again
+    r.step(2);
+    expect([trayCategory(r.world), Object.keys(r.byType())]).toEqual(["", ["spec:pad"]]);
+    // out: a press at its would-be peg hovers nothing and takes nothing; the op lays nothing of it
+    openTray(r.world);
+    r.ce.world.edit(r.tray()).set(Tray, { ...t(), scroll: 0 });
+    r.step(2);
+    const x = 40 + (peg?.x ?? 0) + (peg?.w ?? 0) / 2;
+    const y = 348 + (peg?.y ?? 0) + (peg?.h ?? 0) / 2;
+    expect(pressAt(r, x, y)).toEqual(["", ""]);
+    expect(r.ce.ops.layFromTray("plugin:swatch", { x: 0, y: 0 })).toBeUndefined();
+    // its object on the desk: still a member of the frame, selected and duplicated as before
+    expect(r.world.hasTag(desk, Active)).toBe(true);
+    r.ce.ops.setSelection([desk], "replace");
+    const twins = r.ce.ops.duplicateSelection();
+    r.step(2);
+    expect(twins).toHaveLength(1);
+    expect(r.world.read(twins[0] as never, PrefabId).id).toBe("plugin:swatch");
+    expect(r.world.hasTag(twins[0] as never, Active)).toBe(true);
+    expect(r.world.hasTag(twins[0] as never, Selected)).toBe(true);
+    // every type hidden: nothing to offer — no specimen, no chip, a count of 0, no order to walk
+    setTrayHidden(r.world, ["spec:pad", "plugin:swatch"]);
+    r.step(2);
+    expect([r.specimens(), trayCategories(r.world), trayEntryCount(r.world), trayHung(r.world)]).toEqual([[], [], 0, []]);
+    // none hidden: hung again where the law lays it, and the same press takes it — the control that the press above was at its peg
+    setTrayHidden(r.world, []);
+    r.step(2);
+    expect(Object.keys(r.byType()).sort()).toEqual(["plugin:swatch", "spec:pad"]);
+    expect(rect(r, "plugin:swatch")).toEqual(peg);
+    expect(pressAt(r, x, y)).toEqual(["plugin:swatch", "plugin:swatch"]);
+  });
+
+  it("a HIDE keeps the scroll — clamped when the lay it causes moves the range under it (K9 S10), kept when the range grows", () => {
+    const view = { w: 280, face: 147 };   // at 280 the pad and the swatch hang on two lines (foot 410): the K9 row's numbers
+    const r = rig(view);
+    r.pose(true);
+    r.step(2);
+    const t = () => r.world.read(r.tray(), Tray);
+    const bottom = () => r.world.read(r.tray(), TrayContent).bottom;
+    expect(bottom()).toBe(410);
+    scrollTray(r.world, trayScrollMax(410, 147, 40));   // 303, the whole range
+    r.step(2);
+    const n = r.world.read(r.tray(), TrayContent).laid;
+    const alone = layTray([{ type: "spec:pad", hang: hangOf(PAD), category: "paper", order: 0 }], 280, 40).bottom;   // the pad alone: one line
+    expect(trayScrollMax(alone, 147, 40)).toBeLessThan(303);   // the precondition: the range falls under the scroll
+    setTrayHidden(r.world, ["plugin:swatch"]);
+    r.step(2);
+    expect([r.world.read(r.tray(), TrayContent).laid, bottom()]).toEqual([n + 1, alone]);
+    expect(t().scroll).toBe(trayScrollMax(alone, 147, 40));   // clamped to the new end — not zeroed: a hide is no move of what is shown
+    scrollTray(r.world, 20);
+    r.step(2);
+    setTrayHidden(r.world, []);   // two lines again: the range grows past the scroll — kept
+    r.step(2);
+    expect([bottom(), t().scroll]).toEqual([410, 20]);
+  });
+
+  it("a take in flight whose specimen hangs no more — its type hidden while it is lifted — is put back, never handed to the desk", () => {
+    const r = rig();
+    r.pose(true);
+    r.step(2);
+    openTray(r.world);
+    r.step(2);
+    const peg = rect(r, "plugin:swatch");
+    const x = 40 + (peg?.x ?? 0) + (peg?.w ?? 0) / 2;
+    const y = 348 + (peg?.y ?? 0) + (peg?.h ?? 0) / 2;
+    const epoch = (): number => r.world.getResource(TrayIntent)?.epoch ?? 0;
+    const press = (kind: "down" | "move" | "up", px: number, py: number, buttons: number): void => {
+      r.ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: px, screenY: py, buttons, mods: NO_MODS });
+      r.step();
+    };
+    r.mouse(x, y);
+    press("down", x, y, 1);
+    press("move", x + 12, y + 12, 1);
+    expect(r.world.read(r.tray(), Tray).take).toBe("plugin:swatch");   // lifted, still in the drawer
+    const before = epoch();
+    setTrayHidden(r.world, ["plugin:swatch"]);
+    r.step(2);
+    expect(r.world.read(r.tray(), Tray).take).toBe("");   // its specimen gone: the copy goes back
+    press("move", x, 200, 1);   // out of the drawer: nothing is handed — no intent, the drawer stays out
+    expect([epoch(), r.world.read(r.tray(), Tray).take, trayOpen(r.world)]).toEqual([before, "", true]);
+    press("up", x, 200, 0);
+  });
+
+  it("ops.layFromTray refuses a type hidden, or left out of a standing set, AT ONCE — before any step has moved the lay's record", () => {
+    const r = rig();
+    r.pose(true);
+    r.step(2);
+    expect([...trayHung(r.world)].sort()).toEqual(["plugin:swatch", "spec:pad"]);
+    setTrayHidden(r.world, ["plugin:swatch"]);
+    expect(trayHung(r.world)).toContain("plugin:swatch");   // the record has not moved: no step since
+    expect(r.ce.ops.layFromTray("plugin:swatch", { x: 0, y: 0 })).toBeUndefined();
+    setTrayHidden(r.world, []);
+    setTrayOnly(r.world, ["spec:pad"]);
+    expect(trayHung(r.world)).toContain("plugin:swatch");
+    expect(r.ce.ops.layFromTray("plugin:swatch", { x: 0, y: 0 })).toBeUndefined();
+    // the control, in the same state: the set's own type is laid
+    const laid = r.ce.ops.layFromTray("spec:pad", { x: 0, y: 0 });
+    expect(laid).toBeDefined();
+    r.step(3);   // a spawned object's type is the store's, reflected in the step (as I37's own row reads `made`)
+    expect(r.world.read(laid as never, PrefabId).id).toBe("spec:pad");
+  });
+
+  it("the hidden win over the set: a hidden type of the set hangs nothing, and a set wholly hidden falls back to none", () => {
+    const r = rig({ w: 720 }, [CARD]);
+    r.pose(true);
+    r.step(2);
+    setTrayOnly(r.world, ["spec:pad", "spec:card"]);
+    setTrayHidden(r.world, ["spec:card"]);
+    r.step(2);
+    expect(Object.keys(r.byType())).toEqual(["spec:pad"]);
+    expect(trayOnly(r.world)).toEqual(["spec:card", "spec:pad"]);   // the set stands
+    expect(trayCategories(r.world)).toEqual([{ id: "paper", label: "Paper", count: 1 }, { id: "plugin", label: "Plugin", count: 1 }]);
+    setTrayHidden(r.world, ["spec:card", "spec:pad"]);
+    r.step(2);
+    expect(trayOnly(r.world)).toBeNull();
+    expect(Object.keys(r.byType())).toEqual(["plugin:swatch"]);
   });
 });

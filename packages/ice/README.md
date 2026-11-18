@@ -18,9 +18,9 @@ an archetype ECS with reactivity and opt-in Loro-CRDT durable + presence layers.
 > `./desk`, `./desk/engine`, `./desk/objects` are new. The full list is the changelog's
 > `### Removed` under the 0.14.0 release.
 
-**0.17.0** adds native-scale desk navigation, marquee and selected-group dragging,
-a simpler tray, passive borderless Prints, fixed viewport gobo lighting, foreground
-edge rulers, retired-widget data preservation, and change-only zoom feedback for hosts.
+**0.18.0** adds the pegboard's set and its hidden types (petition I54): `handle.tray.only(types)`
+lays a set of object types across their categories, and `handle.tray.hide(types)` keeps types off
+the board while their objects on the desk draw and work as before.
 
 ```sh
 pnpm add @vibecook/ice react react-dom     # react/react-dom are optional peers

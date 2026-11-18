@@ -2313,6 +2313,86 @@ file:line). Three slices — and a fourth for the asks VibeField's builders foun
   - **Not here**: the `0.16.0` FINAL cut and its version bump (the orchestrator's); VibeField's half (the pane's driver idle once
     still, `77d402d2` reverted as `c64fdc61`, back at the FINAL's pin with its SLEEP row); any strata edit.
 
+## M25 — The board's set and its hidden types (petition I54) — **LANDED 2026-11-18 on main e682bd22acff** · **CUT as `0.18.0` 2026-11-18 (`latest`)**
+
+VibeField's plugin market (track MK; `docs/downstream-petitions.md` I54) asks the pegboard two things its category filter (design-018
+§6) cannot say: the board shows ONE SET of types across their categories — after an install, the set the plugin brought (MK-D8) —
+and a HIDDEN type hangs nothing while the desk still draws its objects — a person's per-object switch (MK-D9). Filed and built on
+James's word, 2026-11-17, on origin/main `f7c1171`. ADDITIVE: absent either, every lay, still and rig as before.
+
+- **As built — two facts of the view, two ops, two doors.** `Tray.only` and `Tray.hidden` (core `catalog/desk.ts`; JSON
+  `string[]`, sorted, each once, "" for none — as `TrayContent` keeps its lists), written by `setTrayOnly(world, types | null)` and
+  `setTrayHidden(world, types)` (`ops/tray.ts`, beside `setTrayCategory`; a list that is not an array of strings throws), read by
+  `trayOnly` (the set as asked; null — none) and `trayHidden` through ONE reader, `trayTypesOf` (a malformed fact reads as none); the
+  desk handle's `tray.only(types?)` and `tray.hide(types?)` (set when given, returned) and `TrayAnchor.only` (`host/layer.ts`). The
+  lay (`systems/tray.ts` `createTrayLay`) reads both, each parsed once per change of its raw string: the hung types are now
+  `hungTypes ∩ takes ∩ draws − hidden` — so `TrayContent.present`, the chips and the count know nothing of a hidden type — and of
+  those it lays the set's alone when a set stands, else its category's. No other system reads either fact, and the desk's anchor
+  reports the set: `trayInput`, the hover, the take and `focusTray` walk the specimens or the lay's record, so a hidden type or one
+  outside the set has no specimen to press and no place in `trayHung`; a take already lifted when its specimen goes is put back
+  (never handed to the desk); and `ops.layFromTray` also refuses on the facts at once, before the next lay has moved `trayHung`.
+  Its objects on the desk are untouched.
+- **Decided — (a) the set WINS over the category** (the petition left it open). While a set stands the category reads "": the op
+  writes it "" with the set, and the next step's lay writes back "" over one asked meanwhile (until then `trayCategory` reads it as
+  asked — the lay's own rule, the fact says what is shown, as a category the frame hangs none of falls back to all). So the ×,
+  `only(null)`, lands on EVERY object — never the category before the set — with one call; a host's chip that should end the set
+  says `only(null)` then the category. Not chosen, the intersection (the category inside the set): the set crosses categories by
+  design, each object in the lay's order under its own; a category inside it is a narrower set, which `only` says directly; and with
+  both standing, the fallback would have to pick which filter yields, a chip with none of the set would do nothing silently, and the
+  × would land on the old category. A host quiets its chips on `anchor().only`.
+- **Decided — (b) `hide` is a door setter over a world fact, not `TrayPoseSource.hangs?`.** The pose seam is the RENDERER's word —
+  where it drew the drawer (`frame`) and what it can draw (`draws`, I38) — and its source is made inside the desk layer, out of a
+  host's reach; a person's switch is the host's, set live, and the engine's first law puts interaction state in the world. As a
+  fact it is one source the lay reads (the input and `layFromTray` follow it); a core unit proves it with no renderer; and `draws`
+  keeps the narrow meaning the petition feared a host would bend.
+- **Decided in the build**:
+  - *The petition amended — no tape per category.* The petition asks the set's types laid "each over its own category's tape";
+    ICE's board draws no tape per category, so the set's objects lie in the lay's (category, order, type) order under the header's
+    chips. A host that wants a category's tape over its objects draws it from each type's `tray.category`. The amendment's text for
+    VibeField's petition file is the lane's (its file is VibeField's).
+  - *The set's fallback is DESTRUCTIVE.* A set the frame hangs none of — an empty list, ids no entry names, every one hidden, refused
+    in an entered container, or kinds the mounted desk cannot draw (I38) — is dropped at the next lay, written back none, and the
+    category it replaced is not restored (the category's own rule: the fact says what is shown). `anchor().only` turns null, so a
+    host's token drops — and since a dropped set re-lays nothing, every set asked through the door publishes the anchor at the next
+    frame, so `subscribe` hears it. So a host says the set again to restore it, and says a set over new kinds only once the desk that
+    draws them is mounted (I25's remount) and `subscribe` reports them. `only()` and `anchor().only` are the set as asked; what hangs
+    is the lay's record. The non-destructive alternative — keep the set as asked and lay none of it while the frame hangs none —
+    is not built (ruled, below).
+  - *The scroll and the focus.* A move of the set zeroes the scroll and the band (a category's rule) and then scrolls a focus that
+    still hangs back into the face, once, the least that shows it — the host's × lands on what its ring is on (a category's move
+    keeps I37's "once"); a hide does not zero (it re-lays; the range clamp, D-K9-c.2, catches a range that moved under the scroll — a
+    person flipping a switch with the board out keeps their place). A hidden type of the set hangs nothing (the hidden win).
+  - *The lists are normalised* (sorted, each once), so the same set in another order writes nothing and re-lays nothing. `focus`
+    walks the lay's record, so a set asked is walked from the step after: a host raises the board, says the set, and focuses
+    `"first"` once `subscribe` tells it (the desk test does exactly that).
+  - *Never durable*: a desk remounted on one engine keeps both facts; a new world (a new engine, a document switch) starts with none.
+- **Ruled** (on James's word, 2026-11-17, each open question at its lean): the drop stays destructive — the category's rule — and
+  the non-destructive one (the set kept as asked, the lay hanging none of it while the frame hangs none) is not built; the set wins,
+  its one-step category lag documented; `hide` is a world fact; `<TrayBar>` is unchanged under a set; the units witness the slice
+  and rig:tray gains no row.
+- **Exit** — `main` at e682bd22acff, green; `pnpm run ci` green. `pnpm run gate:landing` ran on a test Mac, not the Mac the goldens
+  were blessed on, in this tree and in the base alike: 22 of its 27 steps green, pack:audit and dts:check among them; the oracle
+  (its golden alone), the desk clock's still, rig:world, rig:sticky and rig:tray red in BOTH trees on the same checks, their logs
+  the same but for figures, and the oracle's 117 renders the same with the slice and without it (nothing a still draws reads
+  either fact). So the slice adds no red there; no gate:landing ran on the goldens' Mac for it. Owed: a gate:landing on the
+  goldens' Mac — the last one recorded green there is 0.16.0's (M24 LT5, 2026-10-13); 0.17.0 recorded none, and goldens and rig
+  harnesses moved after it, so the base's state there is unrecorded too. **Witnesses**: core
+  `tray-specimens.test.ts` (+9 — the facts and their reset, a refusal over facts that stand, a hand-written fact read as none; the
+  set across two categories and a category-less entry, laid where the law lays them alone, winning over a category asked before and
+  during it, the chips and count unmoved, the scroll and the band zeroed in one step with the drawer out, the same set changing
+  nothing, every object on the ×; the drop by an unknown id, inside a container and by a malformed fact; the drop over kinds the
+  renderer cannot draw, the set said again once it can; a hidden type with no specimen, chip, count, hover, take or lay, its desk
+  object a member, selected and duplicated, every type hidden, `[]` hanging it again at its peg; a hide's scroll clamped by K9's rule;
+  a take in flight put back; `layFromTray` refusing before any step; the hidden of a set), `tray-focus.test.ts` (+2 — the walk under
+  a set from a measured scroll, a focus let go by the set and by a hide, one kept across the × and scrolled back into the face;
+  `layFromTray` refusing both); desk `tray-set.test.ts` (3 — a mounted desk on the fake device: the specimens drawn, the anchor's set
+  and chips, `subscribe` told when only the set moves and when a set is dropped with nothing re-laid, the set's first specimen
+  focused the step after; a hidden type's object drawn by its own kind, no kind faulted, picked by `handle.pick` and duplicated; the
+  refusals, writing nothing over facts that stand).
+- **Not here**: `<TrayBar>`'s chips do not read `only` (ICE's demo bar shows All chosen while a set stands, and a chip pressed then
+  is written back — a host's bar quiets its chips; ICE's own stays as it is, as ruled); a durable or per-document hide (a
+  person's switches are the host's to keep and say again for each new world); a tape per category; any VibeField or strata edit.
+
 ## Release cut & downstream
 
 **0.5.0 = M11 + M12** (guest runtime, `tx.move`, the three standing fixes) — vibe-field

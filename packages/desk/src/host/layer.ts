@@ -34,7 +34,7 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, closeTray, type Entity, focusTray, frameParent, heldEntity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type HeldToolDef, type HeldToolState, type MarqueeBuffer, type MenuActionDef, type NavFace, type NavGeometrySlot, NavTransition, NO_ENTITY, openTray, type PointPick, PrefabId, type PresentationTransitionAdapter, readHeldToolState, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayFocus, type TrayFocusMove, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, closeTray, type Entity, focusTray, frameParent, heldEntity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type HeldToolDef, type HeldToolState, type MarqueeBuffer, type MenuActionDef, type NavFace, type NavGeometrySlot, NavTransition, NO_ENTITY, openTray, type PointPick, PrefabId, type PresentationTransitionAdapter, readHeldToolState, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, setTrayHidden, setTrayOnly, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayFocus, type TrayFocusMove, trayHidden, trayOnly, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
 import { screenToWorld } from "@ice/kernel";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
@@ -346,11 +346,20 @@ export interface TrayAnchor {
   readonly night: number;
   /** An object is IN HAND (not flying home): the selection menu has the view's foot — the bar steps aside. */
   readonly held: boolean;
-  /** How many entries the drawer's frame hangs, every category (0: nothing to offer here — the bar steps aside). */
+  /** How many entries the drawer's frame hangs, every category (0: nothing to offer here — the bar steps aside); a type the host hides counts none (I54), so with every type hidden it is 0. */
   readonly entries: number;
-  /** The category the drawer shows ("" all) and the categories its frame hangs, in the lay's order (design-018 §6). */
+  /** The category the drawer shows ("" all — and while a set stands, I54) and the categories its frame hangs, in the lay's order (design-018 §6). */
   readonly category: string;
   readonly categories: readonly TrayCategory[];
+  /**
+   * Petition I54 — THE SET the drawer lays across its categories (`tray.only`), AS ASKED: its types, sorted — null with none. What
+   * hangs of it (ids that hang nothing left out) is the lay's record — `focus` walks it — and `entries` counts the frame's whole hang.
+   * A host's token ("4 new") rides it and drops when it turns null: the host cleared it, or the lay dropped it — a frame that hangs
+   * none of it (a container entered that takes none, kinds this desk was not mounted with) drops the set for good, and the host says
+   * it again. While it stands, `category` reads "" and `categories`/`entries` stay the frame's whole hang (a host's chips may quiet
+   * themselves).
+   */
+  readonly only: readonly string[] | null;
   /**
    * Petition I37 — the board's KEYBOARD FOCUS: the focused specimen's type (`id`) and its object as the last frame drew it (`rect`,
    * CSS px — the fit inside its hang, what a press there grabs; null while the drawer is not drawn), scrolled into the board's face
@@ -376,21 +385,50 @@ export interface DeskTrayDoor {
   pin(pin: TrayPin | null): void;
   /**
    * design-018 §6 — the category the drawer shows ("" all): set when given (core's `setTrayCategory` — the lay lays only its
-   * entries, the board starts at its top, and it falls back to all when the frame hangs none of it), and returned.
+   * entries, the board starts at its top, and it falls back to all when the frame hangs none of it), and returned. While a SET stands
+   * (`only`, petition I54) the set wins: the category reads "", and one asked meanwhile is written back "" by the next lay.
    */
   category(id?: string): string;
   /** design-018 §6 — the categories the drawer's frame hangs, in the lay's order: each its id, its label and its count (a host's chips). */
   categories(): readonly TrayCategory[];
+  /**
+   * Petition I54 — THE SET: the object types the drawer lays, across their categories — set when given (core's `setTrayOnly`;
+   * `null`, or an empty list, clears it), and returned AS ASKED (sorted; null — none). The board hangs only the set's types the frame
+   * hangs, in the lay's (category, order, type) order — no tape per category is drawn; the set wins over the category (which reads ""
+   * while it stands — so clearing the set shows every object, never the category before it); `categories()` and `anchor().entries` stay
+   * the frame's whole hang. A move of the set re-lays from the next step and starts the board at its top — then scrolls a focus that
+   * still hangs back into the face, the least that shows it; a focus that no longer hangs is let go. THE DROP: a frame that hangs none
+   * of the set — ids no entry names, every one hidden, a container entered that takes none of them, kinds this desk was not mounted
+   * with (I38) — drops it at the next lay, for good (the category's own rule): the host says it again. So a host says a set over NEW
+   * kinds only once the desk that draws them is mounted (I25) and `subscribe` reports them (`anchor().entries`, `categories`). After
+   * every set asked here, the next frame publishes the anchor whatever moved: `subscribe` is told the board's answer — `anchor().only`
+   * the set, or null when it was dropped — and `focus` walks the lay's record from then, so a host focuses the set's first specimen
+   * there. Never durable: a desk remounted on one engine keeps it; a new world — a new engine, a document switch — starts with none.
+   * Throws unless `types` is null or an array of strings.
+   */
+  only(types?: readonly string[] | null): readonly string[] | null;
+  /**
+   * Petition I54 — THE HIDDEN: the object types the board does not hang while the desk still draws them — set when given (core's
+   * `setTrayHidden`, the fact `Tray.hidden`; `[]` hides none), and returned (sorted). A hidden type gets no specimen, so no hover, no
+   * press and no take (one in flight is put back; `lay` refuses it at once), no count and no category it alone would fill; with every
+   * type hidden `anchor().entries` is 0. Its objects on the desk draw, select, duplicate and work as before. A change re-lays from the
+   * next step, the board's scroll kept (clamped if the range shrank under it); a focus on a type now hidden is let go. Never durable: a
+   * desk remounted on one engine keeps it; a new world — a new engine, a document switch — starts with none, and a host that keeps a
+   * person's switches says them again for it. Throws unless `types` is an array of strings.
+   */
+  hide(types?: readonly string[]): readonly string[];
   /** design-018 §5 — what the bar is placed from, as of the last frame drawn. */
   anchor(): TrayAnchor;
   /**
    * design-018 §5 — tell `listener` after each frame that moved what `anchor()` says: the drawer as drawn (its slide, frame by frame),
-   * open or shut, the category or the categories, the hand, the entries, the view, the focus (I37). Never at rest: no frame, no call.
+   * open or shut, the category or the categories, the hand, the entries, the view, the focus (I37), the set (I54) — and after every set
+   * asked through `only` (I54), the next frame whatever moved, so a host hears the board's answer even when the set was dropped at
+   * once. Never at rest: no frame, no call.
    */
   subscribe(listener: () => void): () => void;
   /**
    * Petition I37 — THE BOARD'S KEYBOARD FOCUS (core's `focusTray`): `next`/`prev` along the specimens the lay hangs, in its order (row
-   * by row, across the categories when the drawer shows all; from none `next` is the first and `prev` the last; the ends stay),
+   * by row, across the categories when the drawer shows all or a set, petition I54; from none `next` is the first and `prev` the last; the ends stay),
    * `first`/`last`, or a type by its id (one the board does not hang changes nothing). Returns the focused type ("" — nothing hung).
    * The board scrolls the specimen into its face by the next frame, and `anchor().focused` then says where it is drawn. The order
    * is the lay's record (`TrayContent.order`): until the board is first laid — the step after the desk's first drawn frame, the
@@ -870,6 +908,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         entries: trayEntryCount(world),
         category: trayCategory(world),
         categories: trayCategories(world),
+        only: trayOnly(world),
         focused: focusedOf(),
       };
     };
@@ -1403,6 +1442,21 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
           return trayCategory(world);
         },
         categories: () => trayCategories(world),
+        // petition I54: the set laid across the categories, and the types the board does not hang — the world's facts, core's ops
+        only(types) {
+          if (types !== undefined) {
+            setTrayOnly(world, types);
+            // the host is TOLD the board's answer: the next frame publishes the anchor whatever moved — a set the frame hangs none of
+            // is dropped by the next lay with nothing re-laid and nothing drawn, and a host's token waits on `subscribe` for it
+            trayPublished = "";
+            compose.wake("tray");
+          }
+          return trayOnly(world);
+        },
+        hide(types) {
+          if (types !== undefined) setTrayHidden(world, types);
+          return trayHidden(world);
+        },
         anchor: () => trayAnchorOf(),
         subscribe(listener) { trayListeners.add(listener); return () => { trayListeners.delete(listener); }; },
         focus: (to) => focusTray(world, to),

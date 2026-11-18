@@ -5,7 +5,8 @@
 // id; the lay scrolls the specimen it moves to into the board's face — once, the least that shows it whole — and lets go a focus on a
 // type it lays no more. `ops.layFromTray` LAYS the tray's own take at a world point with no drag: what a drag-off's drop makes — the
 // type at its natural size, the entry's `take` props, ONE undo step, selected — centred on the point, the board folding as a handed
-// take's does. Through the REAL stack; the pose is the renderer's word (as tray-take.test.ts's).
+// take's does. Petition I54: the walk under a SET and past a HIDDEN type, and the lay refusing both. Through the REAL stack; the pose
+// is the renderer's word (as tray-take.test.ts's).
 import { describe, expect, it } from "vitest";
 import { specimenFit } from "@ice/kernel";
 import {
@@ -23,6 +24,8 @@ import {
   PrefabId,
   Selected,
   setTrayCategory,
+  setTrayHidden,
+  setTrayOnly,
   Size,
   Specimen,
   specimensOf,
@@ -176,6 +179,45 @@ describe("the board's keyboard focus (petition I37)", () => {
     expect(trayFocus(r.world)).toBe("");
     expect(focusTray(r.world, "next")).toBe("focus:b0");
   });
+
+  it("petition I54: walks the SET in the lay's order across its categories, from the lay of the step after; lets go a focus the set leaves out, or on a type the host then hides; keeps one that still hangs and scrolls it back into the face", () => {
+    const r = rig();
+    focusTray(r.world, "last");
+    r.step();
+    expect(r.tray().scroll).toBeGreaterThan(0);
+    focusTray(r.world, "focus:a3");
+    r.step();
+    // the scroll the set must zero, measured: a3's top on the first line just under the header (90 — its top 130 less the 40)
+    expect(r.tray().scroll).toBe(r.specimen("focus:a3").board.y0 - HEAD);
+    expect(r.tray().scroll).toBeGreaterThan(0);
+    setTrayOnly(r.world, ["focus:b2", "focus:a7", "focus:b0"]);
+    expect(trayHung(r.world)).toEqual(ORDER);   // the lay's record: the set is laid at the next step
+    r.step(2);
+    expect(trayFocus(r.world)).toBe("");          // a3 is not in the set: let go
+    expect(r.tray().scroll).toBe(0);              // the set moved: the board at its top
+    expect(trayHung(r.world)).toEqual(["focus:a7", "focus:b0", "focus:b2"]);
+    expect(focusTray(r.world, "first")).toBe("focus:a7");
+    expect(focusTray(r.world, "next")).toBe("focus:b0");
+    r.step();
+    // the host hides the focused type: let go, and the walk is the rest of the set
+    setTrayHidden(r.world, ["focus:b0"]);
+    r.step(2);
+    expect(trayFocus(r.world)).toBe("");
+    expect(trayHung(r.world)).toEqual(["focus:a7", "focus:b2"]);
+    // a focus that still hangs is kept when the set is cleared — every object laid again, the focus on b2 still — and the board,
+    // started at its top, scrolls it back into the face, the least that shows it whole (a set's move, unlike a category's, re-scrolls
+    // a kept focus once: the host's × lands on what its ring is on)
+    expect(focusTray(r.world, "last")).toBe("focus:b2");
+    r.step();
+    setTrayOnly(r.world, null);
+    r.step(2);
+    expect(trayFocus(r.world)).toBe("focus:b2");
+    expect(trayHung(r.world)).toEqual(ORDER.filter((q) => q !== "focus:b0"));
+    const b2 = r.specimen("focus:b2").board;
+    expect(r.tray().scroll).toBeGreaterThan(0);
+    expect(b2.y1).toBe(r.band().y1);   // just shown: its foot on the face's
+    expect(b2.y0).toBeGreaterThanOrEqual(r.band().y0);
+  });
 });
 
 describe("ops.layFromTray — the tray's own take, laid (petition I37)", () => {
@@ -246,5 +288,22 @@ describe("ops.layFromTray — the tray's own take, laid (petition I37)", () => {
     r.world.addTag(e as Entity, Held);
     expect(r.ce.ops.layFromTray("focus:b1", { x: 300, y: 100 })).toBeUndefined();
     expect(r.made("focus:b1")).toEqual([]);
+  });
+
+  it("petition I54: lays only what the board hangs — a type the set leaves out, or one the host hides, is refused and folds nothing", () => {
+    const r = rig();
+    setTrayOnly(r.world, ["focus:b1", "focus:a0"]);
+    r.step(2);
+    expect(r.ce.ops.layFromTray("focus:a1", { x: 0, y: 0 })).toBeUndefined();   // outside the set
+    setTrayOnly(r.world, null);
+    setTrayHidden(r.world, ["focus:a0"]);
+    r.step(2);
+    expect(r.ce.ops.layFromTray("focus:a0", { x: 0, y: 0 })).toBeUndefined();   // hidden
+    expect([r.made("focus:a1"), r.made("focus:a0")]).toEqual([[], []]);
+    expect(trayOpen(r.world)).toBe(true);   // a refusal folds nothing
+    const e = r.ce.ops.layFromTray("focus:a1", { x: 100, y: 100 });   // the control: hung again, laid
+    expect(e).toBeDefined();
+    r.step(2);
+    expect(r.made("focus:a1")).toEqual([e]);
   });
 });

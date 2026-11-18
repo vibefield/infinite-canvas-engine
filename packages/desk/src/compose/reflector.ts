@@ -115,8 +115,8 @@ export interface DeskReflector {
   setTheme(theme: GroundTheme, palette?: Palette): void;
   /** The root's grid (the mat's config, the fade-in) as a whole. */
   configureGrid(grid: GridConfig): void;
-  /** Wake a frame for a reason the world does not carry (a pin, an asset, the writing's flux — D2c's `ink`). */
-  wake(reason: "pin" | "ambient" | "ink"): void;
+  /** Wake a frame for a reason the world does not carry (a pin, an asset, the writing's flux — D2c's `ink`; a host's word to the tray, I54). */
+  wake(reason: "pin" | "ambient" | "ink" | "tray"): void;
   /**
    * A harness's pins on the build (D2b): live insides on or off (the oracle's `portals: false`), a pinned root
    * dressing (`lodZoom`), every spring and ghost held where it is (`freeze` — a still of a moving frame), the
