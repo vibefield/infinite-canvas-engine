@@ -84,6 +84,23 @@ export const printExtent = (width: number, height: number, long: number = PHOTO.
   width > 0 && height > 0 ? printSize(width, height, long) : printSize(3, 2, long);
 
 /**
+ * A print's OWN PIXELS across its rect (petition I55, 2026-11-19 — the print's `open.natural`, kinds/world.ts `OpenBinding.natural`):
+ * its picture's `width` × `height`. Under the engine's law the picture fills the sheet edge to edge (`PHOTO.border` 0 — a saved
+ * `border` prop is never drawn, `record`'s note below), so they are exactly the props; a host's law that draws a border insets the
+ * picture by it on every side (photo.wgsl: the picture stretched over the inner rect), so the rect holds the picture's pixels over
+ * the share of it the picture fills. Undefined — no cap, the fit alone — for a print with no picture size (0 × 0) or a border that
+ * leaves no picture.
+ */
+export function printNatural(rect: { readonly w: number; readonly h: number }, props: Readonly<Record<string, unknown>>, law: PhotoLaw = PHOTO): { readonly w: number; readonly h: number } | undefined {
+  const width = numberProp(props, "width", 0);
+  const height = numberProp(props, "height", 0);
+  if (!(width > 0 && height > 0)) return undefined;
+  const b = 2 * borderOf(rect.w / 2, rect.h / 2, law);   // both sides' border, world units: 0 under the engine's law, so 1 − 0 = 1 exactly
+  if (!(b < rect.w && b < rect.h)) return undefined;
+  return { w: width / (1 - b / rect.w), h: height / (1 - b / rect.h) };
+}
+
+/**
  * How far a print's drawing reaches past its rect, world units: the leave's height (1.6 × the lift) and the held droop cast
  * along the lamp's capped slope and blurred, and the local eye's scale of a sheet at that height about its far corner.
  */
@@ -446,10 +463,22 @@ export function photoKind(opts: PhotoKindOptions = {}): ObjectKind<PhotoGeometry
     ...program,
     reach: photoReach(law),
     local: (host: KindHost): Prints => createPrints(host, law),
+    // THE OPENING (design-015 §8; petition I55, 2026-11-19): double-click or ⏎ picks a print up into the
+    // hand, as the whiteboard. The smallest flat opening: its own rect under the pose's camera — no tools, no word, no motion of its
+    // own, the wheel and Esc the hand's; the host shows Open and Done, and nothing is drawn around it. It never opens past its own
+    // pixels (`printNatural`: 1:1 device pixels of its picture), so a small picture opens at its own size; a print with no picture
+    // size (0 × 0) opens to the fit alone
+    open: {
+      extent: (c) => c.rect,
+      natural: (c) => printNatural(c.rect, c.props, law),
+    },
     resolve(ctx: ObjectContext): PhotoGeometry {
       const { w, h } = extentOf(ctx);
       const prints = ctx.local as Prints | undefined;
-      if (prints !== undefined) return resolvePhoto(prints.bodyFor(ctx, w / 2, h / 2), law, ctx.lamp);
+      // IN HAND (I55, 2026-11-19) a print is drawn AT REST under the pose's camera, as every flat kind is (hold/pose.ts): its rect and
+      // the pose's turn (`props.angle` in hand), never its carry's body — a double-click's two presses each lift it, so it is still
+      // falling when it opens — and its body never reads the hand's turn as its facts: it lands where they are, owing no rest
+      if (prints !== undefined && ctx.held === undefined) return resolvePhoto(prints.bodyFor(ctx, w / 2, h / 2), law, ctx.lamp);
       const b = newBody(ctx.rect.cx, ctx.rect.cy, w, h, numberProp(ctx.props, "angle", 0), law.hover * ctx.flux.hover);
       if (ctx.flux.fade < 1) { b.h += law.lift * 1.6 * (1 - ctx.flux.fade); b.alpha = ctx.flux.fade; }
       return resolvePhoto(b, law, ctx.lamp);

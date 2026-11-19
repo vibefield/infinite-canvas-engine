@@ -94,7 +94,7 @@ import {
 } from "@ice/core";
 import type { KindFaults } from "../faults";
 import type { HeldFrameInputs, OutgoingInputs, PortalInputs, SlotObject } from "../ground";
-import { carryOf, HELD_USER_REST, heldCamera, heldFocus, heldFrame, heldPose, HOLD, type HoldReserves, homePose, progressOf, readingTarget } from "../hold/pose";
+import { carryOf, HELD_USER_REST, heldCamera, heldFocus, heldFrame, heldPose, HOLD, type HoldReserves, homePose, naturalCap, progressOf, readingTarget } from "../hold/pose";
 import { FLUX_REST, type InsideContext, type KindLocal, numberProp, type ObjectContext, type ObjectFlux, type ObjectKind, type ObjectRect, rectFrame, rectOf, type RungContext } from "../kinds/world";
 import { MISSING_OBJECT } from "../missing/object";
 import type { MarksInput } from "../marks/layout";
@@ -1251,7 +1251,11 @@ export function createDeskBuilder(world: World, opts: DeskBuilderOptions): DeskB
             const extentWorld: ObjectRect = { cx: hst.rect.cx + ca * ox - sa * oy, cy: hst.rect.cy + sa * ox + ca * oy, w: extentLocal.w, h: extentLocal.h };
             // a spread read one page at a time on a phone: the page in view is the kind's (D3t-b — flux, the view glides)
             const face = binding.spread === true ? (binding.page?.({ entity: hand.entity, local: locals?.get(hst.kind.name) }) ?? 0) : 0;
-            const target = readingTarget(extentLocal, vpSize, binding.spread === true, face, reserves);
+            // THE CAP (petition I55, 2026-11-19): a kind that says its extent's own pixels (`open.natural` — the print's picture) is
+            // never read past 1:1 device pixels of them at the frame's dpr — a small picture opens at its own size; the user's zoom
+            // (`user`, below) rides on top. None said: Infinity, the fit as before. Read in this try: a throw is the extent's strike
+            const cap = naturalCap(extentLocal, binding.natural?.({ rect: hst.rect, props: hst.props }), vp.dpr);
+            const target = readingTarget(extentLocal, vpSize, binding.spread === true, face, reserves, cap);
             const user = world.get(hand.entity, HeldView) ?? HELD_USER_REST;
             const pose = heldPose(homePose(extentWorld, angle, cam), target, user, hand.e);
             const { cam: heldCam, grow } = heldCamera(pose, hst.rect, extentLocal, cam.zoom, binding.pose === "eye", vpSize);

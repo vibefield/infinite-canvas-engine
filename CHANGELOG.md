@@ -6,6 +6,30 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-11-19
+
+**The print opens (petition I55), released on `latest`.** Double-click or ⏎ on a print (`desk.photo`) picks it up into
+the hand, and what opening does by itself never draws a picture past its own pixels: a kind's `open.natural` gives
+`readingTarget` a trailing `cap` (`naturalCap`). Additive: a kind that says nothing, and every caller that passes no cap,
+keeps today's numbers exactly.
+
+### Added
+
+<!-- petition I55 — the print opens, never past its own pixels (2026-11-19; VibeField) -->
+- **THE PRINT OPENS, NEVER PAST ITS OWN PIXELS — `OpenBinding.natural`, `readingTarget`'s `cap`, `naturalCap`** (petition I55,
+  VibeField's). A kind's opening may say the device pixels its content holds across the open extent:
+  `open.natural?(ctx: { rect, props }) → { w, h } | undefined`. `naturalCap(extent, natural, dpr)` (`/desk`, `/desk/kit`) is
+  min(natural.w / (extent.w · dpr), natural.h / (extent.h · dpr)) — Infinity when `natural` is absent or not two positive finite
+  numbers — and `readingTarget(extent, vp, spread, face, reserves, cap)` takes it as a new trailing `cap`, bounding the fit wherever
+  3× does; the builder asks `natural` with the extent (a throw is the kind's strike) and passes the cap at the frame's dpr, so a
+  small picture opens at 1:1 device pixels, centred in the fit. The person's ⌘-wheel and pinch (`HeldView.zoom`, up to 3×) ride on
+  top, unchanged. A kind that says nothing, and every caller that passes no cap, keeps today's numbers exactly. THE PRINT
+  (`desk.photo`) declares the smallest flat opening — `extent` its own rect, `natural` its picture's `width` × `height` (none for
+  0 × 0), nothing else — so `Photo.openable` is true and double-click and ⏎ pick it up. In hand it is drawn at rest under the pose,
+  as a flat kind is, never from its carry's body (a double-click's own presses leave that body falling as the print opens; it
+  lands at its facts and owes no rest); the desk is inert, so the carry never lifts it and the wheel never turns it there.
+  Witnesses: `packages/desk/test/hold-natural.test.ts`, `packages/objects/test/photo-open.test.ts`.
+
 ## [0.18.0] — 2026-11-18
 
 **VibeField's plugin market, the ICE half (M25, petition I54), released on `latest`.** The pegboard lays a SET of object types

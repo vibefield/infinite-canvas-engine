@@ -6,7 +6,9 @@
 // the law's long side (`printExtent` — exact; `Size` is its f32 shadow for the index, the cull and the marks).
 // Things, selectable; a solo carry uses its own physics (the pin, flick, glide and grip), committing once at rest.
 // In a multi-selection it follows core's group move, sharing the group's commit, undo and cancellation.
-// Offered to a mini mat (`provides`) for D2b's nesting.
+// Offered to a mini mat (`provides`) for D2b's nesting. And it OPENS (petition I55, 2026-11-19 — its kind's `open`):
+// double-click or ⏎ picks it up into the hand, its own rect, never past its own pixels; while it is in hand the
+// desk is inert (core's held input), so the carry never lifts it and the wheel never turns it there.
 
 import { p } from "@ice/core";
 import { photoKind, printExtent, type Prints } from "./kind";
@@ -32,7 +34,8 @@ export const Photo = defineObject({
   size: { w: printExtent(0, 0).w, h: printExtent(0, 0).h },
   kind: photoKind(),
   // Created from an image (paste, drop, or a host's card), never as a blank tray specimen.
-  // the wheel TURNS a print held in a hand (PHOTO.md; D3t-a — core cedes that pointer's wheel to it, `PressWheel`)
+  // the wheel TURNS a print a press is carrying (PHOTO.md; D3t-a — core cedes that pointer's wheel to it, `PressWheel`) — never one
+  // opened into the hand (I55): there no press captures it, and a plain wheel is the hand's
   interaction: { selectable: true, movable: "selection", resizable: false, snap: "both", wheelTurns: true },
   // it lies on the desk by what it provides (K8a — `DESK_OBJECT`, the desk canvas's one key), as a plugin kind does
   provides: [PHOTO_TYPE, DESK_OBJECT],

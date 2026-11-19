@@ -8,7 +8,9 @@
 // the desk and the hand the pose is ONE curve: the position on the island ease, the size in LOG scale (the
 // flight's zoom law: a book picked up from far out grows evenly), the tilt let go. The user's `zoom` (0.72 …
 // 3, about the pointer) and `pan` ride on the reading pose. On a portrait phone a spread opens one page at a
-// time (Q-p): the right page centred, the left waiting at the edge.
+// time (Q-p): the right page centred, the left waiting at the edge. And a kind that says its extent's OWN
+// PIXELS (`open.natural` — the print's picture; petition I55, 2026-11-19) is never read past 1:1 device
+// pixels of them: `naturalCap` caps the fit, a small picture opens at its own size; the user's zoom rides on top.
 //
 // THE POSE IS A CAMERA (the plan's D4b ruling): a flat kind is drawn by its own pass, at rest, under a
 // camera that maps its extent to the held rect — `heldCamera` — no per-kind pose code. A kind with height
@@ -77,21 +79,44 @@ export const isNarrow = (vp: HeldViewport): boolean => vp.width < HOLD.narrow;
  * a quarter of its width left of the middle) — or, `face` → 1, the LEFT (D3t-b: the notebook reads page by page; between, the view
  * glides). That decision is the PHONE'S, on `HOLD`'s band whatever the host reserves, so a kind that asks it alone
  * (`readingTarget(extent, vp, true).single`) agrees with the hand; the reserves size the page it shows.
+ * `cap` (petition I55, 2026-11-19 — the print that opens): the most CSS px per object unit the fit may reach —
+ * the extent's own pixels at the window's density (`naturalCap`), so what opening does by itself never draws a picture past 1:1
+ * device pixels: a small one opens at its own size, centred in the box. It bounds the fit wherever 3× does, the one-page decision
+ * included (a kind with its own pixels that asks `.single` alone passes its cap too). Absent, or not a positive number: 3× alone —
+ * every caller before it, number for number.
  */
-export function readingTarget(extent: ObjectRect, vp: HeldViewport, spread = false, face = 0, reserves: HoldReserves = HOLD): ReadingTarget {
+export function readingTarget(extent: ObjectRect, vp: HeldViewport, spread = false, face = 0, reserves: HoldReserves = HOLD, cap = Number.POSITIVE_INFINITY): ReadingTarget {
   const narrow = isNarrow(vp);
   const m = narrow ? HOLD.marginPhone : HOLD.margin;
   const top = narrow ? HOLD.topPhone : reserves.top;
   const boxW = Math.max(40, vp.width - 2 * m);
   const boxH = Math.max(40, vp.height - top - reserves.band);
-  let s = Math.min(boxW / extent.w, boxH / extent.h, HOLD.max);
+  // never past 3× — nor past the extent's own pixels (I55); an absent cap leaves HOLD.max itself, so every min below is as it was
+  const max = cap > 0 ? Math.min(HOLD.max, cap) : HOLD.max;
+  let s = Math.min(boxW / extent.w, boxH / extent.h, max);
   let single = false;
   if (spread && narrow && vp.width < vp.height * 0.85) {
     const own = Math.max(40, vp.height - top - HOLD.band);
-    const s0 = Math.min(boxW / extent.w, own / extent.h, HOLD.max);
-    if (Math.min(boxW / (extent.w / 2), own / extent.h, HOLD.max) > s0 * 1.3) { s = Math.min(boxW / (extent.w / 2), boxH / extent.h, HOLD.max); single = true; }
+    const s0 = Math.min(boxW / extent.w, own / extent.h, max);
+    if (Math.min(boxW / (extent.w / 2), own / extent.h, max) > s0 * 1.3) { s = Math.min(boxW / (extent.w / 2), boxH / extent.h, max); single = true; }
   }
   return { cx: vp.width / 2 - (single ? (extent.w / 4) * s * (1 - 2 * face) : 0), cy: top + boxH / 2, s, single };
+}
+
+/**
+ * THE CAP (petition I55, 2026-11-19 — `OpenBinding.natural`): the most CSS px per object unit an open extent may be read at so that
+ * its own pixels — `natural`, the device pixels its content holds across the WHOLE extent (a picture's width × height when it fills
+ * it) — are never drawn past 1:1 device pixels at `dpr`: min(natural.w / (extent.w · dpr), natural.h / (extent.h · dpr)), handed to
+ * `readingTarget` as its `cap`. Infinity — no cap, the fit alone — when `natural` is absent or either side of it or of the extent is not
+ * a positive finite number (a print with no picture size, 0 × 0); a `dpr` that is not a positive finite number reads 1 (the
+ * reflector's own fallback).
+ */
+export function naturalCap(extent: { readonly w: number; readonly h: number }, natural: { readonly w: number; readonly h: number } | undefined, dpr = 1): number {
+  if (typeof natural !== "object" || natural === null) return Number.POSITIVE_INFINITY;
+  const ok = (v: number): boolean => Number.isFinite(v) && v > 0;   // (Number.isFinite never coerces: a string or undefined fails)
+  if (!ok(natural.w) || !ok(natural.h) || !ok(extent.w) || !ok(extent.h)) return Number.POSITIVE_INFINITY;
+  const d = ok(dpr) ? dpr : 1;
+  return Math.min(natural.w / (extent.w * d), natural.h / (extent.h * d));
 }
 
 /** Where the extent lies on screen at rest, under the desk's camera: its centre (CSS px), the scale (the zoom) and the object's turn. */

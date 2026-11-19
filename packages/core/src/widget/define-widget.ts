@@ -202,7 +202,9 @@ export interface WidgetDef {
    * An object that OPENS (design-015 §8, D4b): its kind declares an `open` binding — an open
    * extent, an open motion, the held bar's tools — and `ops.open(entity)` picks it up into the
    * hand (the double-tap, ⏎). A kind without one is refused by the op: a note is written where it
-   * lies, a mini mat is entered, a print has nothing to open. Refused without an `object` binding.
+   * lies, a mini mat is entered. Refused without an `object` binding. (Corrected 2026-11-19, petition
+   * I55: this said "a print has nothing to open"; the print OPENS now, the
+   * smallest flat opening — its own rect, never past its picture's own pixels.)
    */
   readonly openable?: boolean;
   /**
