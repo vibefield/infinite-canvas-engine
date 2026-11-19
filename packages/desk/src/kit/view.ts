@@ -28,7 +28,10 @@ export interface MatPass {
    * `@group(0) @binding(0)` as `u` (`kitWgsl`'s `view` piece). A kind never writes it and never keeps a copy.
    */
   readonly view: GPUBuffer;
-  /** The slot's animated gobo silhouette (r8, PLATE_SIZE²) — what an object's shadow and dapple sample. */
+  /**
+   * The slot's animated gobo silhouette (r8, PLATE_SIZE²) — what an object's shadow and dapple sample, through the kit's light
+   * (`sample_gobo`, `lit_gobo`). One level under the cone; under soft light (I56) the view of its four-level chain.
+   */
   readonly silhouette: GPUTextureView;
   /** The blue-noise tile (NOISE_SIZE², shared by every slot). */
   readonly noiseTexture: GPUTexture;

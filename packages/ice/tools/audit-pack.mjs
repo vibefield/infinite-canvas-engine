@@ -34,6 +34,10 @@
  *  11. THE KIT CARRIES NO HOST HALF OF THE LIVE FACE (petition I51, M24 LT4): `/desk/kit` — what a kind is handed whole — neither
  *      exports `createLiveTexture` / `stillLive` nor carries their code anywhere in its chunk closure; `/desk` (the host's entry, where
  *      `deskLayer` is) exports both, and the kit still exports what a kind reads (`LIVE`, `createSight`, `liveDepth`).
+ *  12. THE LIGHT'S TEXT IS ONE ACROSS THE ENTRIES (petition I56): the host chooses it on `/desk` (`setLightText`), and a kind
+ *      composes the light through `/desk/kit`. Row 10 composed it through the KIT's entry, so `/desk` must now refuse another text
+ *      and still say the cone's: one state in one shared chunk, never one per entry. `/desk/kit` exports no `setLightText` (the
+ *      choice is the host's, never a kind's).
  *
  * Run: `node packages/ice/tools/audit-pack.mjs` (`pnpm --filter ./packages/ice pack:audit` builds first).
  */
@@ -320,7 +324,28 @@ say(
     : liveProblems.slice(0, 6).join(" · "),
 );
 
-console.log("[pack-audit] @vibecook/ice — design-013 D-B8.1 · design-015 §11.5 · D7 · design-016 K4b · I31 · I51");
+// --- 12. the light's text is one across the entries (petition I56) ---------------------------------------------------------
+// row 10 asked `/desk/kit`'s `shaderText` for the light's file, which composed this process's light from the cone's text. If
+// `/desk` then takes "soft", its state is not the kit's: a host's choice would never reach its kinds.
+const lightProblems = [];
+if (typeof deskDist.setLightText !== "function" || typeof deskDist.lightText !== "function") {
+  lightProblems.push("./desk does not export setLightText and lightText");
+} else {
+  let refused = false;
+  try { deskDist.setLightText("soft"); } catch { refused = true; }
+  if (!refused) lightProblems.push("./desk took another text after ./desk/kit composed the light: the entries hold two states");
+  if (deskDist.lightText() !== "cone") lightProblems.push(`./desk says the text is "${deskDist.lightText()}" after the kit composed the cone's`);
+}
+if (kitDist.setLightText !== undefined) lightProblems.push("./desk/kit exports setLightText");
+say(
+  lightProblems.length === 0,
+  "the light's text is ONE across the entries",
+  lightProblems.length === 0
+    ? "./desk refuses another text once ./desk/kit has composed the light, and both say the cone's; ./desk/kit exports no setLightText — petition I56"
+    : lightProblems.join(" · "),
+);
+
+console.log("[pack-audit] @vibecook/ice — design-013 D-B8.1 · design-015 §11.5 · D7 · design-016 K4b · I31 · I51 · I56");
 for (const r of rows) console.log(`[pack-audit] ${r}`);
 console.log(fail.length === 0 ? "[pack-audit] ALL PASS" : `[pack-audit] ${fail.length} FAILED`);
 process.exit(fail.length === 0 ? 0 : 1);

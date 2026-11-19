@@ -138,9 +138,10 @@ export function createAmbient(opts: AmbientOptions = {}): Ambient {
         noise = [random(), random()];
       }
       phase = speed >= 1 ? "live" : speed > 0 ? "easing" : "still";
-      return { frame: { time, goboTime, goboMatrix, noise }, live: speed > 0 || tiltLive };
+      // the follower's own value rides the frame beside the matrix it tilts: soft light travels by it (I56; mat/soft.ts)
+      return { frame: { time, goboTime, goboMatrix, noise, tilt: [tilt.value[0], tilt.value[1]] }, live: speed > 0 || tiltLive };
     },
-    frame: () => (pinned !== null ? pinnedFrame(pinned) : { time, goboTime, goboMatrix, noise }),
+    frame: () => (pinned !== null ? pinnedFrame(pinned) : { time, goboTime, goboMatrix, noise, tilt: [tilt.value[0], tilt.value[1]] }),
     pin(frame) { pinned = frame; },
     configure(o) {
       if (o.mode !== undefined) mode = o.mode;

@@ -15,6 +15,7 @@ import { PORTAL_CHAIN_TYPE, portalValues, type Presentation } from "../nav/porta
 import type { CameraState } from "../nav/flight";
 import { HERO_PROJECTOR, type Mat4, projectorMatrix } from "./projector";
 import { DAY_LIGHT, lightValues, type MatLight } from "./night";
+import { SOFT_LIGHT, type SoftLight, softValues } from "./soft";
 
 /**
  * THE SLOT'S VIEW BLOCK — the kit's `view` piece (`kitWgsl([..., "view"])`): one per slot, written by the mat once a frame and
@@ -79,7 +80,21 @@ import { DAY_LIGHT, lightValues, type MatLight } from "./night";
  *   with no handover, so the mat uses the same shader path as a world-space lamp;
  * - `light2` — the second light a flight hands the slot to (x, y, z as `light`'s); w unused;
  * - `presence` — the SLOT's presentation opacity (x — 0..1: what the mat itself is drawn at; `view.w` is its objects'); y, z,
- *   w unused.
+ *   w unused;
+ * - `soft` — SOFT LIGHT (mat/soft.ts; petition I56): on (x — 0 = the cone, 1 = soft light), mirrored (y — 0/1), a layer's
+ *   sway (z — plate texels) and the discs' scale as the night comes on (w): `soft_gobo`, `shade_mat`. Zero under the cone,
+ *   as the five records after it are;
+ * - `softNear` — the near layer: the plate's centre (x, y — fractions of the view), its side (z — × the view's longer side)
+ *   and its turn (w — radians);
+ * - `softFar` — the far layer, as `softNear`'s;
+ * - `softDisc` — the blur discs' radii, near and far (x, y — plate texels), and the layers' opacities, near and far (z, w —
+ *   0..1);
+ * - `softShade` — the shade at its deepest (xyz — a LINEAR factor per channel on the albedo's light); w unused;
+ * - `softTilt` — the pointer's tilt as the follower has it (x, y — −1..1; 0 for a still) and the layers' travel per unit of it,
+ *   near and far (z, w — CSS px);
+ * - `night2` — the night's second record (mat/night.ts): the contrast exponent on the reported luminance (x — 1 = none; 0, an
+ *   unset block, reads as 1) and how far the MAT's night is taken from what its day shows (y — 0..1): `night_mat`,
+ *   `mat_colour`; z, w unused.
  */
 export const MatUniforms = defineStruct("MatUniforms", [
   ["cam", "vec4f"],
@@ -116,6 +131,13 @@ export const MatUniforms = defineStruct("MatUniforms", [
   ["light", "vec4f"],
   ["light2", "vec4f"],
   ["presence", "vec4f"],
+  ["soft", "vec4f"],
+  ["softNear", "vec4f"],
+  ["softFar", "vec4f"],
+  ["softDisc", "vec4f"],
+  ["softShade", "vec4f"],
+  ["softTilt", "vec4f"],
+  ["night2", "vec4f"],
 ] as const);
 
 export type PlateName = "c" | "b";
@@ -172,6 +194,18 @@ export interface MatConfig {
     readonly sharp: number;
     readonly soft: number;
     readonly plate: PlateName;
+    /**
+     * The gobo's model (petition I56). Absent or "cone": the projector — the plate thrown from a point, blurred by depth, the
+     * reference's grade. "soft": soft light (mat/soft.ts) — the plate laid flat over the lamp's frame in two layers, each read
+     * through a disc, the shade tinted by the sky. Under "soft" the five numbers above from `blurTexels` to `soft` are not read;
+     * `opacity`, `space` and `plate` are. Soft light is drawn only by the SOFT LIGHT'S TEXT — `setLightText("soft")` before the
+     * desk mounts (shaders.ts); under the cone's text this key draws the cone, and the mat says so once.
+     */
+    readonly model?: "cone" | "soft";
+    /** Soft light's numbers; `SOFT_LIGHT` when absent. Read only under `model: "soft"`. */
+    readonly softLight?: SoftLight;
+    /** The wind's strength for this slot, in place of the theme's own for its plate (0 = still leaves). Both models. */
+    readonly strength?: number;
   };
   readonly plane: { readonly metresPerUnit: number; readonly originX: number; readonly originZ: number; readonly deskY: number };
   /** The rulers (RULER.md); off unless a host prints them on this slot. */
@@ -198,6 +232,11 @@ export interface MatFrame {
   readonly goboMatrix: Mat4;
   /** Blue-noise UV offset for this frame — random while animating, fixed for a still. */
   readonly noise: readonly [number, number];
+  /**
+   * The pointer's tilt as the follower has it (mat/tilt.ts), each −1..1 — what the cone's `goboMatrix` is tilted by, handed
+   * as it is for soft light's parallax. Absent = none: a still, a pinned frame, a host that drives no follower.
+   */
+  readonly tilt?: readonly [number, number];
 }
 
 export const DEFAULT_MAT_CONFIG: MatConfig = {
@@ -243,6 +282,7 @@ export function matUniformValues(view: View & { readonly dpr: number }, fadeIn: 
     noise: [f.noise[0], f.noise[1], 1 / NOISE_SIZE, 0],
     wind: [f.goboTime, plateStrength, cfg.gobo.space === "viewport" ? 1 : 0, 0],
     ...lightValues(light),
+    ...softValues(cfg.gobo.model === "soft", cfg.gobo.softLight ?? SOFT_LIGHT, f.tilt),
     ...portalValues(present),
     ruler: [r.on ? 1 : 0, r.margin, r.band, r.line],
     rulerText: [r.text.top, r.text.gap, r.tick[2], glyphs.scale],

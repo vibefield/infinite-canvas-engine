@@ -21,10 +21,18 @@
 //
 // Until a host uploads a plate the gobo reads a 1×1 white plate — a lit mat,
 // never a blank — and the blue noise is a 1×1 mid-grey (one blur angle).
+//
+// SOFT LIGHT (petition I56; mat/soft.ts): a wind target is a texture of FOUR levels (512 … 64). The wind pass draws level
+// 0, as it always did. Under the cone that is all a slot reads and all it is handed: `silhouette` is a view of level 0
+// alone, so nothing can sample a level nobody drew. Under `gobo.model: "soft"` the slot's `silhouette` is the whole chain,
+// and levels 1–3 are drawn after the wind pass whenever the silhouette is newer than them — three small passes, only
+// while the wind blows. Soft light is drawn only by the SOFT LIGHT'S TEXT (shaders.ts `setLightText`): a mat compiled
+// from the cone's text draws the cone whatever its config asks, and says so once.
 
 import { BLEND_OVER, bindGroup, bindLayout, renderPipeline, uniformBuffer } from "../engine/pipeline";
 import { compile, compose } from "../engine/shader";
-import { beginPass, Target } from "../engine/target";
+import { beginPass } from "../engine/target";
+import { mipsInto } from "../kit/mips";
 import type { FadeIn, View } from "../lattice/lod";
 import type { Presentation } from "../nav/portal";
 import { MAT_GRID } from "../theme";
@@ -35,6 +43,8 @@ import type { MatShaders } from "./shaders";
 import { type MatRegion, type RulerRegions, rulerRegions } from "./ruler-regions";
 
 const PLATE_NAMES: readonly PlateName[] = ["c", "b"];
+/** A wind target's levels: the silhouette, and the three under it that soft light's disc reads (mat.wgsl `soft_layer`). */
+const WIND_LEVELS = 4;
 
 /** What every slot shares: the pipelines, the samplers, and the assets (versioned, so a slot rebinds when a plate lands). */
 interface MatShared {
@@ -56,10 +66,22 @@ interface MatShared {
   readonly winds: Partial<Record<PlateName, Wind>>;
   /** The frame `newFrame` counts (the ground's `prepareFrame`, once a frame) — what tells a key drawn THIS frame from a stale one. */
   frame: number;
+  /** Was the mat compiled from the soft light's text (it defines `soft_gobo`)? Only then can a slot draw `model: "soft"`. */
+  readonly softText: boolean;
+  /** Said once each: a config asked for soft light, a light for a contrast or `fromDay`, of a mat on the cone's text. */
+  warned: { model: boolean; night: boolean };
 }
 
-/** A wind target and what it holds: the key it was drawn at (NaN: never) and the frame that drew it. */
-interface Wind { readonly target: Target; key: number; frame: number }
+/**
+ * A wind target and what it holds: the key its silhouette (level 0) was drawn at (NaN: never), the frame that drew it, and the
+ * key its chain (levels 1–3) was drawn from (NaN: never) — the chain is made only for a slot under soft light.
+ */
+interface Wind { readonly texture: GPUTexture; readonly level0: GPUTextureView; readonly chain: GPUTextureView; key: number; frame: number; mips: number }
+
+function makeWind(device: GPUDevice, label: string): Wind {
+  const texture = device.createTexture({ label, size: [PLATE_SIZE, PLATE_SIZE], mipLevelCount: WIND_LEVELS, format: "r8unorm", usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.TEXTURE_BINDING });
+  return { texture, level0: texture.createView({ label: `${label} level 0`, baseMipLevel: 0, mipLevelCount: 1 }), chain: texture.createView({ label: `${label} chain` }), key: Number.NaN, frame: -1, mips: Number.NaN };
+}
 
 export class CuttingMat implements MatPass {
   readonly name = "mat/mat";
@@ -73,6 +95,10 @@ export class CuttingMat implements MatPass {
   private matGroup!: GPUBindGroup;
   private bound = -1;
   private boundWind: Wind | null = null;
+  /** Is this slot under soft light (`gobo.model`)? What `silhouette` hands: the chain, or level 0 alone. */
+  private soft = false;
+  private boundSoft = false;
+  private chainRuns = 0;
   /** Turns over whenever this slot's bind groups are made again — a shared asset landed, or the slot samples another silhouette. */
   private assets = 0;
   private windRuns = 0;
@@ -133,6 +159,7 @@ export class CuttingMat implements MatPass {
       glyphs: empty("mat/glyphs"), glyphMeta: NO_GLYPHS,
       loaded: { c: false, b: false, noise: false, glyphs: false },
       version: 0, slots: 0, winds: {}, frame: 0,
+      softText: src.modules.some((m) => m.text.includes("\nfn soft_gobo(")), warned: { model: false, night: false },
     };
     return new CuttingMat(device, shared);
   }
@@ -144,8 +171,11 @@ export class CuttingMat implements MatPass {
   get loaded(): { readonly c: boolean; readonly b: boolean; readonly noise: boolean; readonly glyphs: boolean } { return this.shared.loaded; }
   /** What the pass knows about the glyph atlas it samples (RULER.md). */
   get glyphs(): GlyphAtlasMeta { return this.shared.glyphMeta; }
-  /** This slot's animated silhouette — the wind target the mat samples; the paper pass (STICKY.md) samples the same, so a note takes the mat's dapple. */
-  get silhouette(): GPUTextureView { return this.wind.target.view; }
+  /**
+   * This slot's animated silhouette — the wind target the mat samples; the paper pass (STICKY.md) samples the same, so a note takes
+   * the mat's dapple. A view of level 0 alone under the cone; under soft light the whole chain, its lower levels drawn (I56).
+   */
+  get silhouette(): GPUTextureView { return this.soft ? this.wind.chain : this.wind.level0; }
   /** The slot's ONE VIEW BLOCK (K4a, design-016 K-L3): the uniforms this mat writes once a frame, which every kind in the slot binds. */
   get view(): GPUBuffer { return this.uniformBuf; }
   /** The glyph atlas as uploaded (a 1×1 empty cell until a host uploads one) — the mini mat pass prints with it. */
@@ -165,7 +195,7 @@ export class CuttingMat implements MatPass {
     const s = this.shared;
     const made = s.winds[plate];
     if (made) return made;
-    const w: Wind = { target: new Target(this.device, { format: "r8unorm", label: `mat/wind ${plate}` }, PLATE_SIZE, PLATE_SIZE), key: Number.NaN, frame: -1 };
+    const w = makeWind(this.device, `mat/wind ${plate}`);
     s.winds[plate] = w;
     return w;
   }
@@ -180,14 +210,15 @@ export class CuttingMat implements MatPass {
   /** (Re)build this slot's bind groups against the shared assets' current version. */
   private rebind(): void {
     const s = this.shared;
-    if (this.bound === s.version && this.boundWind === this.wind) return;
+    if (this.bound === s.version && this.boundWind === this.wind && this.boundSoft === this.soft) return;
     if (this.bound !== s.version) {
       const windGroup = (name: PlateName) => bindGroup(this.device, s.windLayout, [this.uniformBuf, s.plates[name].createView()], `mat/wind ${name}`);
       this.windGroups = { c: windGroup("c"), b: windGroup("b") };
     }
-    this.matGroup = bindGroup(this.device, s.matLayout, [this.uniformBuf, this.wind.target.view, s.clampSampler, s.noise.createView(), s.repeatSampler, s.glyphs.createView()], "mat/mat");
+    this.matGroup = bindGroup(this.device, s.matLayout, [this.uniformBuf, this.silhouette, s.clampSampler, s.noise.createView(), s.repeatSampler, s.glyphs.createView()], "mat/mat");
     this.bound = s.version;
     this.boundWind = this.wind;
+    this.boundSoft = this.soft;
     this.assets += 1;
   }
 
@@ -231,6 +262,8 @@ export class CuttingMat implements MatPass {
   }
 
   get windPasses(): number { return this.windRuns; }
+  /** How many times this slot drew a silhouette's chain (levels 1–3) — never under the cone. */
+  get chainPasses(): number { return this.chainRuns; }
 
   /**
    * Upload the uniforms (under `light` — the theme's Sun or Moon, mat/night.ts — through the lamp `lit`
@@ -240,8 +273,20 @@ export class CuttingMat implements MatPass {
   prepare(encoder: GPUCommandEncoder, view: View & { readonly dpr: number }, fadeIn: FadeIn, cfg: MatConfig, frame: MatFrame, present?: Presentation, light: MatLight = DAY_LIGHT, lit?: SlotLight): boolean {
     this.ruler = cfg.ruler.on ? rulerRegions(view, cfg.ruler, this.ruler) : null;
     const plate = PLATE_NAMES.includes(cfg.gobo.plate) ? cfg.gobo.plate : "c";
-    const strength = MAT_GRID.gobo.plates[plate].strength;
-    this.uniforms.set(matUniformValues(view, fadeIn, { ...cfg, gobo: { ...cfg.gobo, plate } }, frame, strength, present, light, this.shared.glyphMeta, lit));
+    // the wind's strength: the slot's own when its config states one (I56), else the theme's for its plate
+    const strength = cfg.gobo.strength ?? MAT_GRID.gobo.plates[plate].strength;
+    // soft light reads the silhouette's chain; the cone, level 0 alone (the slot rebinds when its model changes). The cone's
+    // text can draw neither soft light nor the night's two numbers: the block then says the cone, so the mat and every kind
+    // agree, and the host is told once of each
+    const asked = cfg.gobo.model === "soft";
+    this.soft = asked && this.shared.softText;
+    if (!this.shared.softText) {
+      const said = this.shared.warned;
+      const fix = `needs the soft light's text: call setLightText("soft") before the first desk mounts (shaders.ts)`;
+      if (asked && !said.model) { said.model = true; console.warn(`[ice] desk: gobo.model "soft" ${fix}. The cone is drawn`); }
+      if (!said.night && ((light.contrast ?? 1) !== 1 || (light.fromDay ?? 0) !== 0)) { said.night = true; console.warn(`[ice] desk: a night's contrast or fromDay ${fix}. The night is drawn without them`); }
+    }
+    this.uniforms.set(matUniformValues(view, fadeIn, { ...cfg, gobo: { ...cfg.gobo, plate, model: this.soft ? "soft" : "cone" } }, frame, strength, present, light, this.shared.glyphMeta, lit));
     const bytes = this.uniforms.view();
     let same = this.viewSent;
     for (let i = 0; same && i < bytes.byteLength; i++) same = bytes[i] === this.sentView[i];
@@ -258,21 +303,31 @@ export class CuttingMat implements MatPass {
     const common = this.windOf(plate);
     let w = common;
     if (common.key !== key && common.frame === this.shared.frame) {
-      this.own ??= { target: new Target(this.device, { format: "r8unorm", label: "mat/wind own" }, PLATE_SIZE, PLATE_SIZE), key: Number.NaN, frame: -1 };
+      this.own ??= makeWind(this.device, "mat/wind own");
       w = this.own;
     }
     this.wind = w;
     this.rebind();
-    if (w.key === key) return false;
-    const pass = beginPass(encoder, w.target.view, [1, 0, 0, 1], "mat/wind");
-    pass.setPipeline(this.shared.windPipeline);
-    pass.setBindGroup(0, this.windGroups[plate]);
-    pass.draw(3);
-    pass.end();
-    w.key = key;
-    w.frame = this.shared.frame;
-    this.windRuns += 1;
-    return true;
+    let ran = false;
+    if (w.key !== key) {
+      const pass = beginPass(encoder, w.level0, [1, 0, 0, 1], "mat/wind");
+      pass.setPipeline(this.shared.windPipeline);
+      pass.setBindGroup(0, this.windGroups[plate]);
+      pass.draw(3);
+      pass.end();
+      w.key = key;
+      w.frame = this.shared.frame;
+      this.windRuns += 1;
+      ran = true;
+    }
+    // soft light's disc reads the levels under the silhouette: drawn when it is newer than they are — after a wind pass, or
+    // the first time a slot under soft light meets a silhouette the cone drew
+    if (this.soft && w.mips !== w.key) {
+      mipsInto(this.device, encoder, w.texture, 1, WIND_LEVELS - 1);
+      w.mips = w.key;
+      this.chainRuns += 1;
+    }
+    return ran;
   }
 
   draw(pass: GPURenderPassEncoder): void {
@@ -314,11 +369,11 @@ export class CuttingMat implements MatPass {
 
   /** This slot's buffers; the shared plates go with the last slot standing. */
   dispose(): void {
-    this.uniformBuf.destroy(); this.own?.target.dispose();
+    this.uniformBuf.destroy(); this.own?.texture.destroy();
     const s = this.shared;
     s.slots -= 1;
     if (s.slots === 0) {
-      for (const n of PLATE_NAMES) { s.plates[n].destroy(); s.winds[n]?.target.dispose(); }
+      for (const n of PLATE_NAMES) { s.plates[n].destroy(); s.winds[n]?.texture.destroy(); }
       s.noise.destroy(); s.glyphs.destroy();
     }
   }

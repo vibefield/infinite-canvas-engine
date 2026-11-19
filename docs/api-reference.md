@@ -438,7 +438,8 @@ LINEAR.
   the slot is lit by); the day's chain `shade_mat(u, albedo, gobo)` (sRGB in, sRGB out — exactly `albedo` where lit) and the
   night's `night_mat(u, albedo, gobo, noise)` (LINEAR in, sRGB out); `mat_colour`, the MAT's (one albedo into both chains — a
   kind with an sRGB colour splits it as the book's `nb_colour` does); the lattice's `line_coverage`, `grid2`, `line_weight` and
-  `mat_albedo`.
+  `mat_albedo`. Under the soft light's text (petition I56, below) the same names, with `soft_layer` and `soft_gobo` beside
+  them and the cone's own four as `cone_project_gobo`, `cone_shade_mat`, `cone_night_mat` and `cone_mat_colour`.
 - **`ruler`** (mat/ruler.wgsl) — `ruler_ink(u, screen, frag, glyph_tex, samp)` → the rulers' ink coverage, 0..1 (the frame, the
   ticks, the numerals); `ruler_band` and the label arithmetic (`ruler_label`, `ruler_label_len` …).
 - **`book`** (kit/book.wgsl over `NbUniforms` and `NbBook`, after `light`) — the 3D kit, a world with HEIGHT (z up off the
@@ -453,6 +454,30 @@ LINEAR.
   field at its alignment, the struct rounded up to 16 so one record is a legal uniform member and storage element alike.
 
 Enabled cutting-mat rulers draw above the slot's objects and nested canvases, below selection marks and tray chrome. Their edge strips reuse the mat pipeline, uniforms and lighting; the background and foreground cover disjoint pixels, so fades do not double-blend and the mat has no extra fragment shading. Bare tray and reading-hand slots do not draw rulers.
+
+**Soft light, and the night's two numbers (petition I56)** — the gobo has two MODELS, `MatConfig.gobo.model`. `"cone"` (and
+absent) is the plate thrown from the lamp in perspective and blurred by depth, graded as the reference grades it. `"soft"` lays
+the plate FLAT over the lamp's frame, as a plant between a window and a wall is seen, in two layers (`gobo.softLight`, a
+`SoftLight`; `SOFT_LIGHT` when absent): each `SoftLayer` states its centre, side, turn, blur disc, opacity and parallax, and the
+light its `mirror`, its `sway`, its `shade` (the linear RGB the deepest shade multiplies the albedo's light by; `softShade(depth,
+sky, sun)` makes one) and its `nightDisc`. A layer is read through a 12-tap disc on the silhouette's mip chain, which the mat draws
+only under this model and only when the silhouette moved; lit stays exactly the albedo. `gobo.strength` states the wind's strength
+for the slot (absent: the theme's for its plate; 0 stills the silhouette). All of it is live through `configureMat`. The night
+takes two more numbers, on `MatLight` and `NightSpec`: `contrast`, the exponent the eye's reported luminance is raised to (1 and
+absent: none), and `fromDay`, 0..1, how far the MAT's night is taken from what its day shows; a `NightSpec` may also state its
+`exposure` and `adaptation` in place of the fit. A reading light lerps both.
+**The light's two texts.** Soft light and the two numbers are drawn by a second TEXT of the light, never by a branch in
+`mat/mat.wgsl`: a branch there moved a last digit in frames that never took it (the device's compiler reorders the chains' float
+arithmetic by what stands around it). `setLightText("soft")` is the browser host's door: called ONCE, before the first desk mounts,
+it makes the generated module hand `mat/mat.wgsl` with `mat/soft.wgsl` laid after it to every program that composes the light (the
+mat, the tray, every kind, a plugin's through `kitWgsl`); `lightText()` reads the text in force. A page has ONE light text: once
+any program has composed the light, a call that would change it throws. The choice is per realm: a worker, an iframe or a second
+renderer that composes WGSL calls it itself. A host that composes from the files on disk (a Node oracle) uses the
+text-composition door, `softLightWgsl(mat, soft)`, with `SOFT_LIGHT_NAMES` the four definitions it renames `cone_…`. Unasked, a
+host compiles what it always compiled, and no pixel of it moves. Under the soft light's text the cone is still a config away
+(`model: "cone"`), drawn by the same functions inside another text: a shaded pixel's last digit may differ from the cone's own
+text (measured on one device: 1 of 255, in at most three bytes of a 600 × 400 frame). Under the cone's text, `model: "soft"`
+draws the cone and a night's `contrast` and `fromDay` are not applied; the mat warns once of each.
 
 **The host's chrome on the desk (petitions I20, I21, I26)** — beside `grid` (the root's mat config — its rulers, its gobo; `configureMat`
 live), `deskLayer` takes the numbers a host's own chrome sets, read at the mount, each the desk's own when absent: **`hold: { top?,
