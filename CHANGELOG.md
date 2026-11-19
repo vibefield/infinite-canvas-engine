@@ -6,6 +6,13 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.19.0] — 2026-11-19
+
+**The print opens (petition I55), released on `latest`.** Double-click or ⏎ on a print (`desk.photo`) picks it up into
+the hand, and what opening does by itself never draws a picture past its own pixels: a kind's `open.natural` gives
+`readingTarget` a trailing `cap` (`naturalCap`). Additive: a kind that says nothing, and every caller that passes no cap,
+keeps today's numbers exactly.
+
 ### Added
 
 <!-- petition I55 — the print opens, never past its own pixels (2026-11-19; VibeField) -->

@@ -18,9 +18,9 @@ an archetype ECS with reactivity and opt-in Loro-CRDT durable + presence layers.
 > `./desk`, `./desk/engine`, `./desk/objects` are new. The full list is the changelog's
 > `### Removed` under the 0.14.0 release.
 
-**0.18.0** adds the pegboard's set and its hidden types (petition I54): `handle.tray.only(types)`
-lays a set of object types across their categories, and `handle.tray.hide(types)` keeps types off
-the board while their objects on the desk draw and work as before.
+**0.19.0** opens the print (petition I55): double-click or ⏎ picks a print up into the hand, and a
+kind's `open.natural` caps the opening's fit at its content's own pixels, so a small picture opens
+at 1:1 and a large one fits the view.
 
 ```sh
 pnpm add @vibecook/ice react react-dom     # react/react-dom are optional peers
