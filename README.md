@@ -139,7 +139,10 @@ engine.ops.enterContainer(mat);                  // the design-006 flight; camer
 
 Run the showcase: `pnpm --filter desk dev` (`?room=x` shares a desk between two
 tabs over BroadcastChannel; `&relay=ws://localhost:9301` after `pnpm relay`
-shares it between machines; the backtick opens the dev panel; `u` prints the rulers or not).
+shares it between two browsers of one machine, and between machines after
+`RELAY_HOST=0.0.0.0 pnpm relay`, the other machine's `&relay=` naming this one's
+address: the relay listens on its own machine alone unless a host is named; the
+backtick opens the dev panel; `u` prints the rulers or not).
 
 ## Limits
 

@@ -33,6 +33,15 @@ All notable changes to ICE are documented here. The format follows
   asks for soft light draws the cone, and a night's `contrast` and `fromDay` are not applied; the mat warns once of each.
   Known limit: a paper sheet at `chain` 1 does not take the `fromDay` step.
 
+### Changed
+
+- **`pnpm relay` listens on its own machine alone.** `scripts/ws-relay.mjs` binds `127.0.0.1`; it bound every interface, so a
+  relay started for two tabs, or by `apps/desk/test/relay.test.ts` inside `pnpm run ci`, was open to whatever network the
+  machine was on. A DOCUMENTED DEMO'S DEFAULT CHANGES: sharing a desk between two machines now names the reach it wants,
+  `RELAY_HOST=0.0.0.0 pnpm relay`, and the other machine's `&relay=` names this one's address. An empty `RELAY_HOST` is the
+  default. The "listening" line says the address bound, after the `ws://localhost:<port>` a harness reads the port from.
+  Repository tooling: nothing in the `@vibecook/ice` package changes.
+
 ## [0.19.0] — 2026-11-19
 
 **The print opens (petition I55), released on `latest`.** Double-click or ⏎ on a print (`desk.photo`) picks it up into

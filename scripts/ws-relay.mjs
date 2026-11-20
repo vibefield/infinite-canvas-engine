@@ -9,15 +9,22 @@
  * history — a late joiner catches up through the M9 hello/snapshot handshake,
  * not the relay. `PORT` env overrides the 9301 default.
  *
- *   node scripts/ws-relay.mjs            # ws://localhost:9301/<room>
+ * THE LISTENER IS ITS OWN MACHINE'S ALONE unless a host is named: it binds 127.0.0.1, so a relay started for two
+ * tabs, or by a test, is not open to whatever network the machine is on. `RELAY_HOST` names the address to bind
+ * instead (`0.0.0.0` is every interface: the two-machine demo); an empty one is the default. The name is not
+ * `HOST`: shells and toolchains export one of their own, and a stray one would name a place that cannot be bound.
+ *
+ *   node scripts/ws-relay.mjs                      # ws://localhost:9301/<room>, this machine alone
  *   PORT=9999 node scripts/ws-relay.mjs
+ *   RELAY_HOST=0.0.0.0 node scripts/ws-relay.mjs   # every interface: another machine joins by this one's address
  */
 import { WebSocketServer } from "ws";
 
 const PORT = Number(process.env.PORT ?? 9301);
+const HOST = process.env.RELAY_HOST || "127.0.0.1";
 const rooms = new Map(); // room name → Set<WebSocket>
 
-const wss = new WebSocketServer({ port: PORT });
+const wss = new WebSocketServer({ port: PORT, host: HOST });
 
 wss.on("connection", (socket, req) => {
   const rawRoom = (req.url ?? "/").split("?")[0].replace(/^\/+/, "");
@@ -55,9 +62,15 @@ wss.on("connection", (socket, req) => {
 });
 
 // "listening" is said once the port is BOUND, naming the port bound — `PORT=0` asks the OS for a free one, so a harness reads the
-// port back from this line and never probes one free and loses it before the bind (K-H: rig:collab's relay-port race)
+// port back from this line and never probes one free and loses it before the bind (K-H: rig:collab's relay-port race).
+// The line says the address BOUND, and "localhost" only where the loopback answers: an address named on purpose is said
+// as it is (an IPv6 one in brackets), so the line never points at a place the relay does not listen.
 wss.on("listening", () => {
-  console.log(`ws-relay listening on ws://localhost:${wss.address().port}  (rooms via URL path; set PORT to override)`);
+  const { address, port } = wss.address();
+  let at = address;
+  if (address === "127.0.0.1" || address === "0.0.0.0" || address === "::") at = "localhost";
+  else if (address.includes(":")) at = `[${address}]`;
+  console.log(`ws-relay listening on ws://${at}:${port}  (bound to ${address}; rooms via URL path; PORT and RELAY_HOST override)`);
 });
 wss.on("error", (e) => {
   console.error(`ws-relay: ${e.message}`);
