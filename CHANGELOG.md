@@ -6,6 +6,15 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+### Changed
+
+- **The rigs' browser can be named.** `apps/desk/scripts/cdp.mjs` launched one constant binary, the Google Chrome
+  application; `DESK_CHROME` now names another to drive (a Chromium build that takes the same switches), and today's
+  path stays the default (`chromeBinary`, `DEFAULT_CHROME`). No rig changes by default. Which build a rig's timing and
+  capture rows hold on is not decided by this: a number or a picture taken under one build is that build's.
+  `apps/desk/test/cdp-binary.test.ts` reads the choice alone and launches nothing.
+  Repository tooling: nothing in the `@vibecook/ice` package changes.
+
 ## [0.20.0] — 2026-11-20
 
 **Soft light, and a night with a contrast (petition I56), released on `latest`; and `pnpm relay` now listens on its own

@@ -5,7 +5,17 @@ import { mkdtemp, readFile, rm } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 
-const CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+/** Today's browser: the Google Chrome application. */
+export const DEFAULT_CHROME = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
+
+/**
+ * The binary a rig launches: `DESK_CHROME` when it is set (another Chromium build that takes the switches below), else
+ * today's. An empty variable is the default. Which build a rig's timing and capture rows HOLD on is not said here: a
+ * number or a picture taken under one build is that build's.
+ */
+export function chromeBinary(env = process.env) {
+  return env.DESK_CHROME || DEFAULT_CHROME;
+}
 
 /**
  * Launch a Chrome to drive. `port` 0 (the default, K-H): Chrome binds a free port ITSELF and writes it to its profile's
@@ -35,7 +45,7 @@ export async function launchChrome({ port = 0, headless = false, extraArgs = [] 
     ...extraArgs,
   ];
   if (headless) args.push("--headless=new", "--use-angle=metal");
-  const child = spawn(CHROME, args, { stdio: ["ignore", "pipe", "pipe"] });
+  const child = spawn(chromeBinary(), args, { stdio: ["ignore", "pipe", "pipe"] });
   const stderr = [];
   child.stderr.on("data", (b) => stderr.push(String(b)));
 
