@@ -53,7 +53,8 @@ const ROWS = [
  */
 const shaders = resolve(root, "packages/desk/shaders");
 const kit = kitPieces(read("packages/desk/src/kit/wgsl.ts"));
-const kitFiles = [...new Set([...kit.files, ...readdirSync(join(shaders, "kit")).filter((f) => f.endsWith(".wgsl")).map((f) => `kit/${f}`)])];
+// mat/soft.wgsl is the `light` piece's second text (petition I56: laid after mat/mat.wgsl under `setLightText("soft")`), so it is held too
+const kitFiles = [...new Set([...kit.files, "mat/soft.wgsl", ...readdirSync(join(shaders, "kit")).filter((f) => f.endsWith(".wgsl")).map((f) => `kit/${f}`)])];
 const recordAt = (name) => jsdoc.find((p) => p.startsWith(resolve(root, "packages/desk/src")) && readFileSync(p, "utf8").includes(`export const ${name} = defineStruct("${name}", [`));
 const COMPUTED = [
   [`every declaration of the kit's WGSL (${kitFiles.join(", ")}) has a /// block naming each parameter and its answer, and each kit record's JSDoc (${kit.structs.join(", ")}) names every field (petition I31)`, () => [

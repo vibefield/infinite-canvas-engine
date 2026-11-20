@@ -11,6 +11,7 @@
 //   m    = CIE 191:2010's mesopic weight at L
 //   see  = mix(rod · rodHue, cone, m)     what the eye reports
 //   disp = eigengrau + see · exposure     the dark's own grey under it; the appearance's scale
+//                                         (under a contrast exponent c, petition I56: · Y(see)^(c − 1))
 //   out  = sRGB(disp) + snow              encoded, then the rods' own noise
 
 import type { RGB } from "../theme";
@@ -33,6 +34,19 @@ export interface MatLight {
   readonly rod: RGB;
   /** The dark the eye adds to everything — linear sRGB. */
   readonly eigengrau: RGB;
+  /**
+   * The exponent the reported luminance is raised to (petition I56). Absent or 1 = none: the night as it always was. Below 1
+   * the scene loses contrast as one seen in a dim surround does (CIECAM02's exponent falls from 0.69 to 0.59, a ratio of
+   * 0.855), which lifts the dark ground toward the paper and every shadow toward its light.
+   */
+  readonly contrast?: number;
+  /**
+   * How far the MAT's night is taken from what its day shows, 0..1 (petition I56; absent = 0). The mat's day writes its
+   * linearised sage as an sRGB value (the reference's double gamma), so its day's luminance is one more decode below the
+   * albedo its night is handed. At 1 the night decodes it too, and one exposure then holds for the mat and for a sheet
+   * (whose night already starts from its day's luminance). `mat_colour` alone reads it.
+   */
+  readonly fromDay?: number;
 }
 
 /** The day: the reference's chain, untouched — every night number inert. */
@@ -56,6 +70,14 @@ export interface NightSpec {
   readonly snow: number;
   /** CIECAM02's surround factor F for the degree of adaptation: 1 average · 0.9 dim · 0.8 dark. */
   readonly surround: number;
+  /** The contrast exponent (`MatLight.contrast`); absent = none. */
+  readonly contrast?: number;
+  /** How far the mat's night is taken from its day (`MatLight.fromDay`); absent = 0. */
+  readonly fromDay?: number;
+  /** The scale, stated: used as it is, in place of the fit of `litLuminance` on the ground. */
+  readonly exposure?: number;
+  /** The degree of adaptation D, stated (0..1), in place of CIECAM02's at the moonlit ground's luminance. */
+  readonly adaptation?: number;
 }
 
 // ---- colour science, the standard numbers
@@ -140,10 +162,23 @@ export function nightReport(light: MatLight, albedoLinear: RGB, shade: number): 
   return tri((i) => (1 - m) * rod * light.rod[i] + m * cone[i]);
 }
 
+/** The scale a report is drawn at: the exposure and, under a contrast exponent c, the report's own luminance raised to (c − 1). */
+export function nightScale(light: MatLight, see: RGB): number {
+  const c = light.contrast ?? 1;
+  return c > 0 && c !== 1 ? light.exposure * Math.max(luminance(see), 1e-5) ** (c - 1) : light.exposure;
+}
+
 /** The shader's `night_mat` on the CPU: what the display shows (sRGB 0..1), the snow left out. */
 export function nightAppearance(light: MatLight, albedoLinear: RGB, shade: number): RGB {
   const see = nightReport(light, albedoLinear, shade);
-  return tri((i) => linearToSrgb(light.eigengrau[i] + see[i] * light.exposure));
+  const k = nightScale(light, see);
+  return tri((i) => linearToSrgb(light.eigengrau[i] + see[i] * k));
+}
+
+/** The albedo the MAT's night is handed (the shader's `mat_colour`): its own or, by `fromDay`, what its day shows — decoded once more. */
+export function matNightAlbedo(light: MatLight, albedo: RGB): RGB {
+  const t = light.fromDay ?? 0;
+  return t > 0 ? tri((i) => albedo[i] + (albedo[i] ** 2.2 - albedo[i]) * t) : albedo;
 }
 
 /** The theme's night, computed for a ground colour (sRGB 0..1): the light the mat pass reads. */
@@ -152,22 +187,31 @@ export function nightLight(spec: NightSpec, groundSrgb: RGB): MatLight {
   const [px, py] = planckianXY(spec.kelvin);
   const moonRaw = xyToLinear(px, py);
   // the eye adapts to the Moon's colour only as far as this little light lets it (CIECAM02's D at the moonlit ground's luminance)
-  const D = degreeOfAdaptation((spec.lux * luminance(ground)) / Math.PI, spec.surround);
+  const D = spec.adaptation ?? degreeOfAdaptation((spec.lux * luminance(ground)) / Math.PI, spec.surround);
   const moon: RGB = [1 + (1 - D) * (moonRaw[0] - 1), 1 + (1 - D) * (moonRaw[1] - 1), 1 + (1 - D) * (moonRaw[2] - 1)];
   const eigengrau = linear(spec.eigengrau);
-  const light: MatLight = { night: 1, lux: spec.lux, exposure: 1, snow: spec.snow, moon, fill: spec.fill, rod: hueTint(spec.rodHue.nm, spec.rodHue.purity), eigengrau };
-  // the one scale: the lit ground's report, drawn so the display's luminance there (Eigengrau included) is the theme's number
+  const light: MatLight = {
+    night: 1, lux: spec.lux, exposure: 1, snow: spec.snow, moon, fill: spec.fill, rod: hueTint(spec.rodHue.nm, spec.rodHue.purity), eigengrau,
+    ...(spec.contrast !== undefined ? { contrast: spec.contrast } : {}),
+    ...(spec.fromDay !== undefined ? { fromDay: spec.fromDay } : {}),
+  };
+  if (spec.exposure !== undefined) return { ...light, exposure: spec.exposure };
+  // the one scale: the lit ground's report, drawn so the display's luminance there (Eigengrau included) is the theme's number —
+  // through the mat's own steps: its night's albedo (`fromDay`), and under a contrast exponent c the display shows exposure · Y^c
   const above = Math.max(spec.litLuminance - luminance(eigengrau), 0);
-  return { ...light, exposure: above / Math.max(luminance(nightReport(light, ground, 1)), 1e-9) };
+  const y = Math.max(luminance(nightReport(light, matNightAlbedo(light, ground), 1)), 1e-9);
+  const c = light.contrast ?? 1;
+  return { ...light, exposure: above / (c > 0 && c !== 1 ? y ** c : y) };
 }
 
-/** The light's four vec4s, by name (MatUniforms). */
-export function lightValues(l: MatLight): { night: number[]; moon: number[]; rod: number[]; eigengrau: number[] } {
+/** The light's five vec4s, by name (MatUniforms). */
+export function lightValues(l: MatLight): { night: number[]; moon: number[]; rod: number[]; eigengrau: number[]; night2: number[] } {
   return {
     night: [l.night, l.lux, l.exposure, l.snow],
     moon: [l.moon[0], l.moon[1], l.moon[2], l.fill],
     rod: [l.rod[0], l.rod[1], l.rod[2], 0],
     eigengrau: [l.eigengrau[0], l.eigengrau[1], l.eigengrau[2], 0],
+    night2: [l.contrast ?? 1, l.fromDay ?? 0, 0, 0],
   };
 }
 
@@ -181,5 +225,10 @@ export function mixLight(a: MatLight, b: MatLight, t: number): MatLight {
   if (t >= 1) return b;
   const l = (x: number, y: number): number => x + (y - x) * t;
   const c = (x: RGB, y: RGB): RGB => [l(x[0], y[0]), l(x[1], y[1]), l(x[2], y[2])];
-  return { night: l(a.night, b.night), lux: l(a.lux, b.lux), exposure: l(a.exposure, b.exposure), snow: l(a.snow, b.snow), moon: c(a.moon, b.moon), fill: l(a.fill, b.fill), rod: c(a.rod, b.rod), eigengrau: c(a.eigengrau, b.eigengrau) };
+  return {
+    night: l(a.night, b.night), lux: l(a.lux, b.lux), exposure: l(a.exposure, b.exposure), snow: l(a.snow, b.snow), moon: c(a.moon, b.moon), fill: l(a.fill, b.fill), rod: c(a.rod, b.rod), eigengrau: c(a.eigengrau, b.eigengrau),
+    // a light that states neither keeps its shape; one that does lerps toward the other's (absent reads none: 1 and 0)
+    ...(a.contrast !== undefined || b.contrast !== undefined ? { contrast: l(a.contrast ?? 1, b.contrast ?? 1) } : {}),
+    ...(a.fromDay !== undefined || b.fromDay !== undefined ? { fromDay: l(a.fromDay ?? 0, b.fromDay ?? 0) } : {}),
+  };
 }

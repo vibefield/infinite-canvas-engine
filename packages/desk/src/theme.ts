@@ -222,7 +222,7 @@ export const NIGHT = {
 } as const;
 
 /** The night's model, for a host that rebuilds the Moon from its own numbers (the desk's dev panel — D5a; the prototype's lab/params.ts). */
-export { dayLuminance, type MatLight, nightLight } from "./mat/night";
+export { dayLuminance, type MatLight, type NightSpec, nightLight } from "./mat/night";
 
 /** Eigengrau, parsed — what a host hands `nightLight` (lab/params.ts rebuilds the night from its panel). */
 export const EIGENGRAU: RGB = rgb(NIGHT.eigengrau.css, STRICT);

@@ -6,6 +6,33 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+<!-- petition I56 — soft light and a night with a contrast (2026-11-19; VibeField) -->
+- **SOFT LIGHT, AND A NIGHT WITH A CONTRAST — `MatConfig.gobo.model: "soft"`, `MatLight.contrast` / `fromDay`,
+  `setLightText("soft")`** (petition I56 — VibeField's desk wants the shadow a plant throws on a wall: flat, soft-edged, cool,
+  never black; and a night whose dark ground and shadows sit nearer the paper). THE MODEL: `gobo.model: "soft"` lays the plate
+  flat over the lamp's frame in two layers (`gobo.softLight`, a `SoftLight` of two `SoftLayer`s, `mirror`, `sway`, `shade` and
+  `nightDisc`; `SOFT_LIGHT` when absent; `softShade(depth, sky, sun)` makes a shade), each read through a 12-tap disc on the
+  silhouette's mip chain. The mat draws that chain (three small passes) only under this model and only when the silhouette
+  moved; the cone is handed one level, as before. Lit stays exactly the albedo. `gobo.strength` states the wind's strength for
+  a slot (0 stills it). `MatFrame.tilt` carries the live desk's pointer tilt to the layers' parallax. THE NIGHT: `contrast` (the
+  exponent the eye's reported luminance is raised to) and `fromDay` (how far the mat's night is taken from what its day shows)
+  on `MatLight` and `NightSpec`; a `NightSpec` may state its `exposure` and `adaptation` in place of the fit, and a reading
+  light lerps the two numbers. THE BLOCK: `MatUniforms` grows by seven vec4f AT ITS END (`soft`,
+  `softNear`, `softFar`, `softDisc`, `softShade`, `softTilt`, `night2`; 880 → 992 bytes), every earlier field where it was.
+  THE LIGHT'S TWO TEXTS: all of it is drawn by a second text of the light, `mat/mat.wgsl` with the new `mat/soft.wgsl` laid
+  after it, and `mat/mat.wgsl` itself is not touched. `setLightText("soft")`, called once before the first desk mounts, hands
+  that text to every program that composes the light (the mat, the tray, every kind, a plugin's through `kitWgsl`);
+  `lightText()` reads it; `softLightWgsl(mat, soft)` and `SOFT_LIGHT_NAMES` compose it for a host that reads the files from
+  disk. A page has ONE light text (a change after any program composed the light throws), and the choice is per realm. A host
+  that asks for nothing compiles what it compiled in `0.18.0`: nine frames of the mat under Dawn, day, night and dusk, are byte
+  for byte the same. It is a second text and not a branch because a branch in the mat's light that is never taken still moved a
+  last digit (the device's compiler reorders float arithmetic by what stands around it): under the soft light's text the CONE
+  differs from the cone's own text by 1 of 255 in at most three bytes of a 600 × 400 frame. Under the cone's text a config that
+  asks for soft light draws the cone, and a night's `contrast` and `fromDay` are not applied; the mat warns once of each.
+  Known limit: a paper sheet at `chain` 1 does not take the `fromDay` step.
+
 ## [0.19.0] — 2026-11-19
 
 **The print opens (petition I55), released on `latest`.** Double-click or ⏎ on a print (`desk.photo`) picks it up into

@@ -19,6 +19,8 @@ export { decodePicture } from "./picture";
 // What a host FEEDS the mat through the handle (the render map's finding #2): the plates' slots, the glyph atlas's shape and cells, the mat's config.
 export { DEFAULT_MAT_CONFIG, GLYPH_PAD, GLYPHS, type GlyphAtlasMeta, type MatConfig, type PlateName, type RulerConfig } from "../mat/layout";
 export type { GridConfig } from "../mat/grid";
+// soft light (petition I56): the gobo's second model — its numbers, the tuned ones, and the shade's arithmetic
+export { SOFT_LIGHT, type SoftLayer, type SoftLight, softShade } from "../mat/soft";
 // THE LIVE FACE'S HOST HALF (design-019 §3.1, §9; petition I51 — off `/desk/kit` since M24 LT4): the writer a host fills on the desk's
 // device (`deskLayer({ onDevice })`) and a still host's source of committed bytes — a kind reads the face through the kit and never
 // makes one
