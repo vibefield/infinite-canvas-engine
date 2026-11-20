@@ -6,6 +6,15 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.20.0] — 2026-11-20
+
+**Soft light, and a night with a contrast (petition I56), released on `latest`; and `pnpm relay` now listens on its own
+machine alone.** The gobo gains a second model, `gobo.model: "soft"`: the plate laid flat over the lamp's frame in two
+soft-edged layers, its shade tinted by the sky and never black. A night may take a `contrast` and a `fromDay` step from
+what its day shows. A second text of the light draws it, chosen once (`setLightText("soft")`): a host that asks for
+nothing compiles what it compiled before. Additive: `MatUniforms` grows at its end, every earlier field where it was. The
+relay's default is repository tooling (`### Changed`): nothing in the package moves with it.
+
 ### Added
 
 <!-- petition I56 — soft light and a night with a contrast (2026-11-19; VibeField) -->

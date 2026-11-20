@@ -14,10 +14,11 @@ an archetype ECS with reactivity and opt-in Loro-CRDT durable + ephemeral
 **docs** <https://vibefield.github.io/infinite-canvas-engine/> ·
 MIT license
 
-> **0.19.0 — the print opens.** Double-click or ⏎ on a print picks it up into the hand, as the
-> whiteboard, and a kind's `open.natural` caps the opening's fit at its content's own pixels, so
-> a small picture opens at 1:1 and a large one fits the view. Additive: a kind that says nothing,
-> and every caller of `readingTarget` that passes no cap, keeps today's numbers (`CHANGELOG.md`).
+> **0.20.0 — soft light.** A second gobo model, `"soft"`, lays the plate flat over the lamp's
+> frame in two soft-edged layers, its shade tinted by the sky, and a night may take a `contrast`
+> and a `fromDay` step from what its day shows. A host chooses it once (`setLightText("soft")`);
+> one that asks for nothing draws the bytes it drew. Additive: `MatUniforms` grows at its end,
+> every earlier field where it was (`CHANGELOG.md`).
 > Upgrading from before 0.14.0 also replaces the DOM/R3F presentation with the GPU desk;
 > see the 0.14.0 removal list in `CHANGELOG.md`.
 
@@ -203,10 +204,10 @@ drive headless Chrome against the oracle's bytes (`rig:parity`: maxΔ 0 per scen
 
 ## Status
 
-**Current release: 0.19.0.** The print's opening builds on 0.18.0's pegboard set and
-0.17.0's desk interactions and presentation. Documents written by 0.1.0 migrate automatically
-on open (schema 2 — ordered `ChildOf` replaces scalar z); a 0.1.0 build opening
-a migrated document still gets a correct read-only view.
+**Current release: 0.20.0.** The soft light builds on 0.19.0's opening print, 0.18.0's
+pegboard set and 0.17.0's desk interactions and presentation. Documents written by 0.1.0
+migrate automatically on open (schema 2 — ordered `ChildOf` replaces scalar z); a 0.1.0
+build opening a migrated document still gets a correct read-only view.
 
 Engine v1 is complete (kernel math, the engine spine, the interaction stack,
 durable documents + per-gesture undo, the node editor, nested canvas, presence +
