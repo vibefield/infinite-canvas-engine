@@ -320,7 +320,7 @@ export interface Writing {
   noteAt(wx: number, wy: number): Entity | undefined;
   /** The note left the desk for good: its rect back to the pages, its run's room back to the store, its moments forgotten. */
   forget(e: Entity): void;
-  /** Every raster and run forgotten, the clock's moments too, and the pages carved afresh (a scene reload). */
+  /** Every raster and run forgotten, the clock's moments and the selection too, and the pages carved afresh (a scene reload). */
   reset(): void;
   stats(): WritingStats;
   dispose(): void;
@@ -1071,6 +1071,7 @@ export function createWriting(opts: WritingOptions): Writing {
       wipes.clear();
       told.clear();
       clock.clear();
+      selection = undefined;   // the selection's note is forgotten too: its wash goes with its run (petition I60)
       opts.pages()?.reset(true);
       dirty = true;
     },

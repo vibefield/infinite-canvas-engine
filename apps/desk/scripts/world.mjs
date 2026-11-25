@@ -10,8 +10,9 @@
 //   pnpm --filter ./packages/objects oracle && pnpm --filter ./apps/desk build && pnpm --filter ./apps/desk rig:world [scene-regex]
 //
 // The minimat, chain and nav scenes need insides and flights (D2b) and are not drawn here; nor is a still MID-WRITING (petition
-// I59 — a note whose words `arrive` a moment before it, the oracle desk's own clock): a note the world spawns is first seen
-// written, so those stills are held in Chrome by rig:parity alone. A scene
+// I59 — a note whose words `arrive` a moment before it, the oracle desk's own clock) or MID-MARKING (petition I60 — its marks made,
+// `inked`, a moment before it): a note the world spawns is first seen written and marked, so those stills are held in Chrome by
+// rig:parity alone, each named in the output with its reason (scripts/world-scenes.mjs). A scene
 // off the oracle is drawn and captured ONCE more (the second witness the landing discipline asks of
 // a rig on a loaded host) and reported as a flap if that witness is clean. The desk calendars' pad-print scenes pin the COMMITTED
 // print on both hosts (oracle/prints.mjs — Node has no canvas to print with); after the scenes, the same scenes are drawn once more
@@ -26,6 +27,7 @@ import { ORACLE_SCENES } from "@ice/objects/oracle/scenes.mjs";
 import { faultsOf, launchChrome, openTab, watchPage } from "./cdp.mjs";
 import { watchdog } from "./timing.mjs";
 import { compareSheet, liveSheet, printedSheets } from "./print-fixture.mjs";
+import { notFromTheWorld } from "./world-scenes.mjs";
 
 const here = import.meta.dirname;
 const app = resolve(here, "..");
@@ -70,9 +72,10 @@ const EXCEPTIONS = {
 
 const die = (what, cmd) => { console.log(`PREFLIGHT FAIL: ${what}\n  produce it with:  ${cmd}`); process.exit(1); };
 if (!existsSync(resolve(app, "dist/rig.html"))) die("the desk's build is missing (apps/desk/dist/rig.html)", "pnpm --filter ./apps/desk build");
-/** A still mid-writing (petition I59): its notes' words `arrive` on the oracle desk's clock — the world's are first seen written. */
-const midWriting = (sc) => (sc.scene.notes ?? []).some((n) => n.arrive !== undefined);
-const scenes = ORACLE_SCENES.filter((sc) => WORLD_SCENES.test(sc.name) && !midWriting(sc) && (only === null || only.test(sc.name)));
+const asked = ORACLE_SCENES.filter((sc) => WORLD_SCENES.test(sc.name) && (only === null || only.test(sc.name)));
+/** The stills the world cannot draw (their moment is the oracle desk's clock — scripts/world-scenes.mjs), each said with its reason. */
+const held = asked.map((sc) => ({ sc, why: notFromTheWorld(sc) })).filter((x) => x.why !== undefined);
+const scenes = asked.filter((sc) => notFromTheWorld(sc) === undefined);
 if (scenes.length === 0) die(`no mat/ruler/paper oracle scene matches ${only}`, "pnpm --filter ./apps/desk rig:world [scene-regex]");
 const missing = scenes.filter((sc) => !existsSync(resolve(repo, `packages/objects/oracle/results/oracle-${sc.name}.rgba`)));
 if (missing.length) die(`${missing.length} of ${scenes.length} oracle render(s) missing (first: oracle-${missing[0].name}.rgba)`, "pnpm --filter ./packages/objects oracle");
@@ -174,6 +177,7 @@ try {
 
   let flaps = 0;
   let kept = 0;
+  for (const { sc, why } of held) console.log(`NOT FROM THE WORLD  ${sc.name}: ${why} — held in Chrome by rig:parity`);
   console.log("\nscene                        Chrome (from the world) vs Node                objects");
   for (const sc of scenes) {
     const t = await tabFor(sc);
