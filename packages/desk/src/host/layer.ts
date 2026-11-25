@@ -67,6 +67,7 @@ import { createServices, type Lent, service } from "../kit/services";
 import { decodePicture } from "./picture";
 import { NO_DOCS, type TypingDocs } from "../docs";
 import { TEXT_RASTER, type TextRaster } from "../kit/raster";
+import { HAND_FACES, type HandFaces } from "../kit/hand-faces";
 import type { DeskEditor, TextPart } from "../kit/editor";
 import { createDeskEditor } from "./editor";
 import type { InsideView } from "../kit/inside";
@@ -132,6 +133,12 @@ export interface DeskLayerOptions {
   readonly name?: string;
   /** The app's text raster (`inkRaster({ faces: penFaces({ … }) })`, D2c): absent, no note is written live — the pinned rasters only. */
   readonly text?: TextRaster;
+  /**
+   * The app's hand FACES (petition I59 — the desk's pen: `handFaces({ faces: { caveat: { json, bin }, … } })`, the baked `ice-hand/1`
+   * atlases by URL): lent to every kind as `HAND_FACES`, and the desk woken whenever one lands (its `onVersion`, as `text`'s). Absent,
+   * no kind writes with the pen: every sheet keeps its raster road.
+   */
+  readonly hand?: HandFaces;
   /** The document a note's typing session commits into — the facade's `engine.docs` (D2c); absent, typing stays runtime-only. */
   readonly docs?: TypingDocs;
   /** A typing session ends after this long without input, ms (1000). */
@@ -791,6 +798,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // every DOM half `use`s any of them by key. A name lent twice throws here, at the mount, naming both lenders
     const services = createServices([
       ...(opts.text !== undefined ? [service(TEXT_RASTER, opts.text)] : []),
+      ...(opts.hand !== undefined ? [service(HAND_FACES, opts.hand)] : []),
       service(PICTURE_DECODER, decodePicture),
       ...(opts.blobs !== undefined ? [service(BLOB_STORE, opts.blobs)] : []),
       ...(opts.services ?? []),
@@ -1146,6 +1154,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     };
     const stopWake = frame?.wakeWhen("desk", deskDue);
     const stopText = opts.text?.onVersion?.(() => frame?.wake("desk:text"));
+    const stopHand = opts.hand?.onVersion?.(() => frame?.wake("desk:hand"));
 
     /**
      * A kind gone MISSING (petition I24) STOPS COSTING, not merely drawing (design-009 §16.7's word for a suspended behavior): its desk
@@ -1534,6 +1543,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         disposed = true;
         stopWake?.();
         stopText?.();
+        stopHand?.();
         listeners.clear();
         trayListeners.clear();
         statusHeard.clear();
