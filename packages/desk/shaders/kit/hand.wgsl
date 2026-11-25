@@ -29,10 +29,11 @@ const HAND_EDGE: f32 = 128.0 / 255.0;
 /// The wet ink's reach behind the nib, em of the pen's path (`HAND_RUN.wet`).
 const HAND_WET: f32 = 1.1;
 
-/// What the pen laid at a point: `cover` — the ink's coverage 0..1 (its pressure in it), the most any glyph laid there; `wet` —
-/// how fresh that ink is, 0..1 (1 just behind the nib, 0 dry: 0 wherever its glyph is whole — a kind weighs it by `cover`); `pen` —
-/// the pen of the glyph that laid the most (0 = the sheet's own, else the kind's pen n); `samples` — the atlas samples the read took
-/// (0 on blank paper); `loads` — the run texels it loaded (a witness: the read's cost).
+/// What the pen laid at a point: `cover` — the ink's coverage 0..1 (its pressure in it), every glyph's laid over the ones before as
+/// the raster lays them; `wet` — how fresh the ink of the glyph that laid the most is, 0..1 (1 just behind the nib, 0 dry: 0 wherever
+/// its glyph is whole — a kind weighs it by `cover`); `pen` — the pen of the glyph that laid the most (0 = the sheet's own, else the
+/// kind's pen n); `samples` — the atlas samples the read took (0 on blank paper); `loads` — the run texels it loaded (a witness: the
+/// read's cost).
 struct HandInk { cover: f32, wet: f32, pen: u32, samples: u32, loads: u32 }
 
 /// One vec4 of a run store.
@@ -64,11 +65,13 @@ fn hand_ease(x: f32) -> f32 {
 /// reads inside that rect (the chain is made over the whole atlas, so no level's box reaches a neighbour's ink — kit/hand-run.ts
 /// `handMips`). The edge is `(R − 128/255) · range` em, made units by the glyph's size, its coverage a one-device-px ramp — never
 /// wider than the field's own reach (half its range): a sheet that small is past reading (its kind greeks it), and a wider ramp
-/// would lay a haze over the glyph's whole rect — widened by the run's bleed, at its alpha. THE REVEAL: a glyph lays nothing
-/// before its pen sets off; while it writes, a texel shows once the pen's eased progress has reached its arrival (`G`), ramped
-/// over a device px of the pen's path — so the front is the arrival's own edge, round where the nib's is, and where a later
-/// stroke crosses an earlier one the earlier ink is already there; once its time is out it is whole. Glyphs combine by the most
-/// each lays (no glyph darkens its neighbour).
+/// would lay a haze over the glyph's whole rect. THE INK LIES AS THE RASTER LAYS IT (desk/host/ink.ts — `strokeText` the bleed,
+/// then `fillText`, each glyph over the ones before): the run's bleed is a stroke, a band that wide about the outline, laid at its
+/// alpha times the glyph's pressure; the fill at the pressure over it, source-over (F + S·(1 − F)); and every glyph over the ones
+/// before, source-over (1 − Π(1 − cover)) — so letters that meet darken where they meet, as on the bitmap. THE REVEAL: a glyph lays
+/// nothing before its pen sets off; while it writes, a texel shows once the pen's eased progress has reached its arrival (`G`),
+/// ramped over a device px of the pen's path — so the front is the arrival's own edge, round where the nib's is, and where a later
+/// stroke crosses an earlier one the earlier ink is already there; once its time is out it is whole.
 /// `runs` — the kind's run store (`texture_2d<f32>` over `rgba32float`); `atlas` — the face's atlas (`texture_2d<f32>` over
 /// `rg8unorm`, every level); `samp` — a filtering sampler, linear between the levels; `base` — the run's base in the store (the
 /// texel index `HandRuns.write` gave its record); `p` — the point, the run's units (the layout's: note units from the sheet's
@@ -99,6 +102,9 @@ fn hand_ink(runs: texture_2d<f32>, atlas: texture_2d<f32>, samp: sampler, base: 
   let levels = f32(textureNumLevels(atlas) - 1u);
   let texels = vec2f(textureDimensions(atlas, 0));
   var four = vec4f(0.0);
+  // what the glyphs leave bare, laid one over another (the coverage is 1 − it), and the most one glyph laid (its pen, its wet ink)
+  var bare = 1.0;
+  var most = 0.0;
   for (var k = 0u; k < n; k++) {
     let e = first + k;
     if (k == 0u || (e & 3u) == 0u) { four = hand_load(runs, list + e / 4u); ink.loads += 1u; }
@@ -123,8 +129,14 @@ fn hand_ink(runs: texture_2d<f32>, atlas: texture_2d<f32>, samp: sampler, base: 
     ink.samples += 1u;
     let dist = (field.r - HAND_EDGE) * edge.x * g2.z;
     let ramp = min(aa, 0.5 * edge.x * g2.z);
-    var fill = saturate(0.5 + dist / ramp);
-    if (edge.y > 0.0) { fill = max(fill, edge.z * saturate(0.5 + (dist + 0.5 * edge.y) / ramp)); }
+    // the fill at the glyph's pressure, over its bleed's stroke — the band `edge.y` wide about the outline, at the alpha × the
+    // pressure — source-over, as the raster strokes then fills
+    let fill = saturate(0.5 + dist / ramp) * g2.w;
+    var glyph = fill;
+    if (edge.y > 0.0) {
+      let band = saturate(0.5 + (dist + 0.5 * edge.y) / ramp) - saturate(0.5 + (dist - 0.5 * edge.y) / ramp);
+      glyph = fill + edge.z * g2.w * band * (1.0 - fill);
+    }
     var written = 1.0;
     var fresh = 0.0;
     if (since < g4.y) {
@@ -132,8 +144,10 @@ fn hand_ink(runs: texture_2d<f32>, atlas: texture_2d<f32>, samp: sampler, base: 
       written = saturate(0.5 + ahead / aa);
       fresh = written * saturate(1.0 - ahead / (HAND_WET * g2.z));
     }
-    let laid = fill * written * g2.w;
-    if (laid > ink.cover) { ink.cover = laid; ink.pen = u32(g4.w) & 15u; ink.wet = fresh; }
+    let laid = glyph * written;
+    bare *= 1.0 - laid;
+    if (laid > most) { most = laid; ink.pen = u32(g4.w) & 15u; ink.wet = fresh; }
   }
+  ink.cover = 1.0 - bare;
   return ink;
 }

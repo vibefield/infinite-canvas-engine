@@ -72,7 +72,11 @@ export interface HandRunOptions {
   readonly epoch?: number;
   /** Each glyph's pen, by its index in `layout.glyphs`: 0 = the sheet's own (the default), 1–15 the kind's. */
   readonly pens?: ArrayLike<number>;
-  /** The pen's spread, units: the edge widened by half of it at `bleedAlpha` (default 0 — none; the note's raster lays 0.3). */
+  /**
+   * The pen's spread, units: a stroke that wide about each glyph's outline (half of it past the edge), laid at `bleedAlpha` × the
+   * glyph's pressure under the fill, source-over — as the raster's `strokeText` before its `fillText` (default 0 — none; the note's
+   * raster lays 0.3).
+   */
   readonly bleed?: number;
   /** The spread's presence, 0..1 (default 0.45 — the note's raster's). */
   readonly bleedAlpha?: number;
@@ -300,7 +304,7 @@ function trilinear(chain: readonly HandMip[], u: number, v: number, lod: number)
 
 /** What the pen laid at a point (`hand_ink`'s `HandInk`): coverage, the fresh ink, the pen, and what the read took. */
 export interface HandInkAt {
-  /** The ink's coverage, 0..1 — its pressure in it. */
+  /** The ink's coverage, 0..1 — its pressure in it; every glyph's laid over the ones before, as the raster lays them (`hand_ink`). */
   readonly cover: number;
   /** How fresh that ink is: 1 just behind the nib, 0 dry — the freshness of the glyph that laid the most (a kind weighs it by `cover`). */
   readonly wet: number;
@@ -342,7 +346,9 @@ export function handInkAt(run: HandRun | Float32Array, atlas: HandAtlas, x: numb
   const chain = handMips(atlas);
   const top = chain[0] as HandMip;
   const levels = chain.length - 1;
-  let cover = 0;
+  // what the glyphs leave bare, laid one over another (the coverage is 1 − it), and the most one glyph laid (its pen, its wet ink)
+  let bare = 1;
+  let most = 0;
   let wet = 0;
   let pen = 0;
   let samples = 0;
@@ -376,8 +382,15 @@ export function handInkAt(run: HandRun | Float32Array, atlas: HandAtlas, x: numb
     const dist = (r - EDGE) * range * size;
     // the ramp never wider than the field's reach (half its range): past it a haze would lie over the glyph's whole rect
     const ramp = Math.min(aa, 0.5 * range * size);
-    let fill = Math.min(1, Math.max(0, 0.5 + dist / ramp));
-    if (bleed > 0) fill = Math.max(fill, bleedA * Math.min(1, Math.max(0, 0.5 + (dist + 0.5 * bleed) / ramp)));
+    // the fill at the glyph's pressure, over its bleed's stroke — the band `bleed` wide about the outline, at the alpha × the
+    // pressure — source-over, as the raster strokes then fills (desk/host/ink.ts)
+    const press = v(g + 2, 3);
+    const fill = Math.min(1, Math.max(0, 0.5 + dist / ramp)) * press;
+    let glyph = fill;
+    if (bleed > 0) {
+      const band = Math.min(1, Math.max(0, 0.5 + (dist + 0.5 * bleed) / ramp)) - Math.min(1, Math.max(0, 0.5 + (dist - 0.5 * bleed) / ramp));
+      glyph = fill + bleedA * press * band * (1 - fill);
+    }
     let written = 1;
     let fresh = 0;
     const dur = v(g + 4, 1);
@@ -386,8 +399,10 @@ export function handInkAt(run: HandRun | Float32Array, atlas: HandAtlas, x: numb
       written = Math.min(1, Math.max(0, 0.5 + ahead / aa));
       fresh = written * Math.min(1, Math.max(0, 1 - ahead / (HAND_RUN.wet * size)));
     }
-    const laid = fill * written * v(g + 2, 3);
-    if (laid > cover) { cover = laid; pen = Math.trunc(v(g + 4, 3)) & ((1 << HAND_RUN.penBits) - 1); wet = fresh; }
+    // every glyph over the ones before, source-over, as the raster draws them: where letters meet, their inks add
+    const laid = glyph * written;
+    bare *= 1 - laid;
+    if (laid > most) { most = laid; pen = Math.trunc(v(g + 4, 3)) & ((1 << HAND_RUN.penBits) - 1); wet = fresh; }
   }
-  return { cover, wet, pen, samples, loads };
+  return { cover: 1 - bare, wet, pen, samples, loads };
 }
