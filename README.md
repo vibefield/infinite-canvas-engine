@@ -62,7 +62,7 @@ under this point", and the behaviours that change it (design-015 §5).
 
 ## Entry points
 
-One npm package, nine entry points (the repo develops them as workspace
+One npm package, ten entry points (the repo develops them as workspace
 packages; `packages/ice` bundles them for publish):
 
 | Entry | Contents | May import |
@@ -73,6 +73,7 @@ packages; `packages/ice` bundles them for publish):
 | `@vibecook/ice/desk` | The desk: one WebGPU renderer drawing every object from the world — the cutting mat, `deskLayer`, the kind contract (`defineObject`, `ObjectKind`, `KindProgram` — what a kind implements, is handed and declares, its DOM half included), the text raster, the theme; it names no kind | core, kernel; **nobody imports desk but apps and `/desk/objects`** |
 | `@vibecook/ice/desk/engine` | The raw-WebGPU engine alone: the device (`acquire`, `adopt`), the `Surface` type (the swap chain itself is `surface()` in `/desk`), shader composition (`compose`, `compile`), pipelines and bind groups, render targets (`Target`, `beginPass`, `readback`), `defineStruct` | — |
 | `@vibecook/ice/desk/kit` | The render kit a kind's pass is written against besides the engine: the slot's view and its mat (`MatPass`), the lamp and its light, the shared WGSL by name (`kitWgsl`), a container's inside, the service keys a kind lends and uses (`serviceKey`, `TEXT_RASTER`, `PRINT_RASTER`, `BLOB_STORE`, `PICTURE_DECODER`), a container's face law and chip finishes, the one physics every object shares | core, kernel |
+| `@vibecook/ice/desk/bake` | The hand's baker (petition I59): `bakeHand(ttfBytes, { file })` — a TrueType face in, its `ice-hand/1` atlas (the json, its text, the RG8 bin: the ink's edge and the moment the pen reaches each texel) out — over `HAND_GLYPH_SET`, with `HAND_CORRECTIONS` and the format's reader; a build step: pure, no fs, DOM or GPU | its own modules and the kit's `hand-atlas.ts` |
 | `@vibecook/ice/desk/objects` | The six reference object kinds — note · mini mat · notebook · whiteboard · calendar · photo — each its world half, its pass, its WGSL, its drivers and its DOM half; the preset (`DESK_ENGINE`) and the default palette. Its own workspace package (`@ice/objects`), built on `/desk`, `/desk/kit` and `/desk/engine` alone, exactly as a plugin kind is | `/desk`, `/desk/kit`, `/desk/engine`, core, kernel; **nobody imports it but apps** |
 | `@vibecook/ice/react` | `<Desk>`, `EngineProvider`, hooks (`useCommit`, `useWidgetProps`, `useSelected`, `useTool`, `useUndoStatus`, `usePresencePeers`), keymap, the screen-space selection menu and held bar | dom, core, kernel + react/react-dom |
 | `@vibecook/ice/devtools` | `attachDevtools(engine)` — strata's observer + profiler in one dock, and the WebGPU desk's GPU slot (its frames' span, passes, draws, memory — `~` in apps/desk) | core only; **nobody imports devtools** |
@@ -216,4 +217,6 @@ bootstrap + migrations, the facade, devtools); the behavior framework train
 (M11–M16), the magnet grid (M17), the compositor and the ground port (M18–M19)
 followed; M20 — the desk — replaced the DOM/GL presentation whole (design-015).
 The scope fence holds: no layout engine, no rich-text, no comments, no
-permissions — each exclusion has a named seam instead.
+permissions — each exclusion has a named seam instead. Its rich-text line was
+crossed once, by a ruling (petition I60, 2026-11-25), for the desk kit's per-glyph
+marks alone; the record is in `docs/implementation-plan.md`.
