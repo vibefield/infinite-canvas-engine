@@ -19,6 +19,8 @@
 // digits and apostrophes, the laid line without its break) — so the editor claims a press on the writing and turns a drag and the
 // clicks into the field's range, which the writing keeps as flux (`select`; the note draws no wash yet). A copy lifts the words as
 // plain text (the marks come later); a paste is laid through the editor's `write`, the path a typed input takes into the typing.
+// Where a range of them LIES (`rangeBox`, from the writing as last drawn, turned with the sheet): the selection menu comes to the
+// words selected. The note declares no words act yet (the ink's acts are a later slice's), so its words' menu is empty.
 
 import { Active, Camera, type Entity, Grab, type World } from "@ice/core";
 import type { PaperDriver } from "../object";
@@ -86,6 +88,8 @@ export function createNoteBody(opts: NoteBodyOptions): NoteBody | undefined {
     // where the writing lies (petition I60): on the sheet as drawn — a press on another object over it is that object's
     indexAt(wx, wy, hit) { return hit !== undefined && hit !== e ? undefined : writing()?.indexAt(e, wx, wy); },
     rangeAt(index, unit) { return writing()?.rangeAt(e, index, unit); },
+    // where a range of the words lies (petition I60): the menu over the words selected is placed by it
+    rangeBox(from, to) { return writing()?.rangeBox(e, from, to); },
     // the words alone (the marks come later): the field's, as the platform's own copy would take them
     lift(from, to) { const text = editor.element.value.slice(from, to); return text === "" ? undefined : { text }; },
     // its words laid as a typed input is (the typing records it), their line breaks the field's own; no words, nothing laid (a piece
