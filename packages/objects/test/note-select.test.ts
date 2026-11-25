@@ -9,7 +9,7 @@
 // `defaultPrevented` gate, pinned in dom's own tests: a press the editor claimed lands `surfaceHandled`).
 import { Camera, createCanvasEngine, type Entity, NO_MODS, Position, Size, Viewport } from "@ice/core";
 import { createDeskEditor, kindPalette, MAT_GRID, PIECE_FLAVOUR, rgb } from "@ice/desk";
-import { decodeMarks, encodeMarks, type HandMetrics, inkOf, layoutText, mark, strikeOf, type TextPart, type TextRaster } from "@ice/desk/kit";
+import { decodeMarks, encodeMarks, type HandMetrics, highlightOf, inkOf, layoutText, mark, strikeOf, type TextPart, type TextRaster, underlineOf } from "@ice/desk/kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createNoteBody, deskPalette, NOTE_INK, NOTE_PROPS, Note, type PaperDriver } from "../src";
 import { paperKind } from "../src/paper/kind";
@@ -275,19 +275,39 @@ describe("the note's marked words on the clipboard and under the keys (petition 
     } finally { r.dispose(); }
   });
 
-  it("a MARK'S KEY (⇧⌘X) strikes the words selected through the note's own act — ONE step — and with no words selected it is the platform's", () => {
+  // each MARK'S KEY (the kit's `inkKeyOf`, as a pad's part runs them): the note's own words act on the words selected — ONE step
+  for (const [name, key, shift, field] of [["Strike ⇧⌘X", "x", true, strikeOf], ["Underline ⌘U", "u", false, underlineOf], ["Highlight ⇧⌘H", "h", true, highlightOf]] as const) {
+    it(`a MARK'S KEY, ${name}, marks the words selected through the note's own act — ONE step — and with a caret only it is the platform's`, () => {
+      const r = rig("buy milk now");
+      try {
+        r.body.focus(r.note, 0);
+        r.el.setSelectionRange(4, 8);
+        expect(r.chord(key, shift)).toBe(true);
+        r.step();
+        expect(decodeMarks(r.docMarks() ?? "", "buy milk now").map(field).map((v) => (v > 0 ? 1 : 0))).toEqual([0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0]);
+        expect(r.ce.docs.undo()).toBe(true);
+        expect(r.docMarks()).toBe("");
+        r.el.setSelectionRange(2, 2);
+        expect(r.chord(key, shift)).toBe(false);   // a caret only: the key is not the note's
+      } finally { r.dispose(); }
+    });
+  }
+
+  it("the CARET'S PLACE (`caretBox`, the anchor's caret while the range is empty): before glyph i, from the ascent above its baseline to the descent below, on the sheet as drawn", () => {
     const r = rig("buy milk now");
     try {
       r.body.focus(r.note, 0);
-      r.el.setSelectionRange(4, 8);
-      r.el.dispatchEvent(new Event("select"));
-      expect(r.chord("x", true)).toBe(true);
-      r.step();
-      expect(decodeMarks(r.docMarks() ?? "", "buy milk now").map(strikeOf)).toEqual([0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0]);
-      expect(r.ce.docs.undo()).toBe(true);
-      expect(r.docMarks()).toBe("");
-      r.el.setSelectionRange(2, 2);
-      expect(r.chord("x", true)).toBe(false);   // a caret only: ⇧⌘X is not the note's
+      const lease = r.editor.lease();
+      const box = lease?.caretBox?.(4);
+      const x = 100 + (r.L.positions[8] as number);
+      const y = 100 + (r.L.positions[9] as number);
+      expect(box?.x).toBeCloseTo(x, 6);
+      expect(box?.w).toBeCloseTo(0, 6);
+      expect(box?.y).toBeCloseTo(y - r.L.ascent, 6);
+      expect(box?.h).toBeCloseTo(r.L.ascent + r.L.descent, 6);
+      expect(lease?.caretBox?.(99)?.x).toBeCloseTo(100 + (r.L.positions[2 * 12] as number), 6);   // past the end: the end's
+      expect(r.writing.caretBox(r.note, 4)).toEqual(box);
+      expect(r.writing.caretBox(9999 as Entity, 0)).toBeUndefined();   // not drawn: no place
     } finally { r.dispose(); }
   });
 });
