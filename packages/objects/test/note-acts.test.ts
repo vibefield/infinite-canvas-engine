@@ -34,7 +34,6 @@ function makeDesk() {
     if ("error" in r) throw new Error(`no single "${quote}"`);
     return { entity: e, from: r.from, to: r.to };
   };
-  const run = (id: string, e: Entity, quote: string, choice?: string): boolean => ce.ops.runMenuAction(id, choice === undefined ? undefined : { id: choice }, { range: range(e, quote) });
   /** What the bar reads of an act over `quote` (a fresh `MenuActionStateContext`, as the anchor composes one). */
   const ctx = (e: Entity, quote: string): MenuActionStateContext => ({
     world: ce.world,
@@ -43,11 +42,22 @@ function makeDesk() {
     range: range(e, quote),
     props: (x) => Object.assign({}, ...Note.groups.map((g) => (ce.world.get(x, g.component) as Record<string, unknown> | undefined) ?? {})),
   });
-  return { ce, world: ce.world, step, note, typing, doc, live, undoSteps, opened, run, ctx };
+  /**
+   * THE ONE DOOR to the acts (the menu act's shape is core's and moves: every run and every state read in this file goes through
+   * here). `run` — the act `id` over the words `quote` of note `e`, handed `choice` taken, as the bar runs it; `state` — what the bar
+   * shows of it there: a toggle's `pressed` (its state, I61), a choice act's `current` choice (I62).
+   */
+  const acts = {
+    run: (id: string, e: Entity, quote: string, choice?: string): boolean => ce.ops.runMenuAction(id, choice === undefined ? undefined : { id: choice }, { range: range(e, quote) }),
+    state: (id: string, e: Entity, quote: string): { readonly pressed: boolean | undefined; readonly current: string | undefined } => {
+      const a = act(id);
+      const c = ctx(e, quote);
+      return { pressed: a.state?.(c)?.pressed, current: a.choices?.(c)?.find((x) => x.current === true)?.id };
+    },
+  };
+  return { ce, world: ce.world, step, note, typing, doc, live, undoSteps, opened, acts };
 }
 
-/** The choice an act marks current over the words (I62's `current`), or undefined: none. */
-const current = (a: MenuActionDef, c: MenuActionStateContext): string | undefined => a.choices?.(c)?.find((x) => x.current === true)?.id;
 const act = (id: string): MenuActionDef => {
   const a = Note.menu.find((m) => m.id === id);
   if (a === undefined) throw new Error(`the note has no act ${id}`);
@@ -69,43 +79,43 @@ describe("the note's words acts are the kit's ink acts (petition I60)", () => {
   });
 
   it("each act on the words it is told, its toggle's `pressed` and its current choice read from the same words — each ONE undo step, the marks alone moving", () => {
-    const { note, step, run, ctx, doc, undoSteps, opened } = makeDesk();
+    const { note, step, acts, doc, undoSteps, opened } = makeDesk();
     const a = note("buy milk now");
     step();
     const before = undoSteps();
-    expect(current(act(INK_ACTS.highlight), ctx(a, "milk"))).toBe(NO_HIGHLIGHT);
-    expect(run(INK_ACTS.highlight, a, "milk", "pink")).toBe(true);
+    expect(acts.state(INK_ACTS.highlight, a, "milk").current).toBe(NO_HIGHLIGHT);
+    expect(acts.run(INK_ACTS.highlight, a, "milk", "pink")).toBe(true);
     step();
     expect(fields(doc(a)).hl).toEqual([0, 0, 0, 0, 3, 3, 3, 3, 0, 0, 0, 0]);
-    expect(current(act(INK_ACTS.highlight), ctx(a, "milk"))).toBe("pink");
-    expect(current(act(INK_ACTS.highlight), ctx(a, "buy milk"))).toBeUndefined();   // two values among the letters
+    expect(acts.state(INK_ACTS.highlight, a, "milk").current).toBe("pink");
+    expect(acts.state(INK_ACTS.highlight, a, "buy milk").current).toBeUndefined();   // two values among the letters
     // the toggles: pressed when every LETTER carries one; pressed again they lift it
-    expect(act(INK_ACTS.strike).state?.(ctx(a, "now"))?.pressed).toBe(false);
-    run(INK_ACTS.strike, a, "now");
+    expect(acts.state(INK_ACTS.strike, a, "now").pressed).toBe(false);
+    acts.run(INK_ACTS.strike, a, "now");
     step();
     expect(fields(doc(a)).strike.slice(9)).toEqual([1, 1, 1]);
-    expect(act(INK_ACTS.strike).state?.(ctx(a, "now"))?.pressed).toBe(true);
-    run(INK_ACTS.underline, a, "buy");
+    expect(acts.state(INK_ACTS.strike, a, "now").pressed).toBe(true);
+    acts.run(INK_ACTS.underline, a, "buy");
     step();
     expect(fields(doc(a)).under.slice(0, 3)).toEqual([1, 1, 1]);
     // a pen by name; the sheet's own pen (its `pen` prop, fountain) chosen clears the field
-    expect(current(act(INK_ACTS.pen), ctx(a, "milk"))).toBe("fountain");
-    run(INK_ACTS.pen, a, "milk", "red");
+    expect(acts.state(INK_ACTS.pen, a, "milk").current).toBe("fountain");
+    acts.run(INK_ACTS.pen, a, "milk", "red");
     step();
     expect(fields(doc(a)).pen.slice(4, 8)).toEqual([4, 4, 4, 4]);
-    expect(current(act(INK_ACTS.pen), ctx(a, "milk"))).toBe("red");
+    expect(acts.state(INK_ACTS.pen, a, "milk").current).toBe("red");
     expect(doc(a)?.text).toBe("buy milk now");   // the marks alone moved
     expect(undoSteps()).toBe(before + 4);
     // the strike pressed again lifts it; Clear lifts all four
-    run(INK_ACTS.strike, a, "now");
+    acts.run(INK_ACTS.strike, a, "now");
     step();
     expect(fields(doc(a)).strike).toEqual(new Array(12).fill(0));
-    run(INK_ACTS.clear, a, "buy milk now");
+    acts.run(INK_ACTS.clear, a, "buy milk now");
     step();
     expect(doc(a)?.marks).toBe("");
     expect(undoSteps()).toBe(before + 6);
     // nothing to move: no step
-    run(INK_ACTS.clear, a, "buy milk now");
+    acts.run(INK_ACTS.clear, a, "buy milk now");
     step();
     expect(undoSteps()).toBe(before + 6);
     // each a step of its own: one undo brings Clear's marks back
@@ -115,7 +125,7 @@ describe("the note's words acts are the kit's ink acts (petition I60)", () => {
   });
 
   it("run while the note is WRITTEN: the live write landed first (its own step), the letters the field shows selected marked, the typing going on after — the act ONE undo step", () => {
-    const { world, note, step, typing, run, live, doc, undoSteps, opened } = makeDesk();
+    const { world, note, step, typing, acts, live, doc, undoSteps, opened } = makeDesk();
     const a = note("buy milk");
     step();
     const before = undoSteps();
@@ -128,7 +138,7 @@ describe("the note's words acts are the kit's ink acts (petition I60)", () => {
     expect(doc(a)?.text).toBe("buy milk");
     expect(inkTypingOn(world, a)?.open()).toBe(true);   // the acts find the note's live typing through the world
     // the words the field shows selected: "oat"
-    expect(run(INK_ACTS.highlight, a, "oat", "yellow")).toBe(true);
+    expect(acts.run(INK_ACTS.highlight, a, "oat", "yellow")).toBe(true);
     step();
     expect(doc(a)?.text).toBe("buy oat milk");   // landed first
     expect(fields(doc(a)).hl).toEqual([0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0]);
