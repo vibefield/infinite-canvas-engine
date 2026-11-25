@@ -443,7 +443,7 @@ const isLow = (c: number): boolean => c >= 0xdc00 && c <= 0xdfff;
 /** A letter, a digit, or a letter's mark (a combining accent): a word's. */
 const WORDY = /^[\p{L}\p{M}\p{N}]$/u;
 /** The two apostrophes a word holds: ' and ’. */
-const APOSTROPHE = 0x27;
+const APOSTROPHE = 0x0027;
 const RIGHT_QUOTE = 0x2019;
 
 /** What the unit at `i` is to a double click: a word's (a pair's half reads as its character), a space, a break (a newline, or past the text) or other. */
