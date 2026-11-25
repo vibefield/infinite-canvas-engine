@@ -17,8 +17,8 @@ import type { ObjectDomHost, ObjectKind } from "../src/kinds/world";
 import type { TextPart } from "../src/kit/editor";
 import { encodeMarks, highlightOf, type InkValue, inkCells, inkOf, lift, mark, penOf, strikeOf, underlineOf } from "../src/kit/ink";
 import { INK_ACTS, inkActs, inkCommonHighlighter, inkCommonPen, inkEveryLetter } from "../src/kit/ink-acts";
-import { type InkGeometry, inkHtml, type InkPart, type InkPartOptions, inkPart } from "../src/kit/ink-part";
-import { type InkArrival, type InkSink, inkTyping, inkTypingOn } from "../src/kit/ink-typing";
+import { type InkGeometry, inkHtml, type InkPart, type InkPartOptions, inkPart, printable, readPiece } from "../src/kit/ink-part";
+import { carryRun, type InkArrival, type InkSink, type InkTypedRun, type InkTypingDoor, inkTyping, inkTypingOn, keepRun, registerInkTyping } from "../src/kit/ink-typing";
 import { type HandLaw, type HandMetrics, layoutText, PENS } from "../src/kit/text";
 import { defineObject } from "../src/object";
 import { type Palette, themeFrom } from "../src/theme";
@@ -623,6 +623,74 @@ describe("the ink acts (`inkActs`): one step each, through the typing when one i
     expect(b.part.typing.open()).toBe(false);
     expect(b.cell(eb).text).toBe("one two threeX");
     expect(inkOf(b.cell(eb), 7).marks.slice(7, 14).map(underlineOf)).toEqual([0, 1, 1, 1, 1, 1, 1]);
+  });
+});
+
+describe("what a typing of another shape shares (a live write — the note's): the run, the piece, the registry", () => {
+  it("`carryRun` is the typing's step, pure: a selection typed over begins a RUN holding the mark its letters shared, each letter typed at its end takes that mark, a letter taken back shortens it, any other edit ends it; `keepRun` ends it unless the caret stands at its end; the run handed in is never changed", () => {
+    const fresh = (() => { let n = 500; return () => ++n; })();
+    const found = mark(inkOf({ text: "on Friday soon" }, 7), 3, 9, { highlight: "pink" });
+    const pink = found.marks[3] ?? 0;
+    expect(highlightOf(pink)).not.toBe(0);
+    const a = carryRun(found, "on M soon", fresh, 4);   // "Friday" typed over by "M"
+    expect([a.from, a.to, a.run]).toEqual([3, 4, { from: 3, to: 4, mark: pink }]);
+    const held: InkTypedRun | undefined = a.run;
+    const b = carryRun(a.ink, "on Mo soon", fresh, 5, held);   // typed on at its end
+    expect([b.from, b.to, b.run, b.ink.marks[4]]).toEqual([4, 5, { from: 3, to: 5, mark: pink }, pink]);
+    expect(held).toEqual({ from: 3, to: 4, mark: pink });   // never changed
+    const c = carryRun(b.ink, "on M soon", fresh, 4, b.run);   // a letter taken back
+    expect(c.run).toEqual({ from: 3, to: 4, mark: pink });
+    const d = carryRun(c.ink, "on Mo soon", fresh, 5, c.run);   // typed again: the mark kept
+    expect([d.run?.to, d.ink.marks[4]]).toEqual([5, pink]);
+    expect(carryRun(d.ink, "Xon Mo soon", fresh, 1, d.run).run).toBeUndefined();   // typed elsewhere: over
+    expect(carryRun(d.ink, d.ink.text, fresh, 5, d.run)).toMatchObject({ ink: d.ink, run: d.run });   // nothing changed: the run stands
+    expect([keepRun(d.run, 5, 5), keepRun(d.run, 4, 4), keepRun(d.run, 3, 5), keepRun(undefined, 5, 5)]).toEqual([d.run, undefined, undefined, undefined]);
+  });
+
+  it("`readPiece` reads the private flavour as a stranger's — `{ text, marks }` with words, else nothing — and `printable` is the paste's default keep: every character but a control one, a break kept", () => {
+    expect(readPiece(JSON.stringify({ text: "two", marks: "1k3" }))).toEqual({ text: "two", marks: "1k3" });
+    expect(readPiece(JSON.stringify({ text: "two", marks: 5 }))).toEqual({ text: "two", marks: "" });
+    expect([readPiece(undefined), readPiece(""), readPiece("{"), readPiece("null"), readPiece("[1]"), readPiece(JSON.stringify({ text: "" })), readPiece(JSON.stringify({ text: 3 }))]).toEqual([undefined, undefined, undefined, undefined, undefined, undefined, undefined]);
+    const chars = ["a", "\u00e9", "\n", " ", "\t", "\r", String.fromCharCode(0), String.fromCharCode(127), String.fromCharCode(133), String.fromCharCode(160)];
+    expect(chars.map(printable)).toEqual([true, true, true, true, false, false, false, false, false, true]);
+  });
+
+  it("a typing that is NOT an `InkTyping` registers on the world by its cell (`registerInkTyping`): `inkTypingOn` finds it, the acts read its words and land it first, its own step before the marks; a second door on the cell replaces it, a stale unregister leaves the newer, the last unregister leaves none", () => {
+    const { ce, world, spawn, cell, props } = engine();
+    const e = spawn("one two three");
+    const ctx = (from: number, to: number) => ({ world, entities: [e], props, local: undefined, range: { entity: e, from, to } });
+    const strike = SHEET.menu.find((d) => d.id === INK_ACTS.strike);
+    const shown = mark(inkOf({ text: "one two three" }, 7), 4, 7, { strike: true });   // the words its field shows
+    const order: string[] = [];
+    let pending = true;
+    const door: InkTypingDoor = {
+      type: SHEET.type,
+      group: "ink",
+      editing: () => e,
+      open: () => pending,
+      commit: () => { order.push(`commit:${cell(e).marks}`); const was = pending; pending = false; return was; },
+      ink: (x) => (x === e ? shown : undefined),
+    };
+    const off = registerInkTyping(world, INK as NonNullable<typeof INK>, door);
+    expect(inkTypingOn(world, e)).toBe(door);
+    expect(inkTypingOn(world, e, "words")).toBeUndefined();   // another group's
+    expect(strike?.state?.(ctx(4, 7))?.pressed).toBe(true);   // its words, not the cell's
+    expect(ce.ops.runMenuAction(INK_ACTS.strike, undefined, { range: { entity: e, from: 0, to: 3 } })).toBe(true);
+    expect(order).toEqual(["commit:"]);   // landed first, the cell's marks untouched then
+    expect([pending, inkOf(cell(e), 7).marks.slice(0, 4).map(strikeOf)]).toEqual([false, [1, 1, 1, 0]]);
+    const other: InkTypingDoor = { ...door, open: () => false, commit: () => { order.push("other"); return false; } };
+    const off2 = registerInkTyping(world, INK as NonNullable<typeof INK>, other);
+    expect(inkTypingOn(world, e)).toBe(other);
+    off();   // stale: the newer stands
+    expect(inkTypingOn(world, e)).toBe(other);
+    expect(ce.ops.runMenuAction(INK_ACTS.underline, undefined, { range: { entity: e, from: 0, to: 3 } })).toBe(true);
+    expect(order).toEqual(["commit:"]);   // nothing open: nothing landed
+    off2();
+    expect(inkTypingOn(world, e)).toBeUndefined();
+    expect(strike?.state?.(ctx(4, 7))?.pressed).toBe(false);   // the cell's words again
+    const t = inkTyping({ world, docs: ce.docs, object: SHEET });   // the kit's own registers through the same door
+    t.begin(e);
+    expect(inkTypingOn(world, e)).toBe(t);
   });
 });
 
