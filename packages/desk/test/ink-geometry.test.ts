@@ -105,23 +105,24 @@ describe("the ink's geometry (kit/ink.ts)", () => {
     expect(near(strokesOf(L, mark(plain(T), 0, 2, { strike: true })))).toEqual([{ line: 0, kind: "strike", value: 1, from: 0, to: 2, x0: 16, x1: 40, y: 30.4 }]);
     expect(near(strokesOf(L, mark(plain(T), 0, 2, { underline: true })))).toEqual([{ line: 0, kind: "underline", value: 1, from: 0, to: 2, x0: 16, x1: 40, y: 38.8 }]);
     // never across a newline, and one a line across a wrap
+    // (the highlighters' numbers are their places: yellow 1, green 2, pink 3, blue 4, orange 5)
     expect(near(strokesOf(L, mark(plain(T), 3, 8, { highlight: "pink" })))).toEqual([
-      { line: 0, kind: "highlight", value: 2, from: 3, to: 5, x0: 47.2, x1: 71.2, y: 30.4 },
-      { line: 1, kind: "highlight", value: 2, from: 6, to: 8, x0: 16, x1: 40, y: 58.24 },
+      { line: 0, kind: "highlight", value: 3, from: 3, to: 5, x0: 47.2, x1: 71.2, y: 30.4 },
+      { line: 1, kind: "highlight", value: 3, from: 6, to: 8, x0: 16, x1: 40, y: 58.24 },
     ]);
     const W = "aaaa bbbbbbbbbbbb";
     expect(near(strokesOf(lay(W), mark(plain(W), 0, W.length, { highlight: "green" })))).toEqual([
-      { line: 0, kind: "highlight", value: 3, from: 0, to: 4, x0: 16, x1: 64, y: 30.4 },
-      { line: 1, kind: "highlight", value: 3, from: 5, to: 17, x0: 16, x1: 160, y: 58.24 },
+      { line: 0, kind: "highlight", value: 2, from: 0, to: 4, x0: 16, x1: 64, y: 30.4 },
+      { line: 1, kind: "highlight", value: 2, from: 5, to: 17, x0: 16, x1: 160, y: 58.24 },
     ]);
     expect(strokesOf(L, plain(T))).toEqual([]);
   });
 
   it("strokesOf runs by the FIELD's value: two highlighters are two strokes, a pen change under one highlight is one; each line its kinds in order", () => {
     const A = lay("abcd");
-    expect(near(strokesOf(A, mark(mark(plain("abcd"), 0, 2, { highlight: "yellow" }), 2, 4, { highlight: "pink" })))).toEqual([
+    expect(near(strokesOf(A, mark(mark(plain("abcd"), 0, 2, { highlight: "yellow" }), 2, 4, { highlight: "orange" })))).toEqual([
       { line: 0, kind: "highlight", value: 1, from: 0, to: 2, x0: 16, x1: 40, y: 30.4 },
-      { line: 0, kind: "highlight", value: 2, from: 2, to: 4, x0: 40, x1: 64, y: 30.4 },
+      { line: 0, kind: "highlight", value: 5, from: 2, to: 4, x0: 40, x1: 64, y: 30.4 },
     ]);
     expect(strokesOf(A, mark(mark(plain("abcd"), 0, 4, { highlight: "yellow" }), 0, 2, { pen: "red" })).length).toBe(1);
     const all = mark(mark(mark(plain("abcd"), 0, 4, { underline: true }), 0, 4, { strike: true }), 0, 4, { highlight: "yellow" });
