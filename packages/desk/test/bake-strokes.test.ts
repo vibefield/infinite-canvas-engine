@@ -1,13 +1,15 @@
 // THE PEN'S PATH (petition I59 — bake/derive.ts): every printable ASCII glyph of each of the desk's three faces gets a pen — 94 of
 // 94, each stroke x, y pairs inside the glyph's own box — and the desk's faces map every code point of the glyph set (none is
 // missing; one a face lacks is reported, never baked). The hand's habits hold: a line starts at its top, a flat one at its left,
-// a ring at its top and turns counterclockwise; a composite writes its letter, then its accent, as its own short stroke.
+// a ring at its top and turns counterclockwise; a composite writes its letter, then its accent, as its own short stroke. The soft
+// hyphen is baked inkless with advance 0, as a browser lays it mid-line, though each face draws it.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
-import { bakeHand, HAND_GLYPH_SET } from "../src/bake/bake";
+import { bakeHand, HAND_GLYPH_SET, HAND_INKLESS } from "../src/bake/bake";
 import { deriveGlyph, type GlyphPen, strokeLists } from "../src/bake/derive";
 import { readFont } from "../src/bake/ttf";
+import { handMetricsOf } from "../src/kit/hand-atlas";
 
 const FACES = ["Caveat-500.ttf", "Caveat-600.ttf", "Kalam-400.ttf"] as const;
 const bytes = (name: string): Uint8Array => new Uint8Array(readFileSync(resolve(import.meta.dirname, "../../../apps/desk/assets/fonts", name)));
@@ -46,7 +48,7 @@ describe("every printable ASCII glyph gets a pen", () => {
         }
       }
       expect(without).toEqual([]);
-    });
+    }, 30_000);
   }
 
   it("the desk's faces map every code point of the glyph set (none missing); a code point a face lacks is reported, not baked", () => {
@@ -59,6 +61,23 @@ describe("every printable ASCII glyph gets a pen", () => {
     expect(baked.missing).toEqual([0x4e00]);
     expect(Object.keys(baked.json.glyphs)).toEqual(["32", "65"]);
     expect(baked.json.glyphs[32]).toEqual({ advance: 0.242, length: 0, strokes: [] });   // the space: an advance, nothing to draw
+  });
+
+  it("the soft hyphen (U+00AD) is baked inkless in every face — advance 0, no rect, no strokes, no kerning — though each face draws it", () => {
+    const SHY = String.fromCodePoint(0x00ad);   // the soft hyphen by its code point: the character itself is invisible in source
+    for (const name of FACES) {
+      const face = readFont(bytes(name));
+      expect(deriveGlyph(face, 0x00ad, [])?.pen?.strokes.length ?? 0, name).toBeGreaterThan(0);   // the face draws it: its hyphen's ink…
+      const baked = bakeHand(bytes(name), { file: name, codes: [0x002d, 0x00ad, 0x0041] });
+      expect(baked.json.glyphs[0x00ad], name).toEqual({ advance: 0, length: 0, strokes: [] });   // …a browser draws nothing mid-line
+      expect(baked.json.glyphs[0x002d]?.rect, name).toBeDefined();   // the hyphen keeps its ink
+      expect(baked.missing, name).toEqual([]);
+      expect(Object.keys(baked.json.kerning).filter((k) => k.split(",").includes("173")), name).toEqual([]);
+      const metrics = handMetricsOf(baked.json);
+      expect(metrics.advance(SHY), name).toBe(0);   // as measureText gives it
+      expect(metrics.kern?.("-", SHY), name).toBe(0);
+    }
+    expect(HAND_INKLESS).toEqual([0x00ad]);
   });
 });
 

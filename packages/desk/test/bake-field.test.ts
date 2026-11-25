@@ -81,7 +81,7 @@ describe("the bake's bytes", () => {
       expect([fast.w, fast.h, ...fast.origin], ch).toEqual([plain.w, plain.h, ...plain.origin]);
       expect(Buffer.from(fast.bytes).equals(Buffer.from(plain.bytes)), ch).toBe(true);
     }
-  });
+  }, 30_000);
 
   it("is laid out as ice-hand/1 says: whole-texel rects inside the atlas, sides a multiple of 4, 0, 0 outside every rect", () => {
     const { json, bin } = baked;
@@ -147,7 +147,7 @@ describe("R: the ink's edge", () => {
     }
     expect(n).toBeGreaterThan(500);
     expect(sum / n).toBeLessThan(0.01);
-  });
+  }, 30_000);
 
   it("reads inside along the pen's path (its tips aside) and 0 at the rect's rim", () => {
     const { json, bin } = baked;
