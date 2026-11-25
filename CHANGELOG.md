@@ -6,6 +6,197 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+<!-- petition I59 — the desk's pen: a face baked once into an atlas, read in each kind's own shader (2026-11-25; VibeField) -->
+- **THE HAND'S ATLAS AND ITS BAKER — `ice-hand/1`, `readHandAtlas` · `glyphOf` · `handMetricsOf` (`/desk/kit`), `bakeHand`
+  (`@vibecook/ice/desk/bake`, a new entry)** (petition I59 — the desk's handwriting was a canvas-2D bitmap drawn per object and per
+  zoom rung; a pen instead: the face kept, a small field baked from it that also knows the order a hand writes each letter, read
+  in each kind's fragment shader). THE FORMAT: `<name>.hand.json` — the face's family, weight and box (`ascent`/`descent`, em), texels
+  an `em` (64), the `range` R spans, and per code point the glyph's `advance`, its `rect` and the pen's `origin` in it, the pen's path
+  `length` and its `strokes` in written order (em, y down; one point a dot); the face's pair `kerning`; the `source` font and its
+  SHA-256; the `corrections` applied — beside `<name>.hand.bin`, raw RG8 rows: R the signed distance to the ink's edge
+  (`HAND_ATLAS_EDGE`, 128, the edge), G the ARRIVAL, the moment the nib first covers the texel along the glyph's whole writing
+  (`HAND_PEN_LIFT` and `HAND_PEN_DOT` say what a lift and a dot count). THE KIT (`kit/hand-atlas.ts`, DOM- and GPU-free): the
+  format's types, a tolerant `readHandAtlas(json, bin)` that refuses a wrong format, a short bin and a rect outside the atlas by
+  name, `glyphOf`, and `handMetricsOf(atlas)` — `HandMetrics` with the atlas's own advances and kerning, so `layoutText` places
+  each glyph where its ink was baked. THE BAKER (`@vibecook/ice/desk/bake` — pure TypeScript, no fs, DOM or GPU; a build step):
+  `bakeHand(ttfBytes, { file })` → `{ json, text, bin, missing, refused }` over `HAND_GLYPH_SET` (203 code points: printable ASCII,
+  Latin-1 and ‘ ’ ‚ “ ” „ – — … • € ™; the soft hyphen inkless at advance 0 in every face, `HAND_INKLESS`, as a browser lays it
+  mid-line), with a TrueType reader (composites kept as parts — a letter, then its accent; cmap 4 and 12; GPOS PairPos and
+  kern-table kerning), the skeleton-and-habits derivation, per-face `HAND_CORRECTIONS` by id (refused whole when the derivation no
+  longer fits them) and shelf packing; the same bytes in are the same bytes out on every host (`handAtlasText(json)` the canonical
+  file text). apps/desk's three faces are baked and committed (`apps/desk/assets/hand`, under the fonts' OFL 1.1;
+  `pnpm --filter desk gen:hands`) and `gen:check` re-bakes them byte for byte.
+- **THE PEN — the hand read in a kind's own shader, and the note written by it** (petition I59: the kit's half and the note's;
+  the petitioner's picks on "The Desk's Pen", hand-face A, hand-home A, hand-draw A, hand-moves A). Every kind that writes drew its
+  words its own way — the note r8 raster pages per zoom rung, a plugin's pad a layer per pad; now the middle steps are the kit's
+  and a kind's fragment makes one call. THE FACES: `HAND_FACES` (`"hand"`) lends the baked atlases by name — `deskLayer({ hand })`
+  (beside `text`; the desk woken when one lands) with the browser's `handFaces({ faces: { caveat: { json, bin } } })` (fetched on a
+  sheet's first ask; `HandFaces.loading(name)`, optional, says a face is still on its way, so a sheet waits blank), or
+  `handFacesOf({ … })` in Node. THE RUN: `handRun(layout, atlas, { moments, epoch, pens, bleed, weight, … })` packs a `layoutText`
+  layout into five vec4s a glyph (its box, place and turned scale, atlas origin, size and pressure, exact atlas rect, its moment and
+  pen) after a five-vec4 header (`HAND_RUN`), and a grid of em cells listing the glyphs each can meet — deterministic, no GPU;
+  `run.missing` names a glyph the face lacks (that sheet keeps its raster). THE GPU: `handAtlasGpu(device, atlas)` (rg8unorm with a
+  CPU mip chain of up to four levels, its coarsest texel eight of the atlas's — one texture per device and face, for every kind),
+  `handSampler`, and `createHandRuns(device)` — a kind's runs in one `rgba32float` texture, an object's base in its record, grown by
+  copy. THE READ: the kit's `hand` WGSL piece, `hand_ink(runs, atlas, samp, base, p, now, aa) → HandInk { cover, wet, pen,
+  samples, loads, was, over }` — its textures and sampler the kind's own bindings (`handBindings(prefix)`), so two pen kinds share
+  one card program; blank paper reads no atlas texel; each sample kept inside its own glyph's rect, so no level reaches a
+  neighbour's ink; the ink laid as the canvas raster lays it — each glyph's bleed stroked as a band about its outline at α × its
+  pressure, the fill over it, every glyph over the ones before (source-over) — every outline moved outward by the run's `weight` (em;
+  the desk's `HAND_WEIGHT`, 0.007, beside `HAND`). THE CLOCK: `createPenClock()` keeps each glyph's moment by its SEED (an insert
+  before it never writes it again): typed glyphs are written as they come, arrived writing word by word within 1.4 s, a desk opening
+  writes nothing; `due`/`tick` wake the desk only while the pen moves, and the run holds the moments, so the writing moves with no
+  record remade (`now` is the pair `penNow(ms)` in the kind's uniform). `handInkAt` is `hand_ink`'s CPU twin. THE NOTE writes with
+  it wherever the host lends `HAND_FACES` and the face holds every glyph: one glyph run a sheet in the kind's run store, built again
+  only when its words or their moments change, never on a pan or a zoom; a glyph typed in the note's own typing written as it is
+  typed (the 110 ms wipe retires on this road), a paste, an IME commit or a peer's words arriving word by word, a sheet first seen
+  written already; the desk drawing while the pen moves (`KindHost.redraw()`, no record remade) and none at rest; in `HAND_WEIGHT`,
+  so on the oracle's note the pen lays 96 % of the raster's ink. A sheet the face cannot write (a glyph it lacks: CJK, an emoji), a
+  desk that lends no faces and a face that failed keep the raster road unchanged, and a still's pinned raster wins over both.
+  apps/desk lends its three baked faces to every kind. The oracle lends them too and gains ten pen stills, four holding the note's
+  shader to `handInkAt` within 0.03, and a row that says the pen's weight against the committed raster beside it.
+
+<!-- petition I60 — editing the ink: words selected, copied, pasted and marked on every written object (2026-11-25; VibeField) -->
+- **THE INK VALUE — the text, the seeds and the marks kept as one, and the verbs every written object is edited by**
+  (`/desk/kit`'s `kit/ink.ts`; petition I60 — written objects edited in place: words selected, copied and pasted, written in another
+  pen, highlighted, struck through, underlined, from an object's menu and from an agent's tools). An INK (`InkValue`) is three rows
+  with one entry a UTF-16 unit of the text: the text, each glyph's seed (its hand) and each glyph's MARK — one integer, four 3-bit
+  fields from the low end: the pen (0 the sheet's own, n `PENS[n − 1]`), the highlighter (0 none, n `HIGHLIGHTERS[n − 1]`), the
+  strike and the underline (0 none, 1 in the words' own pen, n ≥ 2 `PENS[n − 2]`), read by `penOf` · `highlightOf` · `strikeOf` ·
+  `underlineOf`; a newline carries 0. `HIGHLIGHTERS = ["yellow", "green", "pink", "blue", "orange"]` (the desk calendar's five, in its
+  order) and `HighlighterName` are new beside `PENS`; a name is kept by its place, so both orders are part of the format and a name
+  is only ever added at the end. A kind keeps the three in one conflict group (`ink: ["text", "seeds", "marks"]`): `inkOf(cells,
+  sheetSeed)` reads them (a cell with no marks reads unmarked) and `inkCells(ink)` writes them; the marks cell is runs of
+  `count:mark` in base 36 (`encodeMarks` / `decodeMarks`), the unmarked tail left off, read tolerantly. THE VERBS are pure: `splice`
+  (a REPLACEMENT keeps the value its replaced letters all carry, 0 too — "Friday" replaced by "Monday" in a highlighted "on Friday"
+  stays highlighted, and a word left unhighlighted inside one stays so; where the letters disagree, or at an insertion, the arrivals
+  join a field only where both neighbours carry it), `carryInk(ink, text, fresh, caret?)` (the platform's edit carried, `carrySeeds`
+  generalised; with the platform's caret the arrivals end at it, so a letter typed beside its twin lands where it was typed),
+  `mark` (`InkChange`: a pen, a highlighter, a strike or an underline by name, or clear), `replace`, `lift` and `paste` (`InkPiece`:
+  the words and their marks travel, never the seeds — a paste is written again in a fresh hand), `cleanPiece`, `findQuote`
+  (`InkQuote`: where an agent's quoted words are, or why not) and `readWriting` (`InkRun`: the marked runs by name). THE GEOMETRY,
+  over a laid `HandLayout`: `indexIn`, `wordAt`, `lineAt`, `spansOf` (`InkSpan`: the selection's wash, a rect a line) and
+  `strokesOf` (`MarkStroke`: every mark as the strokes a hand makes). The marks are the desk kit's own closed set, never a style in
+  core (the one crossing of design-005 §9's rich-text line: `docs/implementation-plan.md`, beside the fence).
+- **THE ONE EDITOR SELECTS, TAKES THE CLIPBOARD AND RUNS A HOST'S BAR — `EditorLease.selection` · `indexAt` · `rangeAt` · `lift` ·
+  `lay` · `caretBox`, `DeskEditor.write` · `command`, `PIECE_FLAVOUR`** (petition I60). Every new lease member is OPTIONAL: a lease
+  that declares none behaves exactly as before. THE CLAIM: a lease that says where its writing lies (`indexAt(wx, wy, hit?)` — the
+  text index nearest a world point on its part; `hit` the stack's exact hit under a press, so a press on another object lying over
+  the part stays that object's) has the editor claim a primary mouse or pen press there under the select tool — its default
+  prevented, so the pointer adapter lands it `surfaceHandled`: no carry, marquee or pan starts from it. A release within the drag
+  slop is still a tap; past it the drag sets the textarea's own range; a second click takes the word and a third the line
+  (`rangeAt(index, "word" | "line")`), counted by the presses' own times (a pointerdown's `detail` is 0 in the browser); Shift
+  extends. The selection is never stored or synced: it is the field's, told with the caret (`selection(from, to)`). Touch is a tap
+  only. THE CLIPBOARD: a lease that lifts (`lift(from, to)` → `EditorLift`: `text`, `html?`, `piece?`) takes the field's copy and
+  cut — `text/plain`, `text/html` and the kind's own piece under `application/x-ice-ink+json` (`PIECE_FLAVOUR`) — a cut deleting in
+  ONE input; a lease that lays (`lay(EditorPaste, from, to)` → boolean) is handed a paste, the piece when the clipboard holds one,
+  else the plain words. `DeskEditor.write(text, from, to)` writes the field as an input would (the platform's own editing first, so
+  ⌘Z in the field undoes it). A HOST'S BAR: `DeskEditor.command("cut" | "copy" | "paste" | "selectAll", opts?)` (`EditorCommand`,
+  `EditorCommandOptions`) does on the lent field what the keys do — the platform's own copy and cut first, else the async
+  clipboard; every copy and cut kept, so a bar's paste lays the kept piece (its marks back) when the clipboard's words are its, and
+  alone where the page may read no clipboard; `command("paste", { text })` reads no clipboard at all — a desktop shell that denies
+  the page its read hands in what it read. A right press on the lent writing keeps the field's focus for a host's right-click rows.
+  A CARET'S PLACE: a lease's `caretBox(index)` (a line's height at the caret's x, a world box) gives the anchor `caret` (`CaretAnchor
+  { box, entity, at }`, CSS px through the camera) while the range is empty, never together with `words`, so a host's Paste and
+  Select all stand at it. THE ADAPTER (`@vibecook/ice/dom`): a `pointerdown` whose default a listener ahead of it prevented lands
+  `surfaceHandled`, its `overInteractive` the DOM's own verdict (design-007's `defaultPrevented` rule carried from the keys to the
+  press).
+- **THE MENU COMES TO THE WORDS — `MenuActionDef.on` · `MenuActionState.pressed` · `MenuActionRange`, `ops.runMenuAction(id,
+  taken?, { range })`, `SelectionAnchor.words`, `EditorLease.rangeBox` · `entity`, `DeskEditor.pressing`** (petition I60 — the ink
+  bar comes to the words selected while a sheet is written; until now the menu stepped aside while a part was written). On I61's
+  state and I62's choices, every addition OPTIONAL: an act that declares none is I61's and I62's byte for byte. THE ACT (core):
+  `on: "words"` makes an act the WORDS' (`"objects"`, the default, is the selection's) — offered only while its object is written and
+  words are selected, and only in the words' menu; its `state` and `choices` read the selected letters
+  (`MenuActionStateContext.range`, `MenuActionRange { entity, from, to }`) and its `run` marks them (`MenuActionApi.range`); a
+  toggle's state says `pressed` — kept whenever it is a boolean, so a host tells a toggle that is off from a plain act. THE OP:
+  `ops.runMenuAction(id, taken?, opts?)` takes a THIRD argument (`RunMenuActionOpts { range? }`) — given a range, the words act of
+  that object's type runs once on it alone, its state (I61's refusal) and its choices (I62's `takenChoice`) read over the range with
+  the desk's state for that object, never on the selection, and an objects act is never run on words; a words act named without a
+  range runs nothing; a malformed range throws (`ice: ops.runMenuAction("id") — …`). `menuActionsFor(entities, menuOf, on?)` lists
+  the selection's acts (never a words act) or an object's words acts; `defineWidget` refuses any other `on`. THE ANCHOR (desk):
+  `SelectionAnchor.words` (`WordsAnchor { box, entity, from, to, menu }`) while the one editor is lent, the object is being written —
+  the one its lease names (`EditorLease.entity`), else core's `Editing` — the range is not empty and the lease says where it lies
+  (`rangeBox(from, to)` → `RangeBox { x, y, w, h }`, a world box; on a turned part the box of the turned corners) — absent while a
+  press the editor claimed on the writing is down (`DeskEditor.pressing()`: the bar waits for the release), with an object in hand
+  and while the drawer is out. `box` is CSS px through the camera; `menu` the object's words acts as `MenuSlot`s, read for the range
+  through I61's own door, each with I61's `enabled` and `swatch`, I62's `choices` and the new `pressed` (the selection's slots carry
+  `pressed` too). A `rangeBox` that throws is said once, never a strike. The anchor's `editing` is also true while the editor is lent
+  to a part whose lease names an object of the selection. THE SHOWCASE'S MENU (`@vibecook/ice/react`): with words that carry acts,
+  `<SelectionMenu>` is their row, placed over `words.box` by the rules it is placed by over objects and not stepped aside for the
+  writing; a words act its kind says is disabled is dim and inert; a toggle shows `aria-pressed`, on or off (a kind act's too); a
+  words choice act's cell swaps the row for its choices (Back first, the current one marked, its swatch a dot in the kind's colour, a
+  rule where the group changes); a words act runs with the words as the anchor says them at the press; a press on the row keeps the
+  editor's focus.
+- **THE WRITTEN PART AND THE INK ACTS — `inkPart` · `inkTyping` · `inkTypingOn` · `registerInkTyping` · `inkActs` · `inkHtml`**
+  (`/desk/kit`; petition I60 — the editing is the desk's own, so a downstream object gets it whole, shows it in its menu and hands it
+  to an agent). A kind DECLARES its writing — its geometry (`InkGeometry`: its layout as last laid, a world point in the layout's
+  units and back, where the textarea stands, an object at a point for a lifted touch), its ink cell, the marks its words take
+  (`INK_FIELDS`) and a sink its render half draws from (`InkSink`: the draft, the caret, the selection) — and the kit gives it the
+  rest. `inkPart(host, opts)` is a `TextPart` whose lease is complete: taps, typing, the caret, a drag, a word and a line,
+  `rangeBox` and `caretBox`, the object it writes (`entity`, no `Editing` stamped), the clipboard in three flavours — the words,
+  `text/html` styled by the marks (`inkHtml`; a colour only where the host's `colour(role)` answers one) and the piece `{ text, marks
+  }` (`readPiece`) — a paste laid in a fresh hand with the marks the kind keeps (`printable`, the default keep), and the marks' keys
+  (⇧⌘X Strike, ⌘U Underline, ⇧⌘H Highlight; `INK_KEYS`, `inkKeyOf`: ⌘ or Ctrl) run on the field's range while words are selected.
+  Its TYPING (`inkTyping`) is a DRAFT, never a live write: every input carried by the field's caret, a word typed over a selection
+  keeping the marks its letters shared for its whole run (`carryRun`, `keepRun`, `InkTypedRun`), and ONE undoable transaction when
+  the typing ends — nothing when it nets to nothing, marks included; a read-only document opens none. A typing registers itself on
+  its world (`registerInkTyping(world, cell, door)` → unregister; `InkTypingDoor` — a live typing of another shape registers the
+  same way), so `inkTypingOn(world, e, ink?)` finds it from a static binding. THE ACTS: `inkActs({ marks?, ink?, sheetPen?, glyphs?,
+  colour? })` — `INK_ACTS`: Pen (the desk's pens; the sheet's own clears the pen) and Highlight (the five highlighters and
+  `NO_HIGHLIGHT`), each a choice act (I62's `choices`, the letters' common one `current` — `inkCommonPen`, `inkCommonHighlighter` —
+  each choice's swatch the host's CSS colour for its role, `colour("pen.<name>" | "highlight.<name>")`, the roles `inkPart`'s `colour`
+  is asked by), Strike and Underline (toggles: their state's `pressed` when every selected letter carries one, `inkEveryLetter`), and
+  Clear — all `on: "words"`, each ONE undoable step on the cell, an open draft landed first as its own step; with no typing they mark
+  the stored cell (an agent's act). Highlight's key without a choice takes the highlighter last picked on that desk, yellow at first.
+  Their default glyphs are names — `pen`, `highlighter`, `strike`, `underline`, `clear-marks` (ICE's React bar draws all five) — so a
+  host tells a pen's choices (dots) from a highlighter's (stripes) by the act's glyph, never its id.
+- **THE MARKS DRAWN, AND THE NOTE KEEPS ITS INK** (petition I60: the kit's pen draws the marks; `@ice/objects`' paper adopts it
+  all). THE KIT: the `marks` WGSL piece, `ink_marks(runs, base, p, now, aa) → InkMarks { marker, tint, wash, line, pen, loads }` —
+  what a sheet's marks lay at a point under its ink (the highlighters' cover and which; the selection's wash) and over it (a strike's
+  or an underline's cover and its pen), read from the same run as the pen (asking for `marks` composes `hand`). `handRun({ ink,
+  strokes, marked, wash })` builds a run from an ink: each glyph's pen from its mark and a marks section after the glyphs; a glyph
+  whose pen changed is written over by its new pen along its own path (`HandInk.was`, `.over`). `inkWash` and `HandRuns.wash` rewrite
+  the selection's wash alone. `PenClock.marks` (`PenMarks`, `StrokeMoment`, `SHOWN`, `PEN_PACE.reink`, `PEN_PACE.strokes`) draws a
+  mark from the moment it is seen, once, and nothing when a desk opens. `inkMarksAt` is the CPU twin; `INK_STROKES`, `INK_MARKS`,
+  `INK_WASH`, `inkShape`, `inkCentre`, `inkSection`, `washLines`, `strokeValueOf` say how a hand makes each mark. THE NOTE: its
+  writing is ONE conflict cell of three fields, `desk.note:ink` = `{ text, seeds, marks }` — a concurrent edit never pairs one peer's
+  words with another's marks, and a note stored before the marks reads unmarked (the field's default; the type stays at version 1,
+  no migration). Its own live typing carries the marks with the letters (`carryRun`, the field's caret) and registers on its world,
+  so its menu — `inkActs`, and the marks' keys — lands a live write first and marks the letters the field shows selected, one undo
+  step; a copy lifts the words in three flavours (`inkHtml` in the note's palette's inks), a paste lays a piece in a fresh hand; its
+  lease names the note, says where a range of its words lies and where its caret stands. The pen draws them: the run built from the
+  ink, the note's shader laying `ink_marks` beside `hand_ink` in the paper's order — the highlighter by multiply, the selection's
+  wash in the pencil (`PAPER.wash`, 0.34), each glyph in its own pen (a re-ink its new pen over the old), the lines over it — the
+  wash rewritten alone, never a run built; a sheet on the raster road draws its marks over the raster from a run of the marks alone.
+  `NoteTyping` gains `value`, `moved`, `paste` and `lift`, its `input` the caret and its `ink` the marks; `NoteBodyOptions` gains
+  `look`, `object` and `docs`; the paper's palette
+  (`DeskPalette`) `highlighters` and `pencil` (the palette's `select` without one; `deskPalette`'s highlighters the calendar's five),
+  carried in the record a colour a float. The oracle gains eight stills (a marked note at rest, by night, far, its marks being made,
+  a word re-inked, the wash), the marked sheets held as colour to the twins within 0.03; no existing still moved.
+
+### Changed
+
+<!-- petitions I59 and I60 — what a caller of 0.22.0 notices (2026-11-25; VibeField) -->
+- **`DeskEditor` gains three required members — `write`, `pressing` and `command`** (petition I60). Only `createDeskEditor`
+  implements it in this repository; a hand-written double must add them.
+- **A press on a lent part's writing is the editor's** (petition I60): where the lease declares `indexAt`, a primary mouse or pen
+  press there no longer blurs the editor — a tap keeps the same lease and its typing open — and the stack's own tap, carry, marquee
+  and pan do not run for it; a right press there keeps the field's focus. And in `@vibecook/ice/dom`, a host listener that prevents
+  a `pointerdown`'s default inside the container, outside a keyboard claim, now opts that press out of the canvas's gestures.
+- **A menu act declared `on: "words"` is never one of the selection's acts** (`menuActionsFor`, the anchor's `menu`; petition I60);
+  `ops.runMenuAction` runs it only told a range. An act that says nothing is the selection's, as before.
+- **The note's `ink` group gains `marks`** (`desk.note:ink` = `{ text, seeds, marks }`; petition I60). A stored note reads unmarked
+  and the type stays at version 1; a hand-written `NOTE_INK` value names the third field.
+- **`@ice/objects`' `HighlighterName` is the kit's own type** (petition I60): the desk calendar's five in its order — yellow, green,
+  pink, blue, orange — and the calendar's highlighter table is held to `HIGHLIGHTERS`.
+- **The note is written by the pen where the host lends `HAND_FACES`** (petition I59): its words are read from the baked face in
+  its own shader and drawn as they are typed and as they arrive; the 110 ms wipe retires on that road. A host that lends no faces
+  sees the raster road unchanged.
+- **The React selection menu's glyph set gains `highlighter`, `strike`, `underline` and `clear-marks`** (petition I60, the ink
+  acts' default names); a name the set already had draws as before.
+
 ## [0.22.0] — 2026-11-25
 
 **A menu act says its state now (petition I61), and an act may be a choice (petition I62), released on `latest`.** A

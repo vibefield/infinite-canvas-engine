@@ -192,13 +192,13 @@ Measured, not estimated. [`docs/benchmarks.md`](docs/benchmarks.md) has the meth
 - **Shared boards: plan around 3,000 objects.** A peer who is editing applies an incoming edit at a cost that grows with the document. A peer who only receives holds to about 40,000, and a local document to about 100,000.
 - **Scale through containers, not flat boards.** A flat board with 100,000 active objects costs 40 to 64 ms per camera-gesture frame. Nested, the same count costs 2.6 to 4.4 ms.
 - **Opening a big document is a one-time cost:** 0.3 to 0.5 s at 10,000 rows, 3.2 to 3.9 s at 100,000. A saved document is about 100 bytes a row.
-- **Out of scope, each with a named seam:** a general layout engine, rich text, comments and permissions. There is no authority model, so trust between users is the app's to own.
+- **Out of scope, each with a named seam:** a general layout engine, rich text, comments and permissions. There is no authority model, so trust between users is the app's to own. The rich text line was crossed once, by a ruling (petition I60, 2026-11-25), for the desk kit's per-glyph marks alone; the record is in [`docs/implementation-plan.md`](docs/implementation-plan.md).
 - **Not yet on the desk:** the string between objects (no kind declares a port yet), and which mat another person is inside.
 - **Pre-1.0,** and so is strata-ecs underneath. Minor versions may break APIs.
 
 ## Entry points
 
-One npm package, nine entry points. Import walls between them are enforced by dependency-cruiser and fail CI.
+One npm package, ten entry points. Import walls between them are enforced by dependency-cruiser and fail CI.
 
 | Import | What |
 | --- | --- |
@@ -208,6 +208,7 @@ One npm package, nine entry points. Import walls between them are enforced by de
 | `@vibecook/ice/desk` | The desk: the WebGPU renderer, `deskLayer`, and the kind contract (`defineObject`) |
 | `@vibecook/ice/desk/engine` | The raw WebGPU layer: device, shader composition, pipelines, render targets |
 | `@vibecook/ice/desk/kit` | What a kind's pass is written against: the view, the light, the shared WGSL |
+| `@vibecook/ice/desk/bake` | The hand's baker: `bakeHand` turns a TrueType face into its `ice-hand/1` atlas, as a build step |
 | `@vibecook/ice/desk/objects` | The six reference kinds, the preset (`DESK_ENGINE`) and the default palette |
 | `@vibecook/ice/react` | `<Desk>`, `EngineProvider`, hooks, the keymap, the selection menu |
 | `@vibecook/ice/devtools` | `attachDevtools(engine)`: the profiler, the observer and the GPU in one dock |

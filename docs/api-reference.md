@@ -34,7 +34,7 @@ custom driver can yield before lifting; `Drags` and `Grab` remain the authoritat
 
 | Export | Shape | Notes |
 |---|---|---|
-| `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; the `object` kind binding (design-015 §5.2 — the FACE, optional: a widget without one is faceless and the desk draws nothing for it) and its `stratum` (`pads` · `sheets` · `things`) and `openable`; `ports`, `container`/`provides`, `interaction`, `renamedFrom`, `behaviors`, `migrate` chain, and a `tray` entry (design-017 §8, K5a — `{ label, props?, take?, local?, hang: { w, h, pegs, accessory }, order?, category? }`: the object's specimen on the pegboard tray, an object's only; validated at definition; K-L2 — a plugin kind declares the same, and the catalog's widgets that carry one ARE the tray's contents; design-018 §6: `category` is the entry's CHIP on the tray's bar — the built-ins file under `paper` (the note, the notebook, the calendar) and `surfaces` (the mini mat, the whiteboard), the example clock under `things`; a plugin's string is its own chip or joins one it names, and an entry with none is laid under All alone. K5b: `props` is the specimen's FACE; `take` what one taken off the tray is made with — absent the widget's defaults, `"face"` the face's props, or a record (`trayTakeProps` reads it); `local: true` draws the specimen, and a copy lifted off it, with its kind's desk state, for a face that lives there — a note's writing, a print's pictures, a pad's print); `heldTools` (each a `mode`/`action` with keys and a `HeldGlyph` — a name of the bar's set or its own drawing `{ path, fill? }`, design-016 K8a) and `menu` (K8a — `MenuActionDef { id, label, glyph?, keys?, run(api) }`: the acts the selection menu shows for a selection all of whose types declare them, run by `ops.runMenuAction`; `menuActionsFor(entities, menuOf)` is the shared rule). RETIRED at design-015 D5b and refused at definition (the `presentation` precedent): `surface`, `component`, `chrome`, `animated`, `preview`, `instancePreview`, `sizeMode`, the container's `framePreview`, and the three `ice:surface.*` behaviours that chose where a card presented (`domAtRest` · `alwaysGpu` · `alwaysDom` — the S1 gesture-set promotion with them; `git show c5df2c9:docs/api-reference.md` keeps that row). `@ice/desk`'s `defineObject({ type, kind, size, props, container })` is the typed door. |
+| `defineWidget(def)` | → `WidgetType` | Props DSL → conflict-group components on a durable prefab; the `object` kind binding (design-015 §5.2 — the FACE, optional: a widget without one is faceless and the desk draws nothing for it) and its `stratum` (`pads` · `sheets` · `things`) and `openable`; `ports`, `container`/`provides`, `interaction`, `renamedFrom`, `behaviors`, `migrate` chain, and a `tray` entry (design-017 §8, K5a — `{ label, props?, take?, local?, hang: { w, h, pegs, accessory }, order?, category? }`: the object's specimen on the pegboard tray, an object's only; validated at definition; K-L2 — a plugin kind declares the same, and the catalog's widgets that carry one ARE the tray's contents; design-018 §6: `category` is the entry's CHIP on the tray's bar — the built-ins file under `paper` (the note, the notebook, the calendar) and `surfaces` (the mini mat, the whiteboard), the example clock under `things`; a plugin's string is its own chip or joins one it names, and an entry with none is laid under All alone. K5b: `props` is the specimen's FACE; `take` what one taken off the tray is made with — absent the widget's defaults, `"face"` the face's props, or a record (`trayTakeProps` reads it); `local: true` draws the specimen, and a copy lifted off it, with its kind's desk state, for a face that lives there — a note's writing, a print's pictures, a pad's print); `heldTools` (each a `mode`/`action` with keys and a `HeldGlyph` — a name of the bar's set or its own drawing `{ path, fill? }`, design-016 K8a) and `menu` (K8a — `MenuActionDef { id, label, glyph?, keys?, on?, run(api, taken?), state?(ctx), choices?(ctx) }`: the acts the selection menu shows for a selection all of whose types declare them, run by `ops.runMenuAction`; `menuActionsFor(entities, menuOf, on?)` is the shared rule; petition I60: `on: "words"` makes an act the words' — offered while its object is written and words are selected, in the words' menu — its `state` and `choices` reading the range (`ctx.range`), a toggle's state its `pressed`). RETIRED at design-015 D5b and refused at definition (the `presentation` precedent): `surface`, `component`, `chrome`, `animated`, `preview`, `instancePreview`, `sizeMode`, the container's `framePreview`, and the three `ice:surface.*` behaviours that chose where a card presented (`domAtRest` · `alwaysGpu` · `alwaysDom` — the S1 gesture-set promotion with them; `git show c5df2c9:docs/api-reference.md` keeps that row). `@ice/desk`'s `defineObject({ type, kind, size, props, container })` is the typed door. |
 | `p` | `p.string/number/boolean/enum/json/entityKey` | Every field defaulted; `p.json` is the conflict-coarse escape hatch; `p.entityKey` is the ONLY legal cross-entity reference in durable data. Standard Schema v1. |
 | `defineBehavior(name, spec)` | → `BehaviorHandle` | Logic + state as ONE declaration; `store: "durable" \| "runtime" \| "ephemeral"` is REQUIRED and routes everything. See [Behaviors](#behaviors). |
 | `defineTool(def)` / `createDrawTool(type)` | → `Tool` | Pure config: `spawnProfile`, `route {canvasDrag, canvasDragShift, widgetDrag, portDrag}` (`canvasDragShift`: what a shift-drag on the bare canvas does — the desk's `deskSelect` marquees on both, with shift adding to the selection), `gates`, `cursor`, `shortcut`. Built-ins: `select`, `pan`, `connect`. |
@@ -58,7 +58,7 @@ stamped on new documents. A widget cannot appear in both `widgets` and `retiredW
 - `ce.ops` — `setTool · spawnWidget · deleteSelection · duplicateSelection ·
   setSelection/clearSelection/selectAll · reorder(ids, "top"|"bottom") ·
   zoomToFit/zoomTo/panTo · lookAt(entity, opts?) · enterContainer/exitContainer · cancelActiveGestures ·
-  open/putDown/useHeldTool(id, taken?) · runMenuAction(id, taken?) · layFromTray(type, at)`. `layFromTray` (petition I37) LAYS the tray's own take
+  open/putDown/useHeldTool(id, taken?) · runMenuAction(id, taken?, opts?) · layFromTray(type, at)`. `layFromTray` (petition I37) LAYS the tray's own take
   with no drag — what a specimen dragged off the board makes: the type at its natural size, its entry's `take` props, CENTRED on
   `at` (a world point of the current frame), ONE transaction (one undo step), selected, and the board folds as a handed take's
   does; only a type the board hangs now (`trayHung`), refused (undefined) otherwise and while an object is in hand; laid in the
@@ -67,7 +67,10 @@ stamped on new documents. A widget cannot appear in both `widgets` and `retiredW
   over its own selected objects; false when none declares it, or when every declaring type's act says it is disabled now
   (petition I61). `taken` (petition I62) is the choice a host took of an act that is a choice: a declaring type's `run` is handed it
   only when it is one of that act's choices now and its values fit their fields, and `useHeldTool(id, taken)` holds a held
-  action's choice to the same rule.
+  action's choice to the same rule. Petition I60 (`RunMenuActionOpts`, the third argument): `{ range: { entity, from, to } }` runs
+  a WORDS act (`on: "words"`) once on that object alone, `MenuActionApi.range` the words, its state and choices read over them —
+  never on the selection, and an objects act never on words; a words act named without a range runs nothing; a malformed range
+  throws.
   `lookAt` (petition I58) TAKES THE PERSON TO AN OBJECT: the camera centred on it in the viewport less `opts.inset` (screen px), at
   the zoom `opts.zoom` gives — `"comfort"` (keep a zoom it reads at and fits at, else in to 50% and never past 100%, or out until it
   fits), `"fit"` (the FIT band), `"keep"` or a number, CameraLimits clamping — the object selected (`select: false` leaves the
@@ -327,7 +330,7 @@ CHANGELOG's `### Removed` lists them).
 | `useUndoStatus()` | `{canUndo, canRedo}` via the `DurableUndoStatus` resource — survives doc swaps. |
 | `usePresencePeers()` | Remote peers (`PresencePeer` × `Not(Local)`), membership-keyed stable snapshots. A host that draws them itself mounts the desk with `deskLayer({ cursors: false })` (petition I26), and the desk's remote cursors stay off. |
 | `attachKeymap(ce, target?, overrides?)` · `nudgeSelection` · `toggleTape` | Defaults: ⌫ delete · ⌘Z/⇧⌘Z · ⌘D · ⌘A · Esc · arrows nudge (one tx/press) · ⏎ opens / enters · tool shortcuts. All resolve to ops; editable targets and keyboard claims skipped. Esc closes the tray, then puts the object in hand down — in ONE press even while its kind leases the editor (M24 LT2: the claim released with it) — and never for a kind that owns Esc (`open.escape: "kind"`, the type's `heldEscape`: its lease takes the key; Done, a click off it or the pinch put it down). |
-| `<SelectionMenu source actions>` · `defaultSelectionActions` · `placeSelectionMenu` · `SELECTION_MENU` · `SELECTION_GLYPHS` · `selectionTaped` | *Marks on the Mat*'s ink bar and the held bar (design-015 §7–§8, D4a/D4b): placed from the desk layer's `selection` anchor. K8a: the anchor's `menu` puts a selection's KIND ACTS first (`SelectionMenuAct` — a type's `defineWidget({ menu })`, run by `ops.runMenuAction`); a held tool's or an act's glyph is a name of `SELECTION_GLYPHS` or its own drawing (`SelectionGlyph` `{ path, fill? }`), and a name the set lacks is marked missing (its initial, `data-glyph-missing`), never drawn as the ellipsis. |
+| `<SelectionMenu source actions>` · `defaultSelectionActions` · `placeSelectionMenu` · `SELECTION_MENU` · `SELECTION_GLYPHS` · `selectionTaped` | *Marks on the Mat*'s ink bar and the held bar (design-015 §7–§8, D4a/D4b): placed from the desk layer's `selection` anchor. K8a: the anchor's `menu` puts a selection's KIND ACTS first (`SelectionMenuAct` — a type's `defineWidget({ menu })`, run by `ops.runMenuAction`); a held tool's or an act's glyph is a name of `SELECTION_GLYPHS` or its own drawing (`SelectionGlyph` `{ path, fill? }`), and a name the set lacks is marked missing (its initial, `data-glyph-missing`), never drawn as the ellipsis. Petition I60: with the anchor's `words` carrying acts (`SelectionMenuWords`), the bar is the WORDS' row — placed over `words.box` by the same rules, not stepped aside for the writing, a press on it keeping the editor's focus; a toggle's `pressed` shows `aria-pressed` (a kind act's too), a words choice act's cell swaps the row for its choices (I62's `SelectionMenuChoice`: Back first, the `current` one marked, a swatch a dot in the kind's colour, a rule where the group changes), a disabled words act is dim and inert, and a words act runs `ops.runMenuAction(id, taken?, { range })` on the words as the anchor says them at the press; the set draws the ink acts' default names (`pen`, `highlighter`, `strike`, `underline`, `clear-marks`). |
 | `<TrayBar source label? keys?>` · `placeTrayBar` · `TRAY_BAR` · `TRAY_BAR_GLYPHS` · `DESK_TAPE` | The pegboard drawer's HANDLE and its FILTERS (design-018 §5–§6, R4), the menu's sibling: two islands under one root. `source` is the desk handle's `tray` door, read structurally (`TrayBarSource` — `anchor()`, `subscribe()`, `toggle()`, `category(id?)`). THE PILL, in the desk's ink (the same `--ice-menu-*` custom properties, declared on its own root — an app re-points both islands alike): shut, a 40 px pill 16 px above the view's foot — the pegboard glyph and "Objects", titled "Objects (A)", `aria-expanded`; out, it rides the drawer's top edge as "× Objects", its bottom at `min(vh − 16, drawer.y − 10)`. THE CATEGORY CHIPS (R4) lie in the drawer's clear HEADER (the anchor's `drawer.header`) as LABEL TAPE — the specimens' own tags, `DESK_TAPE`'s custom properties (the tape, its raised capitals, the chosen cream, the mono face) — All, then the drawer's categories, the chosen one cream tape with ink letters; `aria-pressed`, a `role="toolbar"`; centred on the drawer and in the band, following the slide and fading in over its last part (`smoothstep(0.6, 1, p)`), scrolling inside the band past its width (each end fading where more lies beyond), stepping back by night by the anchor's `night` as the tags do. `placeTrayBar(anchor)` → `{ y, head: { x, y, w, h, opacity } | null }`. Both are written each frame the desk publishes (no render per frame, no rAF of its own) and step aside in hand and with nothing to offer. The pill and the chips' toolbar are `data-canvas-interactive`: the tray's input never takes their downs (a chip never closes the drawer) and the desk's tap lends nothing under them — the header's bare board beside them stays the drawer's. Enter/Space act on a focused button, ←/→/Home/End walk the chips; a pointer's click leaves no focus (Space still pans). |
 | `useCanvasCatalog` / `useCanvasTools` / `useCurrentCanvas` / `useCanvasDiagnostics` / `useFramePreview` · `<FramePreviewBoundary>` | The canvas SDK hooks. |
 | `useWorld()` | Escape hatch: read + observe only (DEV-warned). |
@@ -344,7 +347,9 @@ layer's handle says `cursors: false`, petition I26 ]
 (one layout read, then a ResizeObserver) → `startRafLoop`. The viewport is the container's LAYOUT size (`clientWidth` ×
 `clientHeight`, petition I39) — the box the canvas fills, which no CSS transform on the container or an ancestor changes — and the
 adapter maps each client point into that space (kernel `clientToScreen`), so a desk mounted under a host's `scale` draws at its size
-and a press lands where it is drawn; `DeskHost { engine, host, layer, focus,
+and a press lands where it is drawn; a `pointerdown` whose default a listener ahead of the adapter prevented (the desk's editor
+claiming a press on the writing it holds, petition I60) lands `surfaceHandled`, as a native control's, its `overInteractive` the
+DOM's own verdict — the focus driver's cancel inside a keyboard claim is not a claim; `DeskHost { engine, host, layer, focus,
 dispose }` · `startRafLoop(engine)` (rAF + the freeze park) · input ownership (`isEditableTarget`,
 `keyboardClaimOf`, `wheelCede`, `KEYBOARD_CLAIM_ATTR`, `CLAIM_OWNS_ESCAPE`) · the focus driver
 (`attachWidgetFocus`, `FOCUS_PROXY_ATTR`) · `createCursorReflector(host, readCursor)` ·
@@ -438,13 +443,78 @@ caller's device, no canvas: Plugin parity, below), the mat config `DEFAULT_MAT_C
 `SPRINGS`, the zoom band `ZOOM_MIN`/`ZOOM_MAX`) · **`@ice/desk/engine`** (the raw-WebGPU engine: `acquire`/`adopt`, the
 `Surface` type, `compose`/`compile`, pipelines, `Target`/`beginPass`/`readback`, `defineStruct` — the swap chain `surface()` is
 `@ice/desk`'s, and no pass ships here) · **`@ice/desk/kit`** (the render kit a kind's pass is written against besides the engine:
-the slot's view and its mat, the lamp, `kitWgsl`, a container's inside, the service keys a kind lends and uses). The desk names no kind.
+the slot's view and its mat, the lamp, `kitWgsl`, a container's inside, the service keys a kind lends and uses, the desk's PEN and
+the INK a written object is edited by — petitions I59 and I60, below) · **`@ice/desk/bake`** (the hand's baker, petition I59:
+`bakeHand(ttf, { file })`, a face's TrueType bytes in, its `ice-hand/1` atlas out; a build step — pure, no fs, DOM or GPU). The desk
+names no kind.
 The kit's `portal` piece — `portal_cover`, a fragment's cover through the slot's chain of faces — honours a face's top FEATHER
 (design-018 §4, R4: the pegboard tray's face carries one, its top the foot of the drawer's clear header, so its specimens dissolve into the board below it; every kind
 that multiplies by `portal_cover` fades with no code of its own). A LAYERED kind (its objects drawn into a target of its own, laid in
 one composite) keeps the contract as one object: the kit's composite lays the layer through the slot's chain (`layerComposite`, its
 bindings `layerCompositeLayout(device, label)`, and `BoxTargets(device, label, layoutComp, samples, view)` — `view` the slot's view
 block, `MatPass.view`).
+
+**The hand's atlas (petition I59, `ice-hand/1`)** — a face's handwriting baked once: `<name>.hand.json` (the face's `family`,
+`weight`, `ascent`/`descent` em, `em` texels an em, `range`, `width`/`height`; per decimal code point a glyph's `advance`, `rect`
+`[x, y, w, h]`, the pen's `origin` in the rect, its path's `length` em and its `strokes` `[x0, y0, …]` em from the origin, y down,
+in written order, one point a dot; `kerning` `"<a>,<b>": em`; `source` `{ file, sha256 }`; `corrections`) and `<name>.hand.bin`
+(`width × height × 2` bytes, row 0 at the top: R the signed distance to the ink's edge, 128 the edge (`HAND_ATLAS_EDGE`) and
+`(R − 128) / 255 × range` em; G the ARRIVAL, 0..255 = 0..1 along the glyph's whole writing — the moment the nib first covers the
+texel, the first stroke to reach it where strokes cross; 0, 0 outside every rect). `readHandAtlas(json, bin)` answers the atlas or
+`{ error }` naming the field (a wrong format, a bin that is not exactly the size, a rect leaving the atlas), ignoring fields it does
+not know; `glyphOf(atlas, code)`; `handMetricsOf(atlas)` is `HandMetrics` from the atlas — `layoutText` with it places each glyph
+where its ink was baked. `HAND_PEN_LIFT` (0.1) and `HAND_PEN_DOT` (0.08) are the em a lift and a dot count in `length`.
+`@vibecook/ice/desk/bake`'s `bakeHand(ttfBytes, { file, family?, weight?, em?, codes?, corrections? })` → `{ json, text, bin,
+missing, refused }` (`handAtlasText(json)` is the canonical file text; `HAND_GLYPH_SET` — 203 code points: printable ASCII,
+Latin-1, ‘ ’ ‚ “ ” „ – — … • € ™; `HAND_INKLESS` — the soft hyphen, baked `{ advance: 0, length: 0, strokes: [] }` whatever the
+face draws and kerning nothing, as a browser lays it mid-line; `HAND_CORRECTIONS` per face and glyph, by id). apps/desk's faces:
+`apps/desk/assets/hand`, `pnpm --filter desk gen:hands`, held by `gen:check`.
+
+**The pen (petition I59)** — a sheet's writing read in the kind's own shader: the faces lent by name (`HAND_FACES`, `HandFaces`,
+`handFaces`, `handFacesOf`), the run (`handRun(layout, atlas, opts)` → five vec4s a glyph after a five-vec4 header, `HAND_RUN`, and
+an em grid of the glyphs each cell can meet; `run.missing`), the GPU's half (`handAtlasGpu` — rg8unorm, up to four mip levels made
+on the CPU, `handMips`; `handSampler`; `createHandRuns` → `HandRuns`, a kind's runs in one `rgba32float` texture; `handBindings`),
+the clock (`createPenClock` → `PenClock`, moments keyed by seed; `penNow`, `PEN_PACE`), the desk's weight `HAND_WEIGHT` (0.007 em)
+beside `HAND`, and `handInkAt`, the `hand` piece's CPU twin. How a kind uses them: Plugin parity, "The pen", below.
+
+**The ink (petition I60)** — `kit/ink.ts`, what a written object is edited by. `InkValue { text, seeds, marks }`: one entry a
+UTF-16 unit; a mark is four 3-bit fields from the low end — the pen (0 the sheet's own, n `PENS[n − 1]`), the highlighter (0
+none, n `HIGHLIGHTERS[n − 1]`), the strike and the underline (0 none, 1 the words' own pen, n ≥ 2 `PENS[n − 2]`) — read by
+`penOf` · `highlightOf` · `strikeOf` · `underlineOf`; a newline's is 0. THE CELL: `inkOf(cells, sheetSeed)` and `inkCells(ink)`
+(`InkCells`: a kind's `ink` group — `text`, `seeds`, `marks`); `encodeMarks` / `decodeMarks` (runs of `count:mark` in base 36,
+the unmarked tail left off; a tolerant reader). THE VERBS, pure: `splice(ink, from, to, words, fresh)` (a replacement keeps the
+value its replaced letters all carry, 0 too; where they disagree, or at an insertion, the arrivals join what both neighbours
+carry), `carryInk(ink, text, fresh, caret?)` → `{ ink, from, to }` (`carrySeeds` carried to the marks; with the platform's caret
+the arrivals end at it), `mark(ink, from, to, change: InkChange)`, `replace` (= `splice`), `lift(ink, from, to)` → `InkPiece {
+text, marks }` (never the seeds), `paste(ink, from, to, piece, fresh)`, `cleanPiece(piece, keep, max = 4000)`, `findQuote(text,
+quote, occurrence?)` → `InkQuote`, `readWriting(ink)` → `{ text, runs: InkRun[] }`. THE GEOMETRY, over a `HandLayout` (note
+units): `indexIn(L, x, y, length)` (the note's caret scoring), `wordAt(text, index)`, `lineAt(L, index)` (the layout's own line,
+a broken one with its newline), `spansOf(L, from, to)` → `InkSpan[]` (a rect a line, the caret's height; a sliver past a line the
+range runs to the end of), `strokesOf(L, ink)` → `MarkStroke[]` (a stroke a line for each run of one value; a strike's `y` 0.2 em
+above the baseline, an underline's 0.15 em under it). `HIGHLIGHTERS` / `HighlighterName` (yellow, green, pink, blue, orange — the
+desk calendar's five, whose table in `@ice/objects` is held to them) sit beside `PENS` (kit/text.ts); both orders are stored, so a
+name is only ever added at the end.
+
+**The marks the pen draws (petition I60)** — `handRun({ ink, strokes, marked, wash })` (a marks section after the glyphs, each
+glyph's pen from its mark), the `marks` WGSL piece (`ink_marks`, below; it composes `hand`), `HandInk.was` and `.over` (the
+re-ink), `inkWash` + `HandRuns.wash` (the selection's wash rewritten alone), `PenClock.marks` (`PenMarks`, `StrokeMoment`, `SHOWN`,
+`PEN_PACE.reink`, `PEN_PACE.strokes`), `inkMarksAt` (the CPU twin), and the strokes' law (`INK_STROKES`, `INK_MARKS`, `INK_WASH`,
+`inkShape`, `inkCentre`, `inkSection`, `washLines`, `strokeValueOf`).
+
+**The written part (petition I60)** — `inkPart(host, { part, label, geometry, ink?, marks?, accepts?, sink?, colour?, keep?, max?,
+fresh? })` → `InkPart` (a `TextPart`: `focus`, `editing`, `typing`) — a kind declares its `InkGeometry` (`layout`, `toLayout`,
+`toWorld`, `place`, `objectAt?`) and an `InkSink` (`draft`, `caret`, `selection`); the lease is the kit's whole (`rangeBox`,
+`caretBox`, `entity`, the marks' keys `INK_KEYS` / `inkKeyOf`), the clipboard in three flavours (`inkHtml`, the piece `{ text,
+marks }` read back by `readPiece`; `printable`, the paste's default keep). `inkTyping(opts)` → `InkTyping`: the DRAFT (`begin`,
+`input(value, caret?)`, `moved`, `paste`, `lift`, `ink`, `committed`, `commit` — one transaction through `writable(docs)`, nothing
+when it nets to nothing —, `end`); its typed-over run is `carryRun` / `keepRun` (`InkTypedRun`), pure, for a typing of another
+shape too. Every typing registers on its world (`registerInkTyping(world, cell, door)` → unregister, `InkTypingDoor { type, group,
+editing, open, commit, ink }`); `inkTypingOn(world, e, ink?)` finds it. `inkActs({ marks?, ink?, sheetPen?, glyphs?, colour? })` →
+the words acts `INK_ACTS` (`ink.pen`, `ink.highlight`, `ink.strike`, `ink.underline`, `ink.clear`; `NO_HIGHLIGHT`): Pen and
+Highlight `choices(ctx)` with the letters' common one `current` and each swatch the host's colour (`colour(role)`), Strike and
+Underline `state(ctx) → { pressed }`, `run(api, taken)`; each one undoable step on the cell, an open draft landed first; the readers
+`inkCommonPen`, `inkCommonHighlighter`, `inkEveryLetter`; the default glyphs the names `pen`, `highlighter`, `strike`, `underline`,
+`clear-marks`.
 
 **The kit's WGSL (petition I31)** — what `kitWgsl(names, own, text?)` composes before a kind's own text, in this order, each piece
 once however many of its names are asked. Every function, struct and const in them carries a `///` block naming each parameter
@@ -478,6 +548,22 @@ LINEAR.
   `nb_desk_at`; the PCSS shadow `nb_shadow` → [0, 1]; the colour chain `nb_colour`; noise with gradients (`nb_hash`, `nb_vn`,
   `nb_fbm`); the cloth (`nb_cloth`), the paper (`nb_paper`, `nb_ruling`), the cover (`nb_design`, `nb_cover_g`,
   `nb_cover_albedo`), a board's inside and edge (`nb_endpaper`, `nb_board`), a stack's edge (`nb_edge`).
+- **`hand`** (kit/hand.wgsl, petition I59 — the desk's pen) — `hand_ink(runs, atlas, samp, base, p, now, aa)` → `HandInk { cover,
+  wet, pen, samples, loads, was, over }`: what a sheet's writing lays at `p` (the RUN's units — the layout's, note units from the
+  sheet's top-left), at `now` (`penNow(ms)`: whole seconds and ms), `aa` one device px in those units worked out outside any loop.
+  Its three textures and sampler are PARAMETERS — the kind's own bindings (`handBindings(prefix)`): the run store (`texture_2d<f32>`
+  over `rgba32float`, unfilterable), the face's atlas (`texture_2d<f32>` over `rg8unorm`, every level), a filtering sampler. It
+  reads the run's cell under `p` (an empty cell: no atlas read) and samples each listed glyph whose exact turned rect holds `p`,
+  once, trilinear at the LOD its texels per px ask, kept half a texel of the coarser level inside that rect (the atlas's levels
+  never reach a neighbour's ink); the edge a one-px ramp (capped at the field's reach), moved outward by the run's weight (em —
+  `handRun({ weight })`, the desk's `HAND_WEIGHT`); the reveal by the arrival field (a texel shows once the pen's eased progress
+  reaches it); the ink laid as the canvas raster lays it — each glyph's bleed stroked as a band about its outline at α × its
+  pressure, the fill over it, every glyph over the ones before (source-over); a glyph whose pen changed written over by its new pen
+  along its own path (`was`, `over`, petition I60). `hand_load`, `hand_ease` its parts.
+- **`marks`** (kit/marks.wgsl, petition I60 — the marks the pen draws; asking for it composes `hand`) — `ink_marks(runs, base, p,
+  now, aa)` → `InkMarks { marker, tint, wash, line, pen, loads }`: what a sheet's marks lay at `p` UNDER its ink (the highlighters'
+  cover and which; the selection's wash) and OVER it (a strike's or an underline's cover and its pen), read from the run's marks
+  section in the pen's units and time; the kind's palette gives the colours and lays them in the paper's order.
 - The composite (kit/composite.wgsl — `LAYER_COMPOSITE_FILE`, composed by `layerComposite`) — a layered kind's resolved,
   premultiplied layer laid through the slot's chain.
 - `defineStruct` (`@ice/desk/engine`) — `FieldType`'s JSDoc gives each type's alignment and size (`vec3f` 16 and 12 — a scalar
@@ -562,13 +648,25 @@ engine names a kind:
 - **When your kind is compiled** (petition I25): at the layer's mount — a desk's kinds are the set it was mounted with, and a host
   that registers, updates or removes one remounts the desk (the kind set, above).
 - **Services**, an open registry by typed key (`@ice/desk/kit`: `serviceKey<T>(name)`, `service(key, value)`, `Services`): the host
-  lends `TEXT_RASTER`, `PICTURE_DECODER`, `BLOB_STORE` (`deskLayer({ text, blobs })`) and more by key (`deskLayer({ services })`);
+  lends `TEXT_RASTER`, `HAND_FACES`, `PICTURE_DECODER`, `BLOB_STORE` (`deskLayer({ text, hand, blobs })`) and more by key
+  (`deskLayer({ services })`);
   an object's DOM half lends what only a browser makes (`defineObject({ host: { lend: (h) => [service(KEY, value)] } })` — the
   calendar's `PRINT_RASTER`), handed a `LendHost` (`use` + `wake`: a service whose work lands later wakes the sleeping loop, K7a);
   any kind's world half `use`s one (`KindHost.use?.(KEY)`), a DOM half too (`ObjectDomHost.use`). Keys match by NAME; a name lent
   twice is a mount error. The desk's own doors (`pass`, `children`, `drawn`, `budget`, `rasters`, `remake`, `wake`, `redraw`,
   `keyOf`, `frames`) stay `KindHost` fields — never lent. Every seam wakes the sleeping loop where it changes something visible: the editor's lease
   (`compose.wake`), a lent service's landing (`LendHost.wake`), a menu act's writes (the document's outside door).
+- **The pen** (petition I59; `@ice/desk/kit`): a kind that writes uses the host's faces (`HAND_FACES` — `deskLayer({ hand })`, the
+  browser's `handFaces` by URL, or `handFacesOf` in Node), lays its words by the face's own metrics (`handMetricsOf`), asks the
+  desk's pen clock when each glyph was written (`createPenClock().look(key, { layout, seeds, atlas, now, how })` — `typed`,
+  `arrived`, nothing at first sight; keyed by seed), packs them (`handRun` — in the desk's weight, `HAND_WEIGHT`, if it writes as the
+  note does) into its run store (`createHandRuns(device)` — the record carries the base), and calls `hand_ink` in its fragment over
+  `handAtlasGpu(device, atlas).view`, `handSampler(device)` and its store's view, `penNow(now)` in its uniform. Its tick asks
+  `KindHost.redraw()` while `clock.tick(now)` says the pen moved and its `due` folds `clock.due(now)`: the writing moves with no
+  record remade. A sheet with a glyph the face lacks (`run.missing`) keeps its own raster. `handInkAt` answers the same as
+  `hand_ink` on the CPU. A face lent and still on its way says so (`HandFaces.loading(name)`, optional; the browser's `handFaces`
+  answers it), so a sheet waits blank rather than drawing a stand-in hand. A kind that keeps marks builds its run from its ink
+  (`handRun({ ink, marked, wash })`) and lays `ink_marks` beside `hand_ink`. The note is the worked example (`@ice/objects`' paper).
 - **Live faces** (M24, design-019 — PROPOSAL rev 1): a kind's face fed by a HOST's source, the texture on the desk's device. The host
   lends `LIVE` (`@ice/desk/kit`: `LiveSources.open(key, spec, arrived) → LiveFace`) and makes each face's texture with
   `createLiveTexture(device, { label, … }) → LiveWriter` (one copy into level 0 per present; a `VideoFrame` closed by the writer) —
@@ -600,7 +698,26 @@ engine names a kind:
   `keydown`, `caret`, `place` → `EditorPlace`, `idle`, `ended`, `live`, and — M24 LT2 — `compose(text, caret)` / `commit(text)`: a
   lease that declares `compose` is told the IME's composition as it runs and its commit, instead of the field's values meanwhile); a
   part without one is leased by the kind's own half at event time (`h.editor.lend(lease)`). The note's body (`NOTE_BODY`) and the
-  calendar's day line (`CALENDAR_LINE`) are two such parts.
+  calendar's day line (`CALENDAR_LINE`) are two such parts. THE RANGE AND THE CLIPBOARD (petition I60), all optional:
+  `indexAt(wx, wy, hit?)` (where the part's writing lies — `hit` the stack's exact hit under a press) has the editor CLAIM a primary
+  mouse or pen press there under the select tool (its default prevented: the adapter lands it `surfaceHandled`, so no carry, marquee
+  or pan) and turn a drag past the slop, a second click (`rangeAt(i, "word")`), a third (`rangeAt(i, "line")`) and Shift into the
+  textarea's own range — a release within the slop still a tap — told with the caret (`selection(from, to)`; never stored);
+  `lift(from, to)` → `EditorLift` (`text`, `html?`, `piece?`) takes the field's copy and cut (`text/plain`, `text/html`,
+  `PIECE_FLAVOUR` = `application/x-ice-ink+json`), `lay(EditorPaste, from, to)` → boolean a paste (the piece when the clipboard holds
+  one, else the plain words); `DeskEditor.write(text, from, to)` writes the field as an input would (the platform's own editing first,
+  so ⌘Z in the field undoes it). WHERE A RANGE LIES, optional too: `rangeBox(from, to)` → `RangeBox { x, y, w, h }` (a world box — on
+  a turned part the box of the turned corners) brings the selection menu to the words selected while the lease is lent
+  (`SelectionAnchor.words`), for the object the lease names (`entity`), else core's `Editing`; `caretBox(index)` gives the anchor the
+  caret's place while the range is empty (`SelectionAnchor.caret`, `CaretAnchor { box, entity, at }`); `DeskEditor.pressing()` says a
+  press the editor claimed on the writing is down. THE HOST'S ITEMS: `DeskEditor.command("cut" | "copy" | "paste" | "selectAll",
+  opts?)` (`EditorCommand`, `EditorCommandOptions`) → Promise<boolean> does on the lent field what the keys do — the platform's own
+  copy and cut first, so a bar writes the lease's flavours, else the async clipboard (a cut deletes once the words landed); a bar's
+  paste reads the clipboard where the page may, the editor's last lifted piece in place of its words when they are its, and alone
+  where nothing can be read; `command("paste", { text })` reads no clipboard and lays `text` (the kept piece when its words are
+  exactly `text`). A host's bar prevents the default of its buttons' `pointerdown` and `mousedown` so the field keeps its focus and
+  range; a right press on the lent writing keeps it too. The note's body declares them all; a kind gets them whole from the kit's
+  written part (`inkPart`, above).
 - **Placement by provides-keys** (`@ice/desk`): `DESK_OBJECT` (the desk canvas places what provides it), `CONTAINABLE` (the mini
   mat holds what provides it), `PINNABLE` (the calendar pins it to a day — `KindDriverHost.provides(key)`).
 - **Chips and containers**: a kind's `chip()` names its `finish` (`ChipFinish`, open — the kit's `PAPER_FINISH`/`VINYL_FINISH`, or
@@ -626,7 +743,11 @@ engine names a kind:
   `kind?`, `hint?`, `glyph?`, `swatch?`, `enabled?` — I49) and a slot's `HeldGlyph` — so a host that draws the held bar itself types it by these names,
   never by `NonNullable<SelectionAnchor["held"]>` (which a rename passes without a word); the desk clock's `dts:check` imports them.
 - **Menu acts**: `defineObject({ menu })` (core's `MenuActionDef`) — the anchor's `menu` carries a selection's shared acts
-  (`withKindActs`), the React menu shows them first and runs `ops.runMenuAction`.
+  (`withKindActs`), the React menu shows them first and runs `ops.runMenuAction`. THE WORDS (petition I60): while a part is written
+  (the object its lease names, else core's `Editing`) and words are selected, `SelectionAnchor.words` (`WordsAnchor { box, entity,
+  from, to, menu }`) carries the object's `on: "words"` acts as slots — `box` the lease's `rangeBox` through the camera, CSS px;
+  absent while a press the editor claimed is down (`DeskEditor.pressing()`); every slot (`MenuSlot`, the selection's too) carries
+  I61's `enabled` and `swatch`, I62's `choices`, and `pressed` as its kind's state says it now (true or false).
 - **A menu act's state** (petition I61, held tools' I49 given to the selection menu's acts): an act says what it is NOW —
   `MenuActionDef.state?(ctx) → { enabled?, glyph?, label?, swatch? }` (`MenuActionState`; `ctx` the selected objects of the declaring
   type, `entities`, their `props(e)`, the world and the kind's desk state `local` — `MenuActionStateContext`): DISABLED, another glyph
@@ -765,7 +886,12 @@ entries alone, exactly as a plugin kind is): `Note`/`NOTE_TYPE`, `MiniMat`, `Not
 `DESK_OBJECTS`; the kinds' programs and world halves (`paperKind`, `minimatKind`, `notebookKind`, `boardKind`, `calendarKind`,
 `photoKind`, …, `DESK_KINDS`) and specs (`PAPER`, `MINIMAT`, `BOARD`, `BOOK`); their DOM halves' makers (`createNoteBody` —
 the note's text part, `NOTE_BODY` —, `createCalendarInput` — `CALENDAR_LINE` —, `printRaster` — each object declares its own,
-`defineObject({ host })`); the mini mat's act `VINYL_ACT`; their `shaderText` (theirs and the
+`defineObject({ host })`); the mini mat's act `VINYL_ACT`; the note's writing (petition I59 — a sheet takes the PEN's road where the host lends `HAND_FACES` and the face holds every
+glyph: its glyph run in the kind's run store, read by `hand_ink` in the note's shader, written as it is typed and as words arrive;
+else the RASTER's, and a still's pinned raster over both) and its MARKS (petition I60 — the note's `ink` cell, `NOTE_INK`, holds
+`text`, `seeds` and `marks`; its typing, `createNoteTyping`, carries them and registers as a typing of another shape; its menu is
+`inkActs`; its lease names the note and says where a range and the caret lie; its shader lays `ink_marks` beside `hand_ink` in
+the paper's order, the selection's wash rewritten alone; `deskPalette`'s paper palette gains `highlighters` and `pencil`); their `shaderText` (theirs and the
 kit's); the typing session, the strokes and pins; the engine preset `DESK_ENGINE` — `createCanvasEngine(DESK_ENGINE)`: the
 objects, `deskSelect`/`DeskCanvas` (which places every object that provides `@ice/desk`'s `DESK_OBJECT` and names no type — the six declare it as a plugin kind does; K5b, K8a), the wheel zooming about the pointer, the scale-free zoom, the zoom-through — and the complete
 default palette `deskPalette(name)`/`deskTheme(name)`, D7. Walls: `desk = core + kernel`; nobody imports desk but apps, the
