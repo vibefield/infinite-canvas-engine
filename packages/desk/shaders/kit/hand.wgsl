@@ -63,9 +63,10 @@ fn hand_ease(x: f32) -> f32 {
 /// cell (an empty one: nothing, and no atlas read); then each glyph the cell lists — its box (outside: next), its exact turned
 /// rect (outside: next), and one atlas sample at the LOD its texels per device px ask, kept half a texel of the coarser level it
 /// reads inside that rect (the chain is made over the whole atlas, so no level's box reaches a neighbour's ink — kit/hand-run.ts
-/// `handMips`). The edge is `(R − 128/255) · range` em, made units by the glyph's size, its coverage a one-device-px ramp — never
-/// wider than the field's own reach (half its range): a sheet that small is past reading (its kind greeks it), and a wider ramp
-/// would lay a haze over the glyph's whole rect. THE INK LIES AS THE RASTER LAYS IT (desk/host/ink.ts — `strokeText` the bleed,
+/// `handMips`). The edge is `(R − 128/255) · range` em, moved outward by the run's WEIGHT (em: `h3.w`; 0 — the face's own
+/// outline), made units by the glyph's size, its coverage a one-device-px ramp — never wider than the field's own reach (half its
+/// range): a sheet that small is past reading (its kind greeks it), and a wider ramp would lay a haze over the glyph's whole rect.
+/// THE INK LIES AS THE RASTER LAYS IT (desk/host/ink.ts — `strokeText` the bleed,
 /// then `fillText`, each glyph over the ones before): the run's bleed is a stroke, a band that wide about the outline, laid at its
 /// alpha times the glyph's pressure; the fill at the pressure over it, source-over (F + S·(1 − F)); and every glyph over the ones
 /// before, source-over (1 − Π(1 − cover)) — so letters that meet darken where they meet, as on the bitmap. THE REVEAL: a glyph lays
@@ -127,7 +128,8 @@ fn hand_ink(runs: texture_2d<f32>, atlas: texture_2d<f32>, samp: sampler, base: 
     let inset = min(vec2f(0.5 * exp2(ceil(lod))), 0.5 * (g3.zw - g3.xy));
     let field = textureSampleLevel(atlas, samp, (g2.xy + clamp(tau, g3.xy + inset, g3.zw - inset)) / texels, lod);
     ink.samples += 1u;
-    let dist = (field.r - HAND_EDGE) * edge.x * g2.z;
+    // the signed distance to the outline, units — the outline moved outward by the run's weight (em)
+    let dist = ((field.r - HAND_EDGE) * edge.x + edge.w) * g2.z;
     let ramp = min(aa, 0.5 * edge.x * g2.z);
     // the fill at the glyph's pressure, over its bleed's stroke — the band `edge.y` wide about the outline, at the alpha × the
     // pressure — source-over, as the raster strokes then fills

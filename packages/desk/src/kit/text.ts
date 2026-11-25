@@ -218,6 +218,14 @@ export const HAND = {
   wipeMs: 110,
 } as const;
 
+/**
+ * The desk's WEIGHT for the pen (petition I59), em: each glyph's outline moved outward by it (`handRun({ weight })`), the weight
+ * that keeps the pen as dark as the canvas raster it replaces. Read from the face's own field the pen lays about four fifths of the
+ * raster's ink on the oracle's note at ×1, a touch thinner where the canvas rounds its coverage up; this much is back to it. The
+ * note writes in it; a run's own default is 0 — the face's outline as baked.
+ */
+export const HAND_WEIGHT = 0.007;
+
 /** The pens a hand writes with (STICKY.md §3) — names; the inks are the host's (the note's, and the desk calendar's lines). */
 export const PENS = ["felt", "ball", "fountain", "red"] as const;
 export type PenName = (typeof PENS)[number];
