@@ -172,6 +172,33 @@ describe("a bar's paste and select all (petition I60)", () => {
     expect(await bare.editor.command("paste")).toBe(false);
   });
 
+  it("PASTE told the HOST'S WORDS (`command(\"paste\", { text })` — a shell that reads the clipboard its own way) reads NO clipboard: the words laid plain; the kept piece in their place only when they are exactly its words (its marks come back); line ends as the field's; no words, nothing", async () => {
+    const r = rig();
+    r.editor.lend(r.lease, 0);
+    const readText = vi.fn(async () => "never");
+    const read = vi.fn(async () => [] as ClipboardItems);
+    installClipboard({ readText, read, writeText: async () => {} });
+    const lays = (): string | undefined => r.told.calls.filter((c) => c.startsWith("lay")).at(-1);
+    r.el.setSelectionRange(4, 7);
+    expect(await r.editor.command("paste", { text: "TWO" })).toBe(true);
+    expect([lays(), r.el.value]).toEqual(['lay {"text":"TWO"} 4 7', "one TWO three"]);
+    r.el.setSelectionRange(0, 3);
+    expect(await r.editor.command("copy")).toBe(true);   // kept: "one" and its piece
+    r.el.setSelectionRange(13, 13);
+    expect(await r.editor.command("paste", { text: "one" })).toBe(true);
+    expect(lays()).toBe(`lay ${JSON.stringify({ text: "one", piece: JSON.stringify({ text: "one", marks: "9:8" }) })} 13 13`);
+    r.el.setSelectionRange(16, 16);
+    expect(await r.editor.command("paste", { text: "one " })).toBe(true);   // not exactly its words: plain
+    expect(lays()).toBe('lay {"text":"one "} 16 16');
+    r.el.setSelectionRange(0, 0);
+    expect(await r.editor.command("paste", { text: "a\r\nb" })).toBe(true);
+    expect(lays()).toBe('lay {"text":"a\\nb"} 0 0');
+    expect(await r.editor.command("paste", { text: "" })).toBe(false);
+    expect([readText.mock.calls.length, read.mock.calls.length]).toEqual([0, 0]);
+    expect(await r.editor.command("paste")).toBe(true);   // the no-argument form reads the clipboard, as ever
+    expect(readText.mock.calls.length).toBe(1);
+  });
+
   it("a lease that lays nothing has the words written as the platform's paste would write them — line ends as the field's", async () => {
     const r = rig();
     const { lay: _lay, ...plain } = r.lease;

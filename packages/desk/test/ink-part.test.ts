@@ -512,10 +512,10 @@ describe("the ink acts (`inkActs`): one step each, through the typing when one i
     const coloured = inkActs({ colour: (role) => COLOUR[role] });
     expect(acts.map((a) => [a.id, a.label, a.on, a.glyph])).toEqual([
       ["ink.pen", "Pen", "words", "pen"],
-      ["ink.highlight", "Highlight", "words", expect.objectContaining({ path: expect.any(String) })],
-      ["ink.strike", "Strike", "words", expect.objectContaining({ path: expect.any(String) })],
-      ["ink.underline", "Underline", "words", expect.objectContaining({ path: expect.any(String) })],
-      ["ink.clear", "Clear", "words", "eraser"],
+      ["ink.highlight", "Highlight", "words", "highlighter"],
+      ["ink.strike", "Strike", "words", "strike"],   // names, so a host's own set gives them its look (the React bar's draws them)
+      ["ink.underline", "Underline", "words", "underline"],
+      ["ink.clear", "Clear", "words", "clear-marks"],
     ]);
     // with no colour from the host, no swatch: the label alone
     expect(acts[0]?.choices?.(bare)).toEqual([{ id: "felt", label: "Felt pen" }, { id: "ball", label: "Ball pen" }, { id: "fountain", label: "Fountain pen" }, { id: "red", label: "Red pen" }]);
@@ -527,6 +527,7 @@ describe("the ink acts (`inkActs`): one step each, through the typing when one i
     expect(inkActs({ marks: ["highlight", "strike"] }).map((a) => a.id)).toEqual(["ink.highlight", "ink.strike", "ink.clear"]);
     expect(inkActs({ marks: [] })).toEqual([]);
     expect(inkActs({ glyphs: { strike: "check" } })[2]?.glyph).toBe("check");
+    expect(inkActs({ glyphs: { clear: { path: "M4 4l16 16" } } })[4]?.glyph).toEqual({ path: "M4 4l16 16" });   // a drawing overrides too
     expect(SHEET.menu.map((a) => a.id)).toEqual(Object.values(INK_ACTS));
   });
 
@@ -810,6 +811,39 @@ describe("the marks' keys: ⇧⌘X strike, ⌘U underline, ⇧⌘H highlight —
   });
 });
 
+describe("a caret's place on the anchor (`SelectionAnchor.caret`, the lease's `caretBox`)", () => {
+  it("while the editor is lent and the range is EMPTY the anchor carries the caret's place — its box through the camera from the part's geometry (a line's height at the caret's x), the object, the index; never with words; absent while a press is down, or nothing lent", async () => {
+    const d = await mountDesk();
+    const e = d.spawn("one two three");
+    d.step(2);
+    const part = made.get(d.ce.world);
+    if (part === undefined) throw new Error("the desk made no written part");
+    expect(d.anchor().caret).toBeUndefined();
+    expect(part.focus(e, 4)).toBe(true);
+    d.select(4, 4);
+    expect(d.anchor().caret).toEqual({ entity: e, at: 4, box: { x0: 50, y0: 10, x1: 50, y1: 30 } });
+    expect(d.anchor().words).toBeUndefined();
+    d.select(4, 7);   // words: no caret
+    expect([d.anchor().caret, d.anchor().words?.from]).toEqual([undefined, 4]);
+    d.select(13, 13);   // the end, and through the camera
+    d.ce.world.setResource(Camera, { x: 10, y: 0, zoom: 2, gesturing: false });
+    d.step();
+    expect(d.anchor().caret).toEqual({ entity: e, at: 13, box: { x0: 260, y0: 20, x1: 260, y1: 60 } });
+    // a press the editor claims on the writing: the caret's place waits for the release
+    const down = new PointerEvent("pointerdown", { bubbles: true, cancelable: true, isPrimary: true, button: 0, buttons: 1, pointerId: 7, pointerType: "mouse", clientX: 70, clientY: 40 });
+    d.container.dispatchEvent(down);
+    expect([d.editor.pressing(), d.anchor().caret]).toEqual([true, undefined]);
+    d.container.dispatchEvent(new PointerEvent("pointerup", { bubbles: true, cancelable: true, isPrimary: true, button: 0, buttons: 0, pointerId: 7, pointerType: "mouse", clientX: 70, clientY: 40 }));
+    d.step();
+    expect(d.editor.pressing()).toBe(false);
+    expect(d.anchor().caret?.entity).toBe(e);
+    const lent = d.editor.lease();
+    if (lent !== undefined) d.editor.release(lent);
+    d.step();
+    expect(d.anchor().caret).toBeUndefined();
+  });
+});
+
 describe("the anchor's `editing` for a lent part (no `Editing` claim)", () => {
   it("true while the one editor is lent to a part whose lease names an object of the selection — no `Editing` stamped; the lease gone, false; lent to an object NOT of the selection, as before; core's claim reads as ever", async () => {
     const d = await mountDesk();
@@ -883,5 +917,5 @@ async function mountDesk() {
   const select = (from: number, to: number): void => { editor.element.setSelectionRange(from, to); document.dispatchEvent(new Event("selectionchange")); step(); };
   const anchor = () => handle.selection.anchor();
   cleanups.push(() => { handle.dispose(); ce.dispose(); for (const u of undo.splice(0).reverse()) u(); });
-  return { ce, handle, editor, step, spawn, select, anchor };
+  return { ce, handle, editor, container, step, spawn, select, anchor };
 }
