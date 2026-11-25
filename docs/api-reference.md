@@ -121,6 +121,25 @@ stamped on new documents. A widget cannot appear in both `widgets` and `retiredW
   `PointerSettings`, `CameraLimits`, `SnapConfig` (resource first, reviewed
   constants as fallback).
 - Doc-less by construction; ops that need a document throw with guidance.
+- **Where an object that comes with no pointer lands** (petition I57) — `resolveFreeSlot(world, size, query?)` → `{ x, y, where,
+  frame } | undefined`, a function of the world beside `resolveFrameChildren`/`resolveFrameView` (never an op: it writes nothing).
+  The placement authority says whether a type MAY live in a frame and a spawn HOW it hangs; the point was the caller's, and an
+  object a tool, a script or a menu makes brought none. This answers it: the nearest free slot to the anchored position (the
+  `size` newcomer centred on `query.anchor` — default the view's middle; with no view the middle of what the frame holds), clear
+  of every incumbent by `query.gutter` (default `FREE_SLOT_DEFAULTS.gutter`, 24 — the frame's units, never scaled by the zoom); a
+  slot wholly inside the view (default what the camera shows of the frame on screen, at its zoom; `view: null` for none; a host
+  passes the part its chrome leaves clear) before any that is not; none farther than `query.reach` (default the view's larger side
+  plus the newcomer's and the gutter); `undefined` when the reach holds none — the caller decides, nothing overlaps by silence.
+  `query.frame` is the board root or a container (its inside, in its own units; default the frame on screen, `frameParent`), and
+  the answer names it: `ops.spawnWidget(type, { x: slot.x, y: slot.y, parent: slot.frame })`. `where` — `"anchor"` (the anchored
+  position was free), `"view"` (moved, wholly in view), `"reach"` (moved, not wholly inside a view). Occupied: every direct child
+  of the frame with a `Position` and a `Size` — taped (`Locked`) objects, pads and sheets too; a container as one rectangle on its
+  parent's frame; an object in the person's hand where it is now; a gliding one where it is and where it lands — plus
+  `query.avoid`'s rectangles; never landscape (a type declaring `sweepContained`). It reads the world as it stands, not the
+  spatial index (the Active set as of the last tick), so it is right out of the tick, under `frame.freeze`, and for a frame that
+  is not on screen; a transaction's spawn is in the world after the next `world.sync()`. Equal distances go right, then below,
+  then above, then left; the same world answers the same place. Throws on a malformed size, gutter, reach or anchor and with no
+  live frame.
 
 ### Documents & collab
 
@@ -738,6 +757,6 @@ stamping (+17–28% on write-heavy paths) — dev builds only.
 Pure math, no ECS/DOM: `screenToWorld/worldToScreen/zoomAtPoint/fitCamera` · `clientToScreen/screenSizeOf` (a client point and a
 container's size in screen space — its layout box, whatever transform draws it; petition I39) ·
 `SpatialIndex` · `computeSnapGuides` · `portAnchor/wireCubic/distanceToCubic` · the easings · the
-design-006 flight maths · `layout` · the pegboard tray's lattice law (`PEG_LATTICE`, `TrayHang`, `hangError`, `layTray`, `TRAY_SPACING` — its first line 2 pitches down, under the drawer's header and its fade (design-018 R4) — `trayScrollMax` — design-017 §8, K5a; `specimenFit` — a specimen's scale and its object's rect in its hang, K5b) · `atlas-pack` (parked). The island helpers, `zoom-bands`,
+design-006 flight maths · `layout` (`insertSlot` — a drop consumed into a container; `packLayout`/`layerGraph` — Clean Up; `freeSlot(incumbents, size, { anchor, gutter, reach, view? })` → `{ x, y, where } | undefined`, petition I57 — one newcomer with no pointer: the nearest free slot to the anchored position by `insertSlot`'s law of the gutter, in view before out of it, none past the reach, exact, ties right-below-above-left; `resolveFreeSlot` is its reader over a world) · the pegboard tray's lattice law (`PEG_LATTICE`, `TrayHang`, `hangError`, `layTray`, `TRAY_SPACING` — its first line 2 pitches down, under the drawer's header and its fade (design-018 R4) — `trayScrollMax` — design-017 §8, K5a; `specimenFit` — a specimen's scale and its object's rect in its hang, K5b) · `atlas-pack` (parked). The island helpers, `zoom-bands`,
 `eviction`, `surface-geometry` and `lift` left at design-015 D5b; `planeCssTransform` and
 `tessellateCubic` at D7.

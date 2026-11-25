@@ -99,6 +99,16 @@ export const FIT_DEFAULTS = {
 } as const;
 
 /**
+ * The free slot's gutter (petition I57, 2026-11-24 — canvas/free-slot.ts): the least space between an object that
+ * comes with no pointer and everything already in its frame, in the frame's units. Clean Up's own gutter
+ * (`ops.arrange`), so a found slot is where a Clean Up would leave it. Never scaled by the zoom: a document's layout
+ * does not depend on how far in one viewer was when an object arrived.
+ */
+export const FREE_SLOT_DEFAULTS = {
+  gutter: 24,
+} as const;
+
+/**
  * Nav-transition motion constants (design-006 §4/§5, tuned in the approved
  * 2026-07-15 mock). `responseMs` is the critically-damped spring response for
  * ENTER; exit runs at `exitResponseFactor ×` (returning is lighter). Response

@@ -22,6 +22,14 @@
  *    barycenter ordering, columns left→right, vertically centered). Callers
  *    lay out each connected component with this and pack the resulting
  *    blocks with `packLayout`.
+ *  - `freeSlot` (petition I57, 2026-11-24) — place ONE newcomer that comes
+ *    with NO pointer (an object a tool, a script or a menu makes): the nearest
+ *    free slot to an anchor, a slot wholly inside the view before any that is
+ *    not, none farther than a reach, and `undefined` when the reach holds none.
+ *    `insertSlot`'s law (closer than the gutter on both axes is occupied,
+ *    incumbents never move) with the opposite contract on two points: it is
+ *    EXACT (the nearest slot there is, not the nearest of six candidates an
+ *    incumbent) and it may answer NOTHING (a desk has no "right of everything").
  *
  * Plain structs in, plain structs out (Law 13): no ECS, no DOM, no camera.
  * All coordinates live in ONE frame — callers convert (container-local for
@@ -107,6 +115,187 @@ export function insertSlot(
   let maxRight = Number.NEGATIVE_INFINITY;
   for (const i of incumbents) maxRight = Math.max(maxRight, i.x + i.w);
   return { x: maxRight + gutter, y: hint.y };
+}
+
+export interface FreeSlotOpts {
+  /** Where the newcomer's CENTRE wants to be (the middle of what the person sees). */
+  readonly anchor: LayoutPoint;
+  /** Min separation from every incumbent, ≥ 0: closer than this on BOTH axes is occupied; exactly this far is clear. */
+  readonly gutter: number;
+  /**
+   * How far the slot may lie from the ANCHORED position (the newcomer centred on the anchor), on either axis; a slot
+   * exactly this far is within it. Nothing free within it → `undefined`. It bounds the cost as well: an incumbent
+   * that cannot block a position within the reach is dropped before anything is searched.
+   */
+  readonly reach: number;
+  /**
+   * The view (what the camera shows, in the incumbents' units). A slot that lies WHOLLY inside it is preferred to
+   * any slot that does not, however near. Absent, or smaller than the newcomer on an axis: no such preference.
+   */
+  readonly view?: LayoutRect;
+}
+
+export interface FreeSlot {
+  /** The newcomer's top-left, as `insertSlot` answers it. */
+  readonly x: number;
+  readonly y: number;
+  /**
+   * Which rule answered: `"anchor"` — the anchored position itself was free (and inside the view, when a slot can
+   * be); `"view"` — moved, wholly inside the view; `"reach"` — moved, within the reach but not wholly inside a view.
+   */
+  readonly where: "anchor" | "view" | "reach";
+}
+
+/** An incumbent in POSITION space: the newcomer's top-left may not lie strictly inside this rectangle. */
+interface SlotWall {
+  readonly x0: number;
+  readonly x1: number;
+  readonly y0: number;
+  readonly y1: number;
+}
+
+/**
+ * The free position nearest (ax, ay) within the closed region [x0, x1] × [y0, y1], or undefined when the region is
+ * empty or wholly walled.
+ *
+ * The free set is the region less a union of OPEN rectangles: closed and rectilinear, so its nearest point has its
+ * x on a COLUMN — the anchored x clamped into the region, a wall's side, or the region's side — and on a column the
+ * nearest free y is the anchored y (clamped) or an end of the walled run that covers it. Columns are read nearest
+ * first and the walk stops at the first one farther than the best slot found. `walls` come sorted by `y0`, so a
+ * column is one pass down them with nothing allocated, ended at the first wall that begins past the anchor.
+ */
+function nearestFreePosition(
+  walls: readonly SlotWall[],
+  ax: number,
+  ay: number,
+  x0: number,
+  x1: number,
+  y0: number,
+  y1: number,
+): { x: number; y: number } | undefined {
+  if (!(x0 <= x1 && y0 <= y1)) return undefined;
+  const cx = ax < x0 ? x0 : ax > x1 ? x1 : ax;
+  const cy = ay < y0 ? y0 : ay > y1 ? y1 : ay;
+  const columns: number[] = [cx, x0, x1];
+  for (const w of walls) {
+    if (w.x0 >= x0 && w.x0 <= x1) columns.push(w.x0);
+    if (w.x1 >= x0 && w.x1 <= x1) columns.push(w.x1);
+  }
+  // nearest the anchor first; of two as near, the larger x (the order equal distances go by)
+  columns.sort((a, b) => Math.abs(a - ax) - Math.abs(b - ax) || b - a);
+
+  let found = false;
+  let bestX = 0;
+  let bestY = 0;
+  let bestD = Number.POSITIVE_INFINITY;
+  /** One free position, against the best so far: the nearer wins; as near, the larger x, then the larger y. */
+  const offer = (x: number, y: number): void => {
+    const dx = x - ax;
+    const dy = y - ay;
+    const d = dx * dx + dy * dy;
+    if (!found || d < bestD || (d === bestD && (x > bestX || (x === bestX && y > bestY)))) {
+      found = true;
+      bestX = x;
+      bestY = y;
+      bestD = d;
+    }
+  };
+  let last = Number.NaN;
+  for (const x of columns) {
+    if (x === last) continue; // equal columns sort together
+    last = x;
+    const dx = x - ax;
+    if (dx * dx > bestD) break; // every slot on this column, and on each after it, is farther
+    // the walls this column crosses, from the top: the run of them that covers the clamped anchor, if one does
+    let runLo = 0;
+    let runHi = Number.NEGATIVE_INFINITY;
+    for (const w of walls) {
+      // from here on every wall begins at or past the anchor and past the run: none covers it, none grows the run
+      if (w.y0 >= cy && w.y0 >= runHi) break;
+      if (!(w.x0 < x && x < w.x1)) continue; // not across this column
+      if (w.y0 >= runHi) {
+        // a new run begins: two walls that only touch leave the line between them free
+        runLo = w.y0;
+        runHi = w.y1;
+      } else if (w.y1 > runHi) {
+        runHi = w.y1;
+      }
+    }
+    if (!(runLo < cy && cy < runHi)) {
+      offer(x, cy);
+      continue;
+    }
+    // walled where it is asked: the run's two ends are the nearest free positions on this column
+    if (runLo >= y0) offer(x, runLo);
+    if (runHi <= y1) offer(x, runHi);
+  }
+  return found ? { x: bestX, y: bestY } : undefined;
+}
+
+/**
+ * The nearest free slot to an anchor for a `size` newcomer among `incumbents` — or `undefined`.
+ *
+ * WHAT IS FREE. A slot is free when the newcomer there is at least `gutter` away from every incumbent on EITHER axis
+ * (`insertSlot`'s law). Incumbents never move.
+ *
+ * THE ORDER. Distances are Euclidean, from the ANCHORED position (the newcomer centred on `anchor`) to the slot's.
+ *  1. With a `view`: the nearest free slot that lies wholly inside the view and within the reach.
+ *  2. Else (no view, or none there): the nearest free slot within the reach.
+ *  3. Else `undefined` — never an overlap by silence; the caller decides (refuse, or overlap by its own rule).
+ * Equal distances go to the larger x, then the larger y: right, then below, then above, then left (y is down). The
+ * anchored position is distance zero, so a free anchor wins its tier. The answer is EXACT — the true nearest slot,
+ * flush at the gutter against what blocks it — and does not depend on the order the incumbents are given in.
+ * No randomness, no clock: the same scene answers the same place.
+ *
+ * A ZOOMED VIEW is the caller's arithmetic: everything here is in one frame's units, the view the rectangle the
+ * camera shows (`visibleRect`). The gutter is not scaled by a zoom.
+ *
+ * COST. Meant for the moment something is placed, never a frame. With n the incumbents that can block a position
+ * within the reach (the rest are dropped first): O(n log n) to order the walls and the columns, then at most O(n) a
+ * column read, nothing allocated. A place on an ordinary desk reads a handful of columns; a wall of incumbents with
+ * its one gap at the reach's edge reads all 2n + 3: O(n²).
+ */
+export function freeSlot(
+  incumbents: readonly LayoutRect[],
+  size: LayoutSize,
+  opts: FreeSlotOpts,
+): FreeSlot | undefined {
+  const { gutter, reach } = opts;
+  const ax = opts.anchor.x - size.w / 2;
+  const ay = opts.anchor.y - size.h / 2;
+  const rx0 = ax - reach;
+  const rx1 = ax + reach;
+  const ry0 = ay - reach;
+  const ry1 = ay + reach;
+  // Each incumbent as a wall in position space. The SAME expressions make the walls' sides and (above) the candidate
+  // columns and run ends, so a slot flush at the gutter is never refused by a rounding in its own arithmetic.
+  const walls: SlotWall[] = [];
+  for (const i of incumbents) {
+    const x0 = i.x - gutter - size.w;
+    const x1 = i.x + i.w + gutter;
+    const y0 = i.y - gutter - size.h;
+    const y1 = i.y + i.h + gutter;
+    // one that walls nothing within the reach is not in the way (nor is one that is no rectangle: every test is false)
+    if (!(x0 < rx1 && x1 > rx0 && y0 < ry1 && y1 > ry0)) continue;
+    walls.push({ x0, x1, y0, y1 });
+  }
+  walls.sort((a, b) => a.y0 - b.y0); // from the top: a column is one pass down them
+  const v = opts.view;
+  if (v !== undefined) {
+    const seen = nearestFreePosition(
+      walls,
+      ax,
+      ay,
+      Math.max(rx0, v.x),
+      Math.min(rx1, v.x + v.w - size.w),
+      Math.max(ry0, v.y),
+      Math.min(ry1, v.y + v.h - size.h),
+    );
+    if (seen !== undefined) return { x: seen.x, y: seen.y, where: seen.x === ax && seen.y === ay ? "anchor" : "view" };
+  }
+  const far = nearestFreePosition(walls, ax, ay, rx0, rx1, ry0, ry1);
+  if (far === undefined) return undefined;
+  return { x: far.x, y: far.y, where: far.x === ax && far.y === ay ? "anchor" : "reach" };
 }
 
 export interface PackOpts {

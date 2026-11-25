@@ -370,6 +370,8 @@ export {
   type ResolvedFrameView,
   type ResolvedPortal,
 } from "./canvas/frame-view";
+// Where an object that comes with no pointer lands (petition I57): the world's reader over the kernel's `freeSlot`.
+export { resolveFreeSlot, type FreeSlotQuery, type ResolvedFreeSlot } from "./canvas/free-slot";
 export {
   defineFrameProjection,
   frameProjections,
