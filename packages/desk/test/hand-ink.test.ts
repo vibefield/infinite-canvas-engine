@@ -4,8 +4,13 @@
 // atlas texel. THE REVEAL (the brief's law): nothing before the pen sets off; while it writes, a texel shows once the pen's progress
 // has reached its arrival — behind the nib written, ahead of it bare, the front round as the nib — and where a later stroke crosses
 // an earlier one the earlier ink is already there; after its time the glyph is whole. The pen and the pressure; a minified read at
-// a coarser level; the pen's spread.
+// a coarser level; the pen's spread; a glyph whose pen origin lies outside its rect (as the bake lays one above the baseline).
+// And on the desk's own faces as baked: the coarse levels keep to their glyph — up to 4 texels a px a glyph reads the same to the
+// bit with every other glyph of its atlas erased, past that under 2% of coverage, never a neighbour's ink.
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { type HandAtlas, type HandAtlasGlyph, readHandAtlas } from "../src/kit/hand-atlas";
 import { HAND_RUN, handEase, handInkAt, handRun } from "../src/kit/hand-run";
 import type { PenMoment } from "../src/kit/pen-clock";
 import type { HandLayout } from "../src/kit/text";
@@ -172,4 +177,137 @@ describe("the reveal (petition I59 — the pen's law)", () => {
     expect(handInkAt(before, face.atlas, ...at(O[0], O[1], 0.18, -0.36), 2e9, 1).cover).toBeCloseTo(1, 2);
     expect(HAND_RUN.before).toBeLessThan(-1e29);
   });
+});
+
+describe("a glyph whose pen origin lies outside its rect (petition I59 — the bake's origins are whole texels, and may)", () => {
+  // a tick wholly above the baseline (its origin under the rect) and a grave far right of its origin (its origin left of the rect
+  // and under it), laid as the bake lays a rect: the ink's box in whole texels and the margin round it
+  const TICK: FixtureGlyph = { ch: "'", advance: 0.24, nib: 0.05, strokes: [[0.12, -0.72, 0.1, -0.5]] };
+  const GRAVE: FixtureGlyph = { ch: "`", advance: 0.6, nib: 0.04, strokes: [[0.35, -0.7, 0.45, -0.6]] };
+  const marks = fixtureFace({ glyphs: [TICK, GRAVE], whole: true });
+  const one = (g: FixtureGlyph, x: number, y: number, rot = 0, scale = 1): HandLayout => ({
+    glyphs: [{ ch: g.ch, index: 0, x, y, advance: g.advance * EM, rot, scale, press: 1, line: 0 }],
+    lines: [{ start: 0, end: 1, y, width: g.advance * EM }], positions: new Float32Array([x, y, x + g.advance * EM, y]),
+    overflow: false, em: EM, ascent: 0.8 * EM, descent: 0.3 * EM,
+  });
+
+  it("is laid as baked: whole-texel origins, outside the rect", () => {
+    for (const g of [TICK, GRAVE]) {
+      const baked = marks.atlas.glyphs[String(g.ch.codePointAt(0))];
+      const [, , , h] = baked?.rect as readonly [number, number, number, number];
+      const [ox, oy] = baked?.origin as readonly [number, number];
+      expect(Number.isInteger(ox) && Number.isInteger(oy)).toBe(true);
+      expect(oy).toBeGreaterThan(h);
+    }
+    expect((marks.atlas.glyphs[String("`".codePointAt(0))]?.origin as readonly [number, number])[0]).toBeLessThan(0);
+  });
+
+  it("is inked where its strokes are — upright, and turned and scaled about its origin — and nowhere else", () => {
+    for (const g of [TICK, GRAVE]) {
+      const st = g.strokes[0] as readonly number[];
+      const mid = [((st[0] as number) + (st[2] as number)) / 2, ((st[1] as number) + (st[3] as number)) / 2] as const;
+      // upright: the stroke's middle inked whole; two nibs and a device px beside it (across the stroke) nothing
+      const run = handRun(one(g, O[0], O[1]), marks.atlas);
+      expect(handInkAt(run, marks.atlas, ...at(O[0], O[1], mid[0], mid[1]), 0, 1).cover).toBeCloseTo(1, 2);
+      const across = [(st[3] as number) - (st[1] as number), (st[0] as number) - (st[2] as number)];
+      const n = Math.hypot(across[0] as number, across[1] as number);
+      const off = 2 * g.nib + 1 / EM;
+      const beside = at(O[0], O[1], mid[0] + ((across[0] as number) / n) * off, mid[1] + ((across[1] as number) / n) * off);
+      expect(handInkAt(run, marks.atlas, ...beside, 0, 1).cover).toBe(0);
+      // turned and scaled: the middle goes with the glyph's frame, as canvas's rotate lays it
+      const rot = -0.4;
+      const turned = handRun(one(g, O[0], O[1], rot, 1.5), marks.atlas);
+      const [ex, ey] = [mid[0] * 1.5 * EM, mid[1] * 1.5 * EM];
+      expect(handInkAt(turned, marks.atlas, O[0] + Math.cos(rot) * ex - Math.sin(rot) * ey, O[1] + Math.sin(rot) * ex + Math.cos(rot) * ey, 0, 1).cover).toBeCloseTo(1, 2);
+    }
+  });
+});
+
+describe("the coarse levels keep to their glyph: the desk's own faces as baked (apps/desk/assets/hand)", () => {
+  // The chain is made over the whole atlas, so a coarse texel can straddle two rects. Each glyph is read through the twin over its own
+  // corner of its atlas — its rect and 16 texels round it, in whole level-3 texels, cut at the atlas's own edges, the same bytes the
+  // whole atlas gives every read a sample there makes — with its neighbours' texels kept, and with them erased: at a point every two
+  // texels of its rect, at rest and mid-writing, plain and spread by half the field's reach (bleed 6 units at 64 an em: 3 texels).
+  const dir = resolve(import.meta.dirname, "../../../apps/desk/assets/hand");
+  const bakedFace = (name: string): HandAtlas => {
+    const read = readHandAtlas(JSON.parse(readFileSync(resolve(dir, `${name}.hand.json`), "utf8")), new Uint8Array(readFileSync(resolve(dir, `${name}.hand.bin`))));
+    if ("error" in read) throw new Error(read.error);
+    return read;
+  };
+  /** Glyph `cp`'s corner of `atlas` as an atlas of its own, its neighbours' texels kept or erased. */
+  const cornerOf = (atlas: HandAtlas, cp: string, keep: boolean): HandAtlas => {
+    const g = atlas.glyphs[cp] as HandAtlasGlyph;
+    const [rx, ry, rw, rh] = g.rect as readonly [number, number, number, number];
+    const x0 = Math.max(0, Math.floor((rx - 16) / 8) * 8);
+    const y0 = Math.max(0, Math.floor((ry - 16) / 8) * 8);
+    const x1 = Math.min(atlas.width, Math.ceil((rx + rw + 16) / 8) * 8);
+    const y1 = Math.min(atlas.height, Math.ceil((ry + rh + 16) / 8) * 8);
+    const w = x1 - x0;
+    const bin = new Uint8Array(w * (y1 - y0) * 2);
+    for (let y = y0; y < y1; y++) {
+      for (let x = x0; x < x1; x++) {
+        if (!keep && (x < rx || y < ry || x >= rx + rw || y >= ry + rh)) continue;
+        bin[((y - y0) * w + x - x0) * 2] = atlas.bin[(y * atlas.width + x) * 2] as number;
+        bin[((y - y0) * w + x - x0) * 2 + 1] = atlas.bin[(y * atlas.width + x) * 2 + 1] as number;
+      }
+    }
+    return { ...atlas, width: w, height: y1 - y0, bin, glyphs: { [cp]: { ...g, rect: [rx - x0, ry - y0, rw, rh] } }, kerning: {} };
+  };
+
+  for (const name of ["caveat-500", "caveat-600", "kalam-400"]) {
+    it(`${name}: up to 4 texels a px every glyph reads the same to the bit with its neighbours erased; past that under 2% of coverage, no ghost`, () => {
+      const atlas = bakedFace(name);
+      const em = atlas.em;   // units an em = texels an em: a texel a unit at zoom 1
+      const T0 = 5000;
+      let glyphs = 0;
+      let points = 0;
+      let unequal = 0;
+      let most = 0;
+      let ghost = 0;
+      for (const [cp, g] of Object.entries(atlas.glyphs)) {
+        if (g.rect === undefined || g.origin === undefined) continue;
+        glyphs += 1;
+        const ch = String.fromCodePoint(Number(cp));
+        const [, , rw, rh] = g.rect;
+        const [ox, oy] = g.origin;
+        const layout: HandLayout = {
+          glyphs: [{ ch, index: 0, x: 0, y: 0, advance: g.advance * em, rot: 0, scale: 1, press: 1, line: 0 }],
+          lines: [{ start: 0, end: 1, y: 0, width: g.advance * em }], positions: new Float32Array([0, 0, g.advance * em, 0]),
+          overflow: false, em, ascent: atlas.ascent * em, descent: atlas.descent * em,
+        };
+        const kept = cornerOf(atlas, cp, true);
+        const erased = cornerOf(atlas, cp, false);
+        const runs = (a: HandAtlas) => ({
+          rest: handRun(layout, a), spread: handRun(layout, a, { bleed: 6 }),
+          writing: handRun(layout, a, { moments: [{ start: T0, dur: 200 }], epoch: T0 }),
+        });
+        const k = runs(kept);
+        const e = runs(erased);
+        for (let v = 0.25; v < rh; v += 2) {
+          for (let u = 0.25; u < rw; u += 2) {
+            points += 1;
+            const [x, y] = [u - ox, v - oy];
+            // up to 4 texels a px (levels 0–2): to the bit, at rest spread and mid-writing
+            for (const [run, now] of [["spread", 0], ["writing", T0 + 100]] as const) {
+              if (handInkAt(k[run], kept, x, y, now, 4).cover !== handInkAt(e[run], erased, x, y, now, 4).cover) unequal += 1;
+            }
+            // 8 and 16 texels a px (level 3, the coarsest): the coverage within 2%, and no ink where the glyph alone lays none
+            for (const aa of [8, 16]) {
+              for (const run of ["rest", "spread"] as const) {
+                const a = handInkAt(k[run], kept, x, y, 0, aa).cover;
+                const b = handInkAt(e[run], erased, x, y, 0, aa).cover;
+                most = Math.max(most, Math.abs(a - b));
+                if (b === 0) ghost = Math.max(ghost, a);
+              }
+            }
+          }
+        }
+      }
+      console.log(`[hand-ink] ${name}: ${glyphs} glyphs, ${points} points — unequal up to 4 texels a px: ${unequal}; at 8–16: coverage moved at most ${most.toFixed(4)}, ghost ink at most ${ghost.toFixed(4)}`);
+      expect(glyphs).toBeGreaterThan(190);
+      expect(unequal).toBe(0);
+      expect(most).toBeLessThan(0.02);
+      expect(ghost).toBeLessThan(0.012);
+    });
+  }
 });

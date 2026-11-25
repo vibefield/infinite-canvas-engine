@@ -116,17 +116,34 @@ export interface Fixture {
   readonly glyphs: ReadonlyMap<string, FixtureGlyph>;
 }
 
-/** The fixture face: `em` texels an em (32), `range` em across the edge byte (0.5), each glyph its ink's box and half the range around it. */
-export function fixtureFace(opts: { readonly em?: number; readonly range?: number } = {}): Fixture {
+/**
+ * The fixture face: `em` texels an em (32), `range` em across the edge byte (0.5), each glyph its ink's box and half the range
+ * around it; `glyphs` its glyphs (FIXTURE_GLYPHS); `whole` — each rect laid as the bake lays one (bake/derive.ts `glyphField`): the
+ * ink's box in whole texels and the margin round it, so the pen's origin is whole texels, and outside the rect for a glyph whose
+ * ink does not reach its origin.
+ */
+export function fixtureFace(opts: { readonly em?: number; readonly range?: number; readonly glyphs?: readonly FixtureGlyph[]; readonly whole?: boolean } = {}): Fixture {
   const em = opts.em ?? 32;
   const range = opts.range ?? 0.5;
   const margin = range / 2;
+  const set = opts.glyphs ?? FIXTURE_GLYPHS;
   const placed: { g: FixtureGlyph; rect: [number, number, number, number]; origin: [number, number] }[] = [];
   let x = 1;
   let tall = 0;
-  for (const g of FIXTURE_GLYPHS) {
+  for (const g of set) {
     const xs = g.strokes.flatMap((st) => st.filter((_, i) => i % 2 === 0));
     const ys = g.strokes.flatMap((st) => st.filter((_, i) => i % 2 === 1));
+    if (opts.whole === true) {
+      const pad = Math.round(margin * em);
+      const left = Math.floor((Math.min(...xs) - g.nib) * em) - pad;
+      const top = Math.floor((Math.min(...ys) - g.nib) * em) - pad;
+      const w = Math.ceil((Math.max(...xs) + g.nib) * em) + pad - left;
+      const h = Math.ceil((Math.max(...ys) + g.nib) * em) + pad - top;
+      placed.push({ g, rect: [x, 1, w, h], origin: [-left, -top] });
+      x += w + 2;
+      tall = Math.max(tall, h);
+      continue;
+    }
     const bx0 = Math.min(...xs) - g.nib - margin;
     const by0 = Math.min(...ys) - g.nib - margin;
     const w = Math.ceil((Math.max(...xs) + g.nib + margin - bx0) * em);
@@ -159,5 +176,5 @@ export function fixtureFace(opts: { readonly em?: number; readonly range?: numbe
   };
   const read = readHandAtlas(json, bin);
   if ("error" in read) throw new Error(`the fixture face is refused: ${read.error}`);
-  return { json, bin, atlas: read, glyphs: new Map(FIXTURE_GLYPHS.map((g) => [g.ch, g])) };
+  return { json, bin, atlas: read, glyphs: new Map(set.map((g) => [g.ch, g])) };
 }

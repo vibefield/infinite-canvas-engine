@@ -266,10 +266,31 @@ describe("hand_ink on Dawn over the desk's own face: Caveat 500, as baked (apps/
     expect(d.pens / d.inked).toBeLessThan(0.01);
     expect(d.counts / (W * H)).toBeLessThan(0.01);
     expect(m.inkSamples).toBeLessThanOrEqual(4);
-    // …and minified ×1/3, a coarser level
-    const far = { origin: [run.grid.x0 - 20, run.grid.y0 - 20] as const, scale: 3 };
-    const fd = compare(await draw(run, 5, far, 0, caveat), run, far, 0, caveat);
-    console.log(`[hand.dawn] Caveat 500 minified ×1/3: cover max |GPU − twin| ${fd.cover.toFixed(4)}; counts differ at ${fd.counts} px`);
-    expect(fd.cover).toBeLessThan(TOLERANCE);
+    // …and minified ×1/3 (8 texels a px: the chain's coarsest level), and ×1/4 — the note's far LOD (10.7 texels a px, past the
+    // coarsest level: the LOD stops there, the AA does not), each sample kept inside its own glyph's rect
+    for (const scale of [3, 4]) {
+      const far = { origin: [run.grid.x0 - 20, run.grid.y0 - 20] as const, scale };
+      const fd = compare(await draw(run, 5, far, 0, caveat), run, far, 0, caveat);
+      console.log(`[hand.dawn] Caveat 500 minified ×1/${scale}: cover max |GPU − twin| ${fd.cover.toFixed(4)}; counts differ at ${fd.counts} px; ${fd.inked} inked px`);
+      expect(fd.cover).toBeLessThan(TOLERANCE);
+      expect(fd.inked).toBeGreaterThan(100);
+    }
+  });
+
+  it("marks whose pen origin lies outside their rect (quotes, an apostrophe, a degree sign — above the baseline): GPU against twin", async () => {
+    const marks = layoutText("“It's 12° ‘ere’,” she said — \"it's 'late'\".", { w: 260, h: 120 }, HAND, handMetricsOf(caveat), 5);
+    const run = handRun(marks, caveat);
+    expect(run.missing).toEqual([]);
+    const outside = marks.glyphs.filter((g) => {
+      const b = caveat.glyphs[String(g.ch.codePointAt(0))];
+      return b?.rect !== undefined && b.origin !== undefined && (b.origin[1] > b.rect[3] || b.origin[0] < 0 || b.origin[0] > b.rect[2]);
+    }).length;
+    expect(outside).toBeGreaterThanOrEqual(8);
+    const crisp = { origin: [run.grid.x0, run.grid.y0] as const, scale: 0.5 };
+    const d = compare(await draw(run, 6, crisp, 0, caveat), run, crisp, 0, caveat);
+    console.log(`[hand.dawn] Caveat 500, ${outside} of ${marks.glyphs.length} glyphs with their origin outside their rect: cover max |GPU − twin| ${d.cover.toFixed(4)}; counts differ at ${d.counts} px; ${d.inked} inked px`);
+    expect(d.cover).toBeLessThan(TOLERANCE);
+    expect(d.counts / (W * H)).toBeLessThan(0.01);
+    expect(d.inked).toBeGreaterThan(500);
   });
 });
