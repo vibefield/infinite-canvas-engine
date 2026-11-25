@@ -12,7 +12,8 @@
 //
 // WHERE A RANGE LIES (petition I60 — "the selection bar comes to the words"): a lease may say where a range of its words is in the
 // world (`rangeBox`) — the desk then places the selection menu's anchor over the words selected (`SelectionAnchor.words`), with the
-// object's words acts. A lease that declares none has no words' menu.
+// object's words acts: the object the lease names (`entity`), else the one core's `Editing` marks. A lease that declares no
+// `rangeBox` has no words' menu.
 
 import type { Entity } from "@ice/core";
 
@@ -83,6 +84,12 @@ export interface EditorPlace {
 export interface EditorLease {
   /** The TEXT PART this lease writes — its kind's declared `TextPart.part` ("note.body", "calendar.line"): what `lease()` names. */
   readonly part?: string;
+  /**
+   * The OBJECT this lease writes (petition I60): the selection menu's words are this object's — their `entity`, its type's words acts —
+   * whether or not its kind stamps core's `Editing` (a plugin's part that keeps its draft in its own state never does). Absent: the
+   * object `Editing` marks, when one is.
+   */
+  readonly entity?: Entity;
   /** The textarea's accessible name while lent ("write on the note"). */
   readonly label?: string;
   /**

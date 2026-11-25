@@ -84,9 +84,9 @@ export interface SelectionAnchor {
   readonly menu?: readonly MenuSlot[];
   /**
    * The WORDS selected while a part is written (petition I60 — "the selection bar comes to the words"): present while the one editor is
-   * lent to an object's part, the object is being written (core's `Editing`), the range is not empty and the part can say where it lies
-   * (its lease's `rangeBox`) — and no press the editor claimed is down (the bar waits for the release), nothing is in hand and the drawer
-   * is shut. Absent otherwise.
+   * lent to an object's part — the object its lease names (`EditorLease.entity`), else the one being written (core's `Editing`) — the
+   * range is not empty and the part can say where it lies (its lease's `rangeBox`), and no press the editor claimed is down (the bar
+   * waits for the release), nothing is in hand and the drawer is shut. Absent otherwise.
    */
   readonly words?: WordsAnchor;
 }
@@ -98,7 +98,7 @@ export interface SelectionAnchor {
 export interface WordsAnchor {
   /** The words' box on screen, CSS px (as `box`): the part's world box (`rangeBox`) through the camera — it follows a pan and a zoom. */
   readonly box: MarkBox;
-  /** The object being written. */
+  /** The object being written: the one the lease names (`EditorLease.entity`), else the one core's `Editing` marks. */
   readonly entity: Entity;
   /** The range selected, text indices of the lent text: `from` < `to`. */
   readonly from: number;

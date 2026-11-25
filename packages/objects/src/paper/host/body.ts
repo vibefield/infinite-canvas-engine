@@ -20,7 +20,8 @@
 // clicks into the field's range, which the writing keeps as flux (`select`; the note draws no wash yet). A copy lifts the words as
 // plain text (the marks come later); a paste is laid through the editor's `write`, the path a typed input takes into the typing.
 // Where a range of them LIES (`rangeBox`, from the writing as last drawn, turned with the sheet): the selection menu comes to the
-// words selected. The note declares no words act yet (the ink's acts are a later slice's), so its words' menu is empty.
+// words selected, as the words of the note the lease names (`entity`). The note declares no words act yet (the ink's acts are a later
+// slice's), so its words' menu is empty.
 
 import { Active, Camera, type Entity, Grab, type World } from "@ice/core";
 import type { PaperDriver } from "../object";
@@ -69,6 +70,8 @@ export function createNoteBody(opts: NoteBodyOptions): NoteBody | undefined {
   const leaseFor = (e: Entity): EditorLease => {
     const lease: EditorLease = {
     part: NOTE_BODY,
+    // the note it writes (petition I60): the words' menu is this note's by the lease's own word, not by its typing's claim
+    entity: e,
     label: "write on the note",
     // between sessions the world's text reaches the field (a peer, an undo); while a session is open the field is the truth
     value: () => (typing.open() ? null : (typing.ink(e)?.text ?? "")),

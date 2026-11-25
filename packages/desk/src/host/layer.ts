@@ -927,18 +927,20 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     };
     /** The ONE editor, once it is made (below, after the drivers): until then there are no words. */
     const editorRef: { current?: DeskEditor } = {};
-    // THE WORDS (petition I60 — "the selection bar comes to the words"): while the one editor is lent to an object's part, the object is
-    // being written (core's `Editing`), no press the editor claimed is down, the range is not empty and the part says where it lies (its
-    // lease's `rangeBox`), the anchor carries them — their box through the camera, the object's words acts as slots, each read for the
-    // range now through the menu's own door (`menuReadsOf`: its state and its choices, I61 and I62). A `rangeBox` that throws is caught
-    // here and said once (no words), never a strike
+    // THE WORDS (petition I60 — "the selection bar comes to the words"): while the one editor is lent to an object's part — the object
+    // its lease names (`entity`), else the one being written (core's `Editing`: a plugin's part may keep its draft in its own state and
+    // never stamp it) — no press the editor claimed is down, the range is not empty and the part says where it lies (its lease's
+    // `rangeBox`), the anchor carries them: their box through the camera, the object's words acts as slots, each read for the range now
+    // through the menu's own door (`menuReadsOf`: its state and its choices, I61 and I62). A `rangeBox` that throws is caught here and
+    // said once (no words), never a strike
     const wordsOf = (): WordsAnchor | undefined => {
       const ed = editorRef.current;
       const lease = ed?.lease();
       if (ed === undefined || lease?.rangeBox === undefined || ed.pressing()) return undefined;
       const from = Math.min(ed.element.selectionStart, ed.element.selectionEnd);
       const to = Math.max(ed.element.selectionStart, ed.element.selectionEnd);
-      const entity = to > from ? world.firstOf(editingQ) : undefined;
+      const named = typeof lease.entity === "number" ? lease.entity : undefined;
+      const entity = to > from ? (named ?? world.firstOf(editingQ)) : undefined;
       const cam = world.getResource(Camera);
       if (entity === undefined || !world.isAlive(entity) || cam === undefined) return undefined;
       let box: RangeBox | undefined;
