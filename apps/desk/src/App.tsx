@@ -30,7 +30,7 @@ import { rigLayer } from "./rig-door";
 import { disposeOnLeave } from "./lifetime";
 import { type DevPanel, installDevPanel } from "./panel/panel";
 import { DESK_GRID, defaultParams } from "./panel/params";
-import { deskText } from "./faces";
+import { deskHand, deskText } from "./faces";
 import { productPlates } from "./fixtures";
 import { deskScale, glyphFeed } from "./glyphs";
 import { deskPalette, deskTheme, osTheme } from "./palette";
@@ -110,7 +110,7 @@ export function App(): ReactElement {
     // …and on a rig's page, the host options its harness asked for (a host's hold, I20, its drawer's foot, I21, and its remote cursors
     // off, I26 — as VibeField mounts them — and object types of the layer's own, I25); none on the product's
     const { objects: rigObjects = [], ...rig } = rigLayer();
-    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS, ...rigObjects], name: "desk/compose", text: deskText(), docs: engine.docs, blobs: deskBlobs, springs: params.motion, grid: DESK_GRID, gpuLedger: true, ...rig });
+    const factory = deskLayer({ theme: deskTheme(themeRef.current.name()), palette: deskPalette(themeRef.current.name()), objects: [...DESK_OBJECTS, ...rigObjects], name: "desk/compose", text: deskText(), hand: deskHand(), docs: engine.docs, blobs: deskBlobs, springs: params.motion, grid: DESK_GRID, gpuLedger: true, ...rig });
     return (ctx) => { const h = factory(ctx); handleRef.current = h; generationRef.current = generation; return h; };
   }, [engine, params, generation]);
 
