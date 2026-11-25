@@ -6,6 +6,8 @@
 export { AMBIENT_DEFAULTS, type Ambient, type AmbientMode, type AmbientOptions, type AmbientPhase, type AmbientPin, type AmbientState, createAmbient } from "./ambient";
 export { type BuildViewport, type BuildWork, type BuiltDesk, createDeskBuilder, type DeskBuilder, type DeskBuilderOptions, type DeskBuilderStats, type DeskWakeReason, type HeldBuild, type HoldPin } from "./builder";
 export { createMarksCollector, type HeldAnchor, type HeldSlot, type MarkRow, type MarksCollector, type MenuSlot, menuSlots, type SelectionAnchor, withKindActs } from "./marks";
+// …and the words the menu comes to (petition I60): the anchor's `words`
+export type { WordsAnchor } from "./marks";
 // …and the glyph a held slot and a menu slot carry (core's `HeldGlyph`, K8a), named beside the anchor's parts: a host that draws the
 // held bar takes `HeldAnchor`, `HeldSlot` and `HeldGlyph` by name from `/desk` (petition I36), never re-derived from `SelectionAnchor`
 export type { HeldGlyph } from "@ice/core";

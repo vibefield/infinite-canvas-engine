@@ -34,7 +34,7 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, closeTray, type Entity, focusTray, frameParent, heldEntity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type HeldToolDef, type HeldToolState, type MarqueeBuffer, type MenuActionDef, type MenuActionState, type MenuStateSlot, type MenuStateSource, type NavFace, type NavGeometrySlot, NavTransition, NO_ENTITY, openTray, type PointPick, PrefabId, type PresentationTransitionAdapter, readActChoices, readHeldToolState, readMenuActionState, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, setTrayHidden, setTrayOnly, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayFocus, type TrayFocusMove, trayHidden, trayOnly, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, closeTray, defineQuery, Editing, type Entity, focusTray, frameParent, heldEntity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type HeldToolDef, type HeldToolState, type MarqueeBuffer, type MenuActionDef, type MenuActionRange, type MenuActionState, menuActionsFor, type MenuStateSlot, type MenuStateSource, type NavFace, type NavGeometrySlot, NavTransition, NO_ENTITY, openTray, type PointPick, PrefabId, type PresentationTransitionAdapter, readActChoices, readHeldToolState, readMenuActionState, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, setTrayHidden, setTrayOnly, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayFocus, type TrayFocusMove, trayHidden, trayOnly, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
 import { screenToWorld } from "@ice/kernel";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
@@ -45,7 +45,7 @@ import type { RecordStoreStats } from "../engine/records";
 import { HOLD, type HoldOptions, type HoldReserves } from "../hold/pose";
 import { createHeldFold } from "../hold/told";
 import { HOLD_SHADER_FILES, holdShaders } from "../hold/shaders";
-import { heldSlots, type SelectionAnchor, withKindActs } from "../compose/marks";
+import { heldSlots, type SelectionAnchor, type WordsAnchor, withKindActs, wordsAnchor } from "../compose/marks";
 import { createPickSource } from "../compose/pick";
 import { createDeskReflector, type DeskReflector, type DeskReflectorStats, type DeskWakes, looksOf } from "../compose/reflector";
 import { acquire, adopt, type Gpu, type GpuOptions } from "../engine/device";
@@ -68,7 +68,7 @@ import { decodePicture } from "./picture";
 import { NO_DOCS, type TypingDocs } from "../docs";
 import { TEXT_RASTER, type TextRaster } from "../kit/raster";
 import { HAND_FACES, type HandFaces } from "../kit/hand-faces";
-import type { DeskEditor, TextPart } from "../kit/editor";
+import type { DeskEditor, RangeBox, TextPart } from "../kit/editor";
 import { createDeskEditor } from "./editor";
 import type { InsideView } from "../kit/inside";
 import { shaderText } from "../shaders";
@@ -702,6 +702,16 @@ function tellChoices(kind: string, act: string, err: unknown): void {
   console.error(`[ice] desk: the kind "${kind}"'s act "${act}" threw in its \`choices\` — it stands as one op (petition I62); said once a page`, err);
 }
 
+/** …and a lease's `rangeBox` (petition I60): the menu does not come to that part's words while it throws; said once a part a page. */
+function tellRangeBox(part: string, err: unknown): void {
+  const key = `rangeBox ${part}`;
+  if (toldAnchor.has(key)) return;
+  toldAnchor.add(key);
+  console.error(`[ice] desk: the lease on the text part "${part}" threw in its \`rangeBox\` — the selection menu does not come to its words (petition I60); said once a page`, err);
+}
+/** The one object being written (core's `Editing` — the one focused editor's claim, D2c). */
+const editingQ = defineQuery([Editing]);
+
 /** A host's length or time for the desk's chrome (I20, I21): a finite number ≥ 0, or the mount refuses it by its name. */
 function hostNumber(name: string, v: number | undefined): number | undefined {
   if (v === undefined) return undefined;
@@ -893,8 +903,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // is now — disabled, another glyph, another label
     // what the kind says of a menu act NOW (I61): its `state`, read over the selected objects of the type whose declaration names the
     // act (core's `menuActionsFor` keeps the first type's), their props and the kind's desk state — each time the anchor is recomposed,
-    // and when core runs the act (the menu state seam); a throw is caught and said once — the act as declared
-    const menuReadsOf = (selected: readonly Entity[]) => {
+    // and when core runs the act (the menu state seam); a throw is caught and said once — the act as declared. I60: a WORDS act is read
+    // over the object being written alone (`selected` = [it]) and the range selected (`range`, on its context)
+    const menuReadsOf = (selected: readonly Entity[], range?: MenuActionRange) => {
       const first = selected[0];
       if (first === undefined) return undefined;
       const kind = builder.kindOf(first);
@@ -902,7 +913,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       const own = selected.filter((e) => world.get(e, PrefabId)?.id === typeId);
       const local = kind === undefined ? undefined : locals.get(kind.name);
       const name = kind?.name ?? String(typeId);
-      const ctx = { world, entities: own, props: (e: Entity) => propsOf(e), local };
+      const ctx = { world, entities: own, props: (e: Entity) => propsOf(e), local, ...(range !== undefined ? { range } : {}) };
       return {
         state: (act: MenuActionDef): MenuActionState | undefined => readMenuActionState(act, ctx, (err) => { tellMenuState(name, act.id, err); }),
         // …and its choices now (I62), read over the same objects with the same desk state; a throw is said once — one op
@@ -914,6 +925,27 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       if (kind === undefined || tool.choices === undefined) return undefined;
       return readActChoices(tool, { world, entity: e, props: () => propsOf(e), local: locals.get(kind.name) }, (err) => { tellChoices(kind.name, tool.id, err); });
     };
+    /** The ONE editor, once it is made (below, after the drivers): until then there are no words. */
+    const editorRef: { current?: DeskEditor } = {};
+    // THE WORDS (petition I60 — "the selection bar comes to the words"): while the one editor is lent to an object's part, the object is
+    // being written (core's `Editing`), no press the editor claimed is down, the range is not empty and the part says where it lies (its
+    // lease's `rangeBox`), the anchor carries them — their box through the camera, the object's words acts as slots, each read for the
+    // range now through the menu's own door (`menuReadsOf`: its state and its choices, I61 and I62). A `rangeBox` that throws is caught
+    // here and said once (no words), never a strike
+    const wordsOf = (): WordsAnchor | undefined => {
+      const ed = editorRef.current;
+      const lease = ed?.lease();
+      if (ed === undefined || lease?.rangeBox === undefined || ed.pressing()) return undefined;
+      const from = Math.min(ed.element.selectionStart, ed.element.selectionEnd);
+      const to = Math.max(ed.element.selectionStart, ed.element.selectionEnd);
+      const entity = to > from ? world.firstOf(editingQ) : undefined;
+      const cam = world.getResource(Camera);
+      if (entity === undefined || !world.isAlive(entity) || cam === undefined) return undefined;
+      let box: RangeBox | undefined;
+      try { box = lease.rangeBox(from, to); } catch (err) { tellRangeBox(lease.part ?? "(unnamed)", err); return undefined; }
+      const reads = menuReadsOf([entity], { entity, from, to });
+      return wordsAnchor({ entity, from, to, box, cam, acts: menuActionsFor([entity], menuOf, "words"), ...(reads !== undefined ? { stateOf: reads.state, choicesOf: reads.choices } : {}) });
+    };
     const anchorOf = (): SelectionAnchor => {
       const a = builder.anchor();
       // the pegboard tray is out (design-017 §4): the desk under it is inert, so the menu has nothing to act on — it steps away
@@ -922,7 +954,10 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       if (h === undefined) {
         const selected = selectedEntities(world);
         const reads = menuReadsOf(selected);
-        return withKindActs(a, selected, menuOf, reads?.state, reads?.choices);
+        const kinds = withKindActs(a, selected, menuOf, reads?.state, reads?.choices);
+        // I60: the WORDS selected while a part is written, with the object's words acts
+        const words = wordsOf();
+        return words === undefined ? kinds : { ...kinds, words };
       }
       const kind = builder.kindOf(h.entity);
       const swatches = swatchesOf(kind);
@@ -1029,6 +1064,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // every kind that takes text; a tap is routed to the text parts the objects declare, in registration order
     const textParts: TextPart[] = [];
     const editor = createDeskEditor({ container: host.container, world, parts: () => textParts, wake: () => compose.wake("ink"), ...(opts.idleMs !== undefined ? { idleMs: opts.idleMs } : {}) });
+    editorRef.current = editor;   // the anchor's words read its lease, its range and its press (petition I60)
     // THE OBJECTS' DOM HALVES (K4b, `defineObject({ host })`), in screen space: each object declared its own and the host builds them
     // from what it lends, never naming a kind — their TEXT PARTS first (K8a: the note's body, the calendar's day line), then every
     // half that mounts (the calendar's days and pen lease the editor, D3t-c)
