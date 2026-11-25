@@ -247,6 +247,27 @@ describe("the selection's WASH is rewritten alone (petition I60)", () => {
     expect(p?.wash).toBeUndefined();   // the run's own wash, built in
     expect(inkMarksAt(p?.run as HandRun, (L?.positions[2] as number) + 1, (L?.positions[3] as number) - 4, 0, 0.5).wash).toBeGreaterThan(0.9);
   });
+
+  it("a selection made before the sheet's first draw is in its first run (a still staged: selected, then drawn)", () => {
+    const { w, frame } = desk();
+    w.select(E(1), 9, 17);   // "call mum", before the writing has seen the sheet
+    frame([{ e: E(1), text: TEXT }]);
+    const L = w.layoutOf(E(1));
+    const run = w.penOf(E(1))?.run as HandRun;
+    expect(inkMarksAt(run, (L?.positions[20] as number) + 1, (L?.positions[21] as number) - 4, 0, 0.5).wash).toBeGreaterThan(0.9);
+    expect(inkMarksAt(run, (L?.positions[2] as number) + 1, (L?.positions[3] as number) - 4, 0, 0.5).wash).toBe(0);
+  });
+
+  it("a reset (a scene staged afresh) forgets the selection with the runs: the next sheet drawn under the same entity carries no wash", () => {
+    const { w, frame } = desk();
+    frame([{ e: E(1), text: TEXT }]);
+    w.select(E(1), 0, 3);
+    w.reset();
+    expect(w.selectionOf()).toBeUndefined();
+    frame([{ e: E(1), text: TEXT }]);
+    const L = w.layoutOf(E(1));
+    expect(inkMarksAt(w.penOf(E(1))?.run as HandRun, (L?.positions[2] as number) + 1, (L?.positions[3] as number) - 4, 0, 0.5).wash).toBe(0);
+  });
 });
 
 describe("the raster's road keeps its letters and draws its marks over them (petition I60)", () => {
