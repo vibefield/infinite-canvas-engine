@@ -190,6 +190,30 @@ describe("the ink's verbs (kit/ink.ts)", () => {
     expect(readWriting(before.ink).runs.map((r) => r.text)).toEqual(readWriting(ink).runs.map((r) => r.text));
   });
 
+  it("carryInk with the platform's caret lays the arrivals where they were typed — a letter beside its twin lands at the caret", () => {
+    // "add" highlighted, then " more": the caret between the two d's, a d typed — the caret after it is 3
+    const v = mark(inkOf({ text: "add more", seeds: encodeSeeds([1, 2, 3, 4, 5, 6, 7, 8]) }, 1), 0, 3, { highlight: "yellow" });
+    const typed = carryInk(v, "addd more", counter(9), 3);
+    expect([typed.from, typed.to]).toEqual([2, 3]);
+    expect(typed.ink.seeds).toEqual([1, 2, 9, 3, 4, 5, 6, 7, 8]);   // the new d at the caret, the d that was there after it in its own hand
+    expect(typed.ink.marks.slice(0, 4)).toEqual([YELLOW, YELLOW, YELLOW, YELLOW]);   // inside the highlight, so it joins
+    // without the caret, carrySeeds' own split: the new d after both, at the highlight's edge
+    const greedy = carryInk(v, "addd more", counter(9));
+    expect([greedy.from, greedy.to]).toEqual([3, 4]);
+    expect(greedy.ink.seeds).toEqual(carrySeeds("add more", v.seeds, "addd more", counter(9)).seeds);
+    expect(greedy.ink.marks[3]).toBe(0);
+    // a letter typed before its twins, and a backspace between two: the caret says which
+    const twins = inkOf({ text: "aab", seeds: encodeSeeds([1, 2, 3]) }, 1);
+    expect(carryInk(twins, "aaab", counter(9), 1).ink.seeds).toEqual([9, 1, 2, 3]);
+    expect(carryInk(twins, "aaab", counter(9)).ink.seeds).toEqual([1, 2, 9, 3]);
+    expect(carryInk(twins, "ab", counter(9), 0).ink.seeds).toEqual([2, 3]);   // the first a went
+    expect(carryInk(twins, "ab", counter(9)).ink.seeds).toEqual([1, 3]);
+    // where the greedy split already ends at the caret, the caret changes nothing
+    expect(carryInk(v, "add more!", counter(9), 9)).toEqual(carryInk(v, "add more!", counter(9)));
+    // a caret no reading of the edit ends at, or no caret index at all, is no hint: the greedy split
+    for (const caret of [0, 1, -1, 99, 2.5, Number.NaN]) expect(carryInk(v, "addd more", counter(9), caret), String(caret)).toEqual(greedy);
+  });
+
   it("mark sets one field over a range — a pen by name, a highlighter, a line in the words' own pen or a named one — and lifts it", () => {
     const v = inkOf({ text: "ab cd", seeds: "", marks: "" }, 1);
     expect(mark(v, 0, 2, { pen: "red" }).marks).toEqual([RED, RED, 0, 0, 0]);
