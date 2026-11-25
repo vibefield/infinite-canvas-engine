@@ -1,9 +1,9 @@
 // THE HAND'S FACES in a browser (petition I59 — the desk's pen; the `HAND_FACES` service, kit/hand-faces.ts): the baked
 // `ice-hand/1` atlases the APP ships (apps/desk: assets/hand/<face>.hand.json and .hand.bin), by URL, as host/ink.ts takes the
 // fonts by URL. A face is fetched ONCE, lazily, on its first ask — both files, read by the kit's tolerant reader
-// (`readHandAtlas`) — and until it lands `face()` answers undefined (a sheet keeps its raster road); `version()` bumps when it
-// lands, or when it is found missing or malformed (said once on the console), and `onVersion` tells the desk, which wakes
-// (`deskLayer({ hand })` subscribes, as it does `text`'s).
+// (`readHandAtlas`) — and until it lands `face()` answers undefined and `loading()` true (a sheet waits blank); `version()` bumps
+// when it lands, or when it is found missing or malformed (said once on the console — its sheets keep their raster road), and
+// `onVersion` tells the desk, which wakes (`deskLayer({ hand })` subscribes, as it does `text`'s).
 
 import { type HandAtlas, readHandAtlas } from "../kit/hand-atlas";
 import type { HandFaces } from "../kit/hand-faces";
@@ -24,6 +24,8 @@ export interface HandFacesOptions {
 export interface HandFacesLender extends HandFaces {
   /** Tell `fn` whenever a face lands or is found missing (the desk wakes: `deskLayer({ hand })` subscribes). Returns an unsubscribe. */
   onVersion(fn: () => void): () => void;
+  /** Is the face lent here and neither landed nor failed — from before its first ask until its files are read (a sheet waits blank)? */
+  loading(name: string): boolean;
   /** Fetch a face (once): resolves whether it landed. `face()` asks for this itself. */
   load(name: string): Promise<boolean>;
   /** Has the face landed? */
@@ -83,6 +85,7 @@ export function handFaces(opts: HandFacesOptions): HandFacesLender {
       return () => { listeners.delete(fn); };
     },
     load,
+    loading: (name) => Object.hasOwn(opts.faces, name) && !landed.has(name) && !errors.has(name),
     ready: (name) => landed.has(name),
     failed: (name) => errors.get(name),
   };
