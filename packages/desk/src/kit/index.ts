@@ -2,8 +2,9 @@
 // view and its mat (`MatPass`), the lamp and its light, a container's inside, the host's rasters and stores a kind is
 // lent, a live face's texture and the source a host lends for it (M24), the desk's PEN (petition I59: the faces, the glyph
 // run, the run store, the atlas on the GPU, the pen's clock — `hand_ink` is the `hand` WGSL piece) and the MARKS it draws
-// (petition I60: the ink value, its strokes as a hand makes them, the selection's wash — `ink_marks` is the `marks` piece), and
-// the shared pieces two kinds would otherwise copy from each other. A kind imports the desk through this, the engine
+// (petition I60: the ink value, its strokes as a hand makes them, the selection's wash — `ink_marks` is the `marks` piece), the
+// WRITTEN PART a written object is edited by (`inkPart` — the typing, the lease, the clipboard — and the words acts, `inkActs`),
+// and the shared pieces two kinds would otherwise copy from each other. A kind imports the desk through this, the engine
 // (`@ice/desk/engine`) and the contract (`KindProgram`, `ObjectKind`, `defineObject` — `@ice/desk`) alone.
 export * from "./arrays";
 export * from "./blobs";
@@ -16,8 +17,11 @@ export * from "./hand-gpu";
 export * from "./hand-run";
 export * from "./hold";
 export * from "./ink";
+export * from "./ink-acts";
 export * from "./ink-marks";
+export * from "./ink-part";
 export * from "./ink-strokes";
+export * from "./ink-typing";
 export * from "./inside";
 export * from "./layer";
 export * from "./light";
