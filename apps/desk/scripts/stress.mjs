@@ -520,10 +520,12 @@ try {
     check(target >= 0, `edit: a written note in view (${target}: ${JSON.stringify(tgt)})`);
     if (target >= 0) {
       for (let i = 0; i < 100 && !(await q("window.__desk.note.fontReady()")); i++) await sleep(50);
+      for (let i = 0; i < 100 && !(await q("window.__desk.note.handReady()")); i++) await sleep(50);
       const focused = await q(`window.__desk.note.focus(${target}, 1)`);
       await settle();
       const w0 = await q("window.__desk.note.writing()");
       const r0 = await q(`window.__desk.note.raster(${target})`);
+      const p0 = await q(`window.__desk.note.pen(${target})`);
       await q("window.__desk.perf.take()");
       const typed = await q("window.__desk.note.type('x')");
       await front();
@@ -531,15 +533,20 @@ try {
       const after = await q("window.__desk.perf.take()");
       const w1 = await q("window.__desk.note.writing()");
       const r1 = await q(`window.__desk.note.raster(${target})`);
-      const edit = { focused, typed, rasters: w1.rasters - w0.rasters, layouts: w1.layouts - w0.layouts, blanks: w1.blanks - w0.blanks, evicted: w1.evicted - w0.evicted, resident: w1.resident, raster: [r0, r1], pages: await q("window.__desk.note.pages()"), redraws: after.redraws, recorded: after.work.recorded, steps: after.steps, load: load() };
+      const p1 = await q(`window.__desk.note.pen(${target})`);
+      // THE PEN (petition I59): a note whose glyphs the face holds takes the pen's road — an edit builds ONE glyph run and lays no
+      // raster; a sheet the face cannot write keeps the raster's road and re-rasters ONE note, as before
+      const road = await q(`window.__desk.note.road(${target})`);
+      const edit = { focused, typed, road, rasters: w1.rasters - w0.rasters, runs: w1.runs - w0.runs, layouts: w1.layouts - w0.layouts, blanks: w1.blanks - w0.blanks, evicted: w1.evicted - w0.evicted, resident: w1.resident, raster: [r0, r1], pen: [p0, p1], pages: await q("window.__desk.note.pages()"), store: await q("window.__desk.note.runs()"), redraws: after.redraws, recorded: after.work.recorded, steps: after.steps, load: load() };
       report.edit = edit;
       await q("window.__desk.note.blur()");
       await settle();
       console.log(`-- edit · load ${edit.load} --`);
-      console.log(`  a character typed: ${edit.rasters} raster(s) drawn, ${edit.layouts} layout(s) laid, ${edit.blanks} blank, ${edit.evicted} evicted · ${edit.resident} rasters resident, pages ${JSON.stringify(edit.pages)} · the note's raster ${JSON.stringify(r0)} → ${JSON.stringify(r1)} · the last frame recorded ${edit.recorded} record(s) · ${edit.steps.length} steps in the window`);
+      console.log(`  a character typed on the ${edit.road} road: ${edit.runs} run(s) built, ${edit.rasters} raster(s) drawn, ${edit.layouts} layout(s) laid, ${edit.blanks} blank, ${edit.evicted} evicted · ${edit.resident} rasters resident, pages ${JSON.stringify(edit.pages)}, the run store ${JSON.stringify(edit.store)} · the note's raster ${JSON.stringify(r0)} → ${JSON.stringify(r1)}, its run ${JSON.stringify(p0)} → ${JSON.stringify(p1)} · the last frame recorded ${edit.recorded} record(s) · ${edit.steps.length} steps in the window`);
       check(focused && typed, "edit: the editor took the note and the character");
-      gate(edit.rasters === 1, `edit: a note edit re-rasters ONE note (${edit.rasters})`);
-      rows.push(["edit", `${edit.rasters} raster`, `${edit.recorded} records in the frame`, edit.load]);
+      if (edit.road === "pen") gate(edit.runs === 1 && edit.rasters === 0, `edit: a note edit on the pen's road builds ONE run (${edit.runs}) and lays no raster (${edit.rasters})`);
+      else gate(edit.rasters === 1, `edit: a note edit on the ${edit.road} road re-rasters ONE note (${edit.rasters})`);
+      rows.push(["edit", edit.road === "pen" ? `${edit.runs} run` : `${edit.rasters} raster`, `${edit.recorded} records in the frame`, edit.load]);
     }
   }
 
