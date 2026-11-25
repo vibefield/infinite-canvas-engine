@@ -78,16 +78,20 @@ export interface InkPart extends TextPart {
 const NEWLINE = 10;
 
 /**
- * A character a paste lays by default: any but a control character — the C0 controls below 32, DEL and the C1 controls, 127 to 159
- * (`cleanPiece` has made every break a "\n" and every tab a space).
+ * A character a paste lays by default (`InkPartOptions.keep`'s, and a live typing's `lay` — `cleanPiece`'s `keep`): any but a control
+ * character — the C0 controls below 32, DEL and the C1 controls, 127 to 159 — a break ("\n") kept (`cleanPiece` has made every break a
+ * "\n" and every tab a space).
  */
-const printable = (ch: string): boolean => {
+export const printable = (ch: string): boolean => {
   const c = ch.charCodeAt(0);
   return ch === "\n" || !(c < 32 || (c >= 127 && c <= 159));
 };
 
-/** The private PIECE a paste hands back (`EditorPaste.piece`), read as a stranger's: `{ text, marks }` with words, else undefined. */
-function readPiece(json: string | undefined): InkPiece | undefined {
+/**
+ * The private PIECE a paste hands back (`EditorPaste.piece`, the `PIECE_FLAVOUR` a lift wrote), read as a stranger's: `{ text, marks }`
+ * with words — marks that are not a string read none — else undefined (no JSON, not an object, no words).
+ */
+export function readPiece(json: string | undefined): InkPiece | undefined {
   if (typeof json !== "string" || json === "") return undefined;
   let v: unknown;
   try { v = JSON.parse(json); } catch { return undefined; }

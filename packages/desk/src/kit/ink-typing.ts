@@ -18,7 +18,10 @@
 // peer's ink reaches the editor's field (the lease's `value`).
 //
 // A typing REGISTERS ITSELF on its world (`inkTypingOn`), so a STATIC binding — a plugin's `menu: inkActs({ … })`, an agent's tool —
-// reaches the per-desk typing on an object without being handed it: an act lands an open draft before it marks by index.
+// reaches the per-desk typing on an object without being handed it: an act lands an open draft before it marks by index. A typing of
+// ANOTHER shape — a live write under core's `Editing` claim, the reference note's — registers through the same door
+// (`registerInkTyping`, the five things an act asks of it: `InkTypingDoor`), and shares the typed-over run's step (`carryRun`,
+// `keepRun`), so its words keep their marks as this typing's do.
 
 import { type Component, type Entity, guardedTransaction, PrefabId, type WidgetType, type World } from "@ice/core";
 import { type TypingDocs, writable } from "../docs";
@@ -66,13 +69,34 @@ export interface InkTypingOptions {
   readonly fresh?: () => number;
 }
 
-/** A kind's written part's TYPING on one desk: one object at a time, its words a DRAFT until the commit lands them in one step. */
-export interface InkTyping {
+/**
+ * What an act or an agent's tool asks of ANY typing on an object (petition I60 — `registerInkTyping`, `inkTypingOn`): the type and the
+ * ink cell's group it writes, the object it is on, whether words are written and not yet landed, the landing, and the words its field
+ * shows. `InkTyping` is one; a live write (the note's typing) is another.
+ */
+export interface InkTypingDoor {
   /** The object type it writes and its ink cell's group: what `inkTypingOn` finds it by. */
   readonly type: string;
   readonly group: string;
   /** The object the typing is on, or undefined. */
   editing(): Entity | undefined;
+  /** Words are written and not yet landed (a draft open; a live write still pending). */
+  open(): boolean;
+  /** Land them: ONE step unless they net to nothing — whether it wrote. The object stays the typing's. */
+  commit(): boolean;
+  /** The ink the editor's field shows for `e` — undefined for a dead entity or another type's. */
+  ink(e: Entity): InkValue | undefined;
+}
+
+/** A word being TYPED OVER a selection (`carryRun`): its letters [from, to) and the mark the replaced letters shared. */
+export interface InkTypedRun {
+  readonly from: number;
+  readonly to: number;
+  readonly mark: number;
+}
+
+/** A kind's written part's TYPING on one desk: one object at a time, its words a DRAFT until the commit lands them in one step. */
+export interface InkTyping extends InkTypingDoor {
   /** A DRAFT is open: words written and not yet landed. */
   open(): boolean;
   /** The ink the editor's field shows for `e`: the draft while one is open on it, else its cell's — undefined for a dead entity or another type's. */
@@ -101,7 +125,7 @@ export interface InkTyping {
 }
 
 /** Every typing on a world, by the cell it writes — one made again on the same cell (the desk remounted) replaces the last. */
-const TYPINGS = new WeakMap<World, Map<Component, InkTyping>>();
+const TYPINGS = new WeakMap<World, Map<Component, InkTypingDoor>>();
 
 /** The cell's three fields (kit/ink.ts — `ink: ["text", "seeds", "marks"]`). */
 const CELL_FIELDS = ["text", "seeds", "marks"] as const;
@@ -115,6 +139,38 @@ const same = (a: InkValue, b: InkValue): boolean => a.text === b.text && a.seeds
 /** An index held to a text `n` long. */
 const clampIndex = (i: number, n: number): number => (i >= n ? n : i > 0 ? Math.floor(i) : 0);
 
+/**
+ * ONE INPUT'S STEP with the typed-over run (petition I60 — pure; `InkTyping.input`'s, and a live typing's): the platform's `value`
+ * carried onto `ink` (`carryInk`, the edit found by `caret`, the field's caret after it), and the run it leaves. A selection typed over
+ * BEGINS a run holding the mark its letters shared (`splice`'s replacement); a letter typed at the run's END takes that mark, not the
+ * join of its neighbours (a break none) — "Friday" typed over as "Monday" inside a highlight stays highlighted, not "M" alone; a letter
+ * of it taken back shortens it; any other edit ends it. The run handed in is never changed. Nothing changed (`value` the ink's words):
+ * the ink and the run as handed, an empty range at the caret.
+ */
+export function carryRun(ink: InkValue, value: string, fresh: () => number, caret?: number, run?: InkTypedRun): { readonly ink: InkValue; readonly from: number; readonly to: number; readonly run: InkTypedRun | undefined } {
+  if (ink.text === value) {
+    const at = clampIndex(caret ?? value.length, value.length);
+    return { ink, from: at, to: at, run };
+  }
+  const carried = carryInk(ink, value, fresh, caret);
+  const { from, to } = carried;
+  const removed = ink.text.length - (value.length - (to - from));
+  const next = carried.ink;
+  if (removed > 0 && to > from) return { ink: next, from, to, run: { from, to, mark: next.marks[from] ?? 0 } };   // a selection typed over: the run begins
+  if (run !== undefined && removed === 0 && to > from && from === run.to) {
+    // typed on at the run's end: the arrivals take the run's mark
+    const marks = next.marks.slice();
+    for (let i = from; i < to; i++) marks[i] = value.charCodeAt(i) === 10 ? 0 : run.mark;
+    return { ink: { text: next.text, seeds: next.seeds, marks }, from, to, run: { from: run.from, to, mark: run.mark } };
+  }
+  if (run !== undefined && to === from && removed > 0 && from >= run.from && from + removed === run.to) return { ink: next, from, to, run: { from: run.from, to: from, mark: run.mark } };   // a letter of it taken back
+  return { ink: next, from, to, run: undefined };
+}
+
+/** The typed-over run after the field's range moved to [from, to) (a selection change): kept while the caret stands at its end, else over (undefined). */
+export function keepRun(run: InkTypedRun | undefined, from: number, to: number): InkTypedRun | undefined {
+  return run !== undefined && from === to && from === run.to ? run : undefined;
+}
 
 /**
  * THE TYPING a kind's text part holds (module doc): the draft, its carry, its paste and lift, its ONE commit. Its ink cell is the
@@ -139,8 +195,8 @@ export function inkTyping(opts: InkTypingOptions): InkTyping {
   /** The ink as the typing found it (before its draft opened) — what "nets to nothing" means. */
   let start: InkValue | undefined;
   let draft: InkValue | undefined;
-  /** A word being typed over a selection (`input`'s): its letters [from, to) and the mark the replaced letters shared, carried on to each letter typed at its end. */
-  let run: { readonly from: number; to: number; readonly mark: number } | undefined;
+  /** A word being typed over a selection (`carryRun`'s), carried on to each letter typed at its end. */
+  let run: InkTypedRun | undefined;
 
   /** Is `e` an object of this type, alive? */
   const ours = (e: Entity | undefined): e is Entity => e !== undefined && world.isAlive(e) && world.get(e, PrefabId)?.id === object.type;
@@ -225,23 +281,12 @@ export function inkTyping(opts: InkTypingOptions): InkTyping {
       if (!ours(e) || typeof value !== "string") return null;
       const cur = draft ?? cellInk(e);
       if (cur === undefined || cur.text === value) return null;
-      const carried = carryInk(cur, value, fresh, caret);
-      const { from, to } = carried;
-      const removed = cur.text.length - (value.length - (to - from));
-      let next = carried.ink;
-      if (removed > 0 && to > from) run = { from, to, mark: next.marks[from] ?? 0 };   // a selection typed over: the run begins
-      else if (run !== undefined && removed === 0 && to > from && from === run.to) {
-        // typed on at the run's end: the arrivals take the run's mark, not the join of their neighbours
-        const marks = next.marks.slice();
-        for (let i = from; i < to; i++) marks[i] = value.charCodeAt(i) === 10 ? 0 : run.mark;
-        next = { text: next.text, seeds: next.seeds, marks };
-        run.to = to;
-      } else if (run !== undefined && to === from && removed > 0 && from >= run.from && from + removed === run.to) run.to = from;   // a letter of it taken back
-      else run = undefined;
-      return move(e, next, { from, to, how: "typed" });
+      const step = carryRun(cur, value, fresh, caret, run);
+      run = step.run;
+      return move(e, step.ink, { from: step.from, to: step.to, how: "typed" });
     },
     moved(from, to) {
-      if (run !== undefined && !(from === to && from === run.to)) run = undefined;
+      run = keepRun(run, from, to);
     },
     paste(piece, from, to) {
       const e = editing;
@@ -264,13 +309,27 @@ export function inkTyping(opts: InkTypingOptions): InkTyping {
     commit,
     end,
   };
+  registerInkTyping(world, cell, typing);
+  return typing;
+}
+
+/**
+ * REGISTER a typing on its world by the ink cell it writes (petition I60): what `inkTypingOn` finds, so the acts and an agent's tools
+ * read its words and land it before they edit by index. `inkTyping` registers through it; a typing of another shape (a live write)
+ * registers its door the same way. One door a cell on a world: a later one replaces it. The answer unregisters — a no-op once another
+ * door has replaced this one.
+ */
+export function registerInkTyping(world: World, cell: Component, door: InkTypingDoor): () => void {
   let all = TYPINGS.get(world);
   if (all === undefined) {
     all = new Map();
     TYPINGS.set(world, all);
   }
-  all.set(cell, typing);
-  return typing;
+  const into = all;
+  into.set(cell, door);
+  return () => {
+    if (into.get(cell) === door) into.delete(cell);
+  };
 }
 
 /**
@@ -278,7 +337,7 @@ export function inkTyping(opts: InkTypingOptions): InkTyping {
  * on `e` now — undefined when none is (no part on that desk, the editor elsewhere). A static binding reaches the per-desk typing so:
  * a menu act (`inkActs`) or an agent's tool lands an open draft (`commit`) before it edits by index, and reads the words the field shows.
  */
-export function inkTypingOn(world: World, e: Entity, ink = "ink"): InkTyping | undefined {
+export function inkTypingOn(world: World, e: Entity, ink = "ink"): InkTypingDoor | undefined {
   const all = TYPINGS.get(world);
   if (all === undefined || !world.isAlive(e)) return undefined;
   const type = world.get(e, PrefabId)?.id;
