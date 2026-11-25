@@ -21,7 +21,8 @@
 // — and its `commit` at the end, instead of the field's values meanwhile: a remote page's IME is driven so (a held live face).
 //
 // THE RANGE (petition I60 — "write first, then a drag across writing selects"): a lease that says where its writing lies
-// (`indexAt`) has the editor CLAIM a primary press on it — a mouse's or a pen's, under the select tool, no ⌘/ctrl/⌥, never on DOM
+// (`indexAt`) has the editor CLAIM a primary press on it — a mouse's or a pen's, under a tool that would carry the object (core's
+// select, a desk's own `desk.select`: `selecting` below), no ⌘/ctrl/⌥, never on DOM
 // chrome, never on another object the stack hit over the part: its default is prevented here, in the capture phase, before the
 // pointer adapter hears it, and the adapter's `defaultPrevented` gate lands the fact `surfaceHandled` — so no carry, marquee or pan
 // starts from it, and no focus fixup takes the focus off the field. A release within the drag slop is still a TAP (the click goes
@@ -51,7 +52,7 @@
 // platform lets the page read no clipboard. A RIGHT press on the lent part's writing has its default prevented and nothing else, so
 // the focus — and the range — survive it for a host's right-click rows (the stack makes no gesture of a secondary press: I28).
 
-import { ActiveTool, Camera, type Entity, GestureSettings, Grab, type World } from "@ice/core";
+import { ActiveTool, Camera, type Entity, GestureSettings, Grab, tools, type World } from "@ice/core";
 import { clientToScreen } from "@ice/kernel";
 import { tapHit } from "../compose/tap";
 import type { DeskEditor, EditorCommand, EditorCommandOptions, EditorLease, EditorLift, EditorPaste, TextPart, TextRange, TextUnit } from "../kit/editor";
@@ -444,12 +445,20 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     last = { at, x: ev.clientX, y: ev.clientY, count };
     return count;
   };
+  /**
+   * The tool in hand would CARRY an object pressed on (its route's `widgetDrag` is "move"): core's select, a desk preset's own select
+   * (`desk.select`, core's select shape under its own id), any select a host defines. Then a press on the lent part's writing is the
+   * editor's — the claim takes the carry's place. A tool whose press on an object means something else (pan, connect, a draw tool, a
+   * drag that does nothing) keeps its press. Read off the tool's own definition, so the desk names no preset's id; an id no tool
+   * registered resolves to select's semantics (core's `tools.resolve`), as an absent tool reads "select".
+   */
+  const selecting = (): boolean => tools.resolve(world.getResource(ActiveTool)?.id ?? "select").route.widgetDrag === "move";
   /** Claim the press when it lands on the lent part's writing (module doc): its default prevented, the focus kept, its range begun. */
   const claim = (ev: PointerEvent, count: number): void => {
     const l = lent;
     if (l?.indexAt === undefined || ev.metaKey || ev.ctrlKey || ev.altKey) return;
-    // a press under another tool is that tool's (a pan's); one on DOM chrome over the part, the chrome's
-    if ((world.getResource(ActiveTool)?.id ?? "select") !== "select" || onChrome(ev.target)) return;
+    // a press under a tool that carries nothing is that tool's (a pan's); one on DOM chrome over the part, the chrome's
+    if (!selecting() || onChrome(ev.target)) return;
     const p = worldAt(ev.clientX, ev.clientY);
     if (p === undefined) return;
     // the stack's word when it knows the pointer: nothing of the desk's under it (an object in hand, the drawer out, chrome under the
@@ -477,13 +486,13 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
   };
   /**
    * A RIGHT press on the lent part's writing (petition I60 — a host's right-click rows act on the words selected): the claim's own
-   * tests — a mouse's or a pen's, the select tool, off DOM chrome, the stack's hit the part's own or none known, `indexAt` answering —
+   * tests — a mouse's or a pen's, a select (`selecting`), off DOM chrome, the stack's hit the part's own or none known, `indexAt` answering —
    * and then its default prevented and NOTHING else: no range, no capture, no count. The platform's focus fixup then leaves the field
    * its focus and its range; the stack makes no gesture of a secondary press (I28), so nothing on the canvas moves for it.
    */
   const keep = (ev: PointerEvent): void => {
     const l = lent;
-    if (l?.indexAt === undefined || (world.getResource(ActiveTool)?.id ?? "select") !== "select" || onChrome(ev.target)) return;
+    if (l?.indexAt === undefined || !selecting() || onChrome(ev.target)) return;
     const p = worldAt(ev.clientX, ev.clientY);
     if (p === undefined) return;
     const t = tapHit(world, ev.pointerType === "pen" ? "pen" : "mouse");
