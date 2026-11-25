@@ -25,6 +25,7 @@ import { Calendar, CALENDAR_TYPE, MINIMAT_TYPE, MiniMat, NOTE_TYPE, Note, type P
 import { HAND, type ThemeName } from "@ice/desk";
 import { MINIMAT, PAPER, type BoardInk, type PaperAsset, type PaperKind } from "@ice/objects";
 import { oracleFixtures } from "./oracle-fixtures";
+import { sceneMarks, sceneWash, writtenWithPen } from "@ice/objects/oracle/ink.mjs";
 import { deskRig, type SceneHost, type Staged } from "../rig-door";
 import { type SpawnSpec, spawnAll } from "../scene";
 import { boardSpec, bookSpec, type KindScene, layBookInk, layEvents, layPins, layStrokes, type OracleBoard, type OracleBook, type OracleObject, type OraclePrint, type OracleThing, padSpec, pinBooks, pinPadPrints, pinPads, pinPrints, pinSpecimenPrint, printFixture, type PrintFixture, printSpec, generatedPicture, strokeSpecOf, thingsOf } from "./scene-kinds";
@@ -79,6 +80,22 @@ export interface OracleNote {
   readonly angle?: number;
   /** The note's lines of writing as the far LOD greeks them: [baseline, width], note units (scenes.mjs). */
   readonly greek?: readonly (readonly [number, number])[];
+  /** Its MARKS (petition I60): `[quote, change]` pairs (oracle/ink.mjs `sceneMarks` — the one reading both routes share). */
+  readonly marks?: readonly (readonly [string, Readonly<Record<string, unknown>>])[];
+  /** A quote: the editor's selection over those words — the run's wash (`sceneWash`). */
+  readonly wash?: string;
+  /** Its marks made this many ms before the still — the oracle desk's clock; the world has no door to it (scripts/world.mjs drops such a still). */
+  readonly inked?: number;
+}
+
+/**
+ * The PaperAsset a scene note is pinned with (K7b; petition I59): the greek lines the still STATES — and none where it states none,
+ * EXCEPT on a note the PEN writes (oracle/ink.mjs `writtenWithPen`): its greek is its own layout's, as the kind's record lays it and the
+ * oracle's desk does (frame.mjs `penOf`), and an empty pin would hide it. Undefined: nothing to pin.
+ */
+export function noteAssetOf(n: OracleNote): PaperAsset | undefined {
+  if (n.greek === undefined && writtenWithPen(n)) return undefined;
+  return { greek: { x0: HAND.pad, em: HAND.size, lines: (n.greek ?? []).map(([y, width]) => ({ y, width })) } };
 }
 export interface OracleInside extends KindScene {
   readonly minimats?: readonly OracleMiniMat[];
@@ -145,10 +162,13 @@ export function clearDesk(engine: CanvasEngine): void {
   session.store.transaction((tx) => { for (const e of all) if (engine.world.isAlive(e)) cascadeDestroy(tx, engine.world, e); }, { undoable: false });
 }
 
-/** The scene's note as a spawn: the oracle's defaults (`seed ?? 1`, `pen ?? "felt"`, the product's one paper, 200²). */
-const noteSpec = (n: OracleNote, parent?: Entity): SpawnSpec => {
+/**
+ * The scene's note as a spawn: the oracle's defaults (`seed ?? 1`, `pen ?? "felt"`, the product's one paper, 200²) and its marks cell
+ * (petition I60 — oracle/ink.mjs `sceneMarks`, the oracle desk's own reading; "" unmarked).
+ */
+export const noteSpec = (n: OracleNote, parent?: Entity): SpawnSpec => {
   if (n.angle !== undefined) throw new Error("desk: a scene note with an explicit angle — the tilt is the seed's (no angle prop)");
-  return { type: NOTE_TYPE, cx: n.x, cy: n.y, w: n.w ?? PAPER.size, h: n.h ?? PAPER.size, props: { seed: n.seed ?? 1, pen: n.pen ?? "felt", paper: "yellow", text: n.text ?? "" }, ...(parent === undefined ? {} : { parent }) };
+  return { type: NOTE_TYPE, cx: n.x, cy: n.y, w: n.w ?? PAPER.size, h: n.h ?? PAPER.size, props: { seed: n.seed ?? 1, pen: n.pen ?? "felt", paper: "yellow", text: n.text ?? "", marks: sceneMarks(n) }, ...(parent === undefined ? {} : { parent }) };
 };
 const matSpec = (m: OracleMiniMat, parent?: Entity): SpawnSpec => ({ type: MINIMAT_TYPE, cx: m.x, cy: m.y, w: m.w ?? MINIMAT.size.w, h: m.h ?? MINIMAT.size.h, props: { name: m.name ?? "", vinyl: m.tone ?? "sage" }, ...(parent === undefined ? {} : { parent }) });
 
@@ -237,7 +257,12 @@ async function spawnDesk(host: SceneHost, fx: Awaited<ReturnType<typeof oracleFi
     // the writing the far LOD greeks (frame.mjs `childrenOf`: x0 = the hand's pad, em = its size) — and NONE where the still states
     // none: since K7b a small note greeks its own text's layout, which Node (no text metrics) cannot lay out — a still's lines are the
     // lines; through the handle's generic door (K8a — `pinAsset`): the asset is the paper kind's own shape (`PaperAsset`), never the desk's
-    handle.pinAsset(e, { greek: { x0: HAND.pad, em: HAND.size, lines: (n.greek ?? []).map(([y, width]) => ({ y, width })) } } satisfies PaperAsset);
+    // a note the pen writes (petition I59) greeks its own layout's lines, as the oracle's desk does: no empty pin over them
+    const asset = noteAssetOf(n);
+    if (asset !== undefined) handle.pinAsset(e, asset);
+    // the editor's selection over a quote (petition I60): the run's WASH, as the oracle's desk selects it (frame.mjs `penOf`)
+    const wash = sceneWash(n);
+    if (wash !== undefined) noteDriver()?.writing()?.select(e, wash.from, wash.to);
   }
   for (let i = 0; i < mats.length; i++) {
     const inside = mats[i]?.inside;
@@ -260,7 +285,7 @@ export async function setScene(host: SceneHost, s: OracleScene): Promise<Staged>
   abortNavFlight(engine.world);
   while (engine.nav.depth() > 0) engine.ops.exitContainer({ transition: "none" });
   clearDesk(engine);
-  noteDriver()?.writing()?.reset();
+  noteDriver()?.writing()?.reset();   // its rasters, runs, moments — and the last still's selection (its wash) — forgotten
   handle.desk.wake("pin");
   handle.pinMat(null);
   handle.clearFlux();

@@ -51,7 +51,7 @@ import { DEFAULT_GRID } from "../../desk/src/mat/grid.ts";
 import { DEFAULT_PAPER_LAW, lampOf, resolvePaper, tiltOf } from "../src/paper/paper.ts";
 import { createWriting } from "../src/paper/writing.ts";
 import { markInksOf, paperKind } from "../src/paper/kind.ts";
-import { encodeMarks, findQuote, inkOf, mark } from "../../desk/src/kit/ink.ts";
+import { sceneMarks, sceneWash } from "./ink.mjs";
 import { HAND } from "../../desk/src/kit/text.ts";
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from "../src/minimat/minimat.ts";
 import { finishOf, flightLights, flightPresent, insidePresent } from "../../desk/src/kit/inside.ts";
@@ -340,24 +340,11 @@ export async function createOracleDesk({ device, format, text, assets, hand, log
     penKeys = 0; arriveAt = 0; penNotes.length = 0;
     writing.tick(0);
   }
-  /** Where a quote lies in a note's words (the kit's `findQuote`): its range, or the oracle stops — a scene's typo. */
-  const quoted = (n, q) => {
-    const r = findQuote(n.text, q);
-    if ("error" in r) throw new Error(`oracle: the note "${n.text}" holds no single "${q}" (${r.error})`);
-    return r;
-  };
-  /** A note spec's `marks` cell (petition I60): each `[quote, change]` laid by the kit's `mark`, in order — "" for none. */
-  function inkMarksOf(n) {
-    if (!n.marks) return "";
-    let ink = inkOf({ text: n.text, seeds: n.seeds ?? "" }, n.seed ?? 1);
-    for (const [q, change] of n.marks) { const r = quoted(n, q); ink = mark(ink, r.from, r.to, change); }
-    return encodeMarks(ink.marks);
-  }
   /** A note written with the pen: drawn by the writing (its run written, its base for the record), its layout's lines its greek. */
   function penOf(n, G, view) {
     const key = ++penKeys;
     const rect = { cx: n.x, cy: n.y, w: n.w ?? NOTE.size, h: n.h ?? NOTE.size };
-    const props = { text: n.text, seeds: n.seeds ?? "", seed: n.seed ?? 1, marks: inkMarksOf(n) };
+    const props = { text: n.text, seeds: n.seeds ?? "", seed: n.seed ?? 1, marks: sceneMarks(n) };   // the one reading both routes share (ink.mjs)
     if (n.arrive !== undefined) {
       // a still mid-writing: the sheet seen blank at the pen's start, its words arriving then — drawn `arrive` ms later (`pensAt`)
       writing.tick(PEN_T0);
@@ -371,7 +358,8 @@ export async function createOracleDesk({ device, format, text, assets, hand, log
       arriveAt = Math.max(arriveAt, n.inked);
     }
     // the editor's selection over a quote: the run's wash
-    if (n.wash !== undefined) { const r = quoted(n, n.wash); writing.select(key, r.from, r.to); }
+    const wash = sceneWash(n);
+    if (wash !== undefined) writing.select(key, wash.from, wash.to);
     const drawn = writing.draw(key, props, rect, view, G);
     penNotes.push({ key, spec: n, geometry: G });
     const L = writing.layoutOf(key);
