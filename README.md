@@ -1,220 +1,250 @@
-# ICE — infinite canvas engine
+<p align="center">
+  <a href="https://vibefield.github.io/infinite-canvas-engine/">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset=".github/readme/hero-dark.svg">
+      <img src=".github/readme/hero-light.svg" alt="ICE: an infinite canvas that shows its work. The desk, drawn by one renderer, above the world it is drawn from: one ECS, where a note, your pointer and another person's hand are each a row." width="100%">
+    </picture>
+  </a>
+</p>
 
-A universal infinite-canvas framework — Figma/Freeform-grade interaction,
-real-time collaboration, and THE DESK: every object under the camera drawn by
-one WebGPU renderer from a CRDT-synced ECS world, the DOM in screen space.
-`defineObject` turns a GPU object kind into a canvas citizen: selectable,
-movable, resizable, nested in mini mats, synced over CRDT, undoable per gesture.
+<p align="center">
+  <b>ICE is the infinite canvas engine: a framework for canvas apps.</b><br>
+  You define the kinds of object. ICE makes them selectable, movable, resizable, nestable,<br>
+  shared between people, and undoable one gesture at a time.
+</p>
 
-Built on [`@vibecook/strata-ecs`](https://www.npmjs.com/package/@vibecook/strata-ecs):
-an archetype ECS with reactivity and opt-in Loro-CRDT durable + ephemeral
-(presence) layers.
+<p align="center">
+  <a href="https://vibefield.github.io/infinite-canvas-engine/"><b>Docs</b></a>&nbsp;&nbsp;·&nbsp;
+  <a href="https://vibefield.github.io/infinite-canvas-engine/api.html">API</a>&nbsp;&nbsp;·&nbsp;
+  <a href="docs/benchmarks.md">Benchmarks</a>&nbsp;&nbsp;·&nbsp;
+  <a href="https://www.npmjs.com/package/@vibecook/ice">npm</a>&nbsp;&nbsp;·&nbsp;
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
 
-**npm** [`@vibecook/ice`](https://www.npmjs.com/package/@vibecook/ice) ·
-**docs** <https://vibefield.github.io/infinite-canvas-engine/> ·
-MIT license
+<p align="center">
+  <a href="https://github.com/vibefield/infinite-canvas-engine/actions/workflows/ci.yml"><picture><source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/github/actions/workflow/status/vibefield/infinite-canvas-engine/ci.yml?branch=main&label=ci&style=flat-square&labelColor=212437&color=e6eafb"><img src="https://img.shields.io/github/actions/workflow/status/vibefield/infinite-canvas-engine/ci.yml?branch=main&label=ci&style=flat-square&labelColor=6a6a64&color=0a0a0a" alt="CI"></picture></a>
+  <a href="https://www.npmjs.com/package/@vibecook/ice"><picture><source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/npm/v/%40vibecook%2Fice?label=npm&style=flat-square&labelColor=212437&color=e6eafb"><img src="https://img.shields.io/npm/v/%40vibecook%2Fice?label=npm&style=flat-square&labelColor=6a6a64&color=0a0a0a" alt="@vibecook/ice on npm"></picture></a>
+  <a href="LICENSE"><picture><source media="(prefers-color-scheme: dark)" srcset="https://img.shields.io/badge/license-MIT-e6eafb?style=flat-square&labelColor=212437"><img src="https://img.shields.io/badge/license-MIT-0a0a0a?style=flat-square&labelColor=6a6a64" alt="MIT licence"></picture></a>
+</p>
 
-> **0.22.0 — an act says its state, and may be a choice.** A selection menu's act may say what
-> it is now (disabled, another label or glyph, a swatch), and a menu act or a held tool's
-> action may offer choices, one of which may ask for values first: a host takes one with
-> `ops.runMenuAction(id, taken)` or `ops.useHeldTool(id, taken)`, and core runs it only when it
-> is one of the act's choices now. Additive: an act that declares neither is read as before
-> (`CHANGELOG.md`).
-> Upgrading from before 0.14.0 also replaces the DOM/R3F presentation with the GPU desk;
-> see the 0.14.0 removal list in `CHANGELOG.md`.
+<br>
+
+<p align="center">
+  <img src=".github/readme/desk.webp" alt="A green cutting mat seen from above, in daylight, with the shadow of leaves across it. On it lie a paper desk calendar for November 2026 with handwritten entries, two yellow sticky notes, a photo print, a notebook, a brass desk clock, a whiteboard with ICE written on it in marker, and a smaller mat holding two more notes. Rulers run along the top and left edges." width="100%">
+</p>
+
+<p align="center"><sub>The showcase in <a href="apps/desk"><code>apps/desk</code></a>: the six reference kinds and a plugin's clock, every one drawn from the world by the desk's WebGPU renderer. A screenshot, not a mock.</sub></p>
+
+## Start
 
 ```sh
-pnpm add @vibecook/ice react react-dom   # react/react-dom are optional peers
+pnpm add @vibecook/ice react react-dom
 ```
 
 ```tsx
 import { createCanvasEngine } from "@vibecook/ice";
-import { deskLayer, penFaces, inkRaster } from "@vibecook/ice/desk";
+import { deskLayer, inkRaster, penFaces } from "@vibecook/ice/desk";
 import { DESK_ENGINE, DESK_OBJECTS, deskPalette, deskTheme } from "@vibecook/ice/desk/objects";
 import { Desk, EngineProvider } from "@vibecook/ice/react";
 
-// The desk's preset: the engine knows the desk's object kinds — the note, the mini mat,
-// the notebook, the whiteboard, the calendar, the photo print — as widget types, with the
-// desk's select tool (a bare-mat drag marquees, shift adds to the selection), two-axis scroll panning,
-// pinch / Cmd-or-Ctrl-wheel zoom about the pointer, scale-free zoom and zoom-through.
+// The preset: the six reference kinds and the select tool. A bare-mat drag marquees
+// (shift adds), two-axis scroll pans, pinch or Cmd/Ctrl-wheel zooms about the pointer,
+// and zooming into a mini mat enters it.
 const engine = createCanvasEngine(DESK_ENGINE);
-engine.docs.create();                     // local-first document; .open()/.join() for load/collab
+engine.docs.create(); // a local-first document; .open() loads one, .join() shares one
 
-// The desk arrives as an OPAQUE layer factory: the renderer, its kinds, the theme,
-// the text raster the notes are written with, the document the typing commits into.
+// The desk arrives as one opaque layer. Memoize it: a new identity remounts the canvas.
 const layer = deskLayer({
-  theme: deskTheme("light"), palette: deskPalette("light"),   // the shipped default palette — or your own tokens
-  objects: [...DESK_OBJECTS], docs: engine.docs,
-  text: inkRaster({ faces: penFaces({ caveat: caveatUrl, "caveat-bold": caveatBoldUrl, kalam: kalamUrl }) }),   // YOUR URLs for the hands' fonts (Caveat, Kalam — OFL; apps/desk/assets/fonts)
+  theme: deskTheme("light"),
+  palette: deskPalette("light"),
+  objects: [...DESK_OBJECTS],
+  docs: engine.docs,
+  // your URLs for the handwriting fonts (Caveat and Kalam, OFL; copies in apps/desk/assets/fonts)
+  text: inkRaster({
+    faces: penFaces({ caveat: caveatUrl, "caveat-bold": caveatBoldUrl, kalam: kalamUrl }),
+  }),
 });
 
 root.render(
   <EngineProvider engine={engine}>
-    <Desk engine={engine} layer={layer} />   {/* memoize `layer`: a new identity re-boots the mount */}
+    <Desk engine={engine} layer={layer} />
   </EngineProvider>,
 );
+
 engine.ops.spawnWidget("desk.note", { x: 120, y: 120, props: { text: "hello" } });
 ```
 
-`apps/desk/src/App.tsx` is the worked example (the keys, the selection menu, the
-room, the dev panel); `defineObject` (`@vibecook/ice/desk`) is how a new kind
-joins: a program that draws its records, a CPU mirror that answers "what is
-under this point", and the behaviours that change it (design-015 §5).
+`react` and `react-dom` are optional peers: the engine is headless, and `createDeskHost` mounts the desk without React. The desk itself needs a browser with WebGPU. [`apps/desk/src/App.tsx`](apps/desk/src/App.tsx) is the worked example.
 
-## Entry points
+## What you get
 
-One npm package, nine entry points (the repo develops them as workspace
-packages; `packages/ice` bundles them for publish):
+<table>
+  <tr>
+    <td width="50%" valign="top">
+      <img src=".github/readme/detail-select.webp" alt="A sticky note selected on the desk: corner brackets round it, its extent marked on the rulers, and a dark menu above it with Send to agent, duplicate, lock, more and delete." width="100%"><br>
+      <b>Selection, drawn by the desk</b><br>
+      Brackets, the selection's extent on the rulers, and a menu that rides it. Your own acts sit beside the built-in ones.
+    </td>
+    <td width="50%" valign="top">
+      <img src=".github/readme/detail-drawer.webp" alt="A pegboard drawer slid up over the desk, with a note, a notebook, a calendar and a mini mat hanging on it under the tabs All, Paper, Surfaces and Things." width="100%"><br>
+      <b>A drawer of kinds</b><br>
+      Every registered kind hangs on the pegboard, plugins included. Drag one out to set it down.
+    </td>
+  </tr>
+  <tr>
+    <td width="50%" valign="top">
+      <img src=".github/readme/detail-devtools.webp" alt="The devtools dock open over the desk: 60 fps, the tick in microseconds, GPU time per frame and per pass, draw calls and instances per kind, and memory." width="100%"><br>
+      <b>It shows its work</b><br>
+      One dock for the ECS profiler and the GPU: time per pass, draws per kind, memory per kind.
+    </td>
+    <td width="50%" valign="top">
+      <img src=".github/readme/day-night.webp" alt="The same desk split on a slant: daylight on the left, night on the right." width="100%"><br>
+      <b>Day and night</b><br>
+      One call relights the whole desk. This picture is two captures of one view, joined on a slant.
+    </td>
+  </tr>
+</table>
 
-| Entry | Contents | May import |
-|---|---|---|
-| `@vibecook/ice/kernel` | Pure math: coordinates (THE one Y-flip), snap, spatial index, bezier/anchors, the design-006 flight, easings, layout | `rbush` only |
-| `@vibecook/ice` | The engine: ECS catalog, frame contract, interaction stack, the widget compiler (`defineWidget` with the `object` binding), the cull, node graph, nested canvas, doc kit, presence, bootstrap, migrations, `createCanvasEngine` facade | strata-ecs, kernel, loro-crdt |
-| `@vibecook/ice/dom` | SCREEN SPACE ONLY: the canvas host, the pointer adapter (L0's producer), the rAF loop, input ownership + the editor's focus, OS + remote cursors, `createDeskHost` (the vanilla mount) | core, kernel |
-| `@vibecook/ice/desk` | The desk: one WebGPU renderer drawing every object from the world — the cutting mat, `deskLayer`, the kind contract (`defineObject`, `ObjectKind`, `KindProgram` — what a kind implements, is handed and declares, its DOM half included), the text raster, the theme; it names no kind | core, kernel; **nobody imports desk but apps and `/desk/objects`** |
-| `@vibecook/ice/desk/engine` | The raw-WebGPU engine alone: the device (`acquire`, `adopt`), the `Surface` type (the swap chain itself is `surface()` in `/desk`), shader composition (`compose`, `compile`), pipelines and bind groups, render targets (`Target`, `beginPass`, `readback`), `defineStruct` | — |
-| `@vibecook/ice/desk/kit` | The render kit a kind's pass is written against besides the engine: the slot's view and its mat (`MatPass`), the lamp and its light, the shared WGSL by name (`kitWgsl`), a container's inside, the service keys a kind lends and uses (`serviceKey`, `TEXT_RASTER`, `PRINT_RASTER`, `BLOB_STORE`, `PICTURE_DECODER`), a container's face law and chip finishes, the one physics every object shares | core, kernel |
-| `@vibecook/ice/desk/objects` | The six reference object kinds — note · mini mat · notebook · whiteboard · calendar · photo — each its world half, its pass, its WGSL, its drivers and its DOM half; the preset (`DESK_ENGINE`) and the default palette. Its own workspace package (`@ice/objects`), built on `/desk`, `/desk/kit` and `/desk/engine` alone, exactly as a plugin kind is | `/desk`, `/desk/kit`, `/desk/engine`, core, kernel; **nobody imports it but apps** |
-| `@vibecook/ice/react` | `<Desk>`, `EngineProvider`, hooks (`useCommit`, `useWidgetProps`, `useSelected`, `useTool`, `useUndoStatus`, `usePresencePeers`), keymap, the screen-space selection menu and held bar | dom, core, kernel + react/react-dom |
-| `@vibecook/ice/devtools` | `attachDevtools(engine)` — strata's observer + profiler in one dock, and the WebGPU desk's GPU slot (its frames' span, passes, draws, memory — `~` in apps/desk) | core only; **nobody imports devtools** |
+Also: desks inside desks (a mini mat is a container you zoom into), versioned documents with autosave and migration, a keymap, and React hooks for selection, undo and the people in the room.
 
-Import walls are dependency-cruiser-enforced and CI-fatal; **`three` is
-imported nowhere** (`no-three`).
+## How it works
 
-## The architecture in six sentences
+**Everything is world state.** Your objects are entities in one ECS, and so are the pointer, the gesture in progress, the selection and the camera. Nothing hides in a closure, so devtools and collaboration see all of it. Where a thing lives is decided when it is spawned: durable things go in the document, runtime things end with the session, ephemeral things ride presence.
 
-1. **Everything is world state.** Pointers, gestures, recognizers, selection,
-   camera, ports — all entities/resources in one ECS; there are no closure
-   FSMs and no singletons, so devtools and collab see everything.
-2. **One frame contract.** `engine.step(now)` = sync → tick (11 fixed phases)
-   → publish (presence I/O) → notify (reactivity) → reflect (the ONLY
-   DOM/GPU writers). Systems never touch output; reflectors never write ECS.
-3. **Sovereignty is per-entity, decided at spawn.** Durable entities live in
-   the CRDT document; runtime entities die with the session; ephemeral ones
-   ride presence. Components stay pure — the spawn path is the class.
-4. **Gestures are divergence.** A drag writes runtime cells live under a
-   claim; release commits ONE transaction (one undo step). A remote edit to
-   the same cell mid-gesture simply wins or loses at commit — divergence is
-   the signal, not an error.
-5. **Widgets are prefabs; their faces are kinds.** `defineWidget` compiles props
-   into conflict-group components on a durable prefab; the desk renderer draws
-   every object from the world in ONE pass, from the kind bound to its type;
-   `Visible`/`Culled` is the renderer's working set; a quiet desk submits nothing.
-6. **Tools are configuration.** A tool parameterizes recognizer spawn, drag
-   routing, gates, and cursor — it adds no code paths. Custom behaviors
-   register systems through the same extension slot the built-ins use.
+### One frame
 
-## Quick tour
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/readme/frame-dark.svg">
+    <img src=".github/readme/frame-light.svg" alt="engine.step(now) as a loop with five stations: sync, where edits and presence from other people land; tick, where systems run in eleven fixed phases; publish, where your presence goes out; notify, where observers fire once; and reflect, the only place the DOM or the GPU is written. The tick's phases are input, react, spawn, recognize, arbitrate, claim, behave, simulate, derive, present and cleanup." width="100%">
+  </picture>
+</p>
+
+Systems never touch output, and reflectors never write the world. The phase order is the only ordering contract, and it is why a pointer event reaches its gesture's first write with no added frames.
+
+### One gesture, one undo step
+
+<p align="center">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset=".github/readme/gesture-dark.svg">
+    <img src=".github/readme/gesture-light.svg" alt="Two timelines. Your drag: pointer down, then past ten pixels the drag claims the pointer and writes live every frame, in memory only, until release. The document: untouched during the drag, then one transaction at the release. Someone else's edit to the same cell wins or loses at the commit. Undo takes the whole gesture back in one step." width="100%">
+  </picture>
+</p>
+
+A drag writes live under a claim and commits once, when you let go. If someone else changes the same cell meanwhile, their edit wins or loses at that commit: divergence is the signal, not an error.
+
+## Together
+
+<p align="center">
+  <img src=".github/readme/room.webp" alt="Two browser windows on the same desk. In the left one a note is selected and a hand labelled Heron rests on the whiteboard. In the right one a hand labelled Otter rests beside the note." width="100%">
+</p>
+
+<p align="center"><sub>Two desks in one room, each drawing the other's hand. Two tabs of the showcase with <code>?room=</code>, over a BroadcastChannel.</sub></p>
 
 ```ts
-// --- ops: every app-handler write path (design-005 §4) ---
-engine.ops.spawnWidget("desk.note", { x, y, props });   // one tx ({undoable:false} for seeds)
-engine.ops.deleteSelection();                   // cascade: children + wires
-engine.ops.duplicateSelection();                // +16/+16 twins, one undo step
-engine.ops.reorder(ids, "top");                 // sibling order (ordered ChildOf)
-engine.ops.zoomToFit();
-engine.ops.setTool("connect");                  // cancels active gestures first
-engine.ops.open(entity);                        // pick an openable object up into the hand (design-015 §8)
-engine.docs.undo();                             // per-gesture; restores selection
-
-// --- documents (local-first; collab is a posture, not a mode) ---
-const session = engine.docs.create();
-const bytes = session.exportEnvelope();          // versioned ICE1 envelope
-engine.docs.open(bytes);                         // gate: ok | readOnly | migrate | reject
-engine.docs.autosave(storage);                   // debounced, gesture-deferred, quarantining
-
-// --- collab: the app moves bytes, the engine owns the protocol ---
 import { webSocketByteChannel } from "@vibecook/ice";
-await engine.docs.join(webSocketByteChannel(ws), {
-  presence: { name: "James", color: "#4f8ef7" },  // cursors + selection summaries
-});                                               // ⇒ { role: "seeder" | "joiner", session, leave }
-// role === "seeder" ⇒ this peer arrived first — seed the board via ops({undoable:false})
 
-// --- node editor (opt-in per widget) ---
-defineWidget({ …, ports: [{ id: "out", side: "e", accepts: ["number"] }] });
-// connect tool: drag port → port creates a durable wire (widget + port IDs —
-// port entities are runtime-on-demand; panning with the select tool spawns zero).
-
-// --- nested canvas: the mini mat is the container ---
-engine.ops.enterContainer(mat);                  // the design-006 flight; camera memory + index rebuild
+const { role } = await engine.docs.join(webSocketByteChannel(ws), {
+  presence: { name: "Otter", color: "#8e4ec6" },
+});
+// "seeder" arrived first and seeds the board; a "joiner" receives it
 ```
 
-Run the showcase: `pnpm --filter desk dev` (`?room=x` shares a desk between two
-tabs over BroadcastChannel; `&relay=ws://localhost:9301` after `pnpm relay`
-shares it between two browsers of one machine, and between machines after
-`RELAY_HOST=0.0.0.0 pnpm relay`, the other machine's `&relay=` naming this one's
-address: the relay listens on its own machine alone unless a host is named; the
-backtick opens the dev panel; `u` prints the rulers or not).
+The app moves bytes and the engine owns the protocol. Documents and presence are [Loro](https://loro.dev) CRDTs, through [`@vibecook/strata-ecs`](https://github.com/vibefield/strata-ecs), the ECS underneath.
 
-## Limits
+## Your own kind
 
-Measured, not estimated. The bench source in `packages/core/bench/` is the
-source of truth; [`docs/benchmarks.md`](docs/benchmarks.md) records the full
-output (Apple M1 Max, 2026-07-15; the sections measured on the deleted hybrid
-are marked historical there).
+`defineObject` is how a new kind joins the desk. A kind is three things: a program that draws its records, a CPU mirror that answers "what is under this point", and the behaviours that change it.
 
-**Collaboration is the tightest ceiling — plan shared boards around ~3,000
-objects.** A local-only document scales to ~100k, but a collaboratively-edited
-one is bounded by how fast a peer applies an incoming edit, which still scales
-with document size: roughly **3,000 objects for an actively-editing peer**,
-**~40,000 for a receive-only one**. Partition large shared boards into containers.
+The six reference kinds (note, mini mat, notebook, whiteboard, calendar, photo) are built on the public entry points alone, exactly as a plugin is. [`examples/desk-clock`](examples/desk-clock) is a complete plugin in a package of its own: the clock in the picture above, with its own shader, its tray entry, its menu act and its wake once a second.
 
-**Scale through containers, not flat boards.** Idle frames no longer scale with
-the board (872 µs at 100k entities, down from 25 ms before the churn gates).
-Camera gestures still can: nested boards stay cheap (276–460 µs at 10k,
-2.6–4.4 ms at 100k), but a **flat, all-active 100k board costs 40–64 ms per
-gesture frame** — the honest O(N) ceiling, since nothing can be skipped when
-everything is active. Containers let active-scoped queries skip whole chunks.
-The desk's own performance gates (idle-zero submits, an O(1) pan over 1,000
-objects, 120 fps) are design-015 §11.4 — measured at D6, after the deletion.
+```ts
+import { DESK_CLOCK_OBJECTS } from "@ice-examples/desk-clock"; // a workspace package in this repo
 
-**Opening a big document is a one-time cost**: full-document projection at
-attach is ~0.3–0.5 s at 10k rows, ~3.2–3.9 s at 100k. Envelope ≈ 100 B/row.
+const engine = createCanvasEngine({
+  ...DESK_ENGINE,
+  widgets: [...DESK_ENGINE.widgets, ...DESK_CLOCK_OBJECTS],
+});
+```
 
-**Deliberately out of scope** — each has a named extension seam rather than a
-hidden TODO: a general layout engine (beyond `ops.arrange`), rich text (the
-note's text is one durable string cell, design-015 D-D13), comments/threads,
-and permissions. strata has no authority model, so multi-user trust is the
-application's to own.
-
-**Not yet on the desk**: the string between objects (a wires pass — no desk
-kind declares a port yet), a peer's nav frame in presence, the §11.4
-performance gates (D6).
-
-**The substrate is pre-1.0**: `@vibecook/strata-ecs` minor versions may break
-APIs, and this repo tracks them closely (eight releases absorbed to date).
-
-## Development
+## Run the showcase
 
 ```sh
 pnpm install
-pnpm run ci            # typecheck + lint + tests + import walls + gen:check — the merge gate
-pnpm run gate:landing  # the pixel gate: the desk's Dawn oracle → its Dawn units → the apps/desk build → its twenty-one rigs → pack:audit → the desk clock's dts:check
+pnpm --filter desk dev
 ```
 
-`ci` is the merge gate; `gate:landing` is required at every landing and is kept out
-of `ci` because its oracle needs Dawn (design-013 D-C4.11, design-015 D1). The rigs
-drive headless Chrome against the oracle's bytes (`rig:parity`: maxΔ 0 per scene).
+| Key | Does |
+| --- | --- |
+| `w` · `m` · `b` | a note, a mini mat, a notebook |
+| `⇧W` · `⇧C` · `c` | a whiteboard, a calendar, the plugin's clock |
+| `a` | the pegboard drawer |
+| `d` · `u` | day or night, the rulers |
+| `` ` `` · `~` | the dev panel, the devtools dock |
+| `⌘Z` · `⇧⌘Z` | undo and redo, one gesture at a time |
 
-- Design docs: the reviewed decision record lives in `draft/` (local branch);
-  `docs/implementation-plan.md` tracks milestones M0–M20 with exit criteria.
-- Every counterintuitive behavior is a cited decision — check the design
-  docs before "fixing" it (ports on-demand, sibling order, OS cursor, …).
-- Improvement asks against strata-ecs are petitions: `docs/strata-petitions.md`.
-- Release notes: [`CHANGELOG.md`](CHANGELOG.md).
+Paste or drop a picture and it becomes a print. Add `?room=x` to share a desk between two tabs. For two machines, run `RELAY_HOST=0.0.0.0 pnpm relay` on one and add `&relay=ws://<its address>:9301` on both.
 
-## Status
+## Limits
 
-**Current release: 0.22.0.** An act's state and its choices build on 0.21.0's free slot and
-look at an object, 0.20.0's soft light, 0.19.0's opening print, 0.18.0's pegboard set and
-0.17.0's desk interactions and presentation. Documents written by 0.1.0 migrate automatically
-on open (schema 2 — ordered `ChildOf` replaces scalar z); a 0.1.0 build opening a migrated
-document still gets a correct read-only view.
+Measured, not estimated. [`docs/benchmarks.md`](docs/benchmarks.md) has the method and the full output, from an Apple M1 Max in July 2026. Some sections were measured on the presentation the desk replaced, and are marked historical there.
 
-Engine v1 is complete (kernel math, the engine spine, the interaction stack,
-durable documents + per-gesture undo, the node editor, nested canvas, presence +
-bootstrap + migrations, the facade, devtools); the behavior framework train
-(M11–M16), the magnet grid (M17), the compositor and the ground port (M18–M19)
-followed; M20 — the desk — replaced the DOM/GL presentation whole (design-015).
-The scope fence holds: no layout engine, no rich-text, no comments, no
-permissions — each exclusion has a named seam instead.
+- **Shared boards: plan around 3,000 objects.** A peer who is editing applies an incoming edit at a cost that grows with the document. A peer who only receives holds to about 40,000, and a local document to about 100,000.
+- **Scale through containers, not flat boards.** A flat board with 100,000 active objects costs 40 to 64 ms per camera-gesture frame. Nested, the same count costs 2.6 to 4.4 ms.
+- **Opening a big document is a one-time cost:** 0.3 to 0.5 s at 10,000 rows, 3.2 to 3.9 s at 100,000. A saved document is about 100 bytes a row.
+- **Out of scope, each with a named seam:** a general layout engine, rich text, comments and permissions. There is no authority model, so trust between users is the app's to own.
+- **Not yet on the desk:** the string between objects (no kind declares a port yet), and which mat another person is inside.
+- **Pre-1.0,** and so is strata-ecs underneath. Minor versions may break APIs.
+
+## Entry points
+
+One npm package, nine entry points. Import walls between them are enforced by dependency-cruiser and fail CI.
+
+| Import | What |
+| --- | --- |
+| `@vibecook/ice` | The engine: the ECS catalog, the frame, interaction, documents, presence, `createCanvasEngine` |
+| `@vibecook/ice/kernel` | Pure math: coordinates, snap, the spatial index, easings |
+| `@vibecook/ice/dom` | Screen space only: the host, the pointer adapter, the frame loop, cursors, `createDeskHost` |
+| `@vibecook/ice/desk` | The desk: the WebGPU renderer, `deskLayer`, and the kind contract (`defineObject`) |
+| `@vibecook/ice/desk/engine` | The raw WebGPU layer: device, shader composition, pipelines, render targets |
+| `@vibecook/ice/desk/kit` | What a kind's pass is written against: the view, the light, the shared WGSL |
+| `@vibecook/ice/desk/objects` | The six reference kinds, the preset (`DESK_ENGINE`) and the default palette |
+| `@vibecook/ice/react` | `<Desk>`, `EngineProvider`, hooks, the keymap, the selection menu |
+| `@vibecook/ice/devtools` | `attachDevtools(engine)`: the profiler, the observer and the GPU in one dock |
+
+<details>
+<summary><b>Development</b></summary>
+
+<br>
+
+Node 24 and pnpm 11.
+
+```sh
+pnpm install
+pnpm run ci            # typecheck, lint, tests, import walls, generated-file checks: the merge gate
+pnpm run gate:landing  # the pixel gate: the Dawn oracle, the desk's Dawn units, the apps/desk build and its twenty-one rigs
+```
+
+`ci` is the merge gate. `gate:landing` is required at every landing and is kept out of `ci` because its oracle needs Dawn. The rigs drive headless Chrome against the oracle's bytes, and `rig:parity` holds every scene to a difference of zero.
+
+- [`docs/implementation-plan.md`](docs/implementation-plan.md) tracks the milestones and their exit criteria.
+- Every counterintuitive behaviour is a cited decision. Check the design record before "fixing" one.
+- Asks against strata-ecs are petitions: [`docs/strata-petitions.md`](docs/strata-petitions.md).
+- Documents written by 0.1.0 migrate on open.
+
+</details>
+
+<br>
+
+<p align="center">
+  <a href="https://github.com/vibefield">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset=".github/readme/vibefield-dark.svg">
+      <img src=".github/readme/vibefield-light.svg" alt="VibeField" height="24">
+    </picture>
+  </a>
+</p>
+
+<p align="center">
+  <sub><a href="LICENSE">MIT</a> © 2026 James Yong. ICE is the canvas engine of <a href="https://github.com/vibefield/vibefield">VibeField</a>, built on <a href="https://github.com/vibefield/strata-ecs">strata-ecs</a>.</sub>
+</p>
