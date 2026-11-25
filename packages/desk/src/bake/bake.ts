@@ -1,7 +1,8 @@
 // THE BAKE (petition I59): a TrueType face in, an `ice-hand/1` atlas out (kit/hand-atlas.ts is the format and its reader).
 // For every code point of the glyph set the face maps: its pen derived (derive.ts — the skeleton, the habits, the face's
 // corrections), its field over its rect, the rects packed on shelves (pack.ts), the face's pair kerning among the set, its
-// box, its source's SHA-256. Pure TypeScript and Node-safe: the caller hands in the font's bytes and writes the two files
+// box, its source's SHA-256; the inkless by rule (`HAND_INKLESS`, the soft hyphen) an advance of 0 and nothing else. Pure
+// TypeScript and Node-safe: the caller hands in the font's bytes and writes the two files
 // (`text` → `<name>.hand.json`, `bin` → `<name>.hand.bin`; apps/desk/tools/bake-hand.mjs is the CLI). The same bytes in are
 // the same bytes out, on every host and every run.
 
@@ -14,7 +15,8 @@ import { readFont } from "./ttf";
 
 /**
  * The glyph set a hand is baked for: printable ASCII (U+0020–U+007E), Latin-1 (U+00A0–U+00FF), and the typographer's marks a
- * note is written with — ‘ ’ ‚ “ ” „ – — … • € ™. A face bakes every one it maps; `bakeHand` reports the rest as `missing`.
+ * note is written with — ‘ ’ ‚ “ ” „ – — … • € ™. A face bakes every one it maps (`HAND_INKLESS` inkless); `bakeHand` reports
+ * the rest as `missing`.
  */
 export const HAND_GLYPH_SET: readonly number[] = (() => {
   const out: number[] = [];
@@ -23,6 +25,15 @@ export const HAND_GLYPH_SET: readonly number[] = (() => {
   out.push(0x2013, 0x2014, 0x2018, 0x2019, 0x201a, 0x201c, 0x201d, 0x201e, 0x2022, 0x2026, 0x20ac, 0x2122);
   return out;
 })();
+
+/**
+ * The code points baked INKLESS whatever the face draws for them — an advance of 0, no rect, no strokes, kerning nothing: the
+ * soft hyphen (U+00AD). A browser draws one only at a line break it makes there and measures it at no width mid-line (the
+ * canvas raster's `measureText`); the hand's `layoutText` breaks a line only at a space or a newline (and by glyph inside a
+ * word longer than its line), never at a soft hyphen, so it never draws one. A face that maps none still reports it `missing`.
+ */
+export const HAND_INKLESS: readonly number[] = [0x00ad];
+const INKLESS = new Set(HAND_INKLESS);
 
 /** The atlas's texels an em unless a bake asks for another. */
 export const HAND_EM = 64;
@@ -68,15 +79,21 @@ export function bakeHand(ttf: Uint8Array, opts: BakeHandOptions): BakedHand {
   const missing: number[] = [];
   const applied = new Set<string>();
   const refused = new Set<string>();
-  const baked: { code: number; id: number; advance: number; pen: GlyphPen | null; field: GlyphField | null }[] = [];
+  const baked: { code: number; id: number; advance: number; pen: GlyphPen | null; field: GlyphField | null; kerns: boolean }[] = [];
   for (const code of codes) {
+    if (INKLESS.has(code)) {
+      const id = face.glyphId(code);
+      if (id === 0) missing.push(code);
+      else baked.push({ code, id, advance: 0, pen: null, field: null, kerns: false });
+      continue;
+    }
     const d = deriveGlyph(face, code, fixes);
     if (d === null) { missing.push(code); continue; }
     if (d.pen !== null) {
       for (const id of d.pen.applied) applied.add(id);
       for (const id of d.pen.refused) refused.add(id);
     }
-    baked.push({ code, id: face.glyphId(code), advance: d.advance, pen: d.pen, field: d.pen === null ? null : glyphField(d.pen, upm, em) });
+    baked.push({ code, id: face.glyphId(code), advance: d.advance, pen: d.pen, field: d.pen === null ? null : glyphField(d.pen, upm, em), kerns: true });
   }
 
   const inked = baked.filter((b) => b.field !== null);
@@ -93,10 +110,11 @@ export function bakeHand(ttf: Uint8Array, opts: BakeHandOptions): BakedHand {
     glyphs[b.code] = { advance, rect: [x, y, f.w, f.h], origin: [f.origin[0], f.origin[1]], length: +(b.pen.total / SKELETON_PX).toFixed(4), strokes: strokeLists(b.pen) };
   }
 
-  // the pair kerning among the baked glyphs, the pairs the face kerns (em, to 1e-5)
+  // the pair kerning among the baked glyphs, the pairs the face kerns (em, to 1e-5); an inkless-by-rule glyph kerns nothing
   const kerning: Record<string, number> = {};
   for (const l of baked) {
     for (const r of baked) {
+      if (!l.kerns || !r.kerns) continue;
       const k = face.kerning(l.id, r.id);
       if (k === 0) continue;
       const v = r5(k / upm);
