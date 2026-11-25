@@ -222,6 +222,14 @@ export const HAND = {
 export const PENS = ["felt", "ball", "fountain", "red"] as const;
 export type PenName = (typeof PENS)[number];
 
+/**
+ * The highlighters a hand marks its words with (petition I60) — names; the inks are the host's, as the pens' are. An ink's mark
+ * (kit/ink.ts) holds a highlighter, and a pen, by its place in this list and in `PENS`: both orders are stored, so a name is only
+ * ever added at the end.
+ */
+export const HIGHLIGHTERS = ["yellow", "pink", "green"] as const;
+export type HighlighterName = (typeof HIGHLIGHTERS)[number];
+
 /** A face: its family and weight, and the file it loads from (absent = the platform's own). */
 export interface FaceSpec {
   readonly family: string;
