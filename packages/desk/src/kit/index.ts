@@ -8,6 +8,7 @@ export * from "./blobs";
 export * from "./book";
 export * from "./editor";
 export * from "./eye";
+export * from "./hand-atlas";
 export * from "./hold";
 export * from "./inside";
 export * from "./layer";
