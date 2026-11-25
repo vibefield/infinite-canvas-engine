@@ -5,8 +5,8 @@
 // write, so the typing needs no claim on the cell (core's `Editing` is the reference kinds' typing's: a plugin's part stamps none,
 // and its lease names its object instead — `EditorLease.entity`), and a peer sees the words only when they land. Every platform
 // input CARRIES the ink (the words around the edit keep their hands and their marks; the run it wrote is written fresh, a mark's
-// field joined only inside it), the edit found by the caret after it where the caret can say (`carryAt`), else by the common prefix
-// and suffix (`carryInk`); a PASTE lays a piece's words and marks in a fresh hand (`paste` — the fields the kind keeps only); a COPY
+// field joined only inside it), the edit found by the caret after it where the caret can say (`carryInk`'s `caret`); a word TYPED
+// OVER a selection keeps the marks its letters shared for every letter of the run (`InkTyping.moved`); a PASTE lays a piece's words and marks in a fresh hand (`paste` — the fields the kind keeps only); a COPY
 // lifts them (`lift`).
 //
 // The typing ENDS — the editor's 1 s without input, Escape, a blur, another part taking the editor — with `commit()`: ONE
@@ -23,7 +23,7 @@
 import { type Component, type Entity, guardedTransaction, PrefabId, type WidgetType, type World } from "@ice/core";
 import { type TypingDocs, writable } from "../docs";
 import type { TextRange } from "./editor";
-import { carryInk, decodeMarks, encodeMarks, type InkChange, type InkPiece, type InkValue, inkCells, inkOf, lift as liftInk, mark, paste as pasteInk, splice } from "./ink";
+import { carryInk, decodeMarks, encodeMarks, type InkChange, type InkPiece, type InkValue, inkCells, inkOf, lift as liftInk, mark, paste as pasteInk } from "./ink";
 import type { PenHow } from "./pen-clock";
 import { freshSeed } from "./seeds";
 
@@ -82,10 +82,14 @@ export interface InkTyping {
   /** Put the typing on `e` (a typing on another object ends first — it commits). False for a dead entity, another type's, or a read-only document. */
   begin(e: Entity): boolean;
   /**
-   * The platform's value (an input): the ink carried, the draft told — anchored by `caret`, the field's caret after the edit, where
-   * it is one (`carryAt`). The arrived range, or null when nothing changed.
+   * The platform's value (an input): the ink carried, the draft told — the edit found by `caret`, the field's caret after it, where
+   * it can say (`carryInk`'s). A selection TYPED OVER keeps the marks its letters shared (`splice`'s replacement), and so does every
+   * letter typed on at the run's end — "Friday" typed over as "Monday" inside a highlight stays highlighted, not "M" alone — until
+   * the caret moves away (`moved`), the draft lands, a paste comes or a mark is made. The arrived range, or null when nothing changed.
    */
   input(value: string, caret?: number): TextRange | null;
+  /** The field's range moved to [from, to) (a selection change): a run typed over a selection ends unless the caret stands at its end. */
+  moved(from: number, to: number): void;
   /** A PIECE laid over [from, to) of the draft (a paste: its words and the marks the kind keeps, in a fresh hand). The arrived range, or null. */
   paste(piece: InkPiece, from: number, to: number): TextRange | null;
   /** The words [from, to) and their marks (a copy, a cut) — the draft's while one is open; undefined with no object. */
@@ -111,27 +115,6 @@ const same = (a: InkValue, b: InkValue): boolean => a.text === b.text && a.seeds
 /** An index held to a text `n` long. */
 const clampIndex = (i: number, n: number): number => (i >= n ? n : i > 0 ? Math.floor(i) : 0);
 
-/**
- * The platform's edit CARRIED, ANCHORED BY THE CARET after it (petition I60): an edit's arrivals end at the caret — a key, a paste, a
- * cut's or a delete's empty run alike — so where the words after the caret are the old words' end, the edit is the one that ends
- * there, and `splice` writes it. The common prefix and suffix alone (`carryInk`) cannot tell two equal letters apart: a cut of "two "
- * from "one two three" would keep two's "t" (the prefix "one t") and leave its marks on "three", and a letter typed before an equal
- * one would take its neighbour's hand. Where the caret cannot say (none, or an edit it does not end — a composition's middle),
- * `carryInk`. The new ink, and the arrived range [from, to).
- */
-function carryAt(ink: InkValue, text: string, caret: number | undefined, fresh: () => number): { readonly ink: InkValue; readonly from: number; readonly to: number } {
-  const old = ink.text;
-  if (caret !== undefined && Number.isInteger(caret) && caret >= 0 && caret <= text.length) {
-    const tail = text.length - caret;
-    if (tail <= old.length && old.endsWith(text.slice(caret))) {
-      const most = Math.min(caret, old.length - tail);
-      let pre = 0;
-      while (pre < most && old.charCodeAt(pre) === text.charCodeAt(pre)) pre += 1;
-      return { ink: splice(ink, pre, old.length - tail, text.slice(pre, caret), fresh), from: pre, to: caret };
-    }
-  }
-  return carryInk(ink, text, fresh);
-}
 
 /**
  * THE TYPING a kind's text part holds (module doc): the draft, its carry, its paste and lift, its ONE commit. Its ink cell is the
@@ -156,6 +139,8 @@ export function inkTyping(opts: InkTypingOptions): InkTyping {
   /** The ink as the typing found it (before its draft opened) — what "nets to nothing" means. */
   let start: InkValue | undefined;
   let draft: InkValue | undefined;
+  /** A word being typed over a selection (`input`'s): its letters [from, to) and the mark the replaced letters shared, carried on to each letter typed at its end. */
+  let run: { readonly from: number; to: number; readonly mark: number } | undefined;
 
   /** Is `e` an object of this type, alive? */
   const ours = (e: Entity | undefined): e is Entity => e !== undefined && world.isAlive(e) && world.get(e, PrefabId)?.id === object.type;
@@ -187,6 +172,7 @@ export function inkTyping(opts: InkTypingOptions): InkTyping {
   };
 
   const commit = (): boolean => {
+    run = undefined;
     const e = editing;
     const d = draft;
     const found = start;
@@ -239,11 +225,27 @@ export function inkTyping(opts: InkTypingOptions): InkTyping {
       if (!ours(e) || typeof value !== "string") return null;
       const cur = draft ?? cellInk(e);
       if (cur === undefined || cur.text === value) return null;
-      const carried = carryAt(cur, value, caret, fresh);
-      return move(e, carried.ink, { from: carried.from, to: carried.to, how: "typed" });
+      const carried = carryInk(cur, value, fresh, caret);
+      const { from, to } = carried;
+      const removed = cur.text.length - (value.length - (to - from));
+      let next = carried.ink;
+      if (removed > 0 && to > from) run = { from, to, mark: next.marks[from] ?? 0 };   // a selection typed over: the run begins
+      else if (run !== undefined && removed === 0 && to > from && from === run.to) {
+        // typed on at the run's end: the arrivals take the run's mark, not the join of their neighbours
+        const marks = next.marks.slice();
+        for (let i = from; i < to; i++) marks[i] = value.charCodeAt(i) === 10 ? 0 : run.mark;
+        next = { text: next.text, seeds: next.seeds, marks };
+        run.to = to;
+      } else if (run !== undefined && to === from && removed > 0 && from >= run.from && from + removed === run.to) run.to = from;   // a letter of it taken back
+      else run = undefined;
+      return move(e, next, { from, to, how: "typed" });
+    },
+    moved(from, to) {
+      if (run !== undefined && !(from === to && from === run.to)) run = undefined;
     },
     paste(piece, from, to) {
       const e = editing;
+      run = undefined;
       if (!ours(e)) return null;
       const cur = draft ?? cellInk(e);
       if (cur === undefined) return null;
