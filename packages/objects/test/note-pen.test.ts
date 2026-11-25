@@ -132,7 +132,7 @@ describe("the note's two roads, per sheet (petition I59)", () => {
     const f = frame([{ e: E(1), text: "buy milk" }]);
     expect(w.roadOf(E(1))).toBe("pen");
     expect(f.out[0]?.raster).toBeUndefined();
-    expect(f.out[0]?.pen).toEqual({ base: r.rooms.get(E(1))?.at });
+    expect(f.out[0]?.pen).toEqual({ base: r.rooms.get(E(1))?.at, marks: true });   // its run carries the marks section too (petition I60)
     expect(t.calls).toEqual([]);   // the text raster never asked
     expect(r.log.faces).toEqual([CAVEAT]);   // the pass binds the note's face
     const p = w.penOf(E(1));
@@ -302,7 +302,7 @@ describe("the moments, through the note's own typing (petition I59 — the typin
 
   it("a glyph TYPED in the note's own typing is written as typed (from that frame, at the hand's pace); the words a sheet first shows are written already", () => {
     const r = rig();
-    r.world.edit(r.note).set(NOTE_INK, { text: "hi", seeds: "" });   // words already on the sheet when it is first drawn
+    r.world.edit(r.note).set(NOTE_INK, { text: "hi", seeds: "", marks: "" });   // words already on the sheet when it is first drawn
     r.frame();
     expect(r.moments()).toEqual(["written", "written"]);   // the first look writes nothing
     expect(r.body.focus(r.note)).toBe(true);
@@ -337,7 +337,7 @@ describe("the moments, through the note's own typing (petition I59 — the typin
     const cur = r.world.get(r.note, NOTE_INK) as { text: string; seeds: string };
     let fresh = 900;
     const carried = carrySeeds(cur.text, seedsFor(cur.text, cur.seeds, 7), "buy milk now", () => { fresh += 7; return fresh; });
-    r.world.edit(r.note).set(NOTE_INK, { text: "buy milk now", seeds: encodeSeeds(carried.seeds) });
+    r.world.edit(r.note).set(NOTE_INK, { text: "buy milk now", seeds: encodeSeeds(carried.seeds), marks: "" });
     r.frame();
     const all = r.moments() as ([number, number] | "written")[];
     expect(all.length).toBe(10);
@@ -359,7 +359,7 @@ describe("where the words lie, on the pen's road (petition I60 — the words' me
   it("a sheet the pen writes answers `rangeBox` from the layout it writes — the range's glyph boxes on the sheet — through its lease too, and the lease names the note", () => {
     const r = rig();
     try {
-      r.world.edit(r.note).set(NOTE_INK, { text: "buy milk", seeds: "" });
+      r.world.edit(r.note).set(NOTE_INK, { text: "buy milk", seeds: "", marks: "" });
       r.frame();
       expect(r.writing.roadOf(r.note)).toBe("pen");
       const L = r.writing.layoutOf(r.note) as HandLayout;
@@ -381,7 +381,7 @@ describe("where the words lie, on the pen's road (petition I60 — the words' me
     const loading: HandFaces = { face: () => undefined, version: () => 0, loading: () => true };
     const r = rig(loading);
     try {
-      r.world.edit(r.note).set(NOTE_INK, { text: "buy milk", seeds: "" });
+      r.world.edit(r.note).set(NOTE_INK, { text: "buy milk", seeds: "", marks: "" });
       r.frame();
       expect(r.writing.roadOf(r.note)).toBe("waiting");
       expect(r.writing.rangeBox(r.note, 4, 8)).toBeUndefined();

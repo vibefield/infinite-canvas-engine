@@ -8,7 +8,7 @@
 // the note was drawn into once — and the interaction stack fed, for each press, the facts the pointer adapter sends (its
 // `defaultPrevented` gate, pinned in dom's own tests: a press the editor claimed lands `surfaceHandled`).
 import { Camera, createCanvasEngine, type Entity, NO_MODS, Position, Size, Viewport } from "@ice/core";
-import { createDeskEditor, MAT_GRID } from "@ice/desk";
+import { createDeskEditor, MAT_GRID, PIECE_FLAVOUR } from "@ice/desk";
 import { type HandMetrics, layoutText, type TextPart, type TextRaster } from "@ice/desk/kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createNoteBody, NOTE_INK, NOTE_PROPS, Note, type PaperDriver } from "../src";
@@ -203,15 +203,16 @@ describe("the note's copy, cut and paste (petition I60)", () => {
     return d;
   };
 
-  it("COPY lifts the selected words as plain text alone (the marks come later); CUT takes them off in ONE input of the note's typing — ONE commit when its writing ends, ONE undo brings them back", () => {
+  it("COPY lifts the selected words as plain text and as the note's piece, their marks with them (petition I60 — an unmarked piece's marks \"\"); CUT takes them off in ONE input of the note's typing — ONE commit when its writing ends, ONE undo brings them back", () => {
     const r = rig();
     try {
       r.body.focus(r.note, 0);
       r.el.setSelectionRange(4, 10);
       const copied = board();
       expect(r.clip("copy", copied).defaultPrevented).toBe(true);
-      expect([...copied.types]).toEqual(["text/plain"]);
+      expect([...copied.types].sort()).toEqual([PIECE_FLAVOUR, "text/plain"].sort());
       expect(copied.getData("text/plain")).toBe("quick ");
+      expect(JSON.parse(copied.getData(PIECE_FLAVOUR))).toEqual({ text: "quick ", marks: "" });
       const cut = board();
       expect(r.clip("cut", cut).defaultPrevented).toBe(true);
       expect(cut.getData("text/plain")).toBe("quick ");
