@@ -1,20 +1,25 @@
 // The paper pass — the notes, instanced, one draw in paint order. Owns its
 // copy of the mat's uniform block (filled for the slot's camera and light
 // every frame), its own knobs, the per-note record buffer and the bind group;
-// shares — with every slot spawned from the first — the pipeline, the samplers
-// and the INK PAGES: an r8 `2d-array` the rasters live in, carved by
-// `InkShelves` so both hosts put the same bytes at the same texels. A slot
+// shares — with every slot spawned from the first — the pipeline, the samplers,
+// the INK PAGES: an r8 `2d-array` the rasters live in, carved by
+// `InkShelves` so both hosts put the same bytes at the same texels — and THE
+// PEN's room (petition I59): the kind's RUN STORE (kit/hand-gpu.ts
+// `createHandRuns` — every pen-road sheet's glyph run, its base in the note's
+// record), the face the notes are read in (`handAtlasGpu`: one texture a device
+// and face) with its sampler, and the pen's time every slot's knobs carry. A slot
 // reads its OWN mat's animated silhouette (the wind target) and its light, so
 // a note inside a mini mat is dappled by the lamp of the desk the mini mat
 // lies on (MINIMAT.md §4). Notes lie above every mini mat on their desk.
 
 import { bindGroup, bindLayout, renderPipeline, uniformBuffer, compile, compose } from "@ice/desk/engine";
 import { createRecordStore, type RecordStore, type GroundTheme, type RGB } from "@ice/desk";
-import { type FadeIn, type View, litByOwn, type MatConfig, type MatFrame, type SlotLight, type MatPass, type Presentation, DAY_LIGHT, type MatLight, sentBytes, writeChanged } from "@ice/desk/kit";
+import { createHandRuns, type FadeIn, HAND_BINDINGS, type HandAtlas, type HandRuns, type HandRunsStats, handAtlasGpu, handSampler, type View, litByOwn, type MatConfig, type MatFrame, type SlotLight, type MatPass, type Presentation, DAY_LIGHT, type MatLight, penNow, sentBytes, writeChanged } from "@ice/desk/kit";
 import { MAX_PAPERS, Paper, PaperUniforms, type PaperInstance, paperValues } from "./layout";
 import { InkShelves, type InkRect, uvOf, type UvRect } from "./pages";
 import { DEFAULT_PAPER_LAW, type PaperLaw } from "./paper";
 import type { PaperShaders } from "./shaders";
+import type { NoteRuns } from "./writing";
 
 /** Premultiplied "source over" — every desk object's blend. */
 const BLEND_PREMUL: GPUBlendState = {
@@ -37,6 +42,16 @@ interface PaperShared {
   readonly pages: GPUTexture;
   readonly pagesView: GPUTextureView;
   readonly shelves: InkShelves;
+  /** THE PEN (petition I59): the kind's run store — every pen-road sheet's glyph run, written by the writing in the world half. */
+  readonly runs: HandRuns;
+  /** The face the notes are read in (one a pass) and the view bound: a 1 × 1 stand-in until one lands, never read — no sheet is on the pen's road before its face is. */
+  face: { readonly atlas: HandAtlas | undefined; readonly view: GPUTextureView };
+  readonly blank: GPUTexture;
+  readonly handSampler: GPUSampler;
+  /** Moves whenever another face is bound: the bind groups over it are made again. */
+  faceVersion: number;
+  /** The pen's time, ms on the desk's clock (the writing's `at`): every slot's knobs carry it as `penNow`. */
+  penMs: number;
   slots: number;
 }
 
@@ -53,6 +68,8 @@ export class PaperPass {
   private group!: GPUBindGroup;
   private boundAssets = -1;
   private boundStore = -1;
+  private boundRuns = -1;
+  private boundFace = -1;
   private count = 0;
   /** This frame's slot is lit from elsewhere: it draws with the second pipeline. */
   private litElsewhere = false;
@@ -67,10 +84,25 @@ export class PaperPass {
   private readonly device: GPUDevice;
   private readonly shared: PaperShared;
   private readonly mat: MatPass;
+  /**
+   * THE PEN's room (petition I59 — the writing's `NoteRuns`), every slot's the same: a sheet's run written into the kind's run store
+   * (its base for the record), its room given back, the face the notes are read in bound, the pen's time told to the knobs.
+   */
+  readonly runs: NoteRuns;
 
   private constructor(device: GPUDevice, shared: PaperShared, mat: MatPass) {
     this.device = device; this.shared = shared; this.mat = mat;
     shared.slots += 1;
+    this.runs = {
+      write: (key, run) => shared.runs.write(key, run),
+      free: (key) => { shared.runs.free(key); },
+      face: (atlas) => {
+        if (shared.face.atlas === atlas) return;
+        shared.face = { atlas, view: handAtlasGpu(device, atlas).view };
+        shared.faceVersion += 1;
+      },
+      at: (ms) => { shared.penMs = ms; },
+    };
     this.knobBuf = uniformBuffer(device, PaperUniforms.size, "paper/knobs");
     this.store = createRecordStore<PaperInstance, keyof typeof Paper.slots>({
       device, def: Paper, capacity: MAX_PAPERS, max: MAX_PAPERS * 64, label: "paper/notes",
@@ -92,6 +124,9 @@ export class PaperPass {
       { binding: 7, stages: ["fragment"], texture: "float", dimension: "2d-array" },
       { binding: 8, stages: ["fragment"], sampler: "filtering" },
       { binding: 9, stages: ["vertex"], buffer: "read-only-storage" },   // the draw list: paint index → record slot (D6)
+      { binding: 10, ...HAND_BINDINGS.runs },      // THE PEN (petition I59): the kind's run store
+      { binding: 11, ...HAND_BINDINGS.atlas },     // …the face's atlas, every level
+      { binding: 12, ...HAND_BINDINGS.sampler },   // …its sampler
     ], "paper/notes");
     const module = await compile(device, compose(src));
     const pl = device.createPipelineLayout({ bindGroupLayouts: [layout] });
@@ -100,12 +135,16 @@ export class PaperPass {
       renderPipeline(device, { label: "paper/notes, lit from elsewhere", layout: pl, module, format, blend: BLEND_PREMUL, constants: { LIT_ELSEWHERE: 1 } }),
     ]);
     const pages = device.createTexture({ label: "paper/ink pages", size: [INK_PAGE, INK_PAGE, INK_LAYERS], format: "r8unorm", dimension: "2d", usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST });
+    // the pen's face until one lands: a texel of nothing (no sheet reads it — a sheet takes the pen's road only once its face has)
+    const blank = device.createTexture({ label: "paper/hand face (none yet)", size: [1, 1], format: "rg8unorm", usage: GPUTextureUsage.TEXTURE_BINDING });
     const shared: PaperShared = {
       layout, pipeline, litPipeline,
       goboSampler: device.createSampler({ label: "paper/gobo", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" }),
       noiseSampler: device.createSampler({ label: "paper/noise", magFilter: "linear", minFilter: "linear", addressModeU: "repeat", addressModeV: "repeat" }),
       inkSampler: device.createSampler({ label: "paper/ink", magFilter: "linear", minFilter: "linear", addressModeU: "clamp-to-edge", addressModeV: "clamp-to-edge" }),
-      pages, pagesView: pages.createView({ dimension: "2d-array" }), shelves: new InkShelves(INK_PAGE, INK_LAYERS), slots: 0,
+      pages, pagesView: pages.createView({ dimension: "2d-array" }), shelves: new InkShelves(INK_PAGE, INK_LAYERS),
+      runs: createHandRuns(device, { label: "paper/hand runs" }), face: { atlas: undefined, view: blank.createView({ dimension: "2d" }) }, blank,
+      handSampler: handSampler(device), faceVersion: 0, penMs: 0, slots: 0,
     };
     return new PaperPass(device, shared, mat);
   }
@@ -147,11 +186,13 @@ export class PaperPass {
   }
 
   private rebind(): void {
-    if (this.boundAssets === this.mat.assetVersion && this.boundStore === this.store.version) return;
     const s = this.shared;
-    this.group = bindGroup(this.device, s.layout, [this.mat.view, this.knobBuf, this.store.records, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.pagesView, s.inkSampler, this.store.order], "paper/notes");
+    if (this.boundAssets === this.mat.assetVersion && this.boundStore === this.store.version && this.boundRuns === s.runs.version && this.boundFace === s.faceVersion) return;
+    this.group = bindGroup(this.device, s.layout, [this.mat.view, this.knobBuf, this.store.records, this.mat.silhouette, s.goboSampler, this.mat.noiseTexture.createView(), s.noiseSampler, s.pagesView, s.inkSampler, this.store.order, s.runs.view, s.face.view, s.handSampler], "paper/notes");
     this.boundAssets = this.mat.assetVersion;
     this.boundStore = this.store.version;
+    this.boundRuns = s.runs.version;
+    this.boundFace = s.faceVersion;
   }
 
   /**
@@ -169,7 +210,9 @@ export class PaperPass {
     this.count = n;
     this.litElsewhere = !litByOwn(view, lit);
     const far = this.law.far;
-    this.knobs.set({ knobs: [this.chain ? 1 : 0, this.wipeSoft, this.law.caret.width, this.law.ring], select: [select[0], select[1], select[2], 1], far: [far.px[0], far.px[1], far.weight, far.alpha] });
+    // the pen's time (petition I59): the writing holds it at the last moment written once nothing moves, so at rest the knobs stand
+    const [ps, pms] = penNow(this.shared.penMs);
+    this.knobs.set({ knobs: [this.chain ? 1 : 0, this.wipeSoft, this.law.caret.width, this.law.ring], select: [select[0], select[1], select[2], 1], far: [far.px[0], far.px[1], far.weight, far.alpha], pen: [ps, pms, 0, 0] });
     writeChanged(this.device.queue, this.knobBuf, this.knobs, this.knobsSent);
     return n;
   }
@@ -177,15 +220,24 @@ export class PaperPass {
   /** The store's counters (a rig's witness): records written, bytes, draw-list writes, slots in use. */
   get records() { return this.store.stats(); }
 
-  /** K7b: this slot's resources for the note's card material (shaders.ts `paperCard`), in its bindings' order — made again when the store grew. */
+  /** The pen's run store's counters (petition I59 — a rig's witness): runs held, texels given and used, its growth, its writes. */
+  get penRuns(): HandRunsStats { return this.shared.runs.stats(); }
+
+  /**
+   * K7b: this slot's resources for the note's card material (shaders.ts `paperCard`), in its bindings' order — made again when the
+   * store grew, the pen's run store grew or another face is bound (its version moves with any of them).
+   */
   cardResources(): { readonly version: number; readonly resources: readonly (GPUBuffer | GPUTextureView | GPUSampler)[] } {
-    if (this.card === null || this.card.version !== this.store.version) {
-      const s = this.shared;
-      this.card = { version: this.store.version, resources: [this.knobBuf, this.store.records, s.goboSampler, s.noiseSampler, s.pagesView, s.inkSampler] };
+    const s = this.shared;
+    const key = `${this.store.version}:${s.runs.version}:${s.faceVersion}`;
+    if (this.card === null || this.cardKey !== key) {
+      this.cardKey = key;
+      this.card = { version: (this.card?.version ?? -1) + 1, resources: [this.knobBuf, this.store.records, s.goboSampler, s.noiseSampler, s.pagesView, s.inkSampler, s.runs.view, s.face.view, s.handSampler] };
     }
     return this.card;
   }
   private card: { readonly version: number; readonly resources: readonly (GPUBuffer | GPUTextureView | GPUSampler)[] } | null = null;
+  private cardKey = "";
 
   /** K7b: every note of the last prepare is the card's to draw — its slot in the store. */
   cardSlot(index: number): number { return this.store.slotAt(index); }
@@ -202,12 +254,12 @@ export class PaperPass {
     pass.draw(6, hi - first, 0, first);
   }
 
-  /** This slot's buffers; the pages go with the last slot standing. */
+  /** This slot's buffers; the pages and the pen's run store go with the last slot standing (a face's atlas is the device's). */
   dispose(): void {
     this.knobBuf.destroy(); this.store.dispose();
     const s = this.shared;
     s.slots -= 1;
-    if (s.slots === 0) s.pages.destroy();
+    if (s.slots === 0) { s.pages.destroy(); s.runs.dispose(); s.blank.destroy(); }
   }
 }
 

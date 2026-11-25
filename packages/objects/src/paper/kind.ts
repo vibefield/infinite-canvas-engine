@@ -11,12 +11,14 @@
 // palette's `papers` and `pens` by the prop's value.
 //
 // And its TEXT (D2c, design-015 §6.1): the kind's own state on each desk is a WRITING
-// (paper/writing.ts — `local()`): the hand's layout from the note's durable `text` and `seeds`, the
-// ink raster on the √2 band ladder in the pass's pages, the pen's wipe, the editor's caret. `record`
-// takes all three from it; a raster a host pinned through the builder (`ctx.asset`) is the fallback.
+// (paper/writing.ts — `local()`): the hand's layout from the note's durable `text` and `seeds`, its
+// ink — THE PEN's glyph run in the pass's run store when the desk lends the note's face (petition I59,
+// `HAND_FACES`), else the raster on the √2 band ladder in the pass's pages — the raster's wipe, the
+// editor's caret. `record` takes them from it; a raster a host pinned through the builder (`ctx.asset`)
+// is the fallback.
 
 import { type KindExtra, type KindPass, type KindProgram, type SlotContext, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type KindHost, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, type RungContext, stringProp } from "@ice/desk";
-import { type MatPass, type MarkFrame, type ChildShape, type HandLaw, type HandLayout, HAND, PAPER_FINISH, type ShaderText, TEXT_RASTER } from "@ice/desk/kit";
+import { type MatPass, type MarkFrame, type ChildShape, HAND_FACES, type HandLaw, type HandLayout, HAND, PAPER_FINISH, type ShaderText, TEXT_RASTER } from "@ice/desk/kit";
 import type { PaperInstance } from "./layout";
 import { DEFAULT_PAPER_LAW, type PaperGeometry, type PaperLaw, pickPaper, resolvePaper, tiltOf } from "./paper";
 import { PaperPass } from "./paper-pass";
@@ -118,6 +120,8 @@ const pagesOf = (host: KindHost) => (): PaperPass | undefined => {
   const pass = host.pass();
   return pass instanceof PaperKind ? pass.pass : undefined;
 };
+/** …and its pen's room (petition I59) — the writing's `runs()`: the run store, the face, the pen's time, every slot's. */
+const runsOf = (host: KindHost) => (): PaperPass["runs"] | undefined => pagesOf(host)()?.runs;
 
 /** A note's writing greeked (a mini mat's chip, the far LOD — K7b): the lines a still pinned, else the hand's layout of its text; undefined = none. */
 function greekOf(asset: PaperAsset | undefined, laid: HandLayout | undefined, hand: { readonly pad: number; readonly size: number }): PaperWriting | undefined {
@@ -141,6 +145,10 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
     local: (host: KindHost): Writing => createWriting({
       pages: pagesOf(host),
       text: host.use?.(TEXT_RASTER),
+      // THE PEN (petition I59): the desk's lent faces, the pass's run store, and the door that draws again with no record remade
+      faces: host.use?.(HAND_FACES),
+      runs: runsOf(host),
+      redraw: host.redraw,
       drawn: host.drawn,
       queue: host.rasters,
       remake: host.remake,
@@ -163,14 +171,17 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
       const paper = papers[stringProp(ctx.props, "paper", "")] ?? Object.values(papers)[0];
       const ink = pens[stringProp(ctx.props, "pen", "")] ?? Object.values(pens)[0];
       if (paper === undefined || ink === undefined) throw new Error("desk/paper: the note's colours are the host's — the palette names no `papers`/`pens` (kinds/paper.ts `PaperPalette`)");
-      // the writing on this desk: the live (or pinned) ink, the pen's wipe, the caret; a builder pin is the fallback
+      // the writing on this desk: the live (or pinned) ink — the pen's run or the raster — the raster's wipe, the caret; a builder pin is the fallback
       const w = ctx.local as Writing | undefined;
       const hand = w?.draw(ctx.entity, ctx.props, ctx.rect, ctx.view, G, ctx.flux.fade < 1) ?? {};   // a ghost fades on what it has
       const asset = asPaperAsset(ctx.asset);
-      const raster = hand.raster ?? (hasRaster(asset) ? { layer: asset.layer, uv: asset.uv } : undefined);
+      // a raster the host pinned (a still's committed ink) wins over the pen as over the live raster (petition I59)
+      const pinned = hand.raster === undefined && hasRaster(asset) ? { layer: asset.layer, uv: asset.uv } : undefined;
+      const raster = hand.raster ?? pinned;
+      const pen = pinned === undefined ? hand.pen : undefined;
       // K7b — its writing GREEKED (the far LOD, theme.ts `PAPER.far`): the lines a still pinned, else the hand's own layout of its text
       const greek = greekOf(asset, w?.layoutOf?.(ctx.entity), opts.hand?.law ?? HAND);
-      return { geometry: G, paper, ink, ...(raster !== undefined ? { raster } : {}), ...(hand.wipe !== undefined ? { wipe: hand.wipe } : {}), ...(hand.caret !== undefined ? { caret: hand.caret } : {}), ...(greek !== undefined ? { greek } : {}) };
+      return { geometry: G, paper, ink, ...(raster !== undefined ? { raster } : {}), ...(pen !== undefined ? { pen } : {}), ...(hand.wipe !== undefined ? { wipe: hand.wipe } : {}), ...(hand.caret !== undefined ? { caret: hand.caret } : {}), ...(greek !== undefined ? { greek } : {}) };
     },
     hit(G: PaperGeometry, wx: number, wy: number): ObjectHit | null {
       return pickPaper(G, wx, wy) === "paper" ? "content" : null;
