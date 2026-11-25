@@ -12,12 +12,14 @@
 //    paste and a peer's words as they arrive, and a sheet's first look writes nothing;
 //  - THE WAKE: frames only while the pen moves (`KindHost.redraw` — no record remade), none at rest; the pen's time held at the last
 //    moment written once nothing moves, so a pan rewrites no knob;
-//  - `forget` gives the run's room back and the clock forgets the sheet; the record carries the run's base to the pass.
+//  - `forget` gives the run's room back and the clock forgets the sheet; the record carries the run's base to the pass;
+//  - WHERE THE WORDS LIE (petition I60, the words' menu) on the pen's road too: `rangeBox` from the layout the pen writes, through
+//    the note's lease, which names its note; none while the face is on its way.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createCanvasEngine, type Entity } from "@ice/core";
 import { createDeskEditor, handFaces, MAT_GRID } from "@ice/desk";
-import { carrySeeds, createPenClock, encodeSeeds, type HandAtlas, type HandFaces, handFacesOf, type HandMetrics, type HandRun, type InkBitmap, type PenKey, readHandAtlas, seedsFor, type TextPart, type TextRaster } from "@ice/desk/kit";
+import { carrySeeds, createPenClock, encodeSeeds, glyphBox, type HandAtlas, type HandFaces, handFacesOf, type HandLayout, type HandMetrics, type HandRun, type InkBitmap, type PenKey, readHandAtlas, seedsFor, type TextPart, type TextRaster } from "@ice/desk/kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createNoteBody, NOTE_INK, NOTE_PROPS, Note, type PaperDriver } from "../src";
 import { Paper, paperValues } from "../src/paper/layout";
@@ -252,48 +254,51 @@ describe("the run: built and written only when the layout or the moments change 
   });
 });
 
+/**
+ * The desk's editor and a note's body over a real engine and document, the body's writing a pen's (its faces the desk's Caveat, landed,
+ * unless `faces` says otherwise); a frame draws the note as the builder would.
+ */
+function rig(faces: HandFaces = handFacesOf({ caveat: CAVEAT })) {
+  const ce = createCanvasEngine({ widgets: [Note] });
+  ce.docs.create();
+  const { world } = ce;
+  const container = document.createElement("div");
+  document.body.appendChild(container);
+  const runs = fakeRuns();
+  const clock = createPenClock();
+  const writing = createWriting({ pages: fakePages, runs: () => runs.runs, faces, clock, redraw: () => {} });
+  const typing = createNoteTyping({ world, docs: ce.docs, ink: NOTE_INK, props: NOTE_PROPS });
+  const driver: PaperDriver = { typing, writing: () => writing, isNote: (e) => world.get(e, NOTE_INK) !== undefined, body: undefined, follow: () => {}, idle: () => true };
+  const parts: TextPart[] = [];
+  const editor = createDeskEditor({ container, world, parts: () => parts, wake: () => {} });
+  const body = createNoteBody({ editor, world, driver, geometryOf: () => undefined, now: () => now });
+  if (body === undefined) throw new Error("no body");
+  parts.push(body);
+  const note = ce.ops.spawnWidget("desk.note", { x: 0, y: 0, props: { seed: 7, text: "" }, undoable: false }) as Entity;
+  ce.step(16);
+  let now = 5000;
+  const G = resolvePaper({ cx: 0, cy: 0, w: 200, h: 200, angle: 0 }, { held: 0, ring: 0, fade: 1 }, DEFAULT_PAPER_LAW, lamp);
+  /** A frame: the clock on, the note drawn from the world's cell as its record would be. */
+  const frame = (dt = 16) => {
+    now += dt;
+    writing.tick(now);
+    const ink = world.get(note, NOTE_INK) as { text: string; seeds: string };
+    return writing.draw(note, { text: ink.text, seeds: ink.seeds, seed: 7 }, { cx: 0, cy: 0, w: 200, h: 200 }, VIEW, G);
+  };
+  const el = editor.element;
+  const type = (value: string) => { el.value = value; el.setSelectionRange(value.length, value.length); el.dispatchEvent(new Event("input", { bubbles: true })); };
+  /** Each glyph's moment as the clock keeps it, by the glyph's seed: [start − now, dur], or written-before. */
+  const moments = () => {
+    const ink = world.get(note, NOTE_INK) as { text: string; seeds: string };
+    const seeds = seedsFor(ink.text, ink.seeds, 7);
+    return [...ink.text].map((_, i) => clock.momentOf(note, seeds[i] as number)).filter((m) => m !== undefined).map((m) => (m.start === Number.NEGATIVE_INFINITY ? "written" : [m.start - now, m.dur]));
+  };
+  return { world, writing, editor, body, note, G, type, frame, moments, now: () => now, dispose: () => { editor.dispose(); ce.dispose(); } };
+}
+
 describe("the moments, through the note's own typing (petition I59 — the typing marks its sheet)", () => {
   beforeEach(() => { vi.useFakeTimers(); });
   afterEach(() => { vi.useRealTimers(); document.body.innerHTML = ""; });
-
-  /** The desk's editor and a note's body over a real engine and document, the body's writing a pen's; a frame draws the note as the builder would. */
-  function rig() {
-    const ce = createCanvasEngine({ widgets: [Note] });
-    ce.docs.create();
-    const { world } = ce;
-    const container = document.createElement("div");
-    document.body.appendChild(container);
-    const runs = fakeRuns();
-    const clock = createPenClock();
-    const writing = createWriting({ pages: fakePages, runs: () => runs.runs, faces: handFacesOf({ caveat: CAVEAT }), clock, redraw: () => {} });
-    const typing = createNoteTyping({ world, docs: ce.docs, ink: NOTE_INK, props: NOTE_PROPS });
-    const driver: PaperDriver = { typing, writing: () => writing, isNote: (e) => world.get(e, NOTE_INK) !== undefined, body: undefined, follow: () => {}, idle: () => true };
-    const parts: TextPart[] = [];
-    const editor = createDeskEditor({ container, world, parts: () => parts, wake: () => {} });
-    const body = createNoteBody({ editor, world, driver, geometryOf: () => undefined, now: () => now });
-    if (body === undefined) throw new Error("no body");
-    parts.push(body);
-    const note = ce.ops.spawnWidget("desk.note", { x: 0, y: 0, props: { seed: 7, text: "" }, undoable: false }) as Entity;
-    ce.step(16);
-    let now = 5000;
-    const G = resolvePaper({ cx: 0, cy: 0, w: 200, h: 200, angle: 0 }, { held: 0, ring: 0, fade: 1 }, DEFAULT_PAPER_LAW, lamp);
-    /** A frame: the clock on, the note drawn from the world's cell as its record would be. */
-    const frame = (dt = 16) => {
-      now += dt;
-      writing.tick(now);
-      const ink = world.get(note, NOTE_INK) as { text: string; seeds: string };
-      return writing.draw(note, { text: ink.text, seeds: ink.seeds, seed: 7 }, { cx: 0, cy: 0, w: 200, h: 200 }, VIEW, G);
-    };
-    const el = editor.element;
-    const type = (value: string) => { el.value = value; el.setSelectionRange(value.length, value.length); el.dispatchEvent(new Event("input", { bubbles: true })); };
-    /** Each glyph's moment as the clock keeps it, by the glyph's seed: [start − now, dur], or written-before. */
-    const moments = () => {
-      const ink = world.get(note, NOTE_INK) as { text: string; seeds: string };
-      const seeds = seedsFor(ink.text, ink.seeds, 7);
-      return [...ink.text].map((_, i) => clock.momentOf(note, seeds[i] as number)).filter((m) => m !== undefined).map((m) => (m.start === Number.NEGATIVE_INFINITY ? "written" : [m.start - now, m.dur]));
-    };
-    return { world, writing, editor, body, note, type, frame, moments, now: () => now, dispose: () => { editor.dispose(); ce.dispose(); } };
-  }
 
   it("a glyph TYPED in the note's own typing is written as typed (from that frame, at the hand's pace); the words a sheet first shows are written already", () => {
     const r = rig();
@@ -338,6 +343,52 @@ describe("the moments, through the note's own typing (petition I59 — the typin
     expect(all.length).toBe(10);
     expect(all.slice(7).map((x) => (Array.isArray(x) ? x[0] >= 0 : x))).toEqual([true, true, true]);   // "now": written from this frame
     r.dispose();
+  });
+});
+
+describe("where the words lie, on the pen's road (petition I60 — the words' menu — under the pen, I59)", () => {
+  beforeEach(() => { vi.useFakeTimers(); });
+  afterEach(() => { vi.useRealTimers(); document.body.innerHTML = ""; });
+
+  /** The union of the glyph boxes of [from, to) in `L`, note units (the words' menu's own reading: note-words.test.ts). */
+  const glyphUnion = (L: HandLayout, from: number, to: number) => {
+    const boxes = L.glyphs.filter((g) => g.index >= from && g.index < to).map((g) => glyphBox(L, g));
+    return { x0: Math.min(...boxes.map((b) => b.x0)), y0: Math.min(...boxes.map((b) => b.y0)), x1: Math.max(...boxes.map((b) => b.x1)), y1: Math.max(...boxes.map((b) => b.y1)) };
+  };
+
+  it("a sheet the pen writes answers `rangeBox` from the layout it writes — the range's glyph boxes on the sheet — through its lease too, and the lease names the note", () => {
+    const r = rig();
+    try {
+      r.world.edit(r.note).set(NOTE_INK, { text: "buy milk", seeds: "" });
+      r.frame();
+      expect(r.writing.roadOf(r.note)).toBe("pen");
+      const L = r.writing.layoutOf(r.note) as HandLayout;
+      expect(L.em).toBe(24);   // laid by the face's own metrics, at the hand's size
+      const u = glyphUnion(L, 4, 8);   // "milk"
+      // unturned and unscaled, the sheet at the world's origin, 200 × 200: note units are the world's from its top-left corner
+      const box = r.writing.rangeBox(r.note, 4, 8);
+      expect(box?.x).toBeCloseTo(-100 + u.x0, 6);
+      expect(box?.y).toBeCloseTo(-100 + u.y0, 6);
+      expect(box?.w).toBeCloseTo(u.x1 - u.x0, 6);
+      expect(box?.h).toBeCloseTo(u.y1 - u.y0, 6);
+      expect(r.body.focus(r.note, 0)).toBe(true);
+      expect(r.editor.lease()?.entity).toBe(r.note);
+      expect(r.editor.lease()?.rangeBox?.(4, 8)).toEqual(box);
+    } finally { r.dispose(); }
+  });
+
+  it("while the sheet's face is on its way it holds no layout, so it answers no box (it draws blank)", () => {
+    const loading: HandFaces = { face: () => undefined, version: () => 0, loading: () => true };
+    const r = rig(loading);
+    try {
+      r.world.edit(r.note).set(NOTE_INK, { text: "buy milk", seeds: "" });
+      r.frame();
+      expect(r.writing.roadOf(r.note)).toBe("waiting");
+      expect(r.writing.rangeBox(r.note, 4, 8)).toBeUndefined();
+      expect(r.body.focus(r.note, 0)).toBe(true);
+      expect(r.editor.lease()?.entity).toBe(r.note);   // the lease names its note on every road
+      expect(r.editor.lease()?.rangeBox?.(4, 8)).toBeUndefined();
+    } finally { r.dispose(); }
   });
 });
 
