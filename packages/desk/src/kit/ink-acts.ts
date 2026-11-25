@@ -10,8 +10,13 @@
 // editor's, so the draft's indices. With no typing on the object (an agent's act on stored props, another desk's object) it marks the
 // stored cell. A toggle's `state` (its `pressed`, petition I61's state) and a choice act's `choices` (I62's, the letters' common one
 // `current`) read the same words — the draft while one is open, else the cell — and write nothing.
+//
+// THE MARKS' KEYS (the design's): ⇧⌘X Strike, ⌘U Underline, ⇧⌘H Highlight — declared on the acts as a host's tip prints them
+// (`MenuActionDef.keys`) and read by the written part while words are selected (`inkKeyOf`, kit/ink-part.ts: a host's bar reads no act
+// id). ⌘ or Ctrl, as the keymap's `mod` reads them. Highlight's key (and its press without a choice) takes the highlighter LAST CHOSEN
+// on this desk in this visit — yellow at first — and lifts it where every letter carries one.
 
-import type { ActChoice, Entity, HeldGlyph, MenuActionApi, MenuActionDef, MenuActionStateContext } from "@ice/core";
+import type { ActChoice, Entity, HeldGlyph, MenuActionApi, MenuActionDef, MenuActionStateContext, World } from "@ice/core";
 import { encodeMarks, highlightOf, type InkChange, type InkValue, inkOf, mark, penOf, strikeOf, underlineOf } from "./ink";
 import { INK_FIELDS, type InkField, inkTypingOn } from "./ink-typing";
 import { HIGHLIGHTERS, type HighlighterName, PENS, type PenName } from "./text";
@@ -21,6 +26,37 @@ export const INK_ACTS = { pen: "ink.pen", highlight: "ink.highlight", strike: "i
 
 /** The highlighter act's choice that lifts the highlight. */
 export const NO_HIGHLIGHT = "none" as const;
+
+/** The marks that have a KEY: their chord (⌘ or Ctrl — `mod` —, ⇧ or not, the key) and the key as a tip prints it. */
+export const INK_KEYS = {
+  strike: { keys: "⇧⌘X", key: "x", shift: true },
+  underline: { keys: "⌘U", key: "u", shift: false },
+  highlight: { keys: "⇧⌘H", key: "h", shift: true },
+} as const;
+export type InkKeyed = keyof typeof INK_KEYS;
+
+/** A key press as the marks' keys read it (a `KeyboardEvent`'s fields). */
+export interface InkKeyPress {
+  readonly key: string;
+  readonly metaKey: boolean;
+  readonly ctrlKey: boolean;
+  readonly shiftKey: boolean;
+  readonly altKey: boolean;
+}
+
+/** The mark a key press names (`INK_KEYS`): ⌘ or Ctrl, no ⌥, ⇧ exactly as its chord says, the key case-blind — undefined for any other. */
+export function inkKeyOf(ev: InkKeyPress): InkKeyed | undefined {
+  if (!(ev.metaKey || ev.ctrlKey) || ev.altKey || typeof ev.key !== "string") return undefined;
+  const k = ev.key.toLowerCase();
+  for (const field of Object.keys(INK_KEYS) as InkKeyed[]) {
+    const chord = INK_KEYS[field];
+    if (chord.key === k && chord.shift === ev.shiftKey) return field;
+  }
+  return undefined;
+}
+
+/** The highlighter last chosen on each desk (its world) in this visit — the key's, yellow (the first) until one is. */
+const LAST_HIGHLIGHTER = new WeakMap<World, HighlighterName>();
 
 export interface InkActsOptions {
   /** The fields the words may take — an act each, Clear with any (`INK_FIELDS` by default). Give the part (`inkPart`) the same. */
@@ -157,6 +193,7 @@ export function inkActs(opts: InkActsOptions = {}): MenuActionDef[] {
     id: INK_ACTS[field],
     label,
     glyph: glyph(field),
+    keys: INK_KEYS[field].keys,
     on: "words",
     state: (ctx) => (ctx.range === undefined ? undefined : { pressed: inkEveryLetter(wordsOf(ctx, ctx.range.entity, ink), ctx.range.from, ctx.range.to, field) }),
     run: (api) => marking(api, (words, from, to) => {
@@ -191,6 +228,7 @@ export function inkActs(opts: InkActsOptions = {}): MenuActionDef[] {
       id: INK_ACTS.highlight,
       label: "Highlight",
       glyph: glyph("highlight"),
+      keys: INK_KEYS.highlight.keys,
       on: "words",
       // the desk's highlighters and None, the letters' common one current — `none` when none carries one
       choices: (ctx): ActChoice[] => {
@@ -198,12 +236,16 @@ export function inkActs(opts: InkActsOptions = {}): MenuActionDef[] {
         const cur = (id: string): { readonly current?: true } => (id === now ? { current: true } : {});
         return [...HIGHLIGHTERS.map((name) => ({ id: name, label: titled(name), ...swatchOf(`highlight.${name}`), ...cur(name) })), { id: NO_HIGHLIGHT, label: "None", ...cur(NO_HIGHLIGHT) }];
       },
-      // a highlighter by name, None lifting it; a key's press (no choice): the first highlighter, or lifted where every letter has one
+      // a highlighter by name (the desk's last chosen now), None lifting it; a key's press (no choice): the last chosen — the first
+      // until one is —, or lifted where every letter has one
       run: (api, taken) => marking(api, (words, from, to) => {
         const choice = taken?.id;
         if (choice === NO_HIGHLIGHT) return { highlight: null };
-        if (choice !== undefined) return { highlight: choice as HighlighterName };
-        return inkEveryLetter(words, from, to, "highlight") ? { highlight: null } : { highlight: HIGHLIGHTERS[0] };
+        if (choice !== undefined) {
+          LAST_HIGHLIGHTER.set(api.world, choice as HighlighterName);
+          return { highlight: choice as HighlighterName };
+        }
+        return inkEveryLetter(words, from, to, "highlight") ? { highlight: null } : { highlight: LAST_HIGHLIGHTER.get(api.world) ?? HIGHLIGHTERS[0] };
       }),
     });
   }

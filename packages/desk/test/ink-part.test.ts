@@ -551,8 +551,8 @@ describe("the ink acts (`inkActs`): one step each, through the typing when one i
     expect(cell(e).marks).toBe("");
     expect(ce.ops.runMenuAction(INK_ACTS.underline, undefined, { range })).toBe(true);
     expect(of(underlineOf)).toEqual([1, 1, 1]);
-    expect(ce.ops.runMenuAction(INK_ACTS.highlight, undefined, { range })).toBe(true);   // a key's press, no choice: the first highlighter
-    expect(of(highlightOf)).toEqual([1, 1, 1]);
+    expect(ce.ops.runMenuAction(INK_ACTS.highlight, undefined, { range })).toBe(true);   // a key's press, no choice: the last chosen on this desk (green, above)
+    expect(of(highlightOf)).toEqual([2, 2, 2]);
     expect(ce.ops.runMenuAction(INK_ACTS.clear, undefined, { range })).toBe(true);
     expect(cell(e)).toMatchObject({ text: "one two three", seeds: "", marks: "" });
     let undos = 0;
