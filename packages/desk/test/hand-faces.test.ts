@@ -83,6 +83,26 @@ describe("the hand's faces (petition I59)", () => {
       error.mockRestore();
     }
   });
+
+  it("a lent face is LOADING from before its first ask until it lands or fails — so a sheet waits for it, blank; a name the desk lends no file for, and the faces a host holds, never load", async () => {
+    const error = vi.spyOn(console, "error").mockImplementation(() => {});
+    try {
+      const { fetch } = files({ "c.json": face.json, "c.bin": face.bin, "k.json": face.json });
+      const faces = handFaces({ faces: { caveat: { json: "c.json", bin: "c.bin" }, kalam: { json: "k.json", bin: "k.bin" } }, fetch });
+      expect(faces.loading("caveat")).toBe(true);   // lent, not asked yet: the first ask starts it
+      expect(faces.face("caveat")).toBeUndefined();
+      expect(faces.loading("caveat")).toBe(true);   // on its way
+      expect(faces.loading("marker")).toBe(false);  // lent no file: never on its way (its sheets keep their raster)
+      await settle();
+      expect(faces.face("caveat")).toBeDefined();
+      expect(faces.loading("caveat")).toBe(false);  // landed
+      expect(await faces.load("kalam")).toBe(false);
+      expect(faces.loading("kalam")).toBe(false);   // failed: not loading either (its sheets keep their raster)
+      expect(handFacesOf({ caveat: face.atlas }).loading).toBeUndefined();   // the faces a host holds: there at once, or not lent
+    } finally {
+      error.mockRestore();
+    }
+  });
 });
 
 describe("the layer lends the hand's faces and wakes for them (petition I59 — `deskLayer({ hand })`, as `text`)", () => {
