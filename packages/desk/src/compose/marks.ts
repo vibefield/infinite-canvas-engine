@@ -15,6 +15,7 @@
 // the world.
 
 import {
+  type ActChoice,
   Camera,
   Captures,
   defineQuery,
@@ -25,6 +26,7 @@ import {
   type HeldGlyph,
   LocalPointer,
   type MenuActionDef,
+  type MenuActionState,
   menuActionsFor,
   Locked,
   type MarqueeBuffer,
@@ -99,23 +101,60 @@ export interface HeldAnchor {
 /** A kind's act as the selection menu shows it (K8a): plain data — the op stays on the widget type (`ops.runMenuAction`). */
 export interface MenuSlot {
   readonly id: string;
+  /** Its name as its kind says it NOW (petition I61), else the declared one. */
   readonly label: string;
   readonly glyph?: HeldGlyph;
   readonly keys?: string;
+  /** A colour the slot shows instead of its glyph (a phone's finish), CSS — what its kind says now (petition I61). */
+  readonly swatch?: string;
+  /**
+   * `false`: its kind says the act is DISABLED now (petition I61): the menu shows it dim and `aria-disabled`, and
+   * `ops.runMenuAction` does nothing for it — its press, its key. Absent: live.
+   */
+  readonly enabled?: false;
+  /**
+   * The act is a CHOICE (petition I62): its choices now, plain data — the host draws them as rows (the current one marked, a field
+   * under a taken row) and takes one through `ops.runMenuAction(id, taken)`. Absent: one op.
+   */
+  readonly choices?: readonly ActChoice[];
 }
 
 /** A selection's kind acts as the menu's slots (K8a): every act its types all declare (core's `menuActionsFor`), as plain data. */
-export function menuSlots(acts: readonly MenuActionDef[]): MenuSlot[] {
-  return acts.map((a) => ({ id: a.id, label: a.label, ...(a.glyph !== undefined ? { glyph: a.glyph } : {}), ...(a.keys !== undefined ? { keys: a.keys } : {}) }));
+export function menuSlots(
+  acts: readonly MenuActionDef[],
+  stateOf?: (act: MenuActionDef) => MenuActionState | undefined,
+  choicesOf?: (act: MenuActionDef) => readonly ActChoice[] | undefined,
+): MenuSlot[] {
+  return acts.map((a) => {
+    // what its kind says of it NOW (petition I61): disabled, another glyph, another label, a swatch; and its choices (I62)
+    const now = stateOf?.(a);
+    const choices = choicesOf?.(a);
+    const glyph = now?.glyph ?? a.glyph;
+    return {
+      id: a.id,
+      label: now?.label ?? a.label,
+      ...(glyph !== undefined ? { glyph } : {}),
+      ...(a.keys !== undefined ? { keys: a.keys } : {}),
+      ...(now?.swatch !== undefined ? { swatch: now.swatch } : {}),
+      ...(now?.enabled === false ? { enabled: false as const } : {}),
+      ...(choices !== undefined ? { choices } : {}),
+    };
+  });
 }
 
 /**
  * The anchor with the selection's KIND ACTS (K8a): every act all the selected objects' types declare (`menuOf` reads an object's
  * type's `menu`), as the menu's slots — the anchor unchanged when nothing is selected or no act is shared.
  */
-export function withKindActs(a: SelectionAnchor, selected: readonly Entity[], menuOf: (e: Entity) => readonly MenuActionDef[]): SelectionAnchor {
+export function withKindActs(
+  a: SelectionAnchor,
+  selected: readonly Entity[],
+  menuOf: (e: Entity) => readonly MenuActionDef[],
+  stateOf?: (act: MenuActionDef) => MenuActionState | undefined,
+  choicesOf?: (act: MenuActionDef) => readonly ActChoice[] | undefined,
+): SelectionAnchor {
   if (a.count === 0) return a;
-  const menu = menuSlots(menuActionsFor(selected, menuOf));
+  const menu = menuSlots(menuActionsFor(selected, menuOf), stateOf, choicesOf);
   return menu.length === 0 ? a : { ...a, menu };
 }
 
@@ -139,6 +178,8 @@ export interface HeldSlot {
    * and `ops.useHeldTool` does nothing for it — its press, its keys. Absent: live.
    */
   readonly enabled?: false;
+  /** The action is a CHOICE (petition I62): its choices now, plain data, taken through `ops.useHeldTool(id, taken)`. Absent: one op. */
+  readonly choices?: readonly ActChoice[];
 }
 
 /**
@@ -146,9 +187,15 @@ export interface HeldSlot {
  * kind says of it NOW (petition I49 — `stateOf`: the tool's `state`, read by the caller with the kind's desk state): disabled, another
  * glyph, another label.
  */
-export function heldSlots(tools: readonly HeldToolDef[], swatches: Readonly<Record<string, string>> = {}, stateOf?: (tool: HeldToolDef) => HeldToolState | undefined): HeldSlot[] {
+export function heldSlots(
+  tools: readonly HeldToolDef[],
+  swatches: Readonly<Record<string, string>> = {},
+  stateOf?: (tool: HeldToolDef) => HeldToolState | undefined,
+  choicesOf?: (tool: HeldToolDef) => readonly ActChoice[] | undefined,
+): HeldSlot[] {
   return tools.filter((t) => t.bar !== false).map((t) => {
     const now = stateOf?.(t);
+    const choices = choicesOf?.(t);
     const glyph = now?.glyph ?? t.glyph;
     return {
       id: t.id, label: now?.label ?? t.label,
@@ -157,6 +204,7 @@ export function heldSlots(tools: readonly HeldToolDef[], swatches: Readonly<Reco
       ...(glyph !== undefined ? { glyph } : {}),
       ...(swatches[t.id] !== undefined ? { swatch: swatches[t.id] as string } : {}),
       ...(now?.enabled === false ? { enabled: false as const } : {}),
+      ...(choices !== undefined ? { choices } : {}),
     };
   });
 }

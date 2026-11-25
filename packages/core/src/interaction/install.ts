@@ -12,6 +12,7 @@
  * The canvas-surface anchor entity is guaranteed here (design-001 §4: picking
  * always resolves to SOMETHING; L0 ingest schedules on it).
  */
+import type { MenuStateSlot } from "../widget/menu-actions";
 import type { Entity, World } from "@vibecook/strata-ecs";
 import { defineQuery } from "@vibecook/strata-ecs";
 import { SpatialIndex } from "@ice/kernel";
@@ -160,6 +161,11 @@ export interface InteractionStack extends InteractionCore {
    * frame (its rect mid-slide, its scroll range), which the tray's input hit-tests and clamps by; set at mount, cleared at dispose.
    */
   readonly trayPose: TrayPoseSlot;
+  /**
+   * The menu state seam (petition I61) beside the two poses: the renderer's word on a kind's state on its desk, which
+   * `ops.runMenuAction` reads an act's `state` with; set at mount, cleared at dispose.
+   */
+  readonly menuState: MenuStateSlot;
   /** Nav-op seam (design-004 §7): forget spatialSync's last-known AABBs. */
   clearCaches(): void;
   /** L4 cursor readout for the DOM cursor reflector. */
@@ -196,6 +202,8 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
   const heldPose: HeldPoseSlot = { current: null };
   // The tray pose seam (design-017 §4; K3): the renderer fills it at mount; the tray's input hit-tests through it. Its facts' entity, one per view.
   const trayPose: TrayPoseSlot = { current: null };
+  // The menu state seam (petition I61): the renderer fills it at mount; `ops.runMenuAction` reads an act's state through it.
+  const menuState: MenuStateSlot = { current: null };
   ensureTray(world);
   const l2 = createL2Systems({ world, ...(opts.profiles ? { profiles: opts.profiles } : {}) });
   const arb = createArbitrationSystems(world);
@@ -291,6 +299,7 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
     navGeometry,
     heldPose,
     trayPose,
+    menuState,
     clearCaches: () => pick.clearCaches(),
     readCursor: cursor.readCursor,
     uninstall() {

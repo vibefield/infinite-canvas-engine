@@ -15,6 +15,7 @@
  * keys doing nothing), another glyph, another label (↻ reload → ✕ stop while a page loads).
  */
 import type { Entity, World } from "@vibecook/strata-ecs";
+import type { ActChoice, ActChoiceTaken } from "./act-choices";
 import type { GuardedTx } from "../guards/guarded-tx";
 
 /** What an action's op is handed: the object in hand, the document's history and ONE transaction on the document. */
@@ -84,14 +85,23 @@ export interface HeldToolDef {
   readonly cursor?: string;
   /** false: keys only — no slot in the bar (the board's tip, its wipe). */
   readonly bar?: boolean;
-  /** An action's op. */
-  run?(api: HeldToolApi): void;
+  /**
+   * An action's op. An action that is a CHOICE (petition I62 — `choices`) is handed the choice the host took (`taken`), only when it is
+   * one of the tool's choices now; used with none, it does its plain op (or nothing).
+   */
+  run?(api: HeldToolApi, taken?: ActChoiceTaken): void;
   /**
    * Its STATE NOW (petition I49 — `HeldToolState`): asked with the anchor, as the kind's `open.readout` is, and when the tool is used.
    * Undefined — or absent — the tool as declared. One that THROWS is caught where it is asked (the desk says so once, never a strike):
    * the tool stands as declared.
    */
   state?(ctx: HeldToolStateContext): HeldToolState | undefined;
+  /**
+   * Its CHOICES NOW (petition I62 — an action may be a choice, as a menu act may: a held pane's device): plain data the host draws as
+   * rows, the current one marked, read with the anchor as its state is. Undefined — or absent — the tool is one op. One that THROWS is
+   * caught where it is asked (said once): the tool stands as one op.
+   */
+  choices?(ctx: HeldToolStateContext): readonly ActChoice[] | undefined;
 }
 
 /**
@@ -155,6 +165,7 @@ export function validateHeldTools(type: string, tools: readonly HeldToolDef[]): 
     seen.add(t.id);
     if (t.kind !== undefined && t.kind !== "mode" && t.kind !== "action") throw new Error(`ice: defineWidget("${type}") heldTools "${t.id}" — a tool is a "mode" or an "action" (or declared with neither).`);
     if (t.kind === "action" && typeof t.run !== "function") throw new Error(`ice: defineWidget("${type}") heldTools "${t.id}" — an action runs an op: declare \`run\`.`);
+    if (t.choices !== undefined && (typeof t.choices !== "function" || t.kind !== "action")) throw new Error(`ice: defineWidget("${type}") heldTools "${t.id}" — \`choices\` is a function of what it reads, on an action (petition I62).`);
     if (t.state !== undefined && typeof t.state !== "function") throw new Error(`ice: defineWidget("${type}") heldTools "${t.id}" — \`state\` is a function of the object in hand: \`(ctx) => ({ enabled, glyph, label })\` (petition I49).`);
     if (!isHeldGlyph(t.glyph)) throw new Error(`ice: defineWidget("${type}") heldTools "${t.id}" — a glyph is a name of the bar's set or a drawing \`{ path }\` (SVG path data in the 24-unit box).`);
     for (const spec of t.keys ?? []) {
