@@ -147,4 +147,12 @@ describe("the note says where a range of its words lies (petition I60)", () => {
       expect(r.writing.rangeBox(9999 as Entity, 0, 3)).toBeUndefined();
     } finally { r.dispose(); }
   });
+
+  it("the note's lease NAMES the note it writes (`entity`): the words' menu is that note's by the lease's own word, not by the claim its typing holds", () => {
+    const r = rig();
+    try {
+      expect(r.body.focus(r.note, 0)).toBe(true);
+      expect(r.editor.lease()?.entity).toBe(r.note);
+    } finally { r.dispose(); }
+  });
 });

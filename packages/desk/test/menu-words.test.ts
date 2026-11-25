@@ -53,6 +53,10 @@ const WORDS_OBJECT: WidgetType = defineObject({
   type: "test.words", version: 1, props: { text: p.string({ default: "" }) }, kind: WORDS_KIND, menu: [PEN, STRIKE, SPIN],
   host: { text: (h: ObjectDomHost) => { handed = h.editor; return [{ part: "test.words" }]; } },
 });
+/** A second object type with words acts of its own (one: Clear) — so whose words the anchor carries shows in its acts. */
+const CLEAR: MenuActionDef = { id: "clear", label: "Clear", on: "words", run: (api) => { ran.push({ id: "clear", entities: [...api.entities], range: api.range, choice: undefined }); } };
+const PLAIN_KIND: ObjectKind = { ...WORDS_KIND, name: "words-plain" };
+const PLAIN_OBJECT: WidgetType = defineObject({ type: "test.words-plain", version: 1, props: {}, kind: PLAIN_KIND, menu: [CLEAR] });
 
 /** A lease of the test's own on `e`: one line ten px a letter, where its words lie (`indexAt`, `rangeAt`) and where a range of them is (`rangeBox`). */
 function wordsLease(world: World, e: Entity, more: Partial<EditorLease> = {}): EditorLease {
@@ -66,7 +70,7 @@ function wordsLease(world: World, e: Entity, more: Partial<EditorLease> = {}): E
     caret() {},
     place: () => ({ x: 10, y: 20, w: 300, h: 40, fontPx: 14, lineHeight: 40 }),
     idle() {},
-    ended() { if (world.isAlive(e)) world.removeTag(e, Editing); },
+    ended() { if (world.isAlive(e) && world.hasTag(e, Editing)) world.removeTag(e, Editing); },
     live: () => world.isAlive(e),
     indexAt(wx, wy) { if (wx < 10 || wx > 310 || wy < 20 || wy > 60) return undefined; return Math.min(Math.max(Math.round((wx - 10) / 10), 0), TEXT.length); },
     rangeAt(i) { let from = i; let to = i; while (from > 0 && TEXT[from - 1] !== " ") from -= 1; while (to < TEXT.length && TEXT[to] !== " ") to += 1; return { from, to }; },
@@ -97,13 +101,13 @@ async function mountDesk() {
   }) as typeof document.createElement);
   undo.push(() => spy.mockRestore());
   handed = undefined;
-  const ce = createCanvasEngine({ widgets: [WORDS_OBJECT] });
+  const ce = createCanvasEngine({ widgets: [WORDS_OBJECT, PLAIN_OBJECT] });
   ce.docs.create();
   ce.world.setResource(Viewport, { w: 1200, h: 800, dpr: 1 });
   const container = document.createElement("div");
   document.body.appendChild(container);
   const { stack } = ce;
-  const handle: DeskLayerHandle = deskLayer({ gpu, theme: themeFrom("light", PALETTE), palette: PALETTE, objects: [WORDS_OBJECT], docs: ce.docs, ambient: "still" })({
+  const handle: DeskLayerHandle = deskLayer({ gpu, theme: themeFrom("light", PALETTE), palette: PALETTE, objects: [WORDS_OBJECT, PLAIN_OBJECT], docs: ce.docs, ambient: "still" })({
     host: { container }, world: ce.world, frame: ce.engine.frame, catalog: ce.catalog,
     framePick: stack.framePick, navGeometry: stack.navGeometry, heldPose: stack.heldPose, trayPose: stack.trayPose, spatial: stack.index,
   });
@@ -316,5 +320,44 @@ describe("the selection menu's anchor comes to the words (petition I60)", () => 
     expect(told).toHaveLength(1);
     expect(told[0]).toContain('the kind "words"\'s menu act "strike"');
     expect(d.handle.status()).toEqual({ state: "ready" });
+  });
+
+  // A LEASE THAT NAMES ITS OBJECT (`EditorLease.entity`): a plugin kind's text part may keep its draft in its own state and never stamp
+  // core's `Editing` (that claim is the reference kinds' typing's) — it says whose words they are itself, and the anchor believes it
+  it("a lease that NAMES its object (`entity`) gets the words with no `Editing` anywhere — their object, their acts, the run on it; a lease that names none still needs the claim", async () => {
+    const d = await mountDesk();
+    d.editor.lend(wordsLease(d.ce.world, d.e, { entity: d.e }), 0);   // lent WITHOUT the claim
+    d.step();
+    d.select(4, 13);
+    expect(d.ce.world.hasTag(d.e, Editing)).toBe(false);
+    const w = d.anchor().words;
+    if (w === undefined) throw new Error("no words for a lease that names its object");
+    expect(w).toMatchObject({ entity: d.e, from: 4, to: 13, box: { x0: 50, y0: 22, x1: 140, y1: 38 } });
+    expect(w.menu.map((m) => m.id)).toEqual(["pen", "strike"]);
+    expect(d.ce.ops.runMenuAction("strike", undefined, { range: { entity: w.entity, from: w.from, to: w.to } })).toBe(true);
+    expect(ran.at(-1)?.entities).toEqual([d.e]);
+    // the same lease naming no object, lent the same way: no claim, no words — as before
+    d.editor.lend(wordsLease(d.ce.world, d.e), 0);
+    d.step();
+    d.select(4, 13);
+    expect(d.anchor().words).toBeUndefined();
+  });
+
+  it("a lease naming ANOTHER object than the one `Editing` marks goes by its own word — the words and their acts are its object's; naming none, the anchor goes by the claim", async () => {
+    const d = await mountDesk();
+    const other = d.ce.ops.spawnWidget(PLAIN_OBJECT.type, { x: 400, y: 0, w: 100, h: 40, undoable: false });
+    d.step(2);
+    d.ce.world.addTag(other, Editing);   // the claim is the other object's
+    d.editor.lend(wordsLease(d.ce.world, d.e, { entity: d.e }), 0);
+    d.step();
+    d.select(4, 13);
+    expect(d.anchor().words).toMatchObject({ entity: d.e, from: 4, to: 13 });
+    expect(d.anchor().words?.menu.map((m) => m.id)).toEqual(["pen", "strike"]);
+    // naming none, the claim decides: the other object, its own words acts
+    d.editor.lend(wordsLease(d.ce.world, d.e), 0);
+    d.step();
+    d.select(4, 13);
+    expect(d.anchor().words).toMatchObject({ entity: other, from: 4, to: 13 });
+    expect(d.anchor().words?.menu.map((m) => m.id)).toEqual(["clear"]);
   });
 });
