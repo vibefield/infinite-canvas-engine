@@ -300,7 +300,7 @@ describe("the typing: a draft, landed in one step (`inkTyping`)", () => {
     const d = t.ink(e) as InkValue;
     expect(d.text).toBe("RED two");
     expect(d.seeds.slice(0, 3)).toEqual([1001, 1002, 1003]);   // written again in a fresh hand
-    expect(d.marks.slice(0, 3).map((m) => [penOf(m), highlightOf(m), strikeOf(m)])).toEqual([[0, 2, 0], [0, 2, 0], [0, 2, 0]]);
+    expect(d.marks.slice(0, 3).map((m) => [penOf(m), highlightOf(m), strikeOf(m)])).toEqual([[0, 3, 0], [0, 3, 0], [0, 3, 0]]);   // pink, the third
     expect(t.lift(0, 3)).toEqual({ text: "RED", marks: encodeMarks(d.marks.slice(0, 3)) });
     expect(t.paste({ text: "", marks: "" }, 2, 2)).toBeNull();   // no words over a caret: nothing moves
     expect(() => inkTyping({ world, docs: ce.docs, object: SHEET, ink: "props" })).toThrow('ice: inkTyping("test.ink-sheet") — its ink cell is the group "props", holding text, seeds and marks (`groups: { props: ["text", "seeds", "marks"] }`): the group lacks text, seeds, marks.');
@@ -370,6 +370,43 @@ describe("the written part's lease, end to end through the one editor (`inkPart`
     const lease = r.editor.lease();
     const [x, y] = r.at(e, 4);
     expect([lease?.indexAt?.(x + 2, y), lease?.indexAt?.(x + 2, y, e), lease?.indexAt?.(x + 2, y, other), lease?.indexAt?.(x + 600, y)]).toEqual([4, 4, undefined, undefined]);
+  });
+
+  it("the lease hands the field's caret to the carry: a letter typed beside its twin inside a highlight lands where it was typed, and is highlighted (the common prefix alone would put it after the twin, at the highlight's edge)", () => {
+    const r = rig();
+    const e = r.spawn("too x", { marks: encodeMarks(mark(inkOf({ text: "too x" }, 7), 0, 3, { highlight: "yellow" }).marks) });
+    r.part.focus(e, 2);
+    r.type("tooo x", 3);
+    const d = r.part.typing.ink(e) as InkValue;
+    expect(d.marks.map(highlightOf)).toEqual([1, 1, 1, 1, 0, 0]);
+    expect(d.seeds[2]).toBe(1001);   // the new "o" is the one typed, before the old last one
+    expect(r.told.drafts.at(-1)?.arrived).toEqual({ from: 2, to: 3, how: "typed" });
+  });
+
+  it("a word TYPED OVER a selection keeps the marks its letters shared for every letter of the run: \"Friday\" selected inside a highlight and typed over as \"Monday\" stays highlighted; a letter taken back and typed again keeps it; once the caret moves away the run is over", () => {
+    const r = rig();
+    const e = r.spawn("on Friday next", { marks: encodeMarks(mark(inkOf({ text: "on Friday next" }, 7), 0, 9, { highlight: "yellow" }).marks) });
+    r.part.focus(e, 0);
+    r.el.setSelectionRange(3, 9);
+    const hl = (): number[] => (r.part.typing.ink(e) as InkValue).marks.map(highlightOf);
+    let word = "";
+    for (const ch of "Monday") {
+      word += ch;
+      r.type(`on ${word} next`, 3 + word.length);
+      if (word === "Mo") document.dispatchEvent(new Event("selectionchange"));   // the platform says the caret moved — to the run's end: it goes on
+    }
+    expect(hl()).toEqual([1, 1, 1, 1, 1, 1, 1, 1, 1, 0, 0, 0, 0, 0]);
+    r.type("on Monda next", 8);   // a letter taken back…
+    r.type("on Monday next", 9);   // …and typed again
+    expect(hl().slice(3, 9)).toEqual([1, 1, 1, 1, 1, 1]);
+    // the caret leaves and comes back: the run is over, a letter typed at the word's end joins its neighbours as ever
+    r.el.setSelectionRange(1, 1);
+    document.dispatchEvent(new Event("selectionchange"));
+    r.el.setSelectionRange(9, 9);
+    document.dispatchEvent(new Event("selectionchange"));
+    r.type("on Mondays next", 10);
+    expect(hl().slice(3, 10)).toEqual([1, 1, 1, 1, 1, 1, 0]);
+    expect(r.cell(e).text).toBe("on Friday next");   // all of it a draft
   });
 
   it("COPY writes the three flavours — the words, their `text/html` styled by the marks, and the piece `{ text, marks }` as JSON under the private flavour — the draft's while one is open; a copy writes nothing", () => {
@@ -471,7 +508,7 @@ describe("the ink acts (`inkActs`): one step each, through the typing when one i
     const acts = inkActs();
     // read with no words (no range): the lists alone, none current
     const bare = { world: undefined as unknown as World, entities: [], props: () => ({}), local: undefined };
-    const COLOUR: Readonly<Record<string, string>> = { "pen.felt": "#2b2a33", "pen.ball": "#1f2f5c", "pen.fountain": "#14213d", "pen.red": "#b3261e", "highlight.yellow": "#fff3a0", "highlight.pink": "#ffc9de", "highlight.green": "#c8f0c0" };
+    const COLOUR: Readonly<Record<string, string>> = { "pen.felt": "#2b2a33", "pen.ball": "#1f2f5c", "pen.fountain": "#14213d", "pen.red": "#b3261e", "highlight.yellow": "#fff3a0", "highlight.green": "#c8f0c0", "highlight.pink": "#ffc9de", "highlight.blue": "#bfe0ff", "highlight.orange": "#ffd8a8" };
     const coloured = inkActs({ colour: (role) => COLOUR[role] });
     expect(acts.map((a) => [a.id, a.label, a.on, a.glyph])).toEqual([
       ["ink.pen", "Pen", "words", "pen"],
@@ -482,10 +519,10 @@ describe("the ink acts (`inkActs`): one step each, through the typing when one i
     ]);
     // with no colour from the host, no swatch: the label alone
     expect(acts[0]?.choices?.(bare)).toEqual([{ id: "felt", label: "Felt pen" }, { id: "ball", label: "Ball pen" }, { id: "fountain", label: "Fountain pen" }, { id: "red", label: "Red pen" }]);
-    expect(acts[1]?.choices?.(bare)).toEqual([{ id: "yellow", label: "Yellow" }, { id: "pink", label: "Pink" }, { id: "green", label: "Green" }, { id: "none", label: "None" }]);
+    expect(acts[1]?.choices?.(bare)).toEqual([...["yellow", "green", "pink", "blue", "orange"].map((n) => ({ id: n, label: `${n.charAt(0).toUpperCase()}${n.slice(1)}` })), { id: "none", label: "None" }]);
     // the host's colour for each role (a CSS colour, I62's swatch); None has none
     expect(coloured[0]?.choices?.(bare)?.map((c) => c.swatch)).toEqual(["#2b2a33", "#1f2f5c", "#14213d", "#b3261e"]);
-    expect(coloured[1]?.choices?.(bare)?.map((c) => c.swatch)).toEqual(["#fff3a0", "#ffc9de", "#c8f0c0", undefined]);
+    expect(coloured[1]?.choices?.(bare)?.map((c) => c.swatch)).toEqual(["#fff3a0", "#c8f0c0", "#ffc9de", "#bfe0ff", "#ffd8a8", undefined]);
     expect([typeof acts[2]?.state, acts[2]?.choices, typeof acts[3]?.state, acts[4]?.state, acts[4]?.choices]).toEqual(["function", undefined, "function", undefined, undefined]);
     expect(inkActs({ marks: ["highlight", "strike"] }).map((a) => a.id)).toEqual(["ink.highlight", "ink.strike", "ink.clear"]);
     expect(inkActs({ marks: [] })).toEqual([]);
@@ -505,7 +542,7 @@ describe("the ink acts (`inkActs`): one step each, through the typing when one i
     expect(ce.ops.runMenuAction(INK_ACTS.pen, { id: "fountain" }, { range })).toBe(true);   // the sheet's own pen: the pen field cleared
     expect(cell(e).marks).toBe("");
     expect(ce.ops.runMenuAction(INK_ACTS.highlight, { id: "green" }, { range })).toBe(true);
-    expect(of(highlightOf)).toEqual([3, 3, 3]);
+    expect(of(highlightOf)).toEqual([2, 2, 2]);   // green, the second
     expect(ce.ops.runMenuAction(INK_ACTS.highlight, { id: "none" }, { range })).toBe(true);
     expect(cell(e).marks).toBe("");
     expect(ce.ops.runMenuAction(INK_ACTS.strike, undefined, { range })).toBe(true);
@@ -599,7 +636,7 @@ describe("the host's bar and the words' menu carry the ink", () => {
     expect(await r.editor.command("paste")).toBe(true);
     const d = r.part.typing.ink(e) as InkValue;
     expect(d.text).toBe("one two threetwo");
-    expect(d.marks.slice(13).map(highlightOf)).toEqual([2, 2, 2]);   // the piece the copy kept: its pink came back
+    expect(d.marks.slice(13).map(highlightOf)).toEqual([3, 3, 3]);   // the piece the copy kept: its pink came back
   });
 
   it("the words' menu of a desk carries the ink acts as the anchor shows them for the words selected — the sheet's own pen current, no highlighter, the toggles off — and a slot's run marks them, the toggle pressed after", async () => {
