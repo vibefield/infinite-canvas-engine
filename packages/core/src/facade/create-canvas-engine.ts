@@ -126,7 +126,9 @@ import { installWidgetRuntime, type WidgetRuntime } from "../widget/mount-store"
 import { spawnWidget, type SpawnWidgetOpts } from "../widget/spawn";
 import { setWidgetProps } from "../widget/set-props";
 import { trayTakeProps, WidgetEquipped, type WidgetType } from "../widget/define-widget";
-import { readHeldToolState } from "../widget/held-tools";
+import { type HeldToolApi, readHeldToolState } from "../widget/held-tools";
+import { type ActChoiceTaken, readActChoices, takenChoice } from "../widget/act-choices";
+import { type MenuActionApi, readMenuActionState } from "../widget/menu-actions";
 import { registerBuiltinTools, type Tool } from "../tools/define-tool";
 import { PrefabId } from "../schema/prefab";
 import { createDocSession, openDocSession, type DocSession, type DocSessionOpts, type OpenDocResult } from "../doc/doc-kit";
@@ -390,14 +392,19 @@ export interface CanvasOps {
    * `action` runs its op once (its transaction, the document's undo or redo). False when nothing is held, the held type
    * names no such tool, the tool is declared only, or its kind says it is DISABLED now (petition I49 — its `state`: the
    * renderer's word through the pose seam, the tool's own where no renderer answers): nothing is written, nothing runs.
+   * `taken` (petition I62): the choice a host took of an action that is a choice — handed to its `run` only when it is one of the
+   * tool's choices now and its values fit their fields; else false, nothing runs.
    */
-  useHeldTool(id: string): boolean;
+  useHeldTool(id: string, taken?: ActChoiceTaken): boolean;
   /**
    * Run a SELECTION MENU act (design-016 §5 · K-L2, K8a — widget/menu-actions.ts): the act `id` of the selected objects' types, each
    * declaring type's `run` handed its own selected objects. False when nothing selected declares it (the menu shows an act only when
-   * every selected object's type does; an app's key reaches the ones that do).
+   * every selected object's type does; an app's key reaches the ones that do), or when its kind says the act is DISABLED now (petition
+   * I61 — its `state`, read with the kind's desk state through the menu state seam). `taken` (petition I62): the choice a host took of
+   * an act that is a choice — each declaring type's `run` is handed it only when it is one of that act's choices now and its values fit
+   * their fields; a type for which it is not runs nothing.
    */
-  runMenuAction(id: string): boolean;
+  runMenuAction(id: string, taken?: ActChoiceTaken): boolean;
 }
 
 export interface CanvasDocs {
@@ -2017,7 +2024,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       world.addTag(entity, Held);
     },
     putDown,
-    useHeldTool(id) {
+    useHeldTool(id, taken) {
       // THE HELD BAR (design-015 §8, D3t-a): a mode becomes the tool in hand — a runtime write, the user's fact, as the selection
       // is; an action runs its op, whose writes are the document's (its own transaction, or a step of the document's history)
       const held = heldNow();
@@ -2029,6 +2036,15 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       const pose = stack.heldPose.current;
       const state = pose?.toolState !== undefined ? pose.toolState(held, id) : readHeldToolState(tool, { world, entity: held, props: () => propsOf(held), local: undefined });
       if (state?.enabled === false) return false;
+      // a choice the host took (petition I62): one of the action's choices NOW, its values within their fields — read with the kind's
+      // desk state where the renderer answers (the menu state seam's word on the held object's kind), else with none
+      let chosen: ActChoiceTaken | undefined;
+      if (taken !== undefined) {
+        if (tool.kind !== "action") return false;
+        const local = stack.menuState.current?.local(held);
+        chosen = takenChoice(readActChoices(tool, { world, entity: held, props: () => propsOf(held), local }), taken);
+        if (chosen === undefined) return false;
+      }
       if (tool.kind === "mode") {
         const cur = world.get(held, HeldTool) ?? { id: "", prev: "" };
         const next = cur.id !== id ? { id, prev: cur.id } : tool.toggle === true ? { id: cur.prev, prev: id } : undefined;
@@ -2042,7 +2058,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
         const s = session;
         return s === undefined || s.readOnly || gateVerdict(s.versionReport()) !== "ok" || diagnosticsDirty || diagnosticSnapshot.authorityIssue !== undefined ? undefined : s;
       };
-      tool.run?.({
+      const api: HeldToolApi = {
         world,
         entity: held,
         undo: () => docs.undo(),
@@ -2060,10 +2076,12 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
           setWidgetProps(s.store, world, held, props, o?.undoable === false ? { undoable: false } : undefined);
           return true;
         },
-      });
+      };
+      if (chosen !== undefined) tool.run?.(api, chosen);
+      else tool.run?.(api);
       return true;
     },
-    runMenuAction(id) {
+    runMenuAction(id, taken) {
       // THE SELECTION MENU'S ACTS (K8a): each type that declares `id` runs it once over its own selected objects
       const byType = new Map<WidgetType, Entity[]>();
       for (const e of selectedEntities(world)) {
@@ -2080,8 +2098,21 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
         const s = session;
         return s === undefined || s.readOnly || gateVerdict(s.versionReport()) !== "ok" || diagnosticsDirty || diagnosticSnapshot.authorityIssue !== undefined ? undefined : s;
       };
+      // an act its kind says is DISABLED now does nothing (petition I61): its state read with the kind's state on its desk where the
+      // renderer answers (the menu state seam), else with none — the anchor's own read
+      let ran = false;
       for (const [type, entities] of byType) {
-        type.menu.find((a) => a.id === id)?.run({
+        const act = type.menu.find((a) => a.id === id);
+        const first = entities[0];
+        if (act === undefined || first === undefined) continue;
+        const local = stack.menuState.current?.local(first);
+        const ctx = { world, entities, props: (e: Entity) => propsOf(e), local };
+        if (readMenuActionState(act, ctx)?.enabled === false) continue;
+        // a choice the host took (petition I62): one of THIS type's choices now, its values within their fields — else this type runs nothing
+        const chosen = taken === undefined ? undefined : takenChoice(readActChoices(act, ctx), taken);
+        if (taken !== undefined && chosen === undefined) continue;
+        ran = true;
+        const api: MenuActionApi = {
           world,
           entities,
           props: (e) => propsOf(e),
@@ -2097,9 +2128,11 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
             guardedTransaction(s.store, world, fn, o?.undoable === false ? { undoable: false } : undefined);
             return true;
           },
-        });
+        };
+        if (chosen !== undefined) act.run(api, chosen);
+        else act.run(api);
       }
-      return true;
+      return ran;
     },
   };
 

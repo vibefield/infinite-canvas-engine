@@ -34,7 +34,7 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, closeTray, type Entity, focusTray, frameParent, heldEntity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type HeldToolDef, type HeldToolState, type MarqueeBuffer, type MenuActionDef, type NavFace, type NavGeometrySlot, NavTransition, NO_ENTITY, openTray, type PointPick, PrefabId, type PresentationTransitionAdapter, readHeldToolState, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, setTrayHidden, setTrayOnly, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayFocus, type TrayFocusMove, trayHidden, trayOnly, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, closeTray, type Entity, focusTray, frameParent, heldEntity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type HeldToolDef, type HeldToolState, type MarqueeBuffer, type MenuActionDef, type MenuActionState, type MenuStateSlot, type MenuStateSource, type NavFace, type NavGeometrySlot, NavTransition, NO_ENTITY, openTray, type PointPick, PrefabId, type PresentationTransitionAdapter, readActChoices, readHeldToolState, readMenuActionState, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, setTrayHidden, setTrayOnly, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayFocus, type TrayFocusMove, trayHidden, trayOnly, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
 import { screenToWorld } from "@ice/kernel";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
@@ -218,6 +218,8 @@ export interface DeskLayerContext {
   readonly heldPose?: HeldPoseSlot;
   /** The tray pose seam (design-017 §4, K3): the desk publishes where the pegboard drawer is ON SCREEN as it drew it; core's tray input hit-tests through it. */
   readonly trayPose?: TrayPoseSlot;
+  /** The menu state seam (petition I61): the desk answers its kinds' state on it; core's `ops.runMenuAction` reads an act's state through it. */
+  readonly menuState?: MenuStateSlot;
   readonly transitions?: { register(adapter: PresentationTransitionAdapter): () => void };
   readonly catalog?: { widgetTypes(): readonly WidgetType[] };
   /** The interaction stack's marquee preview (`stack.marqueeBuffer`, out of the ECS): the vellum the marks draw (D4a). */
@@ -677,6 +679,22 @@ function tellToolState(kind: string, tool: string, err: unknown): void {
   console.error(`[ice] desk: the kind "${kind}"'s held tool "${tool}" threw in its \`state\` — the tool stands as declared: live, its own glyph and label (petition I49); said once a page`, err);
 }
 
+/** …and a menu act's `state` (petition I61): the act stands as declared; said once an act a page. */
+function tellMenuState(kind: string, act: string, err: unknown): void {
+  const key = `menu ${kind} ${act}`;
+  if (toldAnchor.has(key)) return;
+  toldAnchor.add(key);
+  console.error(`[ice] desk: the kind "${kind}"'s menu act "${act}" threw in its \`state\` — the act stands as declared: live, its own glyph and label (petition I61); said once a page`, err);
+}
+
+/** …and an act's or a tool's `choices` (petition I62): it stands as one op; said once an act a page. */
+function tellChoices(kind: string, act: string, err: unknown): void {
+  const key = `choices ${kind} ${act}`;
+  if (toldAnchor.has(key)) return;
+  toldAnchor.add(key);
+  console.error(`[ice] desk: the kind "${kind}"'s act "${act}" threw in its \`choices\` — it stands as one op (petition I62); said once a page`, err);
+}
+
 /** A host's length or time for the desk's chrome (I20, I21): a finite number ≥ 0, or the mount refuses it by its name. */
 function hostNumber(name: string, v: number | undefined): number | undefined {
   if (v === undefined) return undefined;
@@ -865,17 +883,44 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // tools as the bar's slots (their swatches from the kind's look) and the mode in hand — core's `HeldTool`, the one slot marked;
     // I20: the bar's travel when the host set one; I22: the kind's word in hand when it says one; I49: each tool as its kind says it
     // is now — disabled, another glyph, another label
+    // what the kind says of a menu act NOW (I61): its `state`, read over the selected objects of the type whose declaration names the
+    // act (core's `menuActionsFor` keeps the first type's), their props and the kind's desk state — each time the anchor is recomposed,
+    // and when core runs the act (the menu state seam); a throw is caught and said once — the act as declared
+    const menuReadsOf = (selected: readonly Entity[]) => {
+      const first = selected[0];
+      if (first === undefined) return undefined;
+      const kind = builder.kindOf(first);
+      const typeId = world.get(first, PrefabId)?.id;
+      const own = selected.filter((e) => world.get(e, PrefabId)?.id === typeId);
+      const local = kind === undefined ? undefined : locals.get(kind.name);
+      const name = kind?.name ?? String(typeId);
+      const ctx = { world, entities: own, props: (e: Entity) => propsOf(e), local };
+      return {
+        state: (act: MenuActionDef): MenuActionState | undefined => readMenuActionState(act, ctx, (err) => { tellMenuState(name, act.id, err); }),
+        // …and its choices now (I62), read over the same objects with the same desk state; a throw is said once — one op
+        choices: (act: MenuActionDef) => readActChoices(act, ctx, (err) => { tellChoices(name, act.id, err); }),
+      };
+    };
+    // …and a held tool's choices now (I62), read as its state is (I49): off the object's props and the kind's desk state
+    const toolChoicesOf = (kind: ObjectKind | undefined, tool: HeldToolDef, e: Entity) => {
+      if (kind === undefined || tool.choices === undefined) return undefined;
+      return readActChoices(tool, { world, entity: e, props: () => propsOf(e), local: locals.get(kind.name) }, (err) => { tellChoices(kind.name, tool.id, err); });
+    };
     const anchorOf = (): SelectionAnchor => {
       const a = builder.anchor();
       // the pegboard tray is out (design-017 §4): the desk under it is inert, so the menu has nothing to act on — it steps away
       if (trayOpen(world)) return { ...a, box: null, count: 0 };
       const h = builder.hand();
-      if (h === undefined) return withKindActs(a, selectedEntities(world), menuOf);
+      if (h === undefined) {
+        const selected = selectedEntities(world);
+        const reads = menuReadsOf(selected);
+        return withKindActs(a, selected, menuOf, reads?.state, reads?.choices);
+      }
       const kind = builder.kindOf(h.entity);
       const swatches = swatchesOf(kind);
       const active = world.isAlive(h.entity) ? (world.get(h.entity, HeldTool)?.id ?? "") : "";
       const readout = readoutOf(kind, h.entity);
-      return { ...a, held: { tools: heldSlots(kind?.open?.tools ?? [], swatches, (t) => toolStateOf(kind, t, h.entity)), active, landing: h.landing, settled: h.settled, ...(hold.travelMs !== undefined ? { travelMs: hold.travelMs } : {}), ...(readout !== undefined ? { readout } : {}) } };
+      return { ...a, held: { tools: heldSlots(kind?.open?.tools ?? [], swatches, (t) => toolStateOf(kind, t, h.entity), (t) => toolChoicesOf(kind, t, h.entity)), active, landing: h.landing, settled: h.settled, ...(hold.travelMs !== undefined ? { travelMs: hold.travelMs } : {}), ...(readout !== undefined ? { readout } : {}) } };
     };
     const listeners = new Set<() => void>();
     let published = "";
@@ -1163,6 +1208,15 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     };
     const heldPose = ctx.heldPose;
     if (heldPose !== undefined) heldPose.current = poseSource;
+    // the menu state seam (petition I61): a kind's state on this desk, which core's `ops.runMenuAction` reads an act's `state` with
+    const menuSource: MenuStateSource = {
+      local: (e) => {
+        const k = builder.kindOf(e);
+        return k === undefined ? undefined : locals.get(k.name);
+      },
+    };
+    const menuState = ctx.menuState;
+    if (menuState !== undefined) menuState.current = menuSource;
     // the tray pose seam (design-017 §4): the drawer as the last frame drew it — its rect mid-slide, the layout's scroll range — and
     // (petition I38) what the tray can draw: core's lay hangs only the kinds this desk was mounted with, so a kind it cannot draw
     // leaves no invisible hang to press, no count, no chip
@@ -1490,6 +1544,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         if (framePick !== undefined && framePick.current === pick) framePick.current = null;
         if (navGeometry !== undefined && navGeometry.current === navSource) navGeometry.current = null;
         if (heldPose !== undefined && heldPose.current === poseSource) heldPose.current = null;
+        if (menuState !== undefined && menuState.current === menuSource) menuState.current = null;
         if (trayPose !== undefined && trayPose.current === traySource) trayPose.current = null;
         detachTransition?.();
         compose.dispose();

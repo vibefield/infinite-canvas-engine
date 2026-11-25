@@ -184,6 +184,47 @@ describe("a kind's acts in the selection menu (K8a)", () => {
     expect(item?.querySelector("kbd")?.textContent).toBe("S");
   });
 
+  it("a kind act says its state now (petition I61): its label and glyph as said, its swatch for its glyph, dim and inert while disabled", () => {
+    const source = fakeSource(anchorOf({ count: 1, menu: [
+      { id: "sound", label: "Unmute", glyph: { path: "M3 9h4l5-4v14l-5-4H3Z" } },
+      { id: "finish", label: "Finish: Deep Blue", swatch: "#2b3c5c" },
+      { id: "spin", label: "Spin it", enabled: false },
+    ] }));
+    const { menu } = mount(source, [...defaultSelectionActions()]);
+    expect(menu().querySelector('[data-act="kind.sound"]')?.getAttribute("aria-label")).toBe("Unmute");
+    expect(menu().querySelector('[data-act="kind.finish"] circle')?.getAttribute("fill")).toBe("#2b3c5c");
+    const spin = menu().querySelector<HTMLElement>('[data-act="kind.spin"]');
+    expect(spin?.classList.contains("is-dim")).toBe(true);
+    expect(spin?.getAttribute("aria-disabled")).toBe("true");
+    spun.length = 0;
+    act(() => { spin?.click(); });
+    expect(spun).toEqual([]);
+    // the kind says another state: the bar is drawn again with it
+    source.set(anchorOf({ count: 1, menu: [{ id: "sound", label: "Mute", glyph: { path: "M3 9h4l5-4v14l-5-4H3Z" } }] }));
+    expect(menu().querySelector('[data-act="kind.sound"]')?.getAttribute("aria-label")).toBe("Mute");
+  });
+
+  it("a kind act that is a choice (petition I62) lists its choices when pressed, the current one checked, and taking one runs the act with it", () => {
+    const taken: unknown[] = [];
+    const source = fakeSource(anchorOf({ count: 1, menu: [{ id: "device", label: "Laptop", choices: [
+      { id: "laptop", label: "Laptop", hint: "1280 × 800", current: true },
+      { id: "phone", label: "iPhone 17 Pro", hint: "402 × 874" },
+      { id: "custom", label: "Custom…", group: "custom", fields: [{ id: "width" }] },
+    ] }] }));
+    const { engine, menu } = mount(source, [...defaultSelectionActions()]);
+    vi.spyOn(engine.ops, "runMenuAction").mockImplementation((id, choice) => { taken.push([id, choice]); return true; });
+    act(() => { menu().querySelector<HTMLElement>('[data-act="kind.device"]')?.click(); });
+    expect(taken).toEqual([]);   // pressed, it lists — it runs nothing yet
+    const rows = Array.from(menu().querySelectorAll<HTMLElement>('[data-choices="device"] [data-choice]'));
+    expect(rows.map((r) => [r.dataset.choice, r.getAttribute("aria-checked"), r.querySelector("kbd")?.textContent ?? ""])).toEqual([
+      ["laptop", "true", "1280 × 800"], ["phone", "false", "402 × 874"], ["custom", "false", ""],
+    ]);
+    expect(rows[2]?.dataset.groupStart).toBe("true");
+    act(() => { rows[1]?.click(); });
+    expect(taken).toEqual([["device", { id: "phone" }]]);
+    expect(menu().querySelector("[data-choices]")).toBeNull();   // taken: the list closes
+  });
+
   it("a selection whose types share no act shows ICE's acts alone — the kind's go when the anchor says none", () => {
     const source = fakeSource(anchorOf({ count: 2, menu: [{ id: "spin", label: "Spin it" }] }));
     const { menu } = mount(source, [...defaultSelectionActions()]);

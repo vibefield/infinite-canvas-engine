@@ -6,6 +6,29 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+<!-- petitions I61 and I62 — a menu act says its state, and an act may be a choice (2026-11-25; VibeField) -->
+- **A MENU ACT SAYS ITS STATE NOW — `MenuActionDef.state`, `MenuActionState`, `readMenuActionState`, the menu state seam**
+  (petition I61 — what held tools have had since I49, given to the selection menu's acts: VibeField's browser pane says Mute, then
+  Unmute, and its phone's finish act shows the phone's colour). An act may declare `state(ctx) → { enabled?, glyph?, label?, swatch?
+  }`, read with the anchor over the selected objects of the type whose declaration names the act, their props and the kind's state
+  on the desk. The menu's slots carry it as plain data (`MenuSlot.enabled: false`, `swatch`, and the label and glyph as said now),
+  and `ops.runMenuAction` does nothing for a type whose act says it is disabled. Core reads the desk's state through a new seam
+  beside the held pose's, `stack.menuState` (`MenuStateSlot`, `MenuStateSource`), which the desk layer fills at mount and clears at
+  dispose (`DeskLayerContext.menuState`, handed through `@ice/dom`'s desk host); with no renderer the state is read with none. A
+  `state` that throws is caught and said once; the act stands as declared. The React menu draws a disabled act dim and
+  `aria-disabled` and a swatch as a dot.
+- **AN ACT MAY BE A CHOICE — `choices`, `ActChoice`, `ActChoiceField`, `ActChoiceTaken`, `readActChoices`, `takenChoice`**
+  (petition I62 — VibeField's browser pane offers its device as a list of presets with a Custom that asks for a width, a height and
+  an agent; its phone offers its finishes). A menu act, or a held tool's action, may declare `choices(ctx) → ActChoice[]`, read
+  as its state is and carried on its slot (`MenuSlot.choices`, `HeldSlot.choices`): each `{ id, label, hint?, swatch?, current?,
+  group?, fields? }`, a field a number or a text with its value now and its bounds. A host takes one with `ops.runMenuAction(id,
+  taken)` or `ops.useHeldTool(id, taken)`; core hands `run(api, taken)` the choice only when it is one of the act's choices now and
+  every value fits its field (the given one, or the field's own: a number within its bounds and on its step, a text within its
+  length), and runs nothing otherwise. Run with no choice, the act does its
+  plain op. The React menu lists a choice act's choices; it draws no fields.
+
 ## [0.21.0] — 2026-11-25
 
 **A free slot for an object that comes with no pointer (petition I57) and a look at an object (petition I58), released on

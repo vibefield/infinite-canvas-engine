@@ -58,13 +58,16 @@ stamped on new documents. A widget cannot appear in both `widgets` and `retiredW
 - `ce.ops` — `setTool · spawnWidget · deleteSelection · duplicateSelection ·
   setSelection/clearSelection/selectAll · reorder(ids, "top"|"bottom") ·
   zoomToFit/zoomTo/panTo · lookAt(entity, opts?) · enterContainer/exitContainer · cancelActiveGestures ·
-  open/putDown/useHeldTool · runMenuAction(id) · layFromTray(type, at)`. `layFromTray` (petition I37) LAYS the tray's own take
+  open/putDown/useHeldTool(id, taken?) · runMenuAction(id, taken?) · layFromTray(type, at)`. `layFromTray` (petition I37) LAYS the tray's own take
   with no drag — what a specimen dragged off the board makes: the type at its natural size, its entry's `take` props, CENTRED on
   `at` (a world point of the current frame), ONE transaction (one undo step), selected, and the board folds as a handed take's
   does; only a type the board hangs now (`trayHung`), refused (undefined) otherwise and while an object is in hand; laid in the
   current frame (a drop's consume into a container is the drag's). `runMenuAction` (design-016 K8a) runs a SELECTION
   MENU act: each selected object's type that declares `id` (`defineWidget({ menu })`) runs its op
-  over its own selected objects; false when none declares it.
+  over its own selected objects; false when none declares it, or when every declaring type's act says it is disabled now
+  (petition I61). `taken` (petition I62) is the choice a host took of an act that is a choice: a declaring type's `run` is handed it
+  only when it is one of that act's choices now and its values fit their fields, and `useHeldTool(id, taken)` holds a held
+  action's choice to the same rule.
   `lookAt` (petition I58) TAKES THE PERSON TO AN OBJECT: the camera centred on it in the viewport less `opts.inset` (screen px), at
   the zoom `opts.zoom` gives — `"comfort"` (keep a zoom it reads at and fits at, else in to 50% and never past 100%, or out until it
   fits), `"fit"` (the FIT band), `"keep"` or a number, CameraLimits clamping — the object selected (`select: false` leaves the
@@ -624,6 +627,28 @@ engine names a kind:
   never by `NonNullable<SelectionAnchor["held"]>` (which a rename passes without a word); the desk clock's `dts:check` imports them.
 - **Menu acts**: `defineObject({ menu })` (core's `MenuActionDef`) — the anchor's `menu` carries a selection's shared acts
   (`withKindActs`), the React menu shows them first and runs `ops.runMenuAction`.
+- **A menu act's state** (petition I61, held tools' I49 given to the selection menu's acts): an act says what it is NOW —
+  `MenuActionDef.state?(ctx) → { enabled?, glyph?, label?, swatch? }` (`MenuActionState`; `ctx` the selected objects of the declaring
+  type, `entities`, their `props(e)`, the world and the kind's desk state `local` — `MenuActionStateContext`): DISABLED, another glyph
+  and label (a pane's Mute → Unmute), or a colour in place of its glyph (a phone's finish). It is read with the anchor, over the
+  first declaring type's selected objects (the type whose declaration `menuActionsFor` keeps), and surfaces on the menu's slots:
+  `MenuSlot.enabled: false`, `swatch`, and `label`/`glyph` as said now. `ops.runMenuAction` does NOTHING for a type whose act says
+  it is disabled, reading the kind's desk state through the menu state seam (`stack.menuState`, `MenuStateSlot` — the desk layer
+  fills it at mount, `deskLayer`'s context field `menuState`), or with none where no renderer answers. `readMenuActionState` keeps
+  only what is well-formed. A `state` that throws is caught at the call and said once an act — never a strike: the act stands as
+  declared. The React menu shows a disabled act dim and `aria-disabled`, and a swatch as a dot.
+- **An act may be a choice** (petition I62 — a menu act, or a held tool's action): `choices?(ctx) → ActChoice[]`, read with the
+  anchor as the state is (the menu act's `MenuActionStateContext`, the held tool's `HeldToolStateContext`), and carried on the slot
+  as plain data: `MenuSlot.choices` / `HeldSlot.choices`. A choice is `{ id, label, hint?, swatch?, current?, group?, fields? }`;
+  `fields` are the values it asks for before it acts (`ActChoiceField`: `{ id, label, kind: "number" | "text", value, min?, max?,
+  step?, maxLength?, placeholder? }` — a pane's Custom: a width, a height, an agent). `readActChoices` keeps only what is
+  well-formed (at most 64, unique ids, and a choice with a malformed field is dropped whole). The host takes one through
+  `ops.runMenuAction(id, taken)` or `ops.useHeldTool(id, taken)` (`ActChoiceTaken`: `{ id, values? }`); core holds it to the act's
+  choices NOW with `takenChoice` — the id among them, every value the one handed or the field's own, a number finite, within its
+  bounds and on its step (counted from its `min`; a number handed as a field's text is read as one), a text within its length — and
+  hands it to `run(api, taken)`; otherwise nothing runs. Run with no choice, the act does its
+  plain op. The React menu lists a choice act's choices when it is pressed (the current one checked, a rule where the group changes)
+  and takes a choice with its fields' values as they stand; it draws no fields — a host that draws its own bar does.
 - **Tray entries and their chips** (design-017 §8, design-018 §6): `defineObject({ tray: { label, hang, category?, … } })` hangs a
   kind on the pegboard, and its `category` is its chip on the tray's bar — a plugin's string is its own chip, or joins a built-in's
   (`paper`, `surfaces`) or the example clock's (`things`) by naming it; none, and it is laid under All alone. The chips list what

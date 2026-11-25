@@ -303,7 +303,19 @@ export {
 } from "./widget/define-widget";
 // design-015 §8 (D3t-a): the held bar's tools — a mode (`HeldTool`, the tool in hand) or an action (an op), with its keys
 export { type HeldGlyph, type HeldToolApi, type HeldToolDef, type HeldToolState, type HeldToolStateContext, isHeldGlyph, type KeyChord, keyMatches, matchHeldTool, readHeldToolState } from "./widget/held-tools";
-export { type MenuActionApi, type MenuActionDef, menuActionsFor } from "./widget/menu-actions";
+// petition I62: an act (a menu act, a held tool's action) may be a CHOICE — its choices now, and the one a host took, held to them
+export { type ActChoice, type ActChoiceField, type ActChoiceTaken, readActChoices, takenChoice } from "./widget/act-choices";
+// petition I61: an act's state now — disabled, its glyph, its label, a swatch — and the seam core reads the desk's state through
+export {
+  type MenuActionApi,
+  type MenuActionDef,
+  type MenuActionState,
+  type MenuActionStateContext,
+  type MenuStateSlot,
+  type MenuStateSource,
+  menuActionsFor,
+  readMenuActionState,
+} from "./widget/menu-actions";
 
 // --- Canvas SDK: typed frame definitions, engine authority, and placement ---
 export {

@@ -70,6 +70,8 @@ export interface LayerContext {
   readonly heldPose: InteractionStack["heldPose"];
   /** The tray pose slot (design-017 §4, K3): where the pegboard drawer is on screen, as drawn. */
   readonly trayPose: InteractionStack["trayPose"];
+  /** The menu state slot (petition I61): a kind's state on its desk, which `ops.runMenuAction` reads an act's state with. */
+  readonly menuState: InteractionStack["menuState"];
   /** The presentation transition coordinator: the layer registers the `ground` plane so a nav flight can prepare. */
   readonly transitions: CanvasEngine["transitions"];
   /** The engine's catalog: the object types whose kinds the layer registers. */
@@ -139,6 +141,7 @@ export function createDeskHost<H extends LayerHandle>(opts: DeskHostOptions<H>):
       navGeometry: stack.navGeometry,
       heldPose: stack.heldPose,
       trayPose: stack.trayPose,
+      menuState: stack.menuState,
       transitions: engine.transitions,
       catalog: engine.catalog,
       readMarquee: () => stack.marqueeBuffer,
