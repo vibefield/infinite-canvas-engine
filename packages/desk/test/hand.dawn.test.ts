@@ -6,7 +6,8 @@
 //     (nearly) every pixel — and every pixel of an empty cell, or outside the grid's box, read NO atlas texel;
 //  2. the pen mid-writing (glyphs in flight at their moments): the reveal and the wet ink, GPU against twin;
 //  3. minified (a coarser mip at the LOD the device px asks): GPU against twin;
-//  4. MEASURED: the per-fragment atlas samples and run loads on the dense sheet, where there is ink and over the whole box.
+//  4. MEASURED: the per-fragment atlas samples and run loads on the dense sheet, where there is ink and over the whole box;
+//  5. on the desk's own Caveat: a dense sheet, minified; with the pen's spread laid as the raster lays it; marks off their origin.
 // The face is the tests' own (./hand-fixture — round-nibbed strokes whose distance and arrival are exact).
 // Run with pnpm --filter @ice/desk dawn test/hand.dawn.test.ts.
 import { readFileSync } from "node:fs";
@@ -274,6 +275,22 @@ describe("hand_ink on Dawn over the desk's own face: Caveat 500, as baked (apps/
       console.log(`[hand.dawn] Caveat 500 minified ×1/${scale}: cover max |GPU − twin| ${fd.cover.toFixed(4)}; counts differ at ${fd.counts} px; ${fd.inked} inked px`);
       expect(fd.cover).toBeLessThan(TOLERANCE);
       expect(fd.inked).toBeGreaterThan(100);
+    }
+  });
+
+  it("with the pen's spread, as the raster lays it (the bleed's stroke, the fill over it, glyphs over one another): GPU against twin", async () => {
+    // the note's own bleed (0.3 units) and a wide one (2 units: the stroke's band spans px at a crisp zoom), at the hand's pressures,
+    // over Caveat's kerned and joined letters — crisp and minified
+    for (const bleed of [0.3, 2]) {
+      const run = handRun(L, caveat, { pens: pens(L), bleed, bleedAlpha: 0.45 });
+      for (const view of [{ origin: [run.grid.x0, run.grid.y0] as const, scale: 0.5 }, { origin: [run.grid.x0 - 20, run.grid.y0 - 20] as const, scale: 3 }]) {
+        const d = compare(await draw(run, 7, view, 0, caveat), run, view, 0, caveat);
+        console.log(`[hand.dawn] Caveat 500, bleed ${bleed} at ${view.scale} units a px: cover max |GPU − twin| ${d.cover.toFixed(4)}; pen differs at ${d.pens} of ${d.inked} inked px; counts differ at ${d.counts} px`);
+        expect(d.cover).toBeLessThan(TOLERANCE);
+        expect(d.inked).toBeGreaterThan(100);
+        expect(d.pens / d.inked).toBeLessThan(0.01);
+        expect(d.counts / (W * H)).toBeLessThan(0.01);
+      }
     }
   });
 
