@@ -171,9 +171,9 @@ function rangeOf(n: number, from: number, to: number): readonly [number, number]
 
 /**
  * What arriving letters carry in place of `[a, b)` of `text` (its marks `was`), field by field: over a REPLACED range, the value
- * every replaced letter carries — a letter is a unit that is neither a space nor a newline — when that is one value and not 0;
- * else (an insertion; a range of no letters, or of letters that disagree or carry none) the value both neighbours carry, none at
- * the text's ends or by a newline.
+ * every replaced letter carries, 0 too — a letter is a unit that is neither a space nor a newline — when that is one value; else
+ * (letters that disagree; an insertion or a range of no letters) the value both neighbours carry, none at the text's ends or by a
+ * newline.
  */
 function arrivingOf(was: readonly number[], text: string, a: number, b: number): number {
   const left = a > 0 ? (was[a - 1] as number) : 0;
@@ -188,7 +188,7 @@ function arrivingOf(was: readonly number[], text: string, a: number, b: number):
       const v = ((was[i] as number) >>> at) & FIELD;
       shared = shared === -1 || shared === v ? v : -2;
     }
-    if (shared > 0) out |= shared << at;
+    if (shared >= 0) out |= shared << at;
     else {
       const v = (left >>> at) & FIELD;
       if (v !== 0 && v === ((right >>> at) & FIELD)) out |= v << at;
@@ -200,10 +200,11 @@ function arrivingOf(was: readonly number[], text: string, a: number, b: number):
 /**
  * THE SPLICE every edit comes down to: the glyphs of [from, to) leave and `words` arrive. The glyphs before and after keep their
  * seeds and their marks; the arrivals take fresh seeds (`fresh()`, one a unit, in order) and their marks field by field. A
- * REPLACEMENT keeps a value every replaced letter carried — one value, not 0; a space and a newline are no letters — so "Friday"
- * replaced by "Monday" in a highlighted "on Friday" stays highlighted. Otherwise the arrivals carry a field only where the glyphs
- * on both sides carry the same value in it: a letter typed inside a highlight is highlighted, one at its edge is not. A newline
- * arrives unmarked. The range is clamped to the text, in either order.
+ * REPLACEMENT keeps the value its replaced letters all carried, 0 too (a space and a newline are no letters): "Friday" replaced
+ * by "Monday" in a highlighted "on Friday" stays highlighted, and a word left unhighlighted inside a highlight stays so. Where the
+ * replaced letters disagree, or none is replaced (an insertion), the arrivals carry a field only where the glyphs on both sides
+ * carry the same value in it: a letter typed inside a highlight is highlighted, one at its edge is not. A newline arrives
+ * unmarked. The range is clamped to the text, in either order.
  */
 export function splice(ink: InkValue, from: number, to: number, words: string, fresh: () => number): InkValue {
   const n = ink.text.length;
