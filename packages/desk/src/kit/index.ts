@@ -14,6 +14,7 @@ export * from "./hand-faces";
 export * from "./hand-gpu";
 export * from "./hand-run";
 export * from "./hold";
+export * from "./ink";
 export * from "./inside";
 export * from "./layer";
 export * from "./light";
