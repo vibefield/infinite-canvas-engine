@@ -6,7 +6,8 @@
 // the three together, so a mark never slides off its words.
 //
 // The VERBS are pure — an ink in, a new ink out, the one handed never touched — and they are what the editor, a menu's act and an
-// agent's tool all call: `splice` (every edit comes down to it), `carryInk` (the platform's edit, carried), `mark`, `replace`,
+// agent's tool all call: `splice` (every edit comes down to it: arrivals join a mark they land inside, and a replacement keeps the
+// marks its letters shared), `carryInk` (the platform's edit, carried), `mark`, `replace`,
 // `lift` and `paste` (the clipboard: the words travel with their marks and are written again in a fresh hand — the seeds never
 // travel), `cleanPiece`, `findQuote` (an agent says where by quoting) and `readWriting` (what it reads). The GEOMETRY reads a laid
 // `HandLayout` (text.ts) in its note units: the caret index nearest a point, the word and the laid line around an index, a range as
@@ -168,27 +169,47 @@ function rangeOf(n: number, from: number, to: number): readonly [number, number]
   return a <= b ? [a, b] : [b, a];
 }
 
-/** What arriving letters carry: each field their two neighbours carry the same value in (none at the text's ends, or by a newline). */
-function joinOf(left: number, right: number): number {
+/**
+ * What arriving letters carry in place of `[a, b)` of `text` (its marks `was`), field by field: over a REPLACED range, the value
+ * every replaced letter carries — a letter is a unit that is neither a space nor a newline — when that is one value and not 0;
+ * else (an insertion; a range of no letters, or of letters that disagree or carry none) the value both neighbours carry, none at
+ * the text's ends or by a newline.
+ */
+function arrivingOf(was: readonly number[], text: string, a: number, b: number): number {
+  const left = a > 0 ? (was[a - 1] as number) : 0;
+  const right = b < text.length ? (was[b] as number) : 0;
   let out = 0;
   for (const [at] of FIELDS) {
-    const v = (left >>> at) & FIELD;
-    if (v !== 0 && v === ((right >>> at) & FIELD)) out |= v << at;
+    // the replaced letters' one value: -1 while none is seen, -2 once two disagree
+    let shared = -1;
+    for (let i = a; i < b && shared !== -2; i++) {
+      const c = text.charCodeAt(i);
+      if (c === SPACE || c === NEWLINE) continue;
+      const v = ((was[i] as number) >>> at) & FIELD;
+      shared = shared === -1 || shared === v ? v : -2;
+    }
+    if (shared > 0) out |= shared << at;
+    else {
+      const v = (left >>> at) & FIELD;
+      if (v !== 0 && v === ((right >>> at) & FIELD)) out |= v << at;
+    }
   }
   return out;
 }
 
 /**
  * THE SPLICE every edit comes down to: the glyphs of [from, to) leave and `words` arrive. The glyphs before and after keep their
- * seeds and their marks; the arrivals take fresh seeds (`fresh()`, one a unit, in order) and carry a mark's FIELD only where the
- * glyphs on both sides carry the same value in it — a letter typed inside a highlight is highlighted, one at its edge is not; a
- * newline arrives unmarked. The range is clamped to the text, in either order.
+ * seeds and their marks; the arrivals take fresh seeds (`fresh()`, one a unit, in order) and their marks field by field. A
+ * REPLACEMENT keeps a value every replaced letter carried — one value, not 0; a space and a newline are no letters — so "Friday"
+ * replaced by "Monday" in a highlighted "on Friday" stays highlighted. Otherwise the arrivals carry a field only where the glyphs
+ * on both sides carry the same value in it: a letter typed inside a highlight is highlighted, one at its edge is not. A newline
+ * arrives unmarked. The range is clamped to the text, in either order.
  */
 export function splice(ink: InkValue, from: number, to: number, words: string, fresh: () => number): InkValue {
   const n = ink.text.length;
   const [a, b] = rangeOf(n, from, to);
   const was = marksOf(ink);
-  const joined = joinOf(a > 0 ? (was[a - 1] as number) : 0, b < n ? (was[b] as number) : 0);
+  const joined = arrivingOf(was, ink.text, a, b);
   const seeds: number[] = [];
   const marks: number[] = [];
   // in index order — before, the arrivals, after — so `fresh` is asked as `carrySeeds` asks it (a seed the row lacks is fresh too)
@@ -210,7 +231,8 @@ export function splice(ink: InkValue, from: number, to: number, words: string, f
 /**
  * The platform's edit CARRIED (the textarea's new value — what typing gives): the common prefix and suffix of the ink's text and
  * `text` keep their seeds and their marks, and the run between them is `splice`d — `carrySeeds` (text.ts) carried to the marks,
- * agreeing with it seed for seed. The new ink, and the arrived range [from, to).
+ * agreeing with it seed for seed; a selection typed over is a replacement, and keeps the marks its letters shared. The new ink,
+ * and the arrived range [from, to).
  */
 export function carryInk(ink: InkValue, text: string, fresh: () => number): { readonly ink: InkValue; readonly from: number; readonly to: number } {
   const old = ink.text;
@@ -271,7 +293,10 @@ export function mark(ink: InkValue, from: number, to: number, change: InkChange)
   return { text: ink.text, seeds: ink.seeds, marks };
 }
 
-/** REPLACE a range with other words (an agent's edit): `splice` by its name — the rest of the sheet keeps its hand and its marks. */
+/**
+ * REPLACE a range with other words (an agent's edit): `splice` by its name — the rest of the sheet keeps its hand and its marks,
+ * and the new words keep the marks the replaced letters all shared.
+ */
 export function replace(ink: InkValue, from: number, to: number, words: string, fresh: () => number): InkValue {
   return splice(ink, from, to, words, fresh);
 }
@@ -284,9 +309,10 @@ export function lift(ink: InkValue, from: number, to: number): InkPiece {
 
 /**
  * PASTE a piece over a range: its text `splice`d in — written in a fresh hand — and its marks laid over the arrivals field by
- * field: a field the piece names wins; one it leaves at 0 keeps what the splice joined, but for the PEN — a word the piece writes
- * in the sheet's own pen lands in the LANDING sheet's own pen, never in the pen of the words it lands among. A piece is read as a
- * stranger's: a text or marks that is not a string reads as empty, a field out of range is dropped, and seeds on it are never read.
+ * field: a field the piece names wins; one it leaves at 0 keeps what the splice gave (the replaced letters' shared value, or the
+ * neighbours'), but for the PEN — a word the piece writes in the sheet's own pen lands in the LANDING sheet's own pen, never in
+ * the pen of the words it lands among or replaces. A piece is read as a stranger's: a text or marks that is not a string reads as
+ * empty, a field out of range is dropped, and seeds on it are never read.
  */
 export function paste(ink: InkValue, from: number, to: number, piece: InkPiece, fresh: () => number): InkValue {
   const text = typeof piece.text === "string" ? piece.text : "";
