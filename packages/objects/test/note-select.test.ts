@@ -8,10 +8,11 @@
 // the note was drawn into once — and the interaction stack fed, for each press, the facts the pointer adapter sends (its
 // `defaultPrevented` gate, pinned in dom's own tests: a press the editor claimed lands `surfaceHandled`).
 import { Camera, createCanvasEngine, type Entity, NO_MODS, Position, Size, Viewport } from "@ice/core";
-import { createDeskEditor, MAT_GRID, PIECE_FLAVOUR } from "@ice/desk";
-import { type HandMetrics, layoutText, type TextPart, type TextRaster } from "@ice/desk/kit";
+import { createDeskEditor, kindPalette, MAT_GRID, PIECE_FLAVOUR, rgb } from "@ice/desk";
+import { decodeMarks, encodeMarks, type HandMetrics, inkOf, layoutText, mark, strikeOf, type TextPart, type TextRaster } from "@ice/desk/kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createNoteBody, NOTE_INK, NOTE_PROPS, Note, type PaperDriver } from "../src";
+import { createNoteBody, deskPalette, NOTE_INK, NOTE_PROPS, Note, type PaperDriver } from "../src";
+import { paperKind } from "../src/paper/kind";
 import { InkShelves, uvOf } from "../src/paper/pages";
 import { DEFAULT_PAPER_LAW, lampOf, type PaperGeometry, resolvePaper } from "../src/paper/paper";
 import { createNoteTyping } from "../src/paper/typing";
@@ -29,7 +30,7 @@ const TEXT_RASTER: TextRaster = {
 };
 const WORDS = "the quick brown fox jumps\ndog's 2nd bone";
 
-function rig(words = WORDS) {
+function rig(words = WORDS, marks = "") {
   const ce = createCanvasEngine({ widgets: [Note] });
   ce.docs.create();
   const { world } = ce;
@@ -41,7 +42,7 @@ function rig(words = WORDS) {
   const shelves = new InkShelves(2048, 2);
   const writing: Writing = createWriting({ pages: () => ({ alloc: (w, h) => shelves.alloc(w, h), free: (r) => shelves.free(r), write: (r) => uvOf(r.x, r.y, r.w, r.h, 2048, 2048), reset: () => shelves.reset() }), text: TEXT_RASTER });
   const driver: PaperDriver = { typing, writing: () => writing, isNote: (e) => world.get(e, NOTE_INK) !== undefined, body: undefined, follow: () => {}, idle: () => true };
-  const note = ce.ops.spawnWidget("desk.note", { x: 100, y: 100, props: { seed: 7, text: words }, undoable: false }) as Entity;
+  const note = ce.ops.spawnWidget("desk.note", { x: 100, y: 100, props: { seed: 7, text: words, marks }, undoable: false }) as Entity;
   world.sync();
   let now = 1000;
   const step = (n = 1): void => { for (let i = 0; i < n; i++) { now += 16; ce.step(now); } };
@@ -53,7 +54,10 @@ function rig(words = WORDS) {
   const G: PaperGeometry = resolvePaper({ ...rect, angle: 0 }, { held: 0, ring: 0, fade: 1 }, DEFAULT_PAPER_LAW, lampOf(MAT_GRID.plane));
   const parts: TextPart[] = [];
   const editor = createDeskEditor({ container, world, parts: () => parts, wake: () => {} });
-  const body = createNoteBody({ editor, world, driver, geometryOf: () => G });
+  // the note's look as the desk composes it (its pens and highlighters: the copy's HTML colours), its object and its document (a mark's key)
+  const theme = paperKind().theme;
+  const look = theme === undefined ? undefined : theme(kindPalette(deskPalette("light")), "light");
+  const body = createNoteBody({ editor, world, driver, geometryOf: () => G, look: () => look, object: Note, docs: ce.docs });
   if (body === undefined) throw new Error("no body");
   parts.push(body);
   // the note drawn ONCE: its layout and its geometry in the writing
@@ -96,7 +100,10 @@ function rig(words = WORDS) {
     return ev;
   };
   const doc = (): string | undefined => (ce.docs.current()?.store.getComponent(note, NOTE_INK) as { text: string } | undefined)?.text;
-  return { ce, world, typing, writing, editor, body, note, el, L, pt, pointer, click, clickAt, range, key, clip, doc, step, dispose: () => { editor.dispose(); ce.dispose(); } };
+  const docMarks = (): string | undefined => (ce.docs.current()?.store.getComponent(note, NOTE_INK) as { marks: string } | undefined)?.marks;
+  /** A chord on the field (⌘ and the key, ⇧ when asked) — whether the lease took it (its default prevented). */
+  const chord = (k: string, shift = false): boolean => { const ev = new KeyboardEvent("keydown", { key: k, metaKey: true, shiftKey: shift, bubbles: true, cancelable: true }); el.dispatchEvent(ev); return ev.defaultPrevented; };
+  return { ce, world, typing, writing, editor, body, note, el, L, pt, pointer, click, clickAt, range, key, chord, clip, doc, docMarks, step, dispose: () => { editor.dispose(); ce.dispose(); } };
 }
 
 describe("the note says where its writing lies, and a drag across it selects (petition I60)", () => {
@@ -203,15 +210,16 @@ describe("the note's copy, cut and paste (petition I60)", () => {
     return d;
   };
 
-  it("COPY lifts the selected words as plain text and as the note's piece, their marks with them (petition I60 — an unmarked piece's marks \"\"); CUT takes them off in ONE input of the note's typing — ONE commit when its writing ends, ONE undo brings them back", () => {
+  it("COPY lifts the selected words as plain text, as HTML and as the note's piece, their marks with them (petition I60 — an unmarked piece's marks \"\"); CUT takes them off in ONE input of the note's typing — ONE commit when its writing ends, ONE undo brings them back", () => {
     const r = rig();
     try {
       r.body.focus(r.note, 0);
       r.el.setSelectionRange(4, 10);
       const copied = board();
       expect(r.clip("copy", copied).defaultPrevented).toBe(true);
-      expect([...copied.types].sort()).toEqual([PIECE_FLAVOUR, "text/plain"].sort());
+      expect([...copied.types].sort()).toEqual([PIECE_FLAVOUR, "text/html", "text/plain"].sort());
       expect(copied.getData("text/plain")).toBe("quick ");
+      expect(copied.getData("text/html")).toBe('<span style="white-space:pre-wrap">quick </span>');   // the kit's `inkHtml`: unmarked, the words alone
       expect(JSON.parse(copied.getData(PIECE_FLAVOUR))).toEqual({ text: "quick ", marks: "" });
       const cut = board();
       expect(r.clip("cut", cut).defaultPrevented).toBe(true);
@@ -248,3 +256,39 @@ describe("the note's copy, cut and paste (petition I60)", () => {
     } finally { r.dispose(); }
   });
 });
+
+describe("the note's marked words on the clipboard and under the keys (petition I60)", () => {
+  const board = (): DataTransfer => new DataTransfer();
+  it("COPY of marked words writes their marks in all three flavours: the piece's runs, and HTML in the note's palette's inks", () => {
+    const text = "buy milk now";
+    const marks = encodeMarks(mark(mark(inkOf({ text }, 7), 4, 8, { highlight: "yellow" }), 9, 12, { strike: true }).marks);
+    const r = rig(text, marks);
+    try {
+      r.body.focus(r.note, 0);
+      r.el.setSelectionRange(4, 12);
+      const copied = board();
+      expect(r.clip("copy", copied).defaultPrevented).toBe(true);
+      expect(copied.getData("text/plain")).toBe("milk now");
+      expect(JSON.parse(copied.getData(PIECE_FLAVOUR))).toEqual({ text: "milk now", marks: encodeMarks(decodeMarks(marks, text).slice(4, 12)) });
+      const yellow = rgb((deskPalette("light") as unknown as { highlighters: Record<string, { css: string }> }).highlighters.yellow?.css as string).map((v) => Math.round(v * 255));
+      expect(copied.getData("text/html")).toBe(`<span style="white-space:pre-wrap"><mark style="background-color:rgb(${yellow.join(" ")})">milk</mark> <s>now</s></span>`);
+    } finally { r.dispose(); }
+  });
+
+  it("a MARK'S KEY (⇧⌘X) strikes the words selected through the note's own act — ONE step — and with no words selected it is the platform's", () => {
+    const r = rig("buy milk now");
+    try {
+      r.body.focus(r.note, 0);
+      r.el.setSelectionRange(4, 8);
+      r.el.dispatchEvent(new Event("select"));
+      expect(r.chord("x", true)).toBe(true);
+      r.step();
+      expect(decodeMarks(r.docMarks() ?? "", "buy milk now").map(strikeOf)).toEqual([0, 0, 0, 0, 1, 1, 1, 1, 0, 0, 0, 0]);
+      expect(r.ce.docs.undo()).toBe(true);
+      expect(r.docMarks()).toBe("");
+      r.el.setSelectionRange(2, 2);
+      expect(r.chord("x", true)).toBe(false);   // a caret only: ⇧⌘X is not the note's
+    } finally { r.dispose(); }
+  });
+});
+

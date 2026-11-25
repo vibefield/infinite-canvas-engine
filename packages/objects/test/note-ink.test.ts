@@ -11,10 +11,10 @@
 //  - ONE commit lands the words, the hand and the marks together; ONE ⌘Z takes them back; a typing that nets to nothing lands nothing;
 //  - TWO PEERS: the committer wins, and a note's words, seeds and marks stay paired — never one peer's words with another's marks.
 import { createCanvasEngine, type Entity, guardedTransaction } from "@ice/core";
-import { decodeMarks, decodeSeeds, encodeMarks, findQuote, highlightOf, type InkChange, inkOf, mark, penOf, seedsFor, strikeOf, underlineOf } from "@ice/desk/kit";
+import { decodeMarks, decodeSeeds, encodeMarks, findQuote, highlightOf, type InkChange, inkOf, inkTypingOn, mark, penOf, seedsFor, strikeOf, underlineOf } from "@ice/desk/kit";
 import { describe, expect, it } from "vitest";
 import { NOTE_INK, NOTE_PROPS, Note } from "../src";
-import { createNoteTyping, noteTypingOn } from "../src/paper/typing";
+import { createNoteTyping } from "../src/paper/typing";
 
 type Cell = { text: string; seeds: string; marks: string };
 
@@ -196,17 +196,23 @@ describe("the note's typing carries the marks with the letters (petition I60)", 
     typing.end();
   });
 
-  it("registers on its world, so a static act finds the typing on its note (`noteTypingOn`) — none when the editor is off it", () => {
+  it("registers on its world as a typing of another shape (the kit's `registerInkTyping`), so a static act finds it on its note (`inkTypingOn`) — none when the editor is off it", () => {
     const { world, note, step, typing } = makeDesk();
     const a = note("hi");
     const b = note("yo");
     step();
-    expect(noteTypingOn(world, a)).toBeUndefined();
+    expect(inkTypingOn(world, a)).toBeUndefined();
     typing.begin(a);
-    expect(noteTypingOn(world, a)).toBe(typing);
-    expect(noteTypingOn(world, b)).toBeUndefined();
+    const door = inkTypingOn(world, a);
+    expect(door?.type).toBe("desk.note");
+    expect(door?.group).toBe("ink");
+    expect(inkTypingOn(world, b)).toBeUndefined();
+    type(typing, "hi", 2, "!");
+    expect([door?.open(), door?.ink(a)?.text]).toEqual([true, "hi!"]);   // the words the field shows, not yet landed
+    expect(door?.commit()).toBe(true);
+    expect(typing.open()).toBe(false);
     typing.end();
-    expect(noteTypingOn(world, a)).toBeUndefined();
+    expect(inkTypingOn(world, a)).toBeUndefined();
   });
 });
 
