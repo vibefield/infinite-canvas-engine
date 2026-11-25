@@ -31,14 +31,17 @@ export { type ShaderText, shaderText } from "../shaders";
  * - `book` — the 3D kit: the desk eye (`nb_clip`), the PCSS shadow (`nb_shadow`), the colour chain (`nb_colour`), the cloth, the
  *   paper, the cover's designs (kit/book.wgsl), over its records `NbUniforms` and `NbBook`;
  * - `hand` — the desk's PEN (petition I59): `hand_ink`, a sheet's writing read from its glyph run and the face's atlas at a point of
- *   the run's own units, and its `HandInk` (kit/hand.wgsl — the run store, the atlas and the sampler are the kind's, as parameters).
+ *   the run's own units, and its `HandInk` (kit/hand.wgsl — the run store, the atlas and the sampler are the kind's, as parameters);
+ * - `marks` — the MARKS the pen draws (petition I60): `ink_marks`, what a sheet's highlighters, its selection's wash and its lines
+ *   through and under the words lay at a point under its ink and over it, and its `InkMarks` (kit/marks.wgsl — read from the same
+ *   run store, through `hand`'s loader: asking for `marks` composes `hand` too).
  *
  * THE CONVENTIONS they share: world units (one is one CSS px at zoom 1), x right and y DOWN; CSS px = (world − `u.cam.xy`) ·
  * zoom, origin the attachment's top-left; device px = CSS px · dpr, a fragment's `@builtin(position).xy`; zoom = `mat_zoom(u)`
  * (CSS px per world unit), dpr = `mat_dpr(u)` (the attachment's device px per CSS px — below 1 for a thumbnail); the lamp's
  * desk in metres, y up (`desk_of`); colours 0..1, sRGB-encoded unless a parameter says LINEAR.
  */
-export type KitWgslPiece = "view" | "portal" | "sdf" | "light" | "ruler" | "book" | "hand";
+export type KitWgslPiece = "view" | "portal" | "sdf" | "light" | "ruler" | "book" | "hand" | "marks";
 
 /**
  * A name of the kit's WGSL: a piece, or another name for one (`lamp`, `gobo`, `night`, `noise` and `mat` are `light` — `mat` since
@@ -65,7 +68,9 @@ interface KitPiece {
  * - `book` — the 3D kit (kit/book.wgsl and its records `NbUniforms`, `NbBook` — kit/book.ts): the desk eye's projection,
  *   the PCSS shadow on an object's own shadow map, the materials of paper and cloth (after `light`, whose chain it grades by);
  * - `hand` — the desk's PEN (kit/hand.wgsl, petition I59): `hand_ink` over a kind's run store, a face's atlas and a sampler it
- *   passes (kit/hand-gpu.ts), self-contained — it needs no other piece.
+ *   passes (kit/hand-gpu.ts), self-contained — it needs no other piece;
+ * - `marks` — the MARKS the pen draws (kit/marks.wgsl, petition I60): `ink_marks` over the same run store — it reads the run with
+ *   `hand`'s `hand_load` and eases with its `hand_ease`, so it brings `hand` with it.
  */
 const PIECES = {
   view: { structs: [MatUniforms] },
@@ -75,10 +80,14 @@ const PIECES = {
   ruler: { file: "mat/ruler.wgsl" },
   book: { structs: [NbUniforms, NbBook], file: "kit/book.wgsl" },
   hand: { file: "kit/hand.wgsl" },
+  marks: { file: "kit/marks.wgsl" },
 } as const satisfies Record<KitWgslPiece, KitPiece>;
 
 /** The names a piece also answers to. */
 const ALIASES: Readonly<Record<Exclude<KitWgslName, KitWgslPiece>, KitWgslPiece>> = { lamp: "light", gobo: "light", night: "light", noise: "light", mat: "light" };
+
+/** The pieces a piece is written over: asking for it composes them too (petition I60 — the marks read the run as the pen does). */
+const NEEDS: Readonly<Partial<Record<KitWgslPiece, readonly KitWgslPiece[]>>> = { marks: ["hand"] };
 
 /**
  * The .wgsl file behind each of the kit's module pieces — what a host's `ShaderText` is asked for. `shaderText(KIT_WGSL_FILES)`
@@ -99,6 +108,7 @@ export function kitWgsl(names: readonly KitWgslName[], own: ComposeOptions, text
     const piece = (ALIASES as Record<string, string>)[n] ?? n;
     if (!(piece in PIECES)) throw new Error(`kitWgsl: no piece "${n}" (the kit's: ${[...Object.keys(PIECES), ...Object.keys(ALIASES)].join(", ")})`);
     want.add(piece);
+    for (const under of NEEDS[piece as KitWgslPiece] ?? []) want.add(under);
   }
   const files: Record<string, string> = {};
   for (const [name, p] of Object.entries(PIECES) as [string, KitPiece][]) if (want.has(name) && p.file) files[name] = p.file;

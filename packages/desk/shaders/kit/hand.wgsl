@@ -19,8 +19,9 @@
 
 /// Texels a row of a run store (kit/hand-run.ts `HAND_RUN.row`): a run's vec4 `i` lives at texel (`i` mod 1024, `i` / 1024).
 const HAND_ROW: u32 = 1024u;
-/// A run's header, vec4s (`HAND_RUN.header`): the grid's box, the grid, where the list and the glyphs start with the epoch, the edge.
-const HAND_HEADER: u32 = 4u;
+/// A run's header, vec4s (`HAND_RUN.header`): the grid's box, the grid, where the list and the glyphs start with the epoch, the edge
+/// — and the marks' head (petition I60: the `marks` piece reads it, kit/marks.wgsl `INK_HEAD`).
+const HAND_HEADER: u32 = 5u;
 /// One glyph of a run, vec4s (`HAND_RUN.glyph`): its box, its place and turned scale, its atlas origin with size and pressure, its
 /// atlas rect, its moment with the pen.
 const HAND_GLYPH: u32 = 5u;
@@ -33,8 +34,10 @@ const HAND_WET: f32 = 1.1;
 /// the raster lays them; `wet` — how fresh the ink of the glyph that laid the most is, 0..1 (1 just behind the nib, 0 dry: 0 wherever
 /// its glyph is whole — a kind weighs it by `cover`); `pen` — the pen of the glyph that laid the most (0 = the sheet's own, else the
 /// kind's pen n); `samples` — the atlas samples the read took (0 on blank paper); `loads` — the run texels it loaded (a witness: the
-/// read's cost).
-struct HandInk { cover: f32, wet: f32, pen: u32, samples: u32, loads: u32 }
+/// read's cost); `was` — the pen that glyph had before its pen changed (petition I60: its own pen when it did not), and `over` — how
+/// much of its ink here its new pen has written over already, 0..1 (1 wherever no re-ink is drawn): a kind inks it
+/// `mix(ink(was), ink(pen), over)`.
+struct HandInk { cover: f32, wet: f32, pen: u32, samples: u32, loads: u32, was: u32, over: f32 }
 
 /// One vec4 of a run store.
 /// `runs` — the store (`texture_2d<f32>` over `rgba32float`); `i` — the vec4's index from the store's first texel (a run's base
@@ -72,15 +75,19 @@ fn hand_ease(x: f32) -> f32 {
 /// before, source-over (1 − Π(1 − cover)) — so letters that meet darken where they meet, as on the bitmap. THE REVEAL: a glyph lays
 /// nothing before its pen sets off; while it writes, a texel shows once the pen's eased progress has reached its arrival (`G`),
 /// ramped over a device px of the pen's path — so the front is the arrival's own edge, round where the nib's is, and where a later
-/// stroke crosses an earlier one the earlier ink is already there; once its time is out it is whole.
+/// stroke crosses an earlier one the earlier ink is already there; once its time is out it is whole. THE RE-INK (petition I60): a
+/// glyph whose pen changed carries the pen it had and its re-ink's moment (after the run's glyphs); its new pen writes over the old
+/// along the glyph's own path by the same law, so `over` is 1 behind the new pen's front and 0 ahead of it — read once, for the
+/// glyph that laid the most, only while a re-ink is drawn (one load more).
 /// `runs` — the kind's run store (`texture_2d<f32>` over `rgba32float`); `atlas` — the face's atlas (`texture_2d<f32>` over
 /// `rg8unorm`, every level); `samp` — a filtering sampler, linear between the levels; `base` — the run's base in the store (the
 /// texel index `HandRuns.write` gave its record); `p` — the point, the run's units (the layout's: note units from the sheet's
 /// top-left, y down); `now` — the pen's clock, `penNow(ms)`: whole seconds (x) and the ms past them (y); `aa` — one device px in
 /// the run's units, > 0, worked out outside any loop.
-/// → the ink there (`HandInk`): its coverage, how wet, its pen, and what the read took.
+/// → the ink there (`HandInk`): its coverage, how wet, its pen (and the one it had, and how far the new is written), and what the
+/// read took.
 fn hand_ink(runs: texture_2d<f32>, atlas: texture_2d<f32>, samp: sampler, base: u32, p: vec2f, now: vec2f, aa: f32) -> HandInk {
-  var ink = HandInk(0.0, 0.0, 0u, 0u, 1u);
+  var ink = HandInk(0.0, 0.0, 0u, 0u, 1u, 0u, 1.0);
   let box = hand_load(runs, base);
   if (p.x < box.x || p.y < box.y || p.x >= box.z || p.y >= box.w) { return ink; }
   let grid = hand_load(runs, base + 1u);
@@ -106,6 +113,8 @@ fn hand_ink(runs: texture_2d<f32>, atlas: texture_2d<f32>, samp: sampler, base: 
   // what the glyphs leave bare, laid one over another (the coverage is 1 − it), and the most one glyph laid (its pen, its wet ink)
   var bare = 1.0;
   var most = 0.0;
+  // that glyph's last float (its pens and its re-ink), its arrival here, and its path (units): its re-ink is read after the loop
+  var top = vec3f(0.0);
   for (var k = 0u; k < n; k++) {
     let e = first + k;
     if (k == 0u || (e & 3u) == 0u) { four = hand_load(runs, list + e / 4u); ink.loads += 1u; }
@@ -148,8 +157,21 @@ fn hand_ink(runs: texture_2d<f32>, atlas: texture_2d<f32>, samp: sampler, base: 
     }
     let laid = glyph * written;
     bare *= 1.0 - laid;
-    if (laid > most) { most = laid; ink.pen = u32(g4.w) & 15u; ink.wet = fresh; }
+    if (laid > most) { most = laid; ink.pen = u32(g4.w) & 15u; ink.wet = fresh; top = vec3f(g4.w, field.g, g4.z); }
   }
   ink.cover = 1.0 - bare;
+  // THE RE-INK: its re-ink in bits 8–23 (0 none, n the run's n-th, two a vec4 after the glyphs), the pen it had in bits 4–7
+  let packed = u32(top.x);
+  let re = packed >> 8u;
+  ink.was = select(ink.pen, (packed >> 4u) & 15u, re > 0u);
+  if (re > 0u) {
+    let pair = hand_load(runs, glyphs + u32(grid.w) * HAND_GLYPH + (re - 1u) / 2u);
+    ink.loads += 1u;
+    let moment = select(pair.xy, pair.zw, ((re - 1u) & 1u) == 1u);
+    let since = t - moment.x;
+    if (since >= moment.y) { ink.over = 1.0; }
+    else if (since <= 0.0) { ink.over = 0.0; }
+    else { ink.over = saturate(0.5 + (hand_ease(since / moment.y) - top.y) * top.z / aa); }
+  }
   return ink;
 }
