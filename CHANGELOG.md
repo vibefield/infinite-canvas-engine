@@ -36,6 +36,28 @@ All notable changes to ICE are documented here. The format follows
   cost is what `packages/core/bench/free-slot.test.ts` measures (`BENCH=1`) and `docs/benchmarks.md` records: a few tens of µs for
   the kernel's ordinary ask at 100 to 10,000 incumbents, and under 1 ms for the reader on a real board of 1,000.
 
+<!-- petition I58 — look at an object: the camera centred on it and the object selected, in its own frame (2026-11-25; VibeField) -->
+- **LOOK AT AN OBJECT — `ops.lookAt(entity, opts?)`, `LookAtOpts`, `NavOpts.landing`, `lookCamera`** (petition I58 — VibeField's
+  Godview shows a sticker for each desk object an agent holds, and a sticker clicked must take the person to the canvas with that
+  object centred and selected; every camera op snapped, and the one animation was the nav flight into or out of a container).
+  THE CAMERA: `lookCamera(target, from, vpW, vpH, { zoom, pad, band, limits, inset? })` (`/kernel`, beside `fitCamera`) centres a rect
+  in the viewport less the host's `inset`, at the zoom its policy gives: `"comfort"` (the default — keep a zoom the object reads at,
+  at least the FIT band's 50% floor, and fits at; else in to the floor and never past 100%, or out until it fits), `"fit"` (the FIT
+  band), `"keep"`, or a number; CameraLimits clamp every result. Its `pad` is screen px at every zoom (at most a quarter of the room),
+  where `fitCamera` adds its pad in world units. IN THE FRAME `ops.lookAt` flies the camera there as an ordinary camera move: the look
+  flight (a resource and its tick beside `navFlight` in `simulate`) runs the nav flight's spring and log-zoom path, holds its first
+  tick, lands exactly, and yields to a camera gesture, to any other camera write and to a nav switch; it writes no `NavTransition`, so
+  the desk draws it as it draws a pan, and `interactionPending` answers `"look"` while it flies. IN ANOTHER FRAME (a mini mat, another
+  branch of the nav stack) it is the nav ops: out to the deepest frame the object's chain shares with the nav stack, then in, every
+  step a cut but the last, which flies and lands on the look camera. `NavOpts.landing` (new) is that landing: the camera an enter or an
+  exit comes to rest at, the face, the embedding and the cut's camera staying the container's own. `transition: "none"` and the OS's
+  reduced motion snap; the hand lets go as at a nav cut; live gestures cancel and the pan's inertia stops; the selection becomes exactly
+  the object (`select: false` leaves it). Runtime writes only: no transaction, no undo step, and a read-only document is looked at too.
+  False, with nothing changed, for a dead entity, no object of the scene, a frame the nav cannot enter, or no real viewport. Additive:
+  a new op, its options type, an optional `NavOpts` field and a kernel function. Known limit: a look into a container dresses the
+  arriving desk for its landing's zoom from the cut on (the desk dresses an arriving desk for its flight's landing), so where the look's
+  zoom is not the face's arrival the inside's dressing may step once at the cut.
+
 ### Changed
 
 - **The rigs' browser can be named.** `apps/desk/scripts/cdp.mjs` launched one constant binary, the Google Chrome
