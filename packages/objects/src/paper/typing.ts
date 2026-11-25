@@ -23,12 +23,14 @@
 // A note deleted mid-session takes its uncommitted run with it — the gesture was interrupted; an undo
 // of the delete restores the note as last committed.
 //
-// A typing REGISTERS ITSELF on its world (`noteTypingOn`), so the note's STATIC words acts (object.ts — the kit's `inkActs`) land a
-// live typing's words in their own step before they mark by the field's indices.
+// A typing REGISTERS ITSELF on its world (the kit's `registerInkTyping` — a live write is a typing of another shape), so the note's
+// STATIC words acts (object.ts — the kit's `inkActs`, through `inkTypingOn`) land a live typing's words in their own step before they
+// mark by the field's indices, and read the words the field shows. The typed-over run is the kit's (`carryRun`, `keepRun`), shared
+// with every written part's draft.
 
-import { type Component, Editing, type Entity, guardedTransaction, type World } from "@ice/core";
+import { type Component, Editing, type Entity, guardedTransaction, PrefabId, type World } from "@ice/core";
 import { tapHit, type TypingDocs, writable } from "@ice/desk";
-import { carryInk, encodeMarks, encodeSeeds, freshSeed, type InkPiece, type InkValue, inkOf, lift as liftInk, paste as pasteInk, seedsFor, type TextRange } from "@ice/desk/kit";
+import { carryRun, encodeMarks, encodeSeeds, freshSeed, type InkPiece, type InkTypedRun, type InkValue, inkOf, keepRun, lift as liftInk, paste as pasteInk, registerInkTyping, seedsFor, type TextRange } from "@ice/desk/kit";
 
 // The document's doors live in docs.ts (D-D7-A.3: no kind in them, so the host holds them without naming one); the drivers
 // keep reaching them here.
@@ -55,6 +57,8 @@ export interface NoteTypingOptions {
   readonly props: Component<{ seed?: number }>;
   /** A fresh seed for a glyph just written (`Math.random` unless a test says). */
   readonly fresh?: () => number;
+  /** The ink cell's group name on the object ("ink" — what the words acts land by, the kit's `inkActs({ ink })`). */
+  readonly group?: string;
 }
 
 export interface NoteTyping {
@@ -88,41 +92,6 @@ export interface NoteTyping {
 
 type Ink = { readonly text: string; readonly seeds: string; readonly marks: string };
 
-/** A word being typed over a selection: its letters [from, to) and the mark the replaced letters shared, carried on to each letter typed at its end. */
-export interface TypedRun { readonly from: number; readonly to: number; readonly mark: number }
-
-/**
- * ONE INPUT CARRIED (petition I60 — pure): the platform's `value` over `cur` (`carryInk`, the edit found by `caret`), and the word typed
- * over a selection `run` carried on — a replacement (letters removed and some written) begins one with the mark the replaced letters
- * shared; a letter typed on at its end takes that mark, not the join of its neighbours ("Friday" typed over as "Monday" inside a
- * highlight stays highlighted, not "M" alone); a letter of it taken back shortens it; anything else ends it. Its ink, the arrived range
- * and the run after it.
- */
-export function carryTyped(cur: InkValue, value: string, fresh: () => number, caret: number | undefined, run: TypedRun | undefined): { readonly ink: InkValue; readonly from: number; readonly to: number; readonly run: TypedRun | undefined } {
-  const carried = carryInk(cur, value, fresh, caret);
-  const { from, to } = carried;
-  const removed = cur.text.length - (value.length - (to - from));
-  let ink = carried.ink;
-  let next: TypedRun | undefined;
-  if (removed > 0 && to > from) next = { from, to, mark: ink.marks[from] ?? 0 };
-  else if (run !== undefined && removed === 0 && to > from && from === run.to) {
-    const marks = ink.marks.slice();
-    for (let i = from; i < to; i++) marks[i] = value.charCodeAt(i) === 10 ? 0 : run.mark;
-    ink = { text: ink.text, seeds: ink.seeds, marks };
-    next = { from: run.from, to, mark: run.mark };
-  } else if (run !== undefined && to === from && removed > 0 && from >= run.from && from + removed === run.to) next = { from: run.from, to: from, mark: run.mark };
-  return { ink, from, to, run: next };
-}
-
-/** The typing on a world, by the cell it writes — one made again on the same cell (the desk remounted) replaces the last. */
-const TYPINGS = new WeakMap<World, Map<Component, NoteTyping>>();
-
-/** The note typing on `e` now — the one whose claim is `e` — or undefined (no desk's editor is on it): what the words acts land first. */
-export function noteTypingOn(world: World, e: Entity): NoteTyping | undefined {
-  for (const t of TYPINGS.get(world)?.values() ?? []) if (t.editing() === e) return t;
-  return undefined;
-}
-
 /** The same hand: glyph for glyph the same seed, stored or implied (`seedsFor`). */
 function sameHand(a: Omit<Ink, "marks">, b: Omit<Ink, "marks">, noteSeed: number): boolean {
   const x = seedsFor(a.text, a.seeds, noteSeed);
@@ -137,8 +106,8 @@ export function createNoteTyping(opts: NoteTypingOptions): NoteTyping {
   let open = false;
   /** The cell as the session found it (before its first live write) — what "nets to nothing" means. */
   let start: Ink | undefined;
-  /** A word being typed over a selection (`carryTyped`), while the caret stays at its end. */
-  let run: TypedRun | undefined;
+  /** A word being typed over a selection (the kit's `carryRun`), while the caret stays at its end. */
+  let run: InkTypedRun | undefined;
 
   const alive = (e: Entity | undefined): e is Entity => e !== undefined && world.isAlive(e);
   /** The cell as the world holds it, read tolerantly (a cell stored before the marks reads `marks` ""). */
@@ -222,14 +191,12 @@ export function createNoteTyping(opts: NoteTypingOptions): NoteTyping {
       if (!alive(e) || typeof value !== "string") return null;
       const cur = cellOf(e);
       if (cur === undefined || cur.text === value) return null;
-      const carried = carryTyped(inkOf(cur, seedOf(e)), value, fresh, caret, run);
+      const carried = carryRun(inkOf(cur, seedOf(e)), value, fresh, caret, run);
       run = carried.run;
       move(e, cur, carried.ink);
       return { from: carried.from, to: carried.to };
     },
-    moved(from, to) {
-      if (run !== undefined && !(from === to && from === run.to)) run = undefined;
-    },
+    moved(from, to) { run = keepRun(run, from, to); },
     paste(piece, from, to) {
       const e = editing;
       run = undefined;
@@ -255,8 +222,14 @@ export function createNoteTyping(opts: NoteTypingOptions): NoteTyping {
     commit,
     end,
   };
-  let all = TYPINGS.get(world);
-  if (all === undefined) { all = new Map(); TYPINGS.set(world, all); }
-  all.set(NOTE_INK, typing);
+  // its door for the acts and an agent's tools (`inkTypingOn`): the type of the note it is on, the cell's group, the live write's landing
+  registerInkTyping(world, NOTE_INK, {
+    get type() { const e = typing.editing(); return e === undefined ? "" : (world.get(e, PrefabId)?.id ?? ""); },
+    group: opts.group ?? "ink",
+    editing: () => typing.editing(),
+    open: () => typing.open(),
+    commit: () => typing.commit(),
+    ink: (e) => typing.value(e),
+  });
   return typing;
 }

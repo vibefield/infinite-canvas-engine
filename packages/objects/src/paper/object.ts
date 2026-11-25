@@ -10,14 +10,15 @@
 // colours through the palette, kinds/paper.ts `PaperPalette`), and its `seed` — the tilt it is stuck
 // at, never square (`tiltOf`), and the hand of a glyph with no stored seed. Things, movable,
 // selectable, snapping both ways; it offers itself to the desk, a mini mat (D2b's drop-into) and a calendar's day by what it
-// `provides` (K8a — the desk's keys).
+// `provides` (K8a — the desk's keys). Its WORDS take every mark (petition I60): its menu offers the kit's ink acts over the words selected
+// while it is written — Pen ▾, Highlight ▾, Strike, Underline, Clear — each ONE step on its ink cell, a live typing landed first.
 
 import { type Component, type Entity, p } from "@ice/core";
 import { paperKind } from "./kind";
 import { CONTAINABLE, DESK_OBJECT, type KindDriver, defineObject, PINNABLE } from "@ice/desk";
 import type { Writing } from "./writing";
 import { PAPER } from "./theme";
-import { PENS } from "@ice/desk/kit";
+import { INK_FIELDS, inkActs, PENS } from "@ice/desk/kit";
 import { createNoteTyping, type NoteTyping } from "./typing";
 import { createNoteBody, type NoteBody } from "./host/body";
 
@@ -26,6 +27,9 @@ export { PENS, type PenName } from "@ice/desk/kit";
 /** The papers a note is cut from — names; the sheets are the host's (the product's `--vf-note-surface` is `yellow`). */
 export const PAPERS = ["yellow"] as const;
 export type PaperName = (typeof PAPERS)[number];
+
+/** The marks a note's words take (petition I60): every field of the kit's ink — its pen, a highlighter, a line through, a line under. */
+export const NOTE_MARKS = INK_FIELDS;
 
 /** The note's durable type id — what `PrefabId` carries (a mini mat accepts it by what it provides — K8a, `CONTAINABLE`). */
 export const NOTE_TYPE = "desk.note";
@@ -48,6 +52,9 @@ export const Note = defineObject({
   // …with a word on it in the note's own hand, written through its writing (K5b — `local`); one taken is blank
   tray: { label: "Note", category: "paper", order: 0, props: { text: "hello" }, local: true, hang: { w: 120, h: 120, accessory: "hook", pegs: [[-1, -0.5], [1, -0.5]] } },
   interaction: { selectable: true, movable: true, resizable: false, snap: "both" },
+  // the WORDS acts (petition I60 — the kit's `inkActs`): offered over the words selected while the note is written (`SelectionAnchor.words`),
+  // each found its note's live typing through the world (`inkTypingOn` — paper/typing.ts registers it) and lands it before it marks
+  menu: inkActs({ marks: NOTE_MARKS }),
   // what it provides is what places it (K8a): on the desk, into a mini mat, onto a calendar's day — as a plugin kind's would
   provides: [NOTE_TYPE, DESK_OBJECT, CONTAINABLE, PINNABLE],
   // TYPING IS A GESTURE (design-015 §6.1; D2c): the note's driver is its typing session — the world half its body's lease on the
@@ -65,7 +72,7 @@ export const Note = defineObject({
   host: {
     text: (h) => {
       const driver = h.driver as PaperDriver | undefined;
-      const body = createNoteBody({ editor: h.editor, world: h.world, driver, geometryOf: h.geometryOf });
+      const body = createNoteBody({ editor: h.editor, world: h.world, driver, geometryOf: h.geometryOf, look: h.look, object: h.object, docs: h.docs });
       if (driver !== undefined) driver.body = body;
       return body === undefined ? [] : [body];
     },
