@@ -51,7 +51,9 @@ export {
   type SelectionMenuSource,
   type SelectionGlyph,
   type SelectionMenuAct,
+  type SelectionMenuChoice,
   type SelectionMenuTool,
+  type SelectionMenuWords,
   type SelectionState,
   selectionTaped,
 } from "./selection-menu";
