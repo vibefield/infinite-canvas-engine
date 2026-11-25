@@ -5,7 +5,7 @@
 // raster itself (`ink` — r8 bytes for a text, as the prototype's `ink.make` drew the committed raster).
 // Reads the world and the layer; writes only what the editor or the platform would.
 
-import { type CanvasEngine, defineQuery, Editing, type Entity } from "@ice/core";
+import { ActiveTool, type CanvasEngine, defineQuery, Editing, type Entity } from "@ice/core";
 import type { DeskLayerHandle } from "@ice/desk";
 import { DEFAULT_BLEED, DEFAULT_HAND_LAW, type NoteRasterInfo, type NoteRoad, type PaperKind, type WritingStats } from "@ice/objects";
 import { type HandRunsStats, layoutText } from "@ice/desk/kit";
@@ -35,6 +35,10 @@ export interface NoteApi {
   editorRect(): { readonly x: number; readonly y: number; readonly width: number; readonly height: number } | null;
   editorPlacement(): { readonly cx: number; readonly cy: number; readonly w: number; readonly h: number; readonly angle: number } | null;
   editorFocused(): boolean;
+  /** The editor's field's range (petition I60 — the words selected; equal ends a caret), or null while it is hidden. */
+  range(): readonly [number, number] | null;
+  /** The tool in hand (core's `ActiveTool`): the desk's own `desk.select` on this app. */
+  tool(): string | null;
   layout(id: number): { readonly glyphs: number; readonly lines: number; readonly positions: number[]; readonly ascent: number } | null;
   raster(id: number): NoteRasterInfo | null;
   /** The road the note took at its last draw (petition I59): "pen", "raster", "waiting" (its face on its way) or "pinned"; null before. */
@@ -81,6 +85,8 @@ export function noteApi(engine: CanvasEngine, handle: DeskLayerHandle): NoteApi 
     editorRect() { const el = editor()?.element; if (el === undefined || el.hidden) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; },
     editorPlacement: () => editor()?.placement() ?? null,
     editorFocused: () => { const el = editor()?.element; return el !== undefined && document.activeElement === el; },
+    range() { const el = editor()?.element; return el === undefined || el.hidden ? null : [el.selectionStart, el.selectionEnd]; },
+    tool: () => world.getResource(ActiveTool)?.id ?? null,
     layout(id) { const L = paper()?.writing()?.layoutOf(E(id)); return L === undefined ? null : { glyphs: L.glyphs.length, lines: L.lines.length, positions: [...L.positions], ascent: L.ascent }; },
     raster: (id) => paper()?.writing()?.rasterOf(E(id)) ?? null,
     road: (id) => paper()?.writing()?.roadOf(E(id)) ?? null,

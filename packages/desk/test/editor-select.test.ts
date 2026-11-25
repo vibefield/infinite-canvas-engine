@@ -7,10 +7,14 @@
 // a release within the slop is still a TAP. The range is told to the lease with the caret, never stored. A lease that lifts and lays
 // takes the field's copy, cut and paste. Here a THIRD-PARTY lease of the test's own — two lines laid ten px a letter — over a real
 // engine's world (no layer, no device): the pieces a press runs through.
-import { ActiveTool, Camera, closeTray, createCanvasEngine, defineWidget, type Entity, NO_MODS, openTray, widgets } from "@ice/core";
+import { ActiveTool, Camera, closeTray, createCanvasEngine, defineTool, defineWidget, type Entity, NO_MODS, openTray, widgets } from "@ice/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeskEditor } from "../src/host/editor";
 import type { EditorLease, EditorPaste, TextPart, TextTap } from "../src/kit/editor";
+
+/** A select of another id, as a desk preset defines its own (`desk.select`: core's select shape, its own letter and route); and a tool whose drag on an object does nothing. */
+const A_SELECT = defineTool({ id: "test.editor-select.select", route: { canvasDrag: "marquee" } });
+const STILL = defineTool({ id: "test.editor-select.still", route: { canvasDrag: "none", widgetDrag: "none" } });
 
 // One widget type per FILE (core's registry is global): an object a press may land on over the lease's part.
 const CARD =
@@ -259,6 +263,10 @@ describe("what is not claimed behaves exactly as before (petition I60)", () => {
     expect(pressed({ meta: true })).toBe(false);
     r.world.setResource(ActiveTool, { id: "pan" });
     expect(pressed()).toBe(false);   // a press under another tool is that tool's
+    r.world.setResource(ActiveTool, { id: STILL.id });
+    expect(pressed()).toBe(false);   // a tool whose drag on an object is not a carry keeps its press (a draw tool's, a connect's)
+    r.world.setResource(ActiveTool, { id: A_SELECT.id });
+    expect(pressed()).toBe(true);   // a select of ANOTHER id (the desk's own `desk.select` is one): its widget drag carries, so the writing takes the press
     r.world.setResource(ActiveTool, { id: "select" });
     openTray(r.world);
     expect(pressed()).toBe(false);   // the drawer out: the desk is inert

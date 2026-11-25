@@ -7,11 +7,11 @@
 // paste through its typing. On the real pieces — the desk's editor, the note's body and typing, a real document, a writing
 // the note was drawn into once — and the interaction stack fed, for each press, the facts the pointer adapter sends (its
 // `defaultPrevented` gate, pinned in dom's own tests: a press the editor claimed lands `surfaceHandled`).
-import { Camera, createCanvasEngine, type Entity, NO_MODS, Position, Size, Viewport } from "@ice/core";
+import { ActiveTool, Camera, createCanvasEngine, type Entity, NO_MODS, Position, Size, Viewport } from "@ice/core";
 import { createDeskEditor, kindPalette, MAT_GRID, PIECE_FLAVOUR, rgb } from "@ice/desk";
 import { decodeMarks, encodeMarks, type HandMetrics, highlightOf, inkOf, layoutText, mark, strikeOf, type TextPart, type TextRaster, underlineOf } from "@ice/desk/kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
-import { createNoteBody, deskPalette, NOTE_INK, NOTE_PROPS, Note, type PaperDriver } from "../src";
+import { createNoteBody, DESK_ENGINE, deskPalette, deskSelect, NOTE_INK, NOTE_PROPS, Note, type PaperDriver } from "../src";
 import { paperKind } from "../src/paper/kind";
 import { InkShelves, uvOf } from "../src/paper/pages";
 import { DEFAULT_PAPER_LAW, lampOf, type PaperGeometry, resolvePaper } from "../src/paper/paper";
@@ -30,8 +30,13 @@ const TEXT_RASTER: TextRaster = {
 };
 const WORDS = "the quick brown fox jumps\ndog's 2nd bone";
 
-function rig(words = WORDS, marks = "") {
-  const ce = createCanvasEngine({ widgets: [Note] });
+/**
+ * The rig: a plain engine (core's `select` in hand), or — `preset` — the DESK'S OWN (`createCanvasEngine(DESK_ENGINE)` with
+ * `desk.select` in hand, as `apps/desk` and a host that spreads the preset run it).
+ */
+function rig(words = WORDS, marks = "", o: { readonly preset?: boolean } = {}) {
+  const ce = createCanvasEngine(o.preset === true ? DESK_ENGINE : { widgets: [Note] });
+  if (o.preset === true) ce.ops.setTool(deskSelect.id);
   ce.docs.create();
   const { world } = ce;
   world.setResource(Viewport, { w: 1200, h: 800, dpr: 1 });
@@ -72,8 +77,10 @@ function rig(words = WORDS, marks = "") {
    * A pointer event on the container as the platform sends it — and, after the halves heard it, the fact the pointer adapter makes
    * of it fed to the stack and stepped: a down whose default was prevented (claimed) lands `surfaceHandled`.
    */
-  const pointer = (type: "pointerdown" | "pointermove" | "pointerup", [x, y]: [number, number], o: { at?: number; feed?: boolean } = {}): PointerEvent => {
-    const ev = new PointerEvent(type, { bubbles: true, cancelable: true, isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1, pointerId: 1, pointerType: "mouse", clientX: x, clientY: y });
+  const pointer = (type: "pointerdown" | "pointermove" | "pointerup", [x, y]: [number, number], o: { at?: number; feed?: boolean; right?: boolean } = {}): PointerEvent => {
+    const button = type === "pointermove" ? -1 : o.right === true ? 2 : 0;
+    const buttons = type === "pointerup" ? 0 : o.right === true ? 2 : 1;
+    const ev = new PointerEvent(type, { bubbles: true, cancelable: true, isPrimary: true, button, buttons, pointerId: 1, pointerType: "mouse", clientX: x, clientY: y });
     clock += 40;
     Object.defineProperty(ev, "timeStamp", { value: o.at ?? clock });
     container.dispatchEvent(ev);
@@ -149,6 +156,26 @@ describe("the note says where its writing lies, and a drag across it selects (pe
       const p = r.world.get(r.note, Position);
       expect(p?.x).toBeGreaterThan(150);   // carried with the drag
       expect(p?.y).toBeGreaterThan(120);
+    } finally { r.dispose(); }
+  });
+
+  it("on the DESK'S OWN preset (`DESK_ENGINE`, `desk.select` in hand — the desk a host runs): a press on the lent note's words is claimed, a drag selects them and leaves the note where it lay, a second click takes the word, and a right press keeps the field and its range", () => {
+    const r = rig(WORDS, "", { preset: true });
+    try {
+      expect(r.world.getResource(ActiveTool)?.id).toBe("desk.select");
+      r.body.focus(r.note, 0);
+      r.pointer("pointermove", r.pt(4));
+      expect(r.pointer("pointerdown", r.pt(4)).defaultPrevented).toBe(true);   // claimed
+      for (const i of [5, 6, 7, 8, 9]) r.pointer("pointermove", r.pt(i));
+      r.pointer("pointerup", r.pt(9));
+      r.click(r.pt(9));
+      expect([r.range(), r.world.get(r.note, Position)]).toEqual([[4, 9], { x: 100, y: 100 }]);   // "quick", the note where it lay
+      r.clickAt(28, { at: 9000 });
+      r.clickAt(28, { at: 9100, detail: 2 });
+      expect(r.range()).toEqual([26, 31]);   // "dog's"
+      const right = r.pointer("pointerdown", r.pt(28), { right: true });
+      r.pointer("pointerup", r.pt(28), { right: true });
+      expect([right.defaultPrevented, r.editor.lease() !== undefined, document.activeElement === r.el, r.range()]).toEqual([true, true, true, [26, 31]]);
     } finally { r.dispose(); }
   });
 
