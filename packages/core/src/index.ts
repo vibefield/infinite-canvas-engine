@@ -569,6 +569,7 @@ export {
   type CurrentCanvasScope,
   type StageControl,
   type CanvasOps,
+  type LookAtOpts,
 } from "./facade/create-canvas-engine";
 export { createDrawBehavior } from "./systems/l3-draw";
 

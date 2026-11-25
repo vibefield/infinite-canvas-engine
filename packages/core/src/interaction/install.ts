@@ -24,6 +24,7 @@ import { interactionDue, wakefulQueue } from "./wakes";
 import { createCameraSystems } from "../systems/camera-sim";
 import { createCleanupSystems } from "../systems/cleanup";
 import { createL0Systems } from "../systems/l0-input";
+import { createLookFlight } from "../systems/look-flight";
 import { createNavFlight } from "../systems/nav-flight";
 import { createPickingSystems, type FramePickSlot, type PointPick } from "../systems/l1-pick";
 import { createWireSync } from "../systems/l1-wires";
@@ -257,8 +258,11 @@ export function installInteractionStack(engine: Engine, opts: InteractionCoreOpt
     ),
     // navFlight AFTER cameraControl's group (ctl:behave): a gesture going
     // Active stamps Camera.gesturing THIS frame, so the flight yields
-    // same-frame (design-006 §4 "touch always wins").
-    engine.addSystems("simulate", camera.cameraInertia, camera.tweenSystem, createNavFlight(world)),
+    // same-frame (design-006 §4 "touch always wins"). lookFlight beside it
+    // (petition I58, `ops.lookAt` in the frame) for the same reason; the two
+    // never drive at once — a look ends a nav flight at its start, and a nav
+    // switch ends a look before the look writes the camera again.
+    engine.addSystems("simulate", camera.cameraInertia, camera.tweenSystem, createNavFlight(world), createLookFlight(world)),
     // derive order: portMaterialize BEFORE selectionChrome (both touch the index
     // in derive; ports must be indexed before chrome/next-frame picking read it),
     // selectionChrome BEFORE cursor (handles spawn at the derive flush so cursor
