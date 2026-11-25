@@ -16,7 +16,7 @@ import type { KindPass } from "../src/kind";
 import type { ObjectDomHost, ObjectKind } from "../src/kinds/world";
 import type { TextPart } from "../src/kit/editor";
 import { encodeMarks, highlightOf, type InkValue, inkCells, inkOf, lift, mark, penOf, strikeOf, underlineOf } from "../src/kit/ink";
-import { INK_ACTS, inkActs } from "../src/kit/ink-acts";
+import { INK_ACTS, inkActs, inkCommonHighlighter, inkCommonPen, inkEveryLetter } from "../src/kit/ink-acts";
 import { type InkGeometry, inkHtml, type InkPart, type InkPartOptions, inkPart } from "../src/kit/ink-part";
 import { type InkArrival, type InkSink, inkTyping, inkTypingOn } from "../src/kit/ink-typing";
 import { type HandLaw, type HandMetrics, layoutText, PENS } from "../src/kit/text";
@@ -578,6 +578,14 @@ describe("the ink acts (`inkActs`): one step each, through the typing when one i
     t.input("XXone two three");
     expect([current(highlight, ctx(0, 2)), current(highlight, ctx(2, 5))]).toEqual(["none", "yellow"]);
     expect([t.open(), cell(e).text]).toEqual([true, "one two three"]);   // read, nothing written
+  });
+
+  it("what the acts read of the words is plain functions of an ink and a range: the letters' common pen (the sheet's own named by the pen given), their common highlighter (`none` when none), and whether every letter carries a field — a space or a break is no letter, a range of spaces alone its units", () => {
+    let ink = inkOf({ text: "one two three" }, 7);
+    ink = mark(mark(mark(mark(ink, 4, 7, { strike: true }), 8, 13, { strike: true }), 8, 13, { pen: "red" }), 0, 3, { highlight: "green" });
+    expect([inkCommonPen(ink, 4, 7, "fountain"), inkCommonPen(ink, 4, 7), inkCommonPen(ink, 8, 13), inkCommonPen(ink, 4, 13, "fountain")]).toEqual(["fountain", undefined, "red", undefined]);
+    expect([inkCommonHighlighter(ink, 0, 3), inkCommonHighlighter(ink, 4, 13), inkCommonHighlighter(ink, 0, 7), inkCommonHighlighter(ink, 5, 5)]).toEqual(["green", "none", undefined, undefined]);
+    expect([inkEveryLetter(ink, 3, 13, "strike"), inkEveryLetter(ink, 0, 13, "strike"), inkEveryLetter(ink, 4, 13, "underline"), inkEveryLetter(ink, 7, 8, "strike"), inkEveryLetter(ink, 5, 5, "strike")]).toEqual([true, false, false, false, false]);
   });
 
   it("an act on an object with an OPEN DRAFT lands the draft first — its own step — then marks the words it is told, the draft's indices; the editor stays on it", () => {
