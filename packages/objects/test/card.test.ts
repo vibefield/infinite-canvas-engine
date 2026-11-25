@@ -45,9 +45,11 @@ describe("the six kinds' card materials (K7b)", () => {
     const entry = cardEntry(plan.kinds);
     const names = [...entry.matchAll(/@group\(0\) @binding\(\d+\) var(?:<[^>]+>)? (\w+)/g)].map((m) => m[1]);
     expect(new Set(names).size).toBe(names.length);
-    expect(names.length).toBe(4 + 6 + 6 + 6);
+    // the note's six and the PEN's three under the note's own names (petition I59 — `handBindings("paper")`), the board's and the print's six
+    expect(names.length).toBe(4 + 9 + 6 + 6);
+    expect(names.filter((n) => n?.startsWith("paper_hand_"))).toEqual(["paper_hand_runs", "paper_hand_atlas", "paper_hand_samp"]);
     const code = compose(cardShaders(plan.kinds)).code;
-    for (const s of ["struct Paper ", "struct Photo ", "struct Board ", "fn shade_paper(", "fn shade_photo(", "fn shade_board(", "fn photo_thumb(", "fn board_thumb("]) expect(code.split(s).length - 1, s).toBe(1);
+    for (const s of ["struct Paper ", "struct Photo ", "struct Board ", "fn shade_paper(", "fn shade_photo(", "fn shade_board(", "fn photo_thumb(", "fn board_thumb(", "fn hand_ink("]) expect(code.split(s).length - 1, s).toBe(1);
   });
 
   it("the whiteboard's fragment the card splices IS its pass entry's `fs`, statement for statement (the card runs the very code the pass runs — shade_board through one more function is one LSB off on a pixel a scene)", () => {
