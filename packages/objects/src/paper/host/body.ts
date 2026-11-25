@@ -13,6 +13,12 @@
 // (Escape, a blur, another part taking the editor, the note deleted or cut away). A write the world makes between sessions — a
 // peer's edit, an undo — reaches the textarea on the next frame (the lease's `value`). The pen's wipe and the caret are the
 // writing's flux, stamped on ONE clock, `performance.now()` (the rAF clock lags wall time headless).
+//
+// Its WORDS SELECTED, LIFTED AND LAID (petition I60): the lease says where the writing lies — `indexAt` from the writing's caret
+// geometry, on the sheet only and never under another object the stack hit there; `rangeAt` from its layout (a word of letters,
+// digits and apostrophes, the laid line without its break) — so the editor claims a press on the writing and turns a drag and the
+// clicks into the field's range, which the writing keeps as flux (`select`; the note draws no wash yet). A copy lifts the words as
+// plain text (the marks come later); a paste is laid through the editor's `write`, the path a typed input takes into the typing.
 
 import { Active, Camera, type Entity, Grab, type World } from "@ice/core";
 import type { PaperDriver } from "../object";
@@ -76,6 +82,20 @@ export function createNoteBody(opts: NoteBodyOptions): NoteBody | undefined {
     // Escape lets the note go (the keymap's gate 1 stands down; the release is ours)
     keydown(ev) { if (ev.key !== "Escape") return false; editor.release(lease); return true; },
     caret(index) { writing()?.caret(e, index, clock()); },
+    selection(from, to) { writing()?.select(e, from, to); },
+    // where the writing lies (petition I60): on the sheet as drawn — a press on another object over it is that object's
+    indexAt(wx, wy, hit) { return hit !== undefined && hit !== e ? undefined : writing()?.indexAt(e, wx, wy); },
+    rangeAt(index, unit) { return writing()?.rangeAt(e, index, unit); },
+    // the words alone (the marks come later): the field's, as the platform's own copy would take them
+    lift(from, to) { const text = editor.element.value.slice(from, to); return text === "" ? undefined : { text }; },
+    // its words laid as a typed input is (the typing records it), their line breaks the field's own; no words, nothing laid (a piece
+    // alone is not the note's to read yet — the platform's paste stands)
+    lay(paste, from, to) {
+      const text = paste.text.replace(/\r\n?/g, "\n");
+      if (text === "") return false;
+      editor.write(text, from, to);
+      return true;
+    },
     place() {
       const G = opts.geometryOf(e) as PaperGeometry | undefined;
       const cam = world.getResource(Camera);
@@ -91,7 +111,7 @@ export function createNoteBody(opts: NoteBodyOptions): NoteBody | undefined {
     ended() {
       // the claim is lifted only if it is still this note's (a tap on another note claimed that one first)
       if (typing.editing() === e) typing.end();
-      if (current?.entity === e) { current = undefined; writing()?.caret(undefined); }
+      if (current?.entity === e) { current = undefined; writing()?.caret(undefined); writing()?.select(undefined); }
     },
     // a delete or a nav cut ends the writing
     live: () => world.isAlive(e) && world.hasTag(e, Active),

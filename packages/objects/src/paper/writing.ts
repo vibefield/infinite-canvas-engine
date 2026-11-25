@@ -34,10 +34,15 @@
 // The WIPE (110 ms) and the CARET (blink 530 ms) are the editor's flux, clocked by the frame's `now`
 // (`tick`, once a tick, before the draw): `tick` answers whether a frame is wanted — every tick while a
 // wipe runs, once per blink phase while the caret stands, once when a face lands or the editor moves.
+//
+// Where the WRITING LIES (petition I60 — a drag across the words selects them, a second click takes a word, a third a line): the
+// caret index on the sheet under a world point (`indexAt` — none off the sheet), the word or the laid line around an index
+// (`rangeAt`, the pure `wordRange` and `lineRange`), all from what was last drawn. The editor's SELECTION is flux here as the caret is
+// (`select`, `selectionOf`): the platform's field holds it, it is never stored or synced, and the note does not draw it yet.
 
 import type { Entity } from "@ice/core";
 import { type KindHost, rasterPriority } from "@ice/desk";
-import { type View, HAND, caretAt, glyphBox, type HandLaw, type HandLayout, layoutText, type TextRaster, seedsFor } from "@ice/desk/kit";
+import { type View, HAND, caretAt, glyphBox, type HandLaw, type HandLayout, layoutText, type TextRange, type TextRaster, type TextUnit, seedsFor } from "@ice/desk/kit";
 import { PAPER } from "./theme";
 import type { PaperInstance } from "./layout";
 import type { InkRect, UvRect } from "./pages";
@@ -167,6 +172,17 @@ export interface Writing {
   landed(e: Entity): number;
   /** The caret index nearest a world point on a drawn note — where a tap puts the pen. */
   caretIndexAt(e: Entity, wx: number, wy: number): number | undefined;
+  /**
+   * The caret index nearest world point (wx, wy) ON note `e`'s sheet as last drawn (petition I60 — where a press or a drag across its
+   * writing lands): undefined off the sheet, before its first draw, or while the face loads.
+   */
+  indexAt(e: Entity, wx: number, wy: number): number | undefined;
+  /** The WORD (`wordRange`) or the LAID LINE (`lineRange`) around caret index `index` of note `e` as last drawn — undefined before its first draw (petition I60). */
+  rangeAt(e: Entity, index: number, unit: TextUnit): TextRange | undefined;
+  /** The editor's SELECTION on note `e` (petition I60): its range, held in order (`from` ≤ `to`); `undefined` lifts it. Flux: told with the caret, never stored, not drawn yet. */
+  select(e: Entity | undefined, from?: number, to?: number): void;
+  /** The selection as told: its note and its range. */
+  selectionOf(): { readonly entity: Entity; readonly from: number; readonly to: number } | undefined;
   /** The topmost note drawn last frame under a world point. */
   noteAt(wx: number, wy: number): Entity | undefined;
   /** The note left the desk for good: its rect back to the pages. */
@@ -213,6 +229,40 @@ const OWNER = "paper";
 const str = (props: Readonly<Record<string, unknown>>, name: string): string => { const v = props[name]; return typeof v === "string" ? v : ""; };
 const num = (props: Readonly<Record<string, unknown>>, name: string): number => { const v = props[name]; return typeof v === "number" && Number.isFinite(v) ? v : 0; };
 
+/** A WORD's character (petition I60): a letter (its marks with it), a digit or an apostrophe, straight or typographer's. */
+const WORDISH = /[\p{L}\p{M}\p{N}'’]/u;
+
+/**
+ * The WORD around caret index `index` (a double click — petition I60): the run of letters, digits and apostrophes it stands in, or
+ * the one it stands just after; in a gap between words, the one character after the index; at a line break or the end, none.
+ */
+export function wordRange(text: string, index: number): TextRange {
+  const n = text.length;
+  const i = Math.min(Math.max(index, 0), n);
+  const word = (k: number): boolean => k >= 0 && k < n && WORDISH.test(text[k] as string);
+  let a = i;
+  if (!word(a) && word(a - 1)) a -= 1;
+  if (!word(a)) return a < n && text[a] !== "\n" ? { from: a, to: a + 1 } : { from: i, to: i };
+  let from = a;
+  let to = a + 1;
+  while (word(from - 1)) from -= 1;
+  while (word(to)) to += 1;
+  return { from, to };
+}
+
+/** The LAID LINE around caret index `index` (a third click — petition I60): the layout's line it stands on, without the break that ends it. */
+export function lineRange(L: HandLayout, text: string, index: number): TextRange {
+  const i = Math.min(Math.max(index, 0), text.length);
+  let line: { readonly start: number; readonly end: number } | undefined;
+  for (const l of L.lines) {
+    if (l.start > i) break;
+    line = l;
+  }
+  if (line === undefined) return { from: i, to: i };
+  const to = line.end > line.start && text[line.end - 1] === "\n" ? line.end - 1 : line.end;
+  return { from: line.start, to };
+}
+
 /** The caret index nearest a point in a note's own units (the prototype's `caretIndexAt`): lines weigh three times the columns. */
 export function caretIndexIn(L: HandLayout, nx: number, ny: number, length: number): number {
   let best = 0;
@@ -241,6 +291,8 @@ export function createWriting(opts: WritingOptions): Writing {
   const landedOf = new Map<Entity, number>();
   const land = (e: Entity): void => { landedOf.set(e, (landedOf.get(e) ?? 0) + 1); };
   let focus: { entity: Entity; index: number; t0: number } | undefined;
+  /** The editor's selection as told (petition I60) — flux, as the caret is. */
+  let selection: { readonly entity: Entity; readonly from: number; readonly to: number } | undefined;
   let now = 0;
   let ticks = 0;
   let render = 0;
@@ -356,6 +408,16 @@ export function createWriting(opts: WritingOptions): Writing {
     const shows = en.raster === null ? "nothing" : en.raster.band < band ? "magnified" : "minified";
     en.run ??= () => run(e);
     Q.ask(OWNER, e, rasterPriority(shows, px), en.run);
+  };
+
+  /** The caret index nearest a world point on note `e` as last drawn (`caretIndexAt`; on its sheet only, `indexAt`). */
+  const caretIndexNear = (e: Entity, wx: number, wy: number): number | undefined => {
+    const en = entries.get(e);
+    const L = en?.layout;
+    const G = en?.geometry;
+    if (en === undefined || L === undefined || G === undefined) return undefined;
+    const [qx, qy] = localOf(G, wx, wy);
+    return caretIndexIn(L, qx / G.scale + en.w / 2, qy / G.scale + en.h / 2, en.text.length);
   };
 
   const entryOf = (e: Entity): Entry => {
@@ -496,14 +558,25 @@ export function createWriting(opts: WritingOptions): Writing {
     wipeOf: (e) => wipes.get(e),
     landed: (e) => landedOf.get(e) ?? 0,
 
-    caretIndexAt(e, wx, wy) {
-      const en = entries.get(e);
-      const L = en?.layout;
-      const G = en?.geometry;
-      if (en === undefined || L === undefined || G === undefined) return undefined;
-      const [qx, qy] = localOf(G, wx, wy);
-      return caretIndexIn(L, qx / G.scale + en.w / 2, qy / G.scale + en.h / 2, en.text.length);
+    caretIndexAt: (e, wx, wy) => caretIndexNear(e, wx, wy),
+
+    indexAt(e, wx, wy) {
+      const G = entries.get(e)?.geometry;
+      if (G === undefined || sdPaper(G, wx, wy) >= 0) return undefined;   // off the sheet as drawn
+      return caretIndexNear(e, wx, wy);
     },
+
+    rangeAt(e, index, unit) {
+      const en = entries.get(e);
+      if (en === undefined || !en.keyed) return undefined;
+      if (unit === "word") return wordRange(en.text, index);
+      return en.layout === undefined ? undefined : lineRange(en.layout, en.text, index);
+    },
+
+    select(e, from = 0, to = from) {
+      selection = e === undefined ? undefined : { entity: e, from: Math.min(from, to), to: Math.max(from, to) };
+    },
+    selectionOf: () => selection,
 
     noteAt(wx, wy) {
       let best: Entity | undefined;
@@ -523,6 +596,7 @@ export function createWriting(opts: WritingOptions): Writing {
       wipes.delete(e);
       landedOf.delete(e);
       if (focus?.entity === e) { focus = undefined; dirty = true; }
+      if (selection?.entity === e) selection = undefined;
     },
 
     reset() {
@@ -546,6 +620,7 @@ export function createWriting(opts: WritingOptions): Writing {
       entries.clear();
       wipes.clear();
       focus = undefined;
+      selection = undefined;
     },
   };
 }
