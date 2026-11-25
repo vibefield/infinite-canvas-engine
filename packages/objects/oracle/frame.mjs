@@ -26,6 +26,12 @@
 // the Node oracle and the desk lay the same bytes. The two draw as composite runs (kinds/layer.ts): the
 // pads beneath the sheets and the things, the books over every other thing, whatever the scene's order says.
 //
+// THE PEN (petition I59): a host that lends the hand's faces (`hand` — `handFacesOf` over the baked atlases in Node, the page's
+// faces by URL in Chrome) has every note with words and no committed raster written with the pen THROUGH THE NOTE'S OWN WRITING
+// (paper/writing.ts — the same roads, layout, clock and run the desk's note takes): its run written into the paper pass's run store,
+// its base in its record. A note that pins the committed raster (`asset`) draws it, as ever; a still's words are already there (a
+// first look writes nothing) unless its spec says they `arrive` (ms since they came, the still drawn mid-writing).
+//
 // And the desk's MARKS (design-015 §7, D4a): a scene's `selected` objects wear the selection as the product
 // does — brackets for one, member ticks and a union for several, knobs where the kind resizes — and its
 // `locked` ones the tape; `marks` states the rest a still can pin (the lock-on's progress, the vellum, the
@@ -39,6 +45,8 @@ import { createStillDesk } from "../../desk/src/still.ts";
 import { DEFAULT_MAT_CONFIG, HERO_MATRIX } from "../../desk/src/mat/layout.ts";
 import { DEFAULT_GRID } from "../../desk/src/mat/grid.ts";
 import { DEFAULT_PAPER_LAW, lampOf, resolvePaper, tiltOf } from "../src/paper/paper.ts";
+import { createWriting } from "../src/paper/writing.ts";
+import { HAND } from "../../desk/src/kit/text.ts";
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from "../src/minimat/minimat.ts";
 import { finishOf, flightLights, flightPresent, insidePresent } from "../../desk/src/kit/inside.ts";
 import { insideView, miniMatInstance } from "../src/minimat/inside.ts";
@@ -203,9 +211,10 @@ export function pinnedAt(c, day) {
  * and the desk draws without it). Its MAT, ROOT SLOT and POOL are the HOST-LESS DESK every `createStill` draws on (petition I30 —
  * `@ice/desk`'s still.ts `createStillDesk`: the mat from the desk's GENERATED shader text, the same bytes as the .wgsl files on disk
  * — `gen:check` —, the slot set over the kinds, the desk's own blue noise), so the golden pins the desk a plugin's still is drawn on;
- * the chrome (the marks, the hand, the tray) is the oracle's own, on that mat.
+ * the chrome (the marks, the hand, the tray) is the oracle's own, on that mat. `hand`: the hand's faces the host lends (petition
+ * I59 — every face the desk's note is written in, landed before the first still); absent, no note writes with the pen.
  */
-export async function createOracleDesk({ device, format, text, assets, log = console.log, objects = [], onError }) {
+export async function createOracleDesk({ device, format, text, assets, hand, log = console.log, objects = [], onError }) {
   // THE OPEN KIND LIST (design-016 K8b): object types a host hands the desk beyond the reference six — a PLUGIN's (the desk clock,
   // examples/desk-clock) — each drawn through its own kind's contract alone (`resolve` → `record`, `chip`), never by name here: a
   // scene lays them as `objects: [{ type, x, y, w?, h?, props?, asset? }]` on any desk. Their programs join the root's registry after
@@ -305,14 +314,59 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   };
   /** The committed raster, placed once per render — as the lab keeps one raster per note, however many desks draw it. */
   let inkRaster = null;
-  /** A desk's notes as the pass takes them: each resolved under the one lamp, the committed raster where a note carries it. */
-  function notesOf(specs = []) {
+  /**
+   * THE PEN (petition I59): the note's own writing on this desk, over the faces the host lends and the paper pass's run store (Node
+   * has no text raster: a sheet the pen cannot write draws blank, as every unpinned sheet did). Its notes are keyed in the order a
+   * scene's come; each scene forgets the last's (`forgetPens`), so the same scene writes the same runs at the same bases.
+   */
+  const writing = hand === undefined ? undefined : createWriting({ pages: () => papers, runs: () => papers.runs, faces: hand });
+  /** The clock a still's arriving words set off at (`arrive`), ms — any time: the moments are kept from it. */
+  const PEN_T0 = 10_000;
+  let penKeys = 0;
+  let arriveAt = 0;
+  /** The pen-road notes of the scene being built: their keys, specs and sheets (`pens` — the twin's check reads them). */
+  const penNotes = [];
+  /** A new scene: the last one's pen-road notes forgotten (their rooms back, their moments gone), the clock at its start. */
+  function forgetPens() {
+    if (writing === undefined) return;
+    for (let k = 1; k <= penKeys; k++) writing.forget(k);
+    penKeys = 0; arriveAt = 0; penNotes.length = 0;
+    writing.tick(0);
+  }
+  /** A note written with the pen: drawn by the writing (its run written, its base for the record), its layout's lines its greek. */
+  function penOf(n, G, view) {
+    const key = ++penKeys;
+    const rect = { cx: n.x, cy: n.y, w: n.w ?? NOTE.size, h: n.h ?? NOTE.size };
+    const props = { text: n.text, seeds: n.seeds ?? "", seed: n.seed ?? 1 };
+    if (n.arrive !== undefined) {
+      // a still mid-writing: the sheet seen blank at the pen's start, its words arriving then — drawn `arrive` ms later (`pensAt`)
+      writing.tick(PEN_T0);
+      writing.draw(key, { ...props, text: "" }, rect, view, G);
+      arriveAt = Math.max(arriveAt, n.arrive);
+    }
+    const drawn = writing.draw(key, props, rect, view, G);
+    penNotes.push({ key, spec: n, geometry: G });
+    const L = writing.layoutOf(key);
+    const greek = L === undefined || L.lines.length === 0 ? undefined : { x0: HAND.pad, em: HAND.size, lines: L.lines.map((l) => ({ y: l.y, width: l.width })) };
+    return { pen: drawn.pen, greek };
+  }
+  /** The pen's time for the frame: a still's words arriving are drawn `arrive` ms after they came; else the clock's start. */
+  function pensAt() { if (writing !== undefined && arriveAt > 0) writing.tick(PEN_T0 + arriveAt); }
+  const VIEW0 = { camX: 0, camY: 0, zoom: 1, width: VIEW.cssW, height: VIEW.cssH, dpr: VIEW.dpr };
+  /**
+   * A desk's notes as the pass takes them: each resolved under the one lamp, the committed raster where a note carries it, the pen's
+   * run where a note has words and no committed raster (and the host lends faces).
+   */
+  function notesOf(specs = [], view = VIEW0) {
     return specs.map((n) => {
       if (n.asset === "note-1" && inkBytes && !inkRaster) { const rect = papers.alloc(inkMeta.w, inkMeta.h); if (rect) inkRaster = { layer: rect.layer, uv: papers.write(rect, inkBytes) }; }
       const raster = n.asset === "note-1" ? inkRaster : null;
-      // K7b: the greeked lines a still states ride the note as the app's pin does (layer.ts `pinGreek` → the record's `greek`) — its far LOD
-      const greek = n.greek ? { x0: 16, em: 24, lines: n.greek.map(([y, width]) => ({ y, width })) } : undefined;
-      return { geometry: noteGeometry(n), paper: surface(n.paper ?? "note"), ink: pen(n.pen ?? "felt"), ...(raster ? { raster } : {}), ...(greek ? { greek } : {}) };
+      const G = noteGeometry(n);
+      const written = n.asset === undefined && writing !== undefined && typeof n.text === "string" && n.text.length > 0 ? penOf(n, G, view) : undefined;
+      // K7b: the greeked lines a still states ride the note as the app's pin does (layer.ts `pinGreek` → the record's `greek`) — its far
+      // LOD; a note the pen writes greeks its own layout's lines, as the kind's record does
+      const greek = n.greek ? { x0: 16, em: 24, lines: n.greek.map(([y, width]) => ({ y, width })) } : written?.greek;
+      return { geometry: G, paper: surface(n.paper ?? "note"), ink: pen(n.pen ?? "felt"), ...(raster ? { raster } : {}), ...(written?.pen ? { pen: written.pen } : {}), ...(greek ? { greek } : {}) };
     });
   }
   const matGeometry = (m) => resolveMiniMat({ cx: m.x, cy: m.y, w: m.w ?? MINIMAT.size.w, h: m.h ?? MINIMAT.size.h }, { held: m.held ? 1 : 0, hover: 0, ring: prototypeRing && m.selected ? 1 : 0, fade: 1 }, DEFAULT_MINIMAT_LAW, lamp);
@@ -494,7 +548,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
   function deskInputs(desk, cam, s, depth = 0, skip = -1) {
     const gate = s.portalGate ?? PORTAL_GATE;
     const things = thingsOf(desk);
-    const notes = notesOf(things.filter((t) => t.kind === "note"));   // first, as ever: the ink pages are carved in the order the notes come
+    const notes = notesOf(things.filter((t) => t.kind === "note"), viewOf(cam, s));   // first, as ever: the ink pages are carved in the order the notes come
     const minis = [];
     const portals = [];
     const cands = [];
@@ -743,6 +797,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     const heldGrid = { ...rootGrid, mat: { ...rootGrid.mat, gobo: { ...rootGrid.mat.gobo, opacity: 0 } } };
     const held = { object: heldObject, view: viewOf(heldCam, s), grid: heldGrid, e, ...heldFocus(e, vp, theme), stamp: `oracle ${Date.now()} ${Math.random()}` };
     heldFrameDrawn = { ...heldFrame(pose, extentLocal, target1.single), grow, rise, cam: heldCam };
+    pensAt();
     const stats = renderHeldFrame(device, hold, rootSlot, pool, rootGrid, { view: () => target, size: () => size }, inputs, held, { stamp: null, stats: null, copies: 0 });
     return { theme, nav: null, prepared: { incoming: { stats: { k0: stats.k0, fade: stats.fade, wind: stats.wind } }, portals: stats.portals }, marks: [] };
   }
@@ -805,6 +860,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     const m = matOf(s);
     papers.law = DEFAULT_PAPER_LAW; papers.chain = s.paper?.chain ?? false;
     papers.reset(); inkRaster = null;
+    forgetPens();
     pageInk = new PageInk();
     for (const id of rastered) boards.release(id);
     rastered.clear(); nextBoard = 1;
@@ -832,6 +888,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       inputs = { view: viewOf(cam, s), mat: m, theme, ...(s.lodZoom !== undefined ? { lodZoom: s.lodZoom } : {}), grid: rootGrid, objects: r.objects, ...(r.portals.length ? { portals: r.portals } : {}), ...(opts.light ? { light: opts.light } : {}) };
     }
     if (opts.ownLitInsides) inputs = litOwn(inputs);
+    pensAt();   // the pen's time for the frame (petition I59): a still's arriving words mid-writing, else the clock's start
     // the pegboard drawer (design-017): a still's slide and shown scroll, over the marks — and its specimens (K5a)
     const trayIn = s.tray === undefined || s.nav ? undefined : trayInputsOf(s, inputs.view, theme, rootGrid);
     const marked = !(opts.marks === false || prototypeRing || s.nav);
@@ -847,6 +904,7 @@ export async function createOracleDesk({ device, format, text, assets, log = con
       const m = matOf(s);
       papers.law = DEFAULT_PAPER_LAW; papers.chain = false;
       papers.reset(); inkRaster = null;
+      forgetPens();
       pageInk = new PageInk();
       for (const id of rastered) boards.release(id);
       rastered.clear(); nextBoard = 1;
@@ -870,5 +928,10 @@ export async function createOracleDesk({ device, format, text, assets, log = con
     return captureFrame(device, passesOn(rootGrid), format, inputs, { stamp: null, stats: null, copies: 0 }, opts);
   }
 
-  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, tray, traySlots, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, bookOf, pages: () => pageInk, encode, inputsOf, captureOf, heldFrame: () => heldFrameDrawn };
+  /**
+   * The pen-road notes of the scene last built (petition I59): each note's spec, its sheet as drawn and its run as the writing wrote it
+   * (`NotePenInfo` — the run, the atlas), and the pen's time the frame was drawn at — what the twin's check holds the pixels to.
+   */
+  const pens = () => ({ time: writing?.penTime() ?? 0, notes: penNotes.map(({ key, spec, geometry }) => ({ spec, geometry, pen: writing?.penOf(key) })) });
+  return { mat, papers, minimats, boards, photos, notebooks, calendars, marks, tray, traySlots, marksOf, rootSlot, pool, VP, noteGeometry, notesOf, matGeometry, insideOf, contentOf, childrenOf, thingsOf, printOf, boardPoseOf, bookOf, pages: () => pageInk, pens, encode, inputsOf, captureOf, heldFrame: () => heldFrameDrawn };
 }

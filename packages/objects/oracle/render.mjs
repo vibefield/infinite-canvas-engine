@@ -43,7 +43,10 @@ import { insideView } from "../src/minimat/inside.ts";
 import { arrivalCamera, FIT } from "../../desk/src/nav/flight.ts";
 import { PORTAL_GATE } from "../../desk/src/nav/portal.ts";
 import { DRAWER, SHADOW_REACH } from "../../desk/src/tray/drawer.ts";
-import { THEMES, surface } from "./fixtures/vf-theme.ts";
+import { THEMES, pen as penInk, surface } from "./fixtures/vf-theme.ts";
+import { readHandAtlas } from "../../desk/src/kit/hand-atlas.ts";
+import { handFacesOf } from "../../desk/src/kit/hand-faces.ts";
+import { handInkAt } from "../../desk/src/kit/hand-run.ts";
 import { DAY_LIGHT, linearToSrgb, srgbToLinear } from "../../desk/src/mat/night.ts";
 import { sdRoundBox, unproject } from "../src/photo/photo.ts";
 import { sdBoard, sdSurface } from "../src/board/board.ts";
@@ -80,6 +83,18 @@ const inkMetaPath = resolve(root, "oracle/fixtures/assets/ink-note-1.json");
 const inkMeta = existsSync(inkMetaPath) ? JSON.parse(readFileSync(inkMetaPath, "utf8")) : null;
 const photoMetaPath = resolve(root, "oracle/fixtures/assets/photo-1.json");
 const photoMeta = existsSync(photoMetaPath) ? JSON.parse(readFileSync(photoMetaPath, "utf8")) : null;
+// THE PEN (petition I59): the desk's three faces as apps/desk bakes and ships them (assets/hand — held to the bake by its gen:check),
+// lent by the names the note asks (`PEN_FACES`'). Read from the app's own folder, not copied: one home for the files, and a read is
+// no import (the package walls hold imports); apps/desk's parity page lends the same files by URL.
+const handDir = resolve(root, "../../apps/desk/assets/hand");
+const HAND_FILES = { caveat: "caveat-500", "caveat-bold": "caveat-600", kalam: "kalam-400" };
+const handAtlases = {};
+for (const [name, file] of Object.entries(HAND_FILES)) {
+  const read = readHandAtlas(JSON.parse(readFileSync(resolve(handDir, `${file}.hand.json`), "utf8")), bytesOf(handDir, `${file}.hand.bin`));
+  if ("error" in read) throw new Error(`oracle: the hand's face ${file} (apps/desk/assets/hand) does not read — ${read.error}`);
+  handAtlases[name] = read;
+}
+const hand = handFacesOf(handAtlases);
 // the desk calendars' committed prints (D3t-c — prints.mjs): the live print's tiles, read back from the world in Chrome
 const prints = {};
 for (const name of PRINT_FIXTURES) {
@@ -102,7 +117,7 @@ const scoped = async (what, fn) => {
 };
 // The desk both hosts draw (frame.mjs), on Dawn's device, composed from the .wgsl files on disk.
 const desk = await scoped("creation", () => createOracleDesk({
-  device, format: FORMAT, text: texts, objects: [...DESK_CLOCK_OBJECTS, DeskClockBroken],
+  device, format: FORMAT, text: texts, hand, objects: [...DESK_CLOCK_OBJECTS, DeskClockBroken],
   // (the kinds' creation window — petition I24 — holds what a kind does after its first await: an error there no kind raises alone is
   // the probe's, as its own scope would have counted it; a kind's own refuses that kind — the broken clock's compile error, held here)
   onError: (e) => { probe.errors.push(`creation (no kind's alone): ${e.message}`); },
@@ -600,6 +615,59 @@ async function paperCheck(sc) {
   }
   const ok = outsideMax === 0 && insideDiff > inside * 0.5 && shadowBright === 0 && shadowDark > 0 && (!sc.token || (stripOff === 0 && strip > 100));
   console.log(`  ${ok ? "PASS" : "FAIL"}  paper      ${sc.name.padEnd(24)} beyond the sheets and their shadows maxΔ ${outsideMax}/255 over ${outside.toLocaleString()} px · inside ${insideDiff.toLocaleString()} of ${inside.toLocaleString()} differ · the shadow band ${shadowDark.toLocaleString()} of ${shadowN.toLocaleString()} darker, ${shadowBright} brighter${sc.token ? ` · the flat strip is the token's byte within ${stripMax}/255 over ${strip.toLocaleString()} px (${stripOff} off)` : ""}`);
+  return ok;
+}
+
+/** The pen's tolerance against its CPU twin (petition I59 — the kit's Dawn unit holds `hand_ink` to `handInkAt` within it). */
+const PEN_TOL = 0.03;
+
+/**
+ * THE PEN (petition I59), as pixels — the note's own shader draws what the kit's CPU twin says the pen laid. With no light on the
+ * desk, under a sheet's flat strip (the lamp's shading is 1 there and the day's chain the identity, so the drawn colour IS the
+ * albedo), a pixel of a note the pen writes, against the same still with that note BLANK (the same sheet, the same fibre), gives
+ * the coverage the shader laid: `(B − A) / (B − ink)`, on the channel where the paper and the pen differ most. Each is held to
+ * `handInkAt` over the very run the note's writing wrote, at the frame's pen time and the pixel's own width (the layout's units),
+ * within PEN_TOL — and the sheet must hold ink (where the twin lays more than half, a few hundred px at least).
+ */
+async function penCheck(sc) {
+  const s = sc.scene;
+  const k = 1 / (s.zoom * VIEW.dpr);
+  const { px: A, w, h } = await render(s);
+  const { time, notes } = desk.pens();
+  const written = notes.filter((n) => n.pen !== undefined);
+  const blank = (n) => (n.asset === undefined && typeof n.text === "string" && n.text.length > 0 ? { ...n, text: "", arrive: undefined } : n);
+  const { px: B } = await render({ ...s, notes: s.notes.map(blank) });
+  let checked = 0;
+  let inked = 0;
+  let worst = 0;
+  let over = 0;
+  for (const { spec, geometry: G, pen: P } of written) {
+    const ink = penInk(spec.pen ?? "felt").map((v) => v * 255);
+    const flat = -G.half[1] + G.glue * 2 * G.half[1];
+    const ext = Math.hypot(G.half[0], G.half[1]);
+    const x0 = Math.max(0, Math.floor((G.centre[0] - ext - s.camX) / k));
+    const x1 = Math.min(w, Math.ceil((G.centre[0] + ext - s.camX) / k));
+    const y0 = Math.max(0, Math.floor((G.centre[1] - ext - s.camY) / k));
+    const y1 = Math.min(h, Math.ceil((G.centre[1] + ext - s.camY) / k));
+    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+      const [wx, wy] = worldAt(s, x, y);
+      const [qx, qy] = localOf(G, wx, wy);
+      if (!(qy < flat - 2 && qy > -G.half[1] + 3 && Math.abs(qx) < G.half[0] - 3)) continue;
+      const o = (y * w + x) * 4;
+      let ch = 0;
+      let span = 0;
+      for (let c = 0; c < 3; c++) { const d = B[o + c] - ink[c]; if (Math.abs(d) > Math.abs(span)) { span = d; ch = c; } }
+      const gpu = (B[o + ch] - A[o + ch]) / span;
+      const twin = handInkAt(P.run, P.atlas, (qx + G.half[0]) / G.scale, (qy + G.half[1]) / G.scale, time, k / G.scale).cover;
+      checked++;
+      if (twin > 0.5) inked++;
+      const d = Math.abs(gpu - twin);
+      if (d > worst) worst = d;
+      if (d > PEN_TOL) over++;
+    }
+  }
+  const ok = written.length > 0 && inked > 200 && worst <= PEN_TOL;
+  console.log(`  ${ok ? "PASS" : "FAIL"}  pen        ${sc.name.padEnd(24)} ${written.length} note${written.length === 1 ? "" : "s"} written with the pen (pen time ${time} ms): under the flat strip the drawn coverage vs the CPU twin's over ${checked.toLocaleString()} px — max |Δ| ${worst.toFixed(4)} (${over} over ${PEN_TOL}), ${inked.toLocaleString()} px of ink`);
   return ok;
 }
 
@@ -1430,6 +1498,7 @@ for (const sc of scenes) if (sc.light) { if (!(await lightCheck(sc))) failed += 
 for (const sc of scenes) if (sc.night) { if (!(await nightCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.ruler) { if (!(await rulerCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.paper) { if (!(await paperCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.pen) { if (!(await penCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.photo) { if (!(await photoCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.order) { if (!(await orderCheck(sc))) failed += 1; }
 if (!(await cardCheck())) failed += 1;

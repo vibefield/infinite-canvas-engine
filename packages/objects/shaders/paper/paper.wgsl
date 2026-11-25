@@ -6,8 +6,10 @@
 // sheet raised while held — and that height does three things: it tilts the
 // normal the lamp shades, it moves the point the gobo is read at, and it casts
 // the sheet's shadow along the lamp's ground slope, blurred by how high the
-// rim is there. The ink is a coverage raster laid into the paper's albedo
-// before the light, so the dapple crosses the writing as it crosses the mat.
+// rim is there. The ink — a coverage raster, or on the PEN's road (petition
+// I59) the sheet's glyph run read with the face's atlas by the kit's `hand_ink`
+// — is laid into the paper's albedo before the light, so the dapple crosses the
+// writing as it crosses the mat.
 
 fn paper_cov(d: f32, px: f32) -> f32 { return clamp(0.5 - d / px, 0.0, 1.0); }
 fn paper_line(d: f32, w: f32, px: f32) -> f32 { return paper_cov(d, px) - paper_cov(d + w, px); }
@@ -86,12 +88,15 @@ fn paper_greek(P: Paper, k: PaperUniforms, nq: vec2f, px: f32) -> f32 {
 }
 
 // One note at a world point `p`: premultiplied colour. `px` is world units per DEVICE px,
-// `css` world units per CSS px; `frag` the framebuffer pixel (the blue noise's key); `lit` the
-// slot is lit from elsewhere (a mini mat's inside, a handover — MINIMAT.md §4): a PIPELINE constant,
-// never a uniform flag, so a note under its own lamp compiles to exactly what it always did.
+// `css` world units per CSS px; `frag` the framebuffer pixel (the blue noise's key); `hand_runs`,
+// `hand_atlas` and `hand_samp` the PEN's (petition I59): the kind's run store, the face's atlas and its
+// sampler, passed to the kit's `hand_ink`; `lit` the slot is lit from elsewhere (a mini mat's inside,
+// a handover — MINIMAT.md §4): a PIPELINE constant, never a uniform flag, so a note under its own lamp
+// compiles to exactly what it always did.
 fn shade_paper(P: Paper, u: MatUniforms, k: PaperUniforms, p: vec2f, px: f32, css: f32, frag: vec2f,
                gobo_tex: texture_2d<f32>, gobo_samp: sampler, noise_tex: texture_2d<f32>, noise_samp: sampler,
-               ink_tex: texture_2d_array<f32>, ink_samp: sampler, lit: bool) -> vec4f {
+               ink_tex: texture_2d_array<f32>, ink_samp: sampler,
+               hand_runs: texture_2d<f32>, hand_atlas: texture_2d<f32>, hand_samp: sampler, lit: bool) -> vec4f {
   let q = paper_local(P, p);
   let d = sdf_round_box(q, P.half, P.radius);
   // The shadow, outside the sheet only: the silhouette cast along the lamp's ground slope
@@ -131,7 +136,15 @@ fn shade_paper(P: Paper, u: MatUniforms, k: PaperUniforms, p: vec2f, px: f32, cs
   let uv = P.uv.xy + (nq / (2.0 * P.half)) * (P.uv.zw - P.uv.xy);
   var ink = 0.0;
   if (P.layer >= 0) { ink = textureSampleLevel(ink_tex, ink_samp, uv, P.layer, 0.0).r; }
-  // The wipe: the pen still writing the newest glyph — inside its box the ink appears left to right.
+  // THE PEN (petition I59): a sheet on the pen's road reads its words from its glyph run and the face's atlas (the kit's
+  // `hand_ink`) at the point and the device px in the LAYOUT's units — the run is laid at rest, so a held sheet's scale is
+  // divided out — at the pen's time in the knobs; under the far LOD's low edge the greek alone is drawn, and nothing is read.
+  let pen = P.pen.y > 0.5;
+  if (pen && far < 1.0) {
+    let s = max(P.pen.z, 1.0e-6);
+    ink = hand_ink(hand_runs, hand_atlas, hand_samp, u32(P.pen.x), nq / s, k.pen.xy, px / s).cover;
+  }
+  // The wipe (the raster's road): the pen still writing the newest glyph — inside its box the ink appears left to right.
   if (P.wipe.z > P.wipe.x && nq.x >= P.wipe.x && nq.x <= P.wipe.z && nq.y >= P.wipe.y && nq.y <= P.wipe.w) {
     let edge = P.wipe.x + P.marks.x * (P.wipe.z - P.wipe.x + k.knobs.y);
     ink *= 1.0 - smoothstep(edge - k.knobs.y, edge, nq.x);
@@ -139,9 +152,10 @@ fn shade_paper(P: Paper, u: MatUniforms, k: PaperUniforms, p: vec2f, px: f32, cs
   // K7b: the greeked lines in the raster's place — crossfaded within the band, alone under it (where no raster is held).
   // K9 R6: and held at FULL while the sheet holds no raster at any size (`layer < 0` — its ink is on the frame queue's way, or
   // was let go at far and not yet laid on the way back): the greek stands in for the writing until the raster lands, never a
-  // blank sheet. The fibre keeps the band's word (`fine`): the paper's grain is the size's, not the raster's.
+  // blank sheet. A sheet the pen writes holds its words at every size: the band's crossfade alone. The fibre keeps the band's
+  // word (`fine`): the paper's grain is the size's, not the raster's.
   var greeked = far;
-  if (P.layer < 0 && P.greek.z > 0.5) { greeked = 1.0; }
+  if (P.layer < 0 && !pen && P.greek.z > 0.5) { greeked = 1.0; }
   if (greeked > 0.0 && P.greek.z > 0.5) { ink = mix(ink, paper_greek(P, k, nq, px), greeked); }
   albedo = mix(albedo, P.ink.xyz, ink * P.ink.w);
   // the lamp's shading, in the display's own gamma (the mat's law: a linear multiply shows as shade^(1/2.2))

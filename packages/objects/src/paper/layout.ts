@@ -1,7 +1,8 @@
 // The paper pass's GPU records, declared once. `Paper` is one note as drawn —
 // what `resolvePaper` returns, the paper's and the pen's colours, where its
-// ink lives in the pages, the writing head (the wipe) and the caret.
-// `PaperUniforms` is the pass's own knobs; the camera, the light, the gobo
+// ink lives (the raster's pages, or the pen's run — petition I59), the
+// writing head (the raster's wipe) and the caret. `PaperUniforms` is the
+// pass's own knobs (the pen's time among them); the camera, the light, the gobo
 // and the portal chain arrive through the mat's block (`MatUniforms`), which
 // the pass fills for itself so a note is lit like the mat whether or not the
 // mat is the grid this frame.
@@ -31,6 +32,7 @@ export const Paper = defineStruct("Paper", [
   ["caret", "vec4f"],   // the caret: x, baseline y (note units), its reach above and below
   ["marks", "vec4f"],   // the wipe's progress, the caret on (0/1), unused ×2
   ["greek", "vec4f"],   // K7b — the writing GREEKED (the far LOD): the text's left edge and em (note units), how many lines, unused
+  ["pen", "vec4f"],     // petition I59 — THE PEN: the run's base in the kind's run store, 1 on the pen's road (else 0), the held scale it is laid at, unused
   ["glines", `array<vec4f, ${GREEK_LINES / 2}>`],   // …each line's baseline and width (note units), two lines a vec4
 ] as const);
 
@@ -38,6 +40,7 @@ export const PaperUniforms = defineStruct("PaperUniforms", [
   ["knobs", "vec4f"],   // the mat's chain on the paper (0 = a lit byte is the token's byte, 1 = the mat's double gamma), the wipe's softness (note units), the caret's width (CSS px), the ring's width (CSS px)
   ["select", "vec4f"],  // --vf-select, the ring's colour
   ["far", "vec4f"],     // K7b — the far LOD (theme.ts `PAPER.far`): its band's low and high edges (CSS px of the sheet's longer side), the greek's weight and alpha
+  ["pen", "vec4f"],     // petition I59 — the pen's time (`penNow`): whole seconds and the ms past them, unused ×2
 ] as const);
 
 export const MAX_PAPERS = 1024;
@@ -52,8 +55,13 @@ export interface PaperInstance {
   readonly inkDensity?: number;
   /** The fibre's amplitude, ±/255 — theme.ts `PAPER.grain` unless the host says. */
   readonly grain?: number;
-  /** Where the ink lives (pages.ts): absent = a blank sheet. */
+  /** Where the ink lives (pages.ts): absent = a blank sheet (or one the pen writes). */
   readonly raster?: { readonly layer: number; readonly uv: UvRect } | undefined;
+  /**
+   * THE PEN (petition I59): where the sheet's glyph run lives in the kind's run store — its base, the texel index `hand_ink` reads
+   * it from; absent, the sheet is not on the pen's road (its ink is the raster's, or it has none).
+   */
+  readonly pen?: { readonly base: number } | undefined;
   /** The newest glyph's box and how far the pen has got through it. */
   readonly wipe?: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number; readonly t: number } | undefined;
   /** The caret, when the note is being written. */
@@ -84,6 +92,8 @@ export function paperValues(p: PaperInstance, grain: number) {
     caret: c ? [c.x, c.y, c.above, c.below] : [0, 0, 0, 0],
     marks: [w ? w.t : 1, c?.on ? 1 : 0, 0, 0],
     greek: [gk?.x0 ?? 0, gk?.em ?? 0, gn, 0],
+    // the run's base (an f32 is exact below 2^24 texels), on the pen's road, at the sheet's held scale (the run is laid at rest)
+    pen: p.pen !== undefined ? [p.pen.base, 1, G.scale, 0] : [0, 0, 1, 0],
     glines: gl,
   };
 }

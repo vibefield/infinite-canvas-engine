@@ -29,8 +29,8 @@ export { PAPER } from "./paper/theme";
 export { askTurn, bookAngle, bookFrame, type BookPose, type Books, createBooks, DEFAULT_PEN, inTurnZone, NOTEBOOK_KIND, NOTEBOOK_PAGE, NOTEBOOK_PENS, NOTEBOOK_TOOLS, notebookFrame, type NotebookGeometry, NotebookKind, type NotebookKindOptions, notebookKind, type NotebookObjectLook, type NotebookPalette, notebookProgram, notebookReach, PageTurns, pageHitAt, partOf, penOfTool, penToolId } from "./notebook/kind";
 export { PAPER_KIND, type PaperAsset, PaperKind, type PaperKindOptions, type PaperLook, type PaperPalette, paperFrame, paperProgram, paperReach, paperKind } from "./paper/kind";
 export { createPrints, type FlickWitness, PHOTO_KIND, photoFrame, photoKind, PhotoKind, type PhotoKindOptions, type PhotoPose, photoProgram, photoReach, PRINT_RETURN_MS, printExtent, printRect, type PrintRest, type Prints } from "./photo/kind";
-// the text stack's seam and the note's writing (D2c, design-015 §6.1)
-export { createWriting, DEFAULT_BLEED, DEFAULT_FACE, DEFAULT_HAND_LAW, type InkPages, type NoteInk, type NoteRasterInfo, type Writing, type WritingStats } from "./paper/writing";
+// the text stack's seam and the note's writing (D2c, design-015 §6.1) — its two roads, the pen's and the raster's (petition I59)
+export { createWriting, DEFAULT_BLEED, DEFAULT_FACE, DEFAULT_HAND_LAW, type InkPages, type NoteInk, type NotePenInfo, type NoteRasterInfo, type NoteRoad, type NoteRuns, type Writing, type WritingStats } from "./paper/writing";
 
 /**
  * The desk's kinds in the order they prepare — the prototype's (the notes, the mini mats, the whiteboards; its prints

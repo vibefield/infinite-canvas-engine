@@ -38,12 +38,25 @@ export interface OracleDesk {
   ): { readonly prepared: { readonly portals: number } };
 }
 
+/**
+ * The hand's faces a host lends the oracle's notes (petition I59 — `@ice/desk/kit`'s `HandFaces`, stated here structurally so the
+ * declaration stays self-contained): `handFacesOf` over the baked atlases in Node, the page's `handFaces` by URL in Chrome — every
+ * face the note is written in landed before the first still.
+ */
+export interface OracleHandFaces {
+  face(name: string): unknown;
+  version(): number;
+  loading?(name: string): boolean;
+}
+
 /** The desk both hosts draw: the root's passes on `device` in `format`, the fixtures on them, the scene builder. */
 export function createOracleDesk(opts: {
   readonly device: GPUDevice;
   readonly format: GPUTextureFormat;
   readonly text: ShaderText;
   readonly assets: OracleAssets;
+  /** THE PEN (petition I59): the faces the notes with words and no committed raster are written in; absent, none writes. */
+  readonly hand?: OracleHandFaces;
   readonly log?: (message: string) => void;
   /**
    * THE OPEN KIND LIST (design-016 K8b): object types beyond the reference six — a plugin's (`defineObject`'s widget types) —

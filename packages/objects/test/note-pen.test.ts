@@ -350,7 +350,9 @@ describe("the wake (petition I59 — K7a: nothing polled)", () => {
     expect(f.due).toBe(now());   // being written: due now
     let frames = 0;
     let wants = 0;
+    expect(w.stats().moving).toBe(1);   // the pen is writing this sheet
     for (let i = 0; i < 120 && w.due(now()) <= now(); i++) { const g = frame([]); frames += 1; if (g.want) wants += 1; }
+    expect(w.stats().moving).toBe(0);
     expect(frames).toBeGreaterThan(10);   // the pen wrote for a while…
     expect(redraws).toBeGreaterThan(10);  // …each frame a redraw…
     expect(wants).toBe(0);                // …and no record remade for it
