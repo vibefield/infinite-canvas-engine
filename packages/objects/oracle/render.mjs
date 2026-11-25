@@ -47,6 +47,10 @@ import { THEMES, pen as penInk, surface } from "./fixtures/vf-theme.ts";
 import { readHandAtlas } from "../../desk/src/kit/hand-atlas.ts";
 import { handFacesOf } from "../../desk/src/kit/hand-faces.ts";
 import { handInkAt } from "../../desk/src/kit/hand-run.ts";
+import { inkMarksAt, washRun } from "../../desk/src/kit/ink-marks.ts";
+import { markInksOf, paperKind } from "../src/paper/kind.ts";
+import { deskPalette } from "../src/palette.ts";
+import { PAPER } from "../src/paper/theme.ts";
 import { DAY_LIGHT, linearToSrgb, srgbToLinear } from "../../desk/src/mat/night.ts";
 import { sdRoundBox, unproject } from "../src/photo/photo.ts";
 import { sdBoard, sdSurface } from "../src/board/board.ts";
@@ -629,6 +633,12 @@ const PEN_TOL = 0.03;
  * `handInkAt` over the very run the note's writing wrote, at the frame's pen time and the pixel's own width (the layout's units),
  * within PEN_TOL — and the sheet must hold ink (where the twin lays more than half, a few hundred px at least). Beside it, said and
  * not held: THE PEN'S WEIGHT against the committed raster on the still (the same words, seed and sheet) — the look's question.
+ * A MARKED sheet (petition I60 — its run's ink carries a mark, or the selection's wash is on it) is held as COLOUR instead: each pixel
+ * against the paper's order laid on the CPU over its blank sheet `B` — the highlighter's multiply, the pencil's wash, the ink in each
+ * glyph's pen (a re-ink's new pen over the old), the lines over it — from the twins (`inkMarksAt` over the run with its wash laid in,
+ * `handInkAt`) in the palette's inks: every channel within PEN_TOL of 255. A re-ink's front where the arrival field jumps between two
+ * texels may lie a fraction of a px off the twin's (the desk's Dawn unit `marks.dawn` says so and allows it): a still being re-inked
+ * allows such seams at up to 0.2 % of its inked px, none past 0.25.
  */
 async function penCheck(sc) {
   const s = sc.scene;
@@ -637,14 +647,16 @@ async function penCheck(sc) {
   const { time, notes } = desk.pens();
   const written = notes.filter((n) => n.pen !== undefined);
   // B: the same still with every note's words taken off its sheet — the pen's and the committed raster's alike (the same sheets)
-  const blank = (n) => ((typeof n.text === "string" && n.text.length > 0) || n.asset !== undefined ? { ...n, asset: undefined, text: "", arrive: undefined } : n);
+  const blank = (n) => ((typeof n.text === "string" && n.text.length > 0) || n.asset !== undefined ? { ...n, asset: undefined, text: "", arrive: undefined, marks: undefined, inked: undefined, wash: undefined } : n);
   const { px: B } = await render({ ...s, notes: s.notes.map(blank) });
   let checked = 0;
   let inked = 0;
   let worst = 0;
   let over = 0;
+  const marked = [];
   for (const { spec, geometry: G, pen: P } of written) {
     const ink = penInk(spec.pen ?? "felt").map((v) => v * 255);
+    if (P.ink.marks.some((v) => v !== 0) || spec.wash !== undefined) { marked.push({ spec, G, P }); continue; }
     stripOf(s, G, w, h, (o, qx, qy) => {
       const gpu = coverAt(A, B, o, ink);
       const twin = handInkAt(P.run, P.atlas, (qx + G.half[0]) / G.scale, (qy + G.half[1]) / G.scale, time, k / G.scale).cover;
@@ -655,8 +667,10 @@ async function penCheck(sc) {
       if (d > PEN_TOL) over++;
     });
   }
-  const ok = written.length > 0 && inked > 200 && worst <= PEN_TOL;
-  console.log(`  ${ok ? "PASS" : "FAIL"}  pen        ${sc.name.padEnd(24)} ${written.length} note${written.length === 1 ? "" : "s"} written with the pen (pen time ${time} ms): under the flat strip the drawn coverage vs the CPU twin's over ${checked.toLocaleString()} px — max |Δ| ${worst.toFixed(4)} (${over} over ${PEN_TOL}), ${inked.toLocaleString()} px of ink`);
+  const plain = written.length - marked.length;
+  let ok = written.length > 0 && (plain === 0 || inked > 200) && worst <= PEN_TOL;
+  if (plain > 0) console.log(`  ${ok ? "PASS" : "FAIL"}  pen        ${sc.name.padEnd(24)} ${plain} note${plain === 1 ? "" : "s"} written with the pen (pen time ${time} ms): under the flat strip the drawn coverage vs the CPU twin's over ${checked.toLocaleString()} px — max |Δ| ${worst.toFixed(4)} (${over} over ${PEN_TOL}), ${inked.toLocaleString()} px of ink`);
+  if (marked.length > 0 && !inkMarksCheck(sc, s, marked, time, k, A, B, w, h)) ok = false;
   // the pen's weight against the committed raster beside it: the ink each lays under its flat strip — at rest, and at ×1 alone, where
   // the committed bitmap (band 2) is drawn texel for device px as the live raster road draws it there; at another zoom it would be
   // magnified or minified, which the live road never shows (it rasters again at its rung)
@@ -668,6 +682,56 @@ async function penCheck(sc) {
     const of = (x, y) => `${Math.round(x).toLocaleString()} against ${Math.round(y).toLocaleString()} (${((100 * x) / y).toFixed(0)} %)`;
     console.log(`  ....  weight     ${sc.name.padEnd(24)} the pen against the committed raster beside it (the same words, seed and sheet), under the flat strip: ink ${of(a.sum, b.sum)} px · over 0.5 ${of(a.half, b.half)} · over 0.85 ${of(a.deep, b.deep)}`);
   }
+  return ok;
+}
+
+/** The note's marks' inks (petition I60): the palette's pens, highlighters and pencil — the kind's `markInksOf`, as the oracle desk lays them. */
+const NOTE_LOOK = paperKind().theme(deskPalette("light"), "light");
+
+/**
+ * THE MARKS, as colour (petition I60 — `penCheck`'s doc): each marked sheet's flat strip against the paper's order laid on the CPU from
+ * the twins over its blank sheet.
+ */
+function inkMarksCheck(sc, s, marked, time, k, A, B, w, h) {
+  let checked = 0;
+  let laid = 0;
+  let inked = 0;
+  let worst = 0;
+  let seams = 0;
+  let reinked = 0;
+  let reinking = false;
+  const mixed = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+  for (const { spec, G, P } of marked) {
+    const sheet = penInk(spec.pen ?? "felt");
+    const inks = markInksOf(NOTE_LOOK, sheet);
+    const penOfN = (n) => (n >= 1 && n <= inks.pens.length ? inks.pens[n - 1] : sheet);
+    const hlOfN = (n) => (n >= 1 && n <= inks.highlighters.length ? inks.highlighters[n - 1] : inks.pencil);
+    const run = P.wash !== undefined ? washRun(P.run, P.wash) : P.run;
+    if ((P.run.reinks ?? 0) > 0) reinking = true;
+    stripOf(s, G, w, h, (o, qx, qy) => {
+      const x = (qx + G.half[0]) / G.scale;
+      const y = (qy + G.half[1]) / G.scale;
+      const aa = k / G.scale;
+      const m = inkMarksAt(run, x, y, time, aa);
+      const hi = handInkAt(run, P.atlas, x, y, time, aa);
+      let c = [B[o] / 255, B[o + 1] / 255, B[o + 2] / 255];
+      if (m.marker > 0) c = c.map((v, i) => v * (1 + (hlOfN(m.tint)[i] - 1) * m.marker));
+      if (m.wash > 0) c = mixed(c, inks.pencil, m.wash * PAPER.wash);
+      const ic = hi.pen !== 0 || hi.was !== 0 ? mixed(penOfN(hi.was), penOfN(hi.pen), hi.over) : sheet;
+      c = mixed(c, ic, hi.cover);
+      if (m.line > 0) c = mixed(c, penOfN(m.pen), m.line);
+      const d = Math.max(Math.abs(c[0] * 255 - A[o]), Math.abs(c[1] * 255 - A[o + 1]), Math.abs(c[2] * 255 - A[o + 2])) / 255;
+      checked++;
+      if (m.marker > 0.05 || m.line > 0.05 || m.wash > 0.05) laid++;
+      if (hi.cover > 0.05) inked++;
+      if (hi.cover > 0.05 && hi.was !== hi.pen && hi.over < 0.95) reinked++;   // ink its new pen has not written over yet
+      if (d > worst) worst = d;
+      if (d > PEN_TOL) seams++;
+    });
+  }
+  // the sheet must hold what it is checked for: marks laid (a highlight, a line, the wash), or a re-ink's front on the paper
+  const ok = (reinking ? reinked > 20 : laid > 200) && inked > 200 && (reinking ? seams <= 0.002 * inked && worst <= 0.25 : worst <= PEN_TOL);
+  console.log(`  ${ok ? "PASS" : "FAIL"}  marks      ${sc.name.padEnd(24)} ${marked.length} marked note${marked.length === 1 ? "" : "s"} (pen time ${time} ms): under the flat strip the drawn colour vs the paper's order from the twins over ${checked.toLocaleString()} px — max |Δ| ${worst.toFixed(4)} (${seams} over ${PEN_TOL}${reinking ? `, a re-ink's seams allowed at 0.2 % of ${inked.toLocaleString()} inked px` : ""}), ${laid.toLocaleString()} px of marks, ${inked.toLocaleString()} px of ink${reinking ? `, ${reinked.toLocaleString()} px still in the pen they had` : ""}`);
   return ok;
 }
 

@@ -31,6 +31,10 @@
 // (paper/writing.ts — the same roads, layout, clock and run the desk's note takes): its run written into the paper pass's run store,
 // its base in its record. A note that pins the committed raster (`asset`) draws it, as ever; a still's words are already there (a
 // first look writes nothing) unless its spec says they `arrive` (ms since they came, the still drawn mid-writing).
+// Its MARKS (petition I60): a spec's `marks` — `[quote, change]` pairs, each the kit's `mark` over the words `findQuote` finds — are
+// its `marks` cell, drawn by the same writing from the same run (`ink_marks`) in the palette's inks (the kind's `markInksOf`); at rest
+// unless its spec says they were made `inked` ms before the still (the sheet seen unmarked, its marks made then: a stroke pulled
+// through, a word re-inked); `wash`, a quote: the editor's selection over those words, the run's wash.
 //
 // And the desk's MARKS (design-015 §7, D4a): a scene's `selected` objects wear the selection as the product
 // does — brackets for one, member ticks and a union for several, knobs where the kind resizes — and its
@@ -46,6 +50,8 @@ import { DEFAULT_MAT_CONFIG, HERO_MATRIX } from "../../desk/src/mat/layout.ts";
 import { DEFAULT_GRID } from "../../desk/src/mat/grid.ts";
 import { DEFAULT_PAPER_LAW, lampOf, resolvePaper, tiltOf } from "../src/paper/paper.ts";
 import { createWriting } from "../src/paper/writing.ts";
+import { markInksOf, paperKind } from "../src/paper/kind.ts";
+import { encodeMarks, findQuote, inkOf, mark } from "../../desk/src/kit/ink.ts";
 import { HAND } from "../../desk/src/kit/text.ts";
 import { chipOf, DEFAULT_MINIMAT_LAW, faceClip, faceOf, resolveMiniMat } from "../src/minimat/minimat.ts";
 import { finishOf, flightLights, flightPresent, insidePresent } from "../../desk/src/kit/inside.ts";
@@ -330,20 +336,42 @@ export async function createOracleDesk({ device, format, text, assets, hand, log
   function forgetPens() {
     if (writing === undefined) return;
     for (let k = 1; k <= penKeys; k++) writing.forget(k);
+    writing.select(undefined);
     penKeys = 0; arriveAt = 0; penNotes.length = 0;
     writing.tick(0);
+  }
+  /** Where a quote lies in a note's words (the kit's `findQuote`): its range, or the oracle stops — a scene's typo. */
+  const quoted = (n, q) => {
+    const r = findQuote(n.text, q);
+    if ("error" in r) throw new Error(`oracle: the note "${n.text}" holds no single "${q}" (${r.error})`);
+    return r;
+  };
+  /** A note spec's `marks` cell (petition I60): each `[quote, change]` laid by the kit's `mark`, in order — "" for none. */
+  function inkMarksOf(n) {
+    if (!n.marks) return "";
+    let ink = inkOf({ text: n.text, seeds: n.seeds ?? "" }, n.seed ?? 1);
+    for (const [q, change] of n.marks) { const r = quoted(n, q); ink = mark(ink, r.from, r.to, change); }
+    return encodeMarks(ink.marks);
   }
   /** A note written with the pen: drawn by the writing (its run written, its base for the record), its layout's lines its greek. */
   function penOf(n, G, view) {
     const key = ++penKeys;
     const rect = { cx: n.x, cy: n.y, w: n.w ?? NOTE.size, h: n.h ?? NOTE.size };
-    const props = { text: n.text, seeds: n.seeds ?? "", seed: n.seed ?? 1 };
+    const props = { text: n.text, seeds: n.seeds ?? "", seed: n.seed ?? 1, marks: inkMarksOf(n) };
     if (n.arrive !== undefined) {
       // a still mid-writing: the sheet seen blank at the pen's start, its words arriving then — drawn `arrive` ms later (`pensAt`)
       writing.tick(PEN_T0);
       writing.draw(key, { ...props, text: "" }, rect, view, G);
       arriveAt = Math.max(arriveAt, n.arrive);
     }
+    if (n.inked !== undefined) {
+      // a still mid-marking: the sheet seen with its words and no marks at the pen's start, its marks made then — drawn `inked` ms later
+      writing.tick(PEN_T0);
+      writing.draw(key, { ...props, marks: "" }, rect, view, G);
+      arriveAt = Math.max(arriveAt, n.inked);
+    }
+    // the editor's selection over a quote: the run's wash
+    if (n.wash !== undefined) { const r = quoted(n, n.wash); writing.select(key, r.from, r.to); }
     const drawn = writing.draw(key, props, rect, view, G);
     penNotes.push({ key, spec: n, geometry: G });
     const L = writing.layoutOf(key);
@@ -353,6 +381,8 @@ export async function createOracleDesk({ device, format, text, assets, hand, log
   /** The pen's time for the frame: a still's words arriving are drawn `arrive` ms after they came; else the clock's start. */
   function pensAt() { if (writing !== undefined && arriveAt > 0) writing.tick(PEN_T0 + arriveAt); }
   const VIEW0 = { camX: 0, camY: 0, zoom: 1, width: VIEW.cssW, height: VIEW.cssH, dpr: VIEW.dpr };
+  /** The note's look by day (its pens, highlighters and pencil — the same in both themes), for its marks' inks (petition I60). */
+  const NOTE_LOOK = paperKind().theme(deskPalette("light"), "light");
   /**
    * A desk's notes as the pass takes them: each resolved under the one lamp, the committed raster where a note carries it, the pen's
    * run where a note has words and no committed raster (and the host lends faces).
@@ -366,7 +396,8 @@ export async function createOracleDesk({ device, format, text, assets, hand, log
       // K7b: the greeked lines a still states ride the note as the app's pin does (layer.ts `pinGreek` → the record's `greek`) — its far
       // LOD; a note the pen writes greeks its own layout's lines, as the kind's record does
       const greek = n.greek ? { x0: 16, em: 24, lines: n.greek.map(([y, width]) => ({ y, width })) } : written?.greek;
-      return { geometry: G, paper: surface(n.paper ?? "note"), ink: pen(n.pen ?? "felt"), ...(raster ? { raster } : {}), ...(written?.pen ? { pen: written.pen } : {}), ...(greek ? { greek } : {}) };
+      const ink = pen(n.pen ?? "felt");
+      return { geometry: G, paper: surface(n.paper ?? "note"), ink, marks: markInksOf(NOTE_LOOK, ink), ...(raster ? { raster } : {}), ...(written?.pen ? { pen: written.pen } : {}), ...(greek ? { greek } : {}) };
     });
   }
   const matGeometry = (m) => resolveMiniMat({ cx: m.x, cy: m.y, w: m.w ?? MINIMAT.size.w, h: m.h ?? MINIMAT.size.h }, { held: m.held ? 1 : 0, hover: 0, ring: prototypeRing && m.selected ? 1 : 0, fade: 1 }, DEFAULT_MINIMAT_LAW, lamp);
