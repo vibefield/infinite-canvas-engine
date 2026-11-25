@@ -60,14 +60,15 @@ fn hand_ease(x: f32) -> f32 {
 
 /// THE PEN at a point: what a sheet's writing lays at `p` at `now`. The grid's box first (outside: nothing, one load); then the
 /// cell (an empty one: nothing, and no atlas read); then each glyph the cell lists — its box (outside: next), its exact turned
-/// rect (outside: next), and one atlas sample at the LOD its texels per device px ask. The edge is `(R − 128/255) · range` em,
-/// made units by the glyph's size, its coverage a one-device-px ramp — never wider than the field's own reach (half its range):
-/// a sheet that small is past reading (its kind greeks it), and a wider ramp would lay a haze over the glyph's whole rect — widened
-/// by the run's bleed, at its alpha. THE REVEAL: a
-/// glyph lays nothing before its pen sets off; while it writes, a texel shows once the pen's eased progress has reached its arrival
-/// (`G`), ramped over a device px of the pen's path — so the front is the arrival's own edge, round where the nib's is, and where a
-/// later stroke crosses an earlier one the earlier ink is already there; once its time is out it is whole. Glyphs combine by the
-/// most each lays (no glyph darkens its neighbour).
+/// rect (outside: next), and one atlas sample at the LOD its texels per device px ask, kept half a texel of the coarser level it
+/// reads inside that rect (the chain is made over the whole atlas, so no level's box reaches a neighbour's ink — kit/hand-run.ts
+/// `handMips`). The edge is `(R − 128/255) · range` em, made units by the glyph's size, its coverage a one-device-px ramp — never
+/// wider than the field's own reach (half its range): a sheet that small is past reading (its kind greeks it), and a wider ramp
+/// would lay a haze over the glyph's whole rect — widened by the run's bleed, at its alpha. THE REVEAL: a glyph lays nothing
+/// before its pen sets off; while it writes, a texel shows once the pen's eased progress has reached its arrival (`G`), ramped
+/// over a device px of the pen's path — so the front is the arrival's own edge, round where the nib's is, and where a later
+/// stroke crosses an earlier one the earlier ink is already there; once its time is out it is whole. Glyphs combine by the most
+/// each lays (no glyph darkens its neighbour).
 /// `runs` — the kind's run store (`texture_2d<f32>` over `rgba32float`); `atlas` — the face's atlas (`texture_2d<f32>` over
 /// `rg8unorm`, every level); `samp` — a filtering sampler, linear between the levels; `base` — the run's base in the store (the
 /// texel index `HandRuns.write` gave its record); `p` — the point, the run's units (the layout's: note units from the sheet's
@@ -117,7 +118,8 @@ fn hand_ink(runs: texture_2d<f32>, atlas: texture_2d<f32>, samp: sampler, base: 
     let since = t - g4.x;
     if (since <= 0.0) { continue; }
     let lod = clamp(log2(max(aa * length(g1.zw), 1.0e-6)), 0.0, levels);
-    let field = textureSampleLevel(atlas, samp, (g2.xy + tau) / texels, lod);
+    let inset = min(vec2f(0.5 * exp2(ceil(lod))), 0.5 * (g3.zw - g3.xy));
+    let field = textureSampleLevel(atlas, samp, (g2.xy + clamp(tau, g3.xy + inset, g3.zw - inset)) / texels, lod);
     ink.samples += 1u;
     let dist = (field.r - HAND_EDGE) * edge.x * g2.z;
     let ramp = min(aa, 0.5 * edge.x * g2.z);

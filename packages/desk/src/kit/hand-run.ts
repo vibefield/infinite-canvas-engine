@@ -214,14 +214,19 @@ export interface HandMip {
   readonly bytes: Uint8Array;
 }
 
-/** The finest an em gets in the chain: the levels stop where an em is this many texels. */
-const MIN_EM_TEXELS = 4;
+/**
+ * The coarsest level's texel, atlas texels (whatever the em): the pad the bake keeps round each ink (bake/derive.ts `PAD_TEXELS`,
+ * which test/hand-run.test.ts holds it to). `hand_ink` keeps each sample half a texel of the coarser level it reads inside its own
+ * glyph's rect, so no read reaches more than one such texel past the rect — short of a neighbour's ink, which the bake keeps a pad
+ * and its one-texel gutter away. A coarser level would reach into it. And its half (4) is within the ±6 texels the edge byte spans
+ * before it saturates: a block across an edge averages true distances, so the edge stays where it is.
+ */
+const COARSEST_TEXEL = 8;
 
-/** How many levels an atlas's chain has: down to `MIN_EM_TEXELS` texels an em (five at 64 an em). */
-export const handLevels = (atlas: Pick<HandAtlas, "em" | "width" | "height">): number => {
-  const byEm = Math.max(1, Math.floor(Math.log2(Math.max(atlas.em, 1) / MIN_EM_TEXELS)) + 1);
+/** How many levels an atlas's chain has: down to a texel `COARSEST_TEXEL` atlas texels wide — four — or the atlas's own size. */
+export const handLevels = (atlas: Pick<HandAtlas, "width" | "height">): number => {
   const bySize = Math.floor(Math.log2(Math.max(atlas.width, atlas.height, 1))) + 1;
-  return Math.max(1, Math.min(byEm, bySize));
+  return Math.max(1, Math.min(Math.log2(COARSEST_TEXEL) + 1, bySize));
 };
 
 const chains = new WeakMap<HandAtlas, readonly HandMip[]>();
@@ -229,8 +234,13 @@ const chains = new WeakMap<HandAtlas, readonly HandMip[]>();
 /**
  * The atlas's mip chain, made once per atlas: level 0 the atlas's texels at the top-left of a size padded to a multiple of
  * 2^(levels − 1) (so every level is exactly half the one above and a uv is the same place at every level), each further level a
- * 2×2 box of the one above, rounded — the same bytes on every host. Both channels box-filter: the distance stays a distance
- * (where the edge is straight across a block, the average IS the distance at its centre), the arrival stays a timing field.
+ * 2×2 box of the one above, rounded — the same bytes on every host. Both channels box-filter. The distance stays a distance: the
+ * edge byte is linear in it within ±6 texels of the edge, a block no coarser than 8 texels across an edge lies within that, and
+ * where the edge is straight across a block the average IS the distance at its centre — a stroke thinner than a block fades, as a
+ * stroke thinner than a device px should. The arrival stays a timing field: the bake fills it over the whole rect (no texel 0 next
+ * to the ink), so a block's average is the nearby moments blurred. A block that straddles two rects mixes them; `hand_ink`'s
+ * sample, kept inside its own rect, reads none of a neighbour up to level 2, and at level 3 never its ink — at most the outer edge
+ * of its field (on the desk's three faces, a glyph's coverage moves by under 0.011 with every other glyph erased).
  */
 export function handMips(atlas: HandAtlas): readonly HandMip[] {
   const had = chains.get(atlas);
@@ -354,7 +364,13 @@ export function handInkAt(run: HandRun | Float32Array, atlas: HandAtlas, x: numb
     const since = t - v(g + 4, 0);
     if (since <= 0) continue;
     const lod = Math.min(levels, Math.max(0, Math.log2(Math.max(aa * Math.hypot(a, b), 1e-6))));
-    const [r, arrival] = trilinear(chain, (v(g + 2, 0) + tx) / top.w, (v(g + 2, 1) + ty) / top.h, lod);
+    // kept half a texel of the coarser level it reads inside the glyph's own rect (`handMips`): no read reaches a neighbour's ink
+    const inset = 0.5 * 2 ** Math.ceil(lod);
+    const ix = Math.min(inset, 0.5 * (v(g + 3, 2) - v(g + 3, 0)));
+    const iy = Math.min(inset, 0.5 * (v(g + 3, 3) - v(g + 3, 1)));
+    const qx = Math.min(Math.max(tx, v(g + 3, 0) + ix), v(g + 3, 2) - ix);
+    const qy = Math.min(Math.max(ty, v(g + 3, 1) + iy), v(g + 3, 3) - iy);
+    const [r, arrival] = trilinear(chain, (v(g + 2, 0) + qx) / top.w, (v(g + 2, 1) + qy) / top.h, lod);
     samples += 1;
     const size = v(g + 2, 2);
     const dist = (r - EDGE) * range * size;
