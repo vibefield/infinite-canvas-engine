@@ -176,6 +176,40 @@ function firstContainerAncestor(world: World, e: Entity): Entity | undefined {
 }
 
 /**
+ * The nav frames an entity lies in, OUTERMOST first (petition I58, `ops.lookAt`): by membership's own
+ * rule, its first container ancestor — the frame it is `Active` in — then that container's, and so on up
+ * to the root. Empty: it lies in the root frame. `undefined` past `maxDepth` frames (a `ChildOf` cycle).
+ * Membership's rule, not the nav's: a link may be a container the nav cannot enter (the tray's entity, a
+ * type no catalog compiles) — the caller asks.
+ */
+export function navFramesOf(world: World, entity: Entity, maxDepth = 64): Entity[] | undefined {
+  const frames: Entity[] = [];
+  for (let frame = firstContainerAncestor(world, entity); frame !== undefined; frame = firstContainerAncestor(world, frame)) {
+    if (frames.length >= maxDepth) return undefined;
+    frames.unshift(frame);
+  }
+  return frames;
+}
+
+/**
+ * The nav stack's frames by depth (petition I58): index `d - 1` is depth `d`'s container, `undefined`
+ * where that entry's frame died (its `NavFrame` edge cleared; `navIntegrity` pops it on the next tick).
+ * The root, depth 0, has no entry.
+ */
+export function navStackFrames(world: World): (Entity | undefined)[] {
+  const rows: { d: number; frame: Entity | undefined }[] = [];
+  world.query(navEntryQ).each((b) => {
+    for (const r of b) {
+      const e = b.entity(r);
+      const frame = world.getRelation(e, NavFrame);
+      rows.push({ d: world.read(e, NavDepth).d, frame: frame !== undefined && world.isAlive(frame) ? frame : undefined });
+    }
+  });
+  rows.sort((a, b) => a.d - b.d);
+  return rows.map((row) => row.frame);
+}
+
+/**
  * Per-op transition choice (design-006 §3.1); default is the portal zoom. `"none"` snaps to
  * the arrival; `"cut"` (design-015 §9, the zoom-through — D2b) moves nothing either but lands
  * on the CONTINUITY camera — the one the destination was already rendering under through the
@@ -185,12 +219,23 @@ function firstContainerAncestor(world: World, e: Entity): Entity | undefined {
  * geometry seam, nav-geometry.ts): the face `K` in the parent's units, the inside's `arrival`,
  * and the exact `c0`. Given, they outrank the seam and core's own computation; absent, the op
  * asks the seam, then computes.
+ *
+ * `landing` is no geometry (petition I58 — `ops.lookAt`'s last step): it moves only where the op
+ * comes to REST.
  */
 export interface NavOpts {
   readonly transition?: "zoom" | "none" | "cut";
   readonly face?: CanvasRect;
   readonly arrival?: CameraState;
   readonly c0?: CameraState;
+  /**
+   * The camera the op lands on, in the destination frame's units: an enter's in place of the
+   * inside's arrival, an exit's in place of the camera its level was entered at. The face, the
+   * embedding and `c0` stay the container's own, so the cut is exactly as it is without it; the
+   * flight ends here instead, and `"none"` snaps here. `"cut"` ignores it (that op moves the camera
+   * to `c0` alone). Unclamped: the caller clamps.
+   */
+  readonly landing?: CameraState;
 }
 
 export interface NestedCanvas {
@@ -642,7 +687,8 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
     // camera as it was the moment that level was entered).
     const restore = world.read(shallowest.e, NavCamera);
     const restoreTool = world.get(shallowest.e, NavTool)?.id ?? undefined;
-    const c1: CameraState = { x: restore.x, y: restore.y, zoom: restore.zoom };
+    // where it comes to rest: the camera that level was entered at, unless the op names its landing (I58)
+    const c1: CameraState = opts?.landing ?? { x: restore.x, y: restore.y, zoom: restore.zoom };
     const camPre = world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1, gesturing: false };
     const fromFrame = currentNavFrame(world);
     const targetEntry = entries.find((entry) => entry.d === targetDepth);
@@ -734,13 +780,15 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
       // the face AS DRAWN, the arrival and the exact c0 — the op's, the renderer's (the seam), or core's own (design-015 §9)
       const camNow: CameraState = { x: cam.x, y: cam.y, zoom: cam.zoom };
       const face = faceOf(container, camNow, opts);
-      const c1 = face.arrival;
+      const arrival = face.arrival;
+      // where it comes to rest: the inside's arrival, unless the op names its landing (I58) — the embedding stays the arrival's
+      const c1 = opts?.landing ?? arrival;
       const K = face.K;
       const vp = world.getResource(Viewport);
       // M: the child's arrival view onto the container's face (the live portal's own affine); A = M⁻¹.
       const M =
         K !== undefined && vp !== undefined && vp.w > 0 && vp.h > 0
-          ? portalAffine(visibleRect(c1, vp.w, vp.h), K)
+          ? portalAffine(visibleRect(arrival, vp.w, vp.h), K)
           : undefined;
       const A = M === undefined ? undefined : invertAffine(M);
       // the camera the inside was already rendering under through the face: the renderer's word when it has one (the drawn face),
@@ -771,7 +819,7 @@ export function createNestedCanvas(world: World, config: NestedCanvasOpts): Nest
           // desk entered stays dressed for its arrival, as its face showed it, and re-dresses to the camera's zoom
           snapCamera(c0);
           publishNavCut(world, "enter", cam, c0, identity, A);
-          stateRedress("in", c1.zoom, container);
+          stateRedress("in", arrival.zoom, container);
         } else {
           snapCamera(c1);
           publishNavCut(world, "enter", cam, c1, identity, A);

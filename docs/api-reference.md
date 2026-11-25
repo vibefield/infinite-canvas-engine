@@ -57,7 +57,7 @@ stamped on new documents. A widget cannot appear in both `widgets` and `retiredW
 
 - `ce.ops` — `setTool · spawnWidget · deleteSelection · duplicateSelection ·
   setSelection/clearSelection/selectAll · reorder(ids, "top"|"bottom") ·
-  zoomToFit/zoomTo/panTo · enterContainer/exitContainer · cancelActiveGestures ·
+  zoomToFit/zoomTo/panTo · lookAt(entity, opts?) · enterContainer/exitContainer · cancelActiveGestures ·
   open/putDown/useHeldTool · runMenuAction(id) · layFromTray(type, at)`. `layFromTray` (petition I37) LAYS the tray's own take
   with no drag — what a specimen dragged off the board makes: the type at its natural size, its entry's `take` props, CENTRED on
   `at` (a world point of the current frame), ONE transaction (one undo step), selected, and the board folds as a handed take's
@@ -65,6 +65,15 @@ stamped on new documents. A widget cannot appear in both `widgets` and `retiredW
   current frame (a drop's consume into a container is the drag's). `runMenuAction` (design-016 K8a) runs a SELECTION
   MENU act: each selected object's type that declares `id` (`defineWidget({ menu })`) runs its op
   over its own selected objects; false when none declares it.
+  `lookAt` (petition I58) TAKES THE PERSON TO AN OBJECT: the camera centred on it in the viewport less `opts.inset` (screen px), at
+  the zoom `opts.zoom` gives — `"comfort"` (keep a zoom it reads at and fits at, else in to 50% and never past 100%, or out until it
+  fits), `"fit"` (the FIT band), `"keep"` or a number, CameraLimits clamping — the object selected (`select: false` leaves the
+  selection), in its own frame. In the current frame the camera flies there as an ordinary camera move (the look flight: the nav
+  flight's spring and path, no portal, yielding to a gesture, to any other camera write and to a nav switch); in another frame the nav
+  ops run — out to the frame the object's chain shares with the nav stack, then in, every step a cut but the last, which flies and
+  lands on the look camera (`NavOpts.landing`: the camera an enter or an exit comes to rest at, its cut unchanged). `transition:
+  "none"` and reduced motion snap; the hand lets go, as at a nav cut. False, with nothing changed, for a dead entity, no object of the
+  scene, a frame the nav cannot enter or no real viewport. Runtime writes only: no undo step, a read-only document too.
   Every op is one engine-owned write path (one tx / one resource write).
 - The pegboard tray's facts (design-017 §2, design-018 §5–§6) are a view's, never synced — world-taking ops beside `ce.ops`:
   `openTray` (refused with an object in hand; gestures in flight cancel) · `closeTray` · `toggleTray` · `scrollTray(world, px)` ·
@@ -754,7 +763,8 @@ stamping (+17–28% on write-heavy paths) — dev builds only.
 
 ## @ice/kernel
 
-Pure math, no ECS/DOM: `screenToWorld/worldToScreen/zoomAtPoint/fitCamera` · `clientToScreen/screenSizeOf` (a client point and a
+Pure math, no ECS/DOM: `screenToWorld/worldToScreen/zoomAtPoint/fitCamera` · `lookCamera` (`ops.lookAt`'s camera: a rect centred
+in the viewport less an inset at a zoom policy, its pad screen px at every zoom — petition I58) · `clientToScreen/screenSizeOf` (a client point and a
 container's size in screen space — its layout box, whatever transform draws it; petition I39) ·
 `SpatialIndex` · `computeSnapGuides` · `portAnchor/wireCubic/distanceToCubic` · the easings · the
 design-006 flight maths · `layout` (`insertSlot` — a drop consumed into a container; `packLayout`/`layerGraph` — Clean Up; `freeSlot(incumbents, size, { anchor, gutter, reach, view? })` → `{ x, y, where } | undefined`, petition I57 — one newcomer with no pointer: the nearest free slot to the anchored position by `insertSlot`'s law of the gutter, in view before out of it, none past the reach, exact, ties right-below-above-left; `resolveFreeSlot` is its reader over a world) · the pegboard tray's lattice law (`PEG_LATTICE`, `TrayHang`, `hangError`, `layTray`, `TRAY_SPACING` — its first line 2 pitches down, under the drawer's header and its fade (design-018 R4) — `trayScrollMax` — design-017 §8, K5a; `specimenFit` — a specimen's scale and its object's rect in its hang, K5b) · `atlas-pack` (parked). The island helpers, `zoom-bands`,
