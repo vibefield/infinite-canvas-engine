@@ -20,6 +20,45 @@ file is its recorded output.
 > re-measures them. The M3 baseline (reactivity tax, O(1) pan, churn budget) is re-measured on
 > `apps/desk`'s stress rig at D6 (design-015 §11.6).
 
+## I57 — the free slot: what one ask costs (2026-11-24)
+
+`BENCH=1 pnpm --filter @ice/core exec vitest run bench/free-slot.test.ts` (`packages/core/bench/free-slot.test.ts`).
+A field of N cards (180 × 120 on a 240 × 170 pitch: no 200 × 100 newcomer fits between two of them with the 24 gutter)
+in a 1600 × 1000 view at zoom 1 over the field's middle. Four asks: **free** (a clearing at the middle: the anchor
+itself answers), **beside** (the clearing with one card where the newcomer wants to be), **crowded** (no clearing and
+the default reach, one view away: nothing is free and every column within the reach is read) and **wide** (no clearing
+and a reach past the whole field: the slot is at the field's edge and every incumbent reaches the search, the worst
+case in N). Medians of 31 asks (7 at 10,000), µs. One run; the host's 1-minute load average was 11.5; node v26.5.0.
+`within` is how many incumbents can block a position within the reach.
+
+The kernel alone, `freeSlot` over plain rectangles:
+
+| incumbents | free | beside | crowded (default reach) | wide (reach past the field) |
+|---|---|---|---|---|
+| 100 | 20 | 21 | 71 (100 within; a slot at the field's edge) | 61 (100 within) |
+| 1,000 | 31 | 34 | 140 (391 within; none) | 379 (1,000 within) |
+| 10,000 | 57 | 62 | 203 (391 within; none) | 5,174 (10,000 within) |
+
+The world's reader, `resolveFreeSlot`, on the real facade (createCanvasEngine, a document, every card hung on the board
+as a spawn hangs it):
+
+| objects on the board | free | beside | crowded (default reach) | wide (reach past the field) |
+|---|---|---|---|---|
+| 100 | 76 | 50 | 113 | 106 |
+| 1,000 | 389 | 471 | 592 | 808 |
+
+What it says. The search is a few tens of µs for the ordinary ask (a free middle, or one object in the way) at any size
+measured, because an incumbent that cannot block a position within the reach is dropped in one pass before anything is
+sorted. The default reach keeps the crowded ask flat in N (203 µs at 10,000: the 391 cards a view away are all it
+reads). Only a reach the caller widens past everything pays for N, and at 10,000 that is 5 ms. On a real board the
+reader's cost is its one walk of the frame's children: about 0.35 ms per 1,000 of them, more than the search. A place
+is one ask, at the moment something is placed, never a frame's work.
+
+Found on the way, not this petition's: SEEDING the board is what grows faster than N. Hanging every card on the board
+root in one transaction (`attachSpawnParent`, each "last") took 42 ms for 100 and 2,080 ms for 1,000, and a first form
+of the bench with three boards of 10,000 alive at once died of a 4 GB heap six minutes in (where the heap went was not
+measured). The bench's real boards stop at 1,000 for that reason; `BENCH_SLOT_BOARDS` names others.
+
 ## design-015 D6 — the desk's stress rig: 1,000 mixed objects (2026-09-26)
 
 `pnpm --filter ./apps/desk rig:stress` (`apps/desk/scripts/stress.mjs`): one scene of 1,002 root objects on a golden

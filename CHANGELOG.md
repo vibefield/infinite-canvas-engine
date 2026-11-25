@@ -6,6 +6,36 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+### Added
+
+<!-- petition I57 — a free slot for an object that comes with no pointer (2026-11-24; VibeField) -->
+- **A FREE SLOT FOR AN OBJECT THAT COMES WITH NO POINTER — `freeSlot`, `resolveFreeSlot`, `FREE_SLOT_DEFAULTS`** (petition I57 —
+  VibeField's agents place objects on a person's desk; with no pointer to say where, an object went to the middle of the view, on
+  top of whatever the person had there). THE KERNEL, beside `insertSlot` (`/kernel`): `freeSlot(incumbents, size, { anchor,
+  gutter, reach, view? }) → { x, y, where } | undefined` is the nearest free slot to the anchored position (the newcomer centred
+  on `anchor`), free by `insertSlot`'s law: at least the gutter away from every incumbent on either axis. A slot wholly inside the
+  `view` is taken before any that is not; none lies farther than `reach` on either axis; nothing free within it answers
+  `undefined`, never an overlap and never "right of everything": the caller decides. Equal distances go to the larger x, then the
+  larger y (right, below, above, left). The answer is exact (the true nearest slot, flush at the gutter against what blocks it),
+  does not depend on the incumbents' order, and uses no randomness and no clock. `where` says which rule answered: `"anchor"`,
+  `"view"`, `"reach"`. THE WORLD'S READER (`/`): `resolveFreeSlot(world, size, { frame?, anchor?, gutter?, view?, reach?, avoid? })
+  → { x, y, where, frame } | undefined` gathers a frame's incumbents and asks the kernel. `frame` is the board root or a container
+  (its inside, in its own units), by default the frame on screen; the view is by default what the camera shows of that frame, at
+  its zoom, and none for a frame that is not on screen; the anchor by default the view's middle; the gutter
+  `FREE_SLOT_DEFAULTS.gutter` (24, Clean Up's own), in the frame's units and never scaled by the zoom; the reach by default the
+  view's larger side plus the newcomer's and the gutter. OCCUPIED is every direct child of the frame with a `Position` and a
+  `Size` (taped objects, pads and sheets too; a container as one rectangle; an object in the person's hand where it is; a gliding
+  one, `TransformTween`, where it is and where it lands) and never LANDSCAPE, an object whose type declares `sweepContained`. A
+  READ: no write, no tag, no stamp; legal out of the tick and under a frozen frame gate. It walks the frame's children and does not
+  ask the interaction stack's spatial index, which is the Active set as of the last tick: a spawn made since the last step, and
+  every object of a frame that is not on screen, are not in it. A transaction's spawn reaches the world at the next
+  `world.sync()`; a host placing several objects in one turn syncs between them or names them in `avoid`. Throws on a size that is
+  not two positive finite numbers and when there is no live frame to place in. ADDITIVE: no op moves. `ops.spawnWidget` and
+  `ops.layFromTray` keep the point they are given, and `insertSlot` and the folder drop are untouched. A host composes it:
+  `const slot = resolveFreeSlot(world, size); if (slot) ops.spawnWidget(type, { x: slot.x, y: slot.y, parent: slot.frame })`. Its
+  cost is what `packages/core/bench/free-slot.test.ts` measures (`BENCH=1`) and `docs/benchmarks.md` records: a few tens of µs for
+  the kernel's ordinary ask at 100 to 10,000 incumbents, and under 1 ms for the reader on a real board of 1,000.
+
 ### Changed
 
 - **The rigs' browser can be named.** `apps/desk/scripts/cdp.mjs` launched one constant binary, the Google Chrome
