@@ -9,8 +9,8 @@ export { deskLayer, type DeskLayerBoot, type DeskLayerContext, type DeskLayerFac
 export type { SelectionAnchor } from "../compose/marks";
 export { surface, type Surface } from "./surface";
 // the ONE focused editor (D2c; the desk's since design-016 K8a — every kind LEASES it through the text parts its object declares):
-// its maker (the layer's) and its markers
-export { createDeskEditor, type DeskEditorOptions, EDITOR_ATTR, KEYBOARD_CLAIM_ATTR } from "./editor";
+// its maker (the layer's), its markers, and the clipboard's private flavour a lease's piece rides under (petition I60)
+export { createDeskEditor, type DeskEditorOptions, EDITOR_ATTR, KEYBOARD_CLAIM_ATTR, PIECE_FLAVOUR } from "./editor";
 // the TEXT raster a browser hands the kinds (D2c; the `TEXT_RASTER` service, K8a — the note writes in it, the calendar prints in its hand): the
 // faces by URL, Canvas2D ink on an OffscreenCanvas
 export { type FaceSpec, inkRaster, type InkRaster, type InkRasterOptions, PEN_FACES, penFaces } from "./ink";
