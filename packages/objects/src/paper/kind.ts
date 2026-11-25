@@ -8,7 +8,10 @@
 // the seed's tilt (`tiltOf`), the flux the builder stepped (lift ← `Grab`, ring ← `Selected`,
 // fade ← a delete ghost — a note never hovers); `pickPaper` is the mirror. The sheet's colour and
 // the pen's ink are the PRODUCT's (the theme gate: no literal here) — `theme()` takes them from the
-// palette's `papers` and `pens` by the prop's value.
+// palette's `papers` and `pens` by the prop's value — and its MARKS' inks (petition I60): the desk's pens by
+// name, the five highlighters and the pencil the selection's wash is laid in, the palette's `pens`,
+// `highlighters` and `pencil` (the selection's own colour where it names no pencil); the kit numbers them,
+// the host names the colours.
 //
 // And its TEXT (D2c, design-015 §6.1): the kind's own state on each desk is a WRITING
 // (paper/writing.ts — `local()`): the hand's layout from the note's durable `text` and `seeds`, its
@@ -18,8 +21,8 @@
 // is the fallback.
 
 import { type KindExtra, type KindPass, type KindProgram, type SlotContext, type Palette, type RGB, rgb, type ThemeName, type TokenRef, type KindHost, numberProp, type ObjectContext, type ObjectHit, type ObjectKind, type RungContext, stringProp } from "@ice/desk";
-import { type MatPass, type MarkFrame, type ChildShape, HAND_FACES, type HandLaw, type HandLayout, HAND, PAPER_FINISH, type ShaderText, TEXT_RASTER } from "@ice/desk/kit";
-import type { PaperInstance } from "./layout";
+import { type MatPass, type MarkFrame, type ChildShape, HAND_FACES, HIGHLIGHTERS, type HandLaw, type HandLayout, HAND, PAPER_FINISH, PENS, type ShaderText, TEXT_RASTER } from "@ice/desk/kit";
+import type { PaperInstance, PaperMarkInks } from "./layout";
 import { DEFAULT_PAPER_LAW, type PaperGeometry, type PaperLaw, pickPaper, resolvePaper, tiltOf } from "./paper";
 import { PaperPass } from "./paper-pass";
 import { PAPER_SHADER_FILES, paperCard, paperShaders } from "./shaders";
@@ -74,12 +77,31 @@ export function paperProgram(text: ShaderText): KindProgram<PaperInstance> {
 export interface PaperPalette extends Palette {
   readonly papers?: Readonly<Record<string, TokenRef>>;
   readonly pens?: Readonly<Record<string, TokenRef>>;
+  /** The highlighters a note's words are marked in, by the kit's names (`HIGHLIGHTERS` — petition I60); one it names not draws in the pencil. */
+  readonly highlighters?: Readonly<Record<string, TokenRef>>;
+  /** The pencil the selection's WASH is laid in (petition I60); absent — the palette's `select`, the selection's own colour. */
+  readonly pencil?: TokenRef;
 }
 
-/** The note's look for a theme: its sheets and inks, parsed. */
+/** The note's look for a theme: its sheets and inks, parsed — and its marks' inks, in the kit's order (petition I60). */
 export interface PaperLook {
   readonly papers: Readonly<Record<string, RGB>>;
   readonly pens: Readonly<Record<string, RGB>>;
+  readonly highlighters?: Readonly<Record<string, RGB>>;
+  readonly pencil?: RGB;
+}
+
+/**
+ * A note's MARKS' inks (petition I60): the desk's pens in the kit's order (a pen the palette names not: the sheet's own `ink`), the
+ * highlighters in the kit's order (one it names not: the pencil), and the pencil (the palette's `select` where it names none).
+ */
+export function markInksOf(look: PaperLook, ink: RGB): PaperMarkInks {
+  const pencil = look.pencil ?? ink;
+  return {
+    pens: PENS.map((name) => look.pens[name] ?? ink),
+    highlighters: HIGHLIGHTERS.map((name) => look.highlighters?.[name] ?? pencil),
+    pencil,
+  };
 }
 
 /** A note's writing as the far LOD greeks it (MINIMAT.md §5): the text's left edge and em (note units from the sheet's top-left) and each line's baseline and width. */
@@ -181,7 +203,8 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
       const pen = pinned === undefined ? hand.pen : undefined;
       // K7b — its writing GREEKED (the far LOD, theme.ts `PAPER.far`): the lines a still pinned, else the hand's own layout of its text
       const greek = greekOf(asset, w?.layoutOf?.(ctx.entity), opts.hand?.law ?? HAND);
-      return { geometry: G, paper, ink, ...(raster !== undefined ? { raster } : {}), ...(pen !== undefined ? { pen } : {}), ...(hand.wipe !== undefined ? { wipe: hand.wipe } : {}), ...(hand.caret !== undefined ? { caret: hand.caret } : {}), ...(greek !== undefined ? { greek } : {}) };
+      const marks = look === undefined ? undefined : markInksOf(look, ink);
+      return { geometry: G, paper, ink, ...(marks !== undefined ? { marks } : {}), ...(raster !== undefined ? { raster } : {}), ...(pen !== undefined ? { pen } : {}), ...(hand.wipe !== undefined ? { wipe: hand.wipe } : {}), ...(hand.caret !== undefined ? { caret: hand.caret } : {}), ...(greek !== undefined ? { greek } : {}) };
     },
     hit(G: PaperGeometry, wx: number, wy: number): ObjectHit | null {
       return pickPaper(G, wx, wy) === "paper" ? "content" : null;
@@ -207,7 +230,8 @@ export function paperKind(opts: PaperKindOptions = {}): ObjectKind<PaperGeometry
     frame: paperFrame,
     theme(palette: Palette, _name: ThemeName): PaperLook {
       const p = palette as PaperPalette;
-      return { papers: parse(p.papers), pens: parse(p.pens) };
+      const pencil = p.pencil ?? p.select;
+      return { papers: parse(p.papers), pens: parse(p.pens), highlighters: parse(p.highlighters), ...(pencil !== undefined ? { pencil: rgb(pencil.css) } : {}) };
     },
   };
 }

@@ -17,20 +17,42 @@
 // Its WORDS SELECTED, LIFTED AND LAID (petition I60): the lease says where the writing lies — `indexAt` from the writing's caret
 // geometry, on the sheet only and never under another object the stack hit there; `rangeAt` from its layout (a word of letters,
 // digits and apostrophes, the laid line without its break) — so the editor claims a press on the writing and turns a drag and the
-// clicks into the field's range, which the writing keeps as flux (`select`; the note draws no wash yet). A copy lifts the words as
-// plain text (the marks come later); a paste is laid through the editor's `write`, the path a typed input takes into the typing.
+// clicks into the field's range, which the writing keeps as flux (`select`) and draws as the selection's WASH. Every input hands the
+// typing the field's caret (`carryInk` finds the edit by it), and a selection change tells the typing (`moved`: a word typed over a
+// selection keeps its marks while the caret stays at its end). A copy lifts the words with their MARKS — the plain words, and the piece
+// `{ text, marks }` under the desk's private flavour (`PIECE_FLAVOUR`); a paste lays a piece (else the plain words) through the typing
+// in a fresh hand (`paste`), cleaned as any written part's (`cleanPiece`), and the field is written to match.
 // Where a range of them LIES (`rangeBox`, from the writing as last drawn, turned with the sheet): the selection menu comes to the
-// words selected, as the words of the note the lease names (`entity`). The note declares no words act yet (the ink's acts are a later
-// slice's), so its words' menu is empty.
+// words selected, as the words of the note the lease names (`entity`) — the note's words acts (object.ts, the kit's `inkActs`).
 
 import { Active, Camera, type Entity, Grab, type World } from "@ice/core";
 import type { PaperDriver } from "../object";
-import { PEN_FACES, type HandLaw, type DeskEditor, type EditorLease, type TextPart } from "@ice/desk/kit";
+import { cleanPiece, PEN_FACES, type HandLaw, type DeskEditor, type EditorLease, type InkPiece, type TextPart } from "@ice/desk/kit";
 import type { PaperGeometry } from "../paper";
 import { DEFAULT_FACE, DEFAULT_HAND_LAW, type Writing } from "../writing";
 
 /** The note's text part's name — what the editor's lease carries while a note is being written (`DeskEditor.lease().part`). */
 export const NOTE_BODY = "note.body";
+
+/**
+ * A character a paste lays: any but a control character — the C0 controls below 32, DEL and the C1 controls, 127 to 159
+ * (`cleanPiece` has made every break a "\n" and every tab a space).
+ */
+const printable = (ch: string): boolean => {
+  const c = ch.charCodeAt(0);
+  return ch === "\n" || !(c < 32 || (c >= 127 && c <= 159));
+};
+
+/** The private PIECE a paste hands back (`EditorPaste.piece`), read as a stranger's: `{ text, marks }` with words, else undefined. */
+function readPiece(json: string | undefined): InkPiece | undefined {
+  if (typeof json !== "string" || json === "") return undefined;
+  let v: unknown;
+  try { v = JSON.parse(json); } catch { return undefined; }
+  if (typeof v !== "object" || v === null) return undefined;
+  const { text, marks } = v as { readonly text?: unknown; readonly marks?: unknown };
+  if (typeof text !== "string" || text === "") return undefined;
+  return { text, marks: typeof marks === "string" ? marks : "" };
+}
 
 export interface NoteBodyOptions {
   /** The desk's ONE editor (the desk makes it — `ObjectDomHost.editor`). */
@@ -76,7 +98,8 @@ export function createNoteBody(opts: NoteBodyOptions): NoteBody | undefined {
     // between sessions the world's text reaches the field (a peer, an undo); while a session is open the field is the truth
     value: () => (typing.open() ? null : (typing.ink(e)?.text ?? "")),
     input(value) {
-      const r = typing.input(value);
+      // the platform's value, the edit found by the caret after it (the field's `selectionEnd` — kit/ink.ts `carryInk`)
+      const r = typing.input(value, editor.element.selectionEnd);
       if (r !== null) {
         const ch = value[r.from];
         // a typed glyph is WRITTEN (the pen's wipe); a paste, a space or a newline arrives whole
@@ -87,20 +110,39 @@ export function createNoteBody(opts: NoteBodyOptions): NoteBody | undefined {
     // Escape lets the note go (the keymap's gate 1 stands down; the release is ours)
     keydown(ev) { if (ev.key !== "Escape") return false; editor.release(lease); return true; },
     caret(index) { writing()?.caret(e, index, clock()); },
-    selection(from, to) { writing()?.select(e, from, to); },
+    selection(from, to) {
+      typing.moved(from, to);   // a word typed over a selection ends where the caret leaves it
+      writing()?.select(e, from, to);
+    },
     // where the writing lies (petition I60): on the sheet as drawn — a press on another object over it is that object's
     indexAt(wx, wy, hit) { return hit !== undefined && hit !== e ? undefined : writing()?.indexAt(e, wx, wy); },
     rangeAt(index, unit) { return writing()?.rangeAt(e, index, unit); },
     // where a range of the words lies (petition I60): the menu over the words selected is placed by it
     rangeBox(from, to) { return writing()?.rangeBox(e, from, to); },
-    // the words alone (the marks come later): the field's, as the platform's own copy would take them
-    lift(from, to) { const text = editor.element.value.slice(from, to); return text === "" ? undefined : { text }; },
-    // its words laid as a typed input is (the typing records it), their line breaks the field's own; no words, nothing laid (a piece
-    // alone is not the note's to read yet — the platform's paste stands)
+    // a COPY or a CUT: the words and the piece with their marks — the field's words alone where the cell moved under the field
+    lift(from, to) {
+      const a = Math.min(from, to);
+      const b = Math.max(from, to);
+      const text = editor.element.value.slice(a, b);
+      if (text === "") return undefined;
+      const piece = typing.editing() === e && typing.ink(e)?.text === editor.element.value ? typing.lift(a, b) : undefined;
+      return piece === undefined ? { text } : { text: piece.text, piece: JSON.stringify({ text: piece.text, marks: piece.marks }) };
+    },
+    // a PASTE: the piece (else the plain words) cleaned, laid by the typing in a fresh hand — the words ARRIVE — and the field written to
+    // match (its input then changes nothing); no plain words, nothing laid — a piece alone cannot delete the selection (the platform's
+    // paste stands)
     lay(paste, from, to) {
-      const text = paste.text.replace(/\r\n?/g, "\n");
-      if (text === "") return false;
-      editor.write(text, from, to);
+      const plain = typeof paste.text === "string" ? paste.text : "";
+      if (plain === "") return false;
+      const raw = readPiece(paste.piece) ?? { text: plain, marks: "" };
+      if (typing.editing() !== e) return false;
+      const piece = cleanPiece(raw, printable);
+      if (piece.text === "") return true;   // every character refused: nothing laid, the platform's paste stood down
+      const field = editor.element.value;
+      if (typing.ink(e)?.text !== field) typing.input(field, editor.element.selectionEnd);   // the cell at the field's words first
+      if (typing.paste(piece, from, to) === null) return true;
+      writing()?.wrote(e, undefined, clock());
+      editor.write(piece.text, from, to);
       return true;
     },
     place() {

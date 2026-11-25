@@ -52,16 +52,28 @@
 // editor's flux, clocked by the frame's `now` (`tick`, once a tick, before the draw): `tick` answers whether a frame is wanted —
 // every tick while a wipe runs, once per blink phase while the caret stands, once when a face lands or the editor moves.
 //
+// THE MARKS (petition I60 — "Editing the Ink"): a sheet's words are an INK (kit/ink.ts — its text, each glyph's seed and each glyph's
+// mark: the pen that wrote it, a highlighter under it, a line through it, one under it — the note's `marks` cell beside its text and
+// seeds). On the pen's road the run is built FROM THE INK (`handRun({ ink, marked, wash })`): each glyph in its own pen, and a marks
+// section the kit's `ink_marks` reads beside `hand_ink` — the highlighters, the strokes through and under the words, and the
+// selection's WASH. The marks' moments are the same pen clock's (`clock.marks`, after the frame's `look`): a mark made here, by a peer
+// or by an agent is drawn once from when it is seen — a highlighter's band, a line pulled through, a word re-inked in its new pen along
+// its own path — and a desk opening draws nothing. The run is built again only when its layout, its moments or its marks' moments
+// change; the SELECTION is flux and rewrites the wash ALONE (`inkWash`, `NoteRuns.wash` — the marks' head and a texel a laid line: never
+// the run rebuilt, never stored), cleared when the lease ends. A sheet on the RASTER road keeps its letters in the sheet's pen (the
+// raster's) and draws its strokes and its wash over the raster from a run that carries the marks section alone (no glyphs, no pen's
+// moments: every mark on the paper at once) — while the desk lends its faces (the run is built against the note's face).
+//
 // Where the WRITING LIES (petition I60 — a drag across the words selects them, a second click takes a word, a third a line): the
 // caret index on the sheet under a world point (`indexAt` — none off the sheet), the word or the laid line around an index
 // (`rangeAt`, the pure `wordRange` and `lineRange`), all from what was last drawn. The editor's SELECTION is flux here as the caret is
-// (`select`, `selectionOf`): the platform's field holds it, it is never stored or synced, and the note does not draw it yet. Where a
+// (`select`, `selectionOf`): the platform's field holds it, it is never stored or synced, and the note draws it as the wash. Where a
 // RANGE of the words lies (`rangeBox` — the selection menu comes to the words selected): the union of their glyph boxes, placed on the
 // sheet as last drawn, the box of the turned corners for a sheet at its tilt.
 
 import type { Entity } from "@ice/core";
 import { type KindHost, rasterPriority } from "@ice/desk";
-import { type View, HAND, HAND_WEIGHT, caretAt, createPenClock, glyphBox, glyphOf, type HandAtlas, type HandFaces, type HandLaw, type HandLayout, handMetricsOf, type HandRun, handRun, layoutText, type PenClock, type PenHow, type PenKey, type PenMoment, type RangeBox, type TextRange, type TextRaster, type TextUnit, seedsFor } from "@ice/desk/kit";
+import { type View, HAND, HAND_WEIGHT, caretAt, createPenClock, encodeMarks, glyphBox, glyphOf, type HandAtlas, type HandFaces, type HandLaw, type HandLayout, handMetricsOf, type HandRun, handRun, type InkValue, type InkWash, inkOf, inkWash, layoutText, type MarkStroke, type PenClock, type PenHow, type PenKey, type PenMarks, type PenMoment, type RangeBox, spansOf, strokesOf, type TextRange, type TextRaster, type TextUnit, seedsFor } from "@ice/desk/kit";
 import { PAPER } from "./theme";
 import type { PaperInstance } from "./layout";
 import type { InkRect, UvRect } from "./pages";
@@ -92,6 +104,11 @@ export interface NoteRuns {
   face(atlas: HandAtlas): void;
   /** The pen's time, ms on the desk's clock: every slot's knobs carry it (`penNow`), and the run's moments are read against it. */
   at(ms: number): void;
+  /**
+   * Note `key`'s selection WASH rewritten in the run it holds (petition I60 — kit/hand-gpu.ts `HandRuns.wash`: the marks' head and a texel
+   * a laid line, the rest untouched). False when it holds no run, or one with no room for it.
+   */
+  wash?(key: PenKey, wash: InkWash): boolean;
 }
 
 /** The hand's law as theme.ts states it (`HAND`) — the engine's unless a host says. */
@@ -181,8 +198,17 @@ export interface NotePenInfo {
   /** The face it is read in (`PEN_FACES`' name) and that face's atlas. */
   readonly face: string;
   readonly atlas: HandAtlas;
-  /** The run itself, as written (`handRun`) — what `handInkAt` reads on the CPU. */
+  /** The run itself, as built (`handRun`) — what `handInkAt` and `inkMarksAt` read on the CPU (with `wash` laid in: `washRun`). */
   readonly run: HandRun;
+  /** The selection's wash written into the store's copy since the run was built (petition I60); undefined — the run's own. */
+  readonly wash?: InkWash;
+  /** The road the run serves: the PEN's (its words and its marks), or the RASTER's (its marks alone, over the raster's letters). */
+  readonly road: "pen" | "raster";
+  /** The ink it was built from, and its strokes (petition I60). */
+  readonly ink: InkValue;
+  readonly strokes: readonly MarkStroke[];
+  /** The clock's marks it was built with (`PenClock.marks`); undefined on the raster's road (every mark on the paper at once). */
+  readonly marked: PenMarks | undefined;
 }
 
 export interface WritingStats {
@@ -202,8 +228,10 @@ export interface WritingStats {
   readonly roads: { readonly pen: number; readonly raster: number; readonly waiting: number };
   /** Glyph runs built since the mount — the pen's "built on a layout or a moment change only" instrument. */
   readonly runs: number;
-  /** Sheets the pen is writing now: a glyph not yet whole at the last tick (the raster's wipe's twin, petition I59). */
+  /** Sheets the pen is writing now: a glyph not yet whole at the last tick, or a mark still being drawn (the raster's wipe's twin, petition I59). */
   readonly moving: number;
+  /** Washes rewritten alone since the mount (petition I60 — a selection change: never a run built). */
+  readonly washes: number;
 }
 
 export interface Writing {
@@ -274,7 +302,10 @@ export interface Writing {
    * order (`from` > `to` is the same range); undefined for an empty range, before its first draw, or while the face loads.
    */
   rangeBox(e: Entity, from: number, to: number): RangeBox | undefined;
-  /** The editor's SELECTION on note `e` (petition I60): its range, held in order (`from` ≤ `to`); `undefined` lifts it. Flux: told with the caret, never stored, not drawn yet. */
+  /**
+   * The editor's SELECTION on note `e` (petition I60): its range, held in order (`from` ≤ `to`); `undefined` lifts it. Flux: told with the
+   * caret, never stored; drawn as the WASH, rewritten alone in the run the note holds (`NoteRuns.wash`) and a frame asked (`redraw`).
+   */
   select(e: Entity | undefined, from?: number, to?: number): void;
   /** The selection as told: its note and its range. */
   selectionOf(): { readonly entity: Entity; readonly from: number; readonly to: number } | undefined;
@@ -297,12 +328,23 @@ interface Raster {
   readonly bleed: number;
 }
 
-/** A pen-road sheet's run as written, and the face and moments it was built with. */
+/** A sheet's run as written — the pen's (its words and marks) or the raster's (its marks alone) — and what it was built with. */
 interface Pen {
+  readonly road: "pen" | "raster";
   readonly atlas: HandAtlas;
+  /** The layout it was built over (identity). */
+  readonly layout: HandLayout;
   readonly moments: readonly PenMoment[];
+  readonly ink: InkValue;
+  /** The marks it was built with, as the cell writes them (a new marking is a new run). */
+  readonly marks: string;
+  readonly strokes: readonly MarkStroke[];
+  readonly marked: PenMarks | undefined;
   readonly run: HandRun;
   readonly base: number;
+  /** The wash the store holds for it (`undefined` — the one built in), and the spans it was laid from, as a key. */
+  wash: InkWash | undefined;
+  washKey: string;
 }
 
 interface Entry {
@@ -323,6 +365,12 @@ interface Entry {
   pen: Pen | null;
   /** The layout the clock last looked at and a run was built for (identity: a new layout is a new look and a new run); undefined off the pen. */
   looked: HandLayout | undefined;
+  /** The glyphs' moments of that look (petition I59). */
+  moments: readonly PenMoment[];
+  /** The marks the clock last looked at, over `looked` (as the cell writes them), its strokes and its answer (petition I60). */
+  inked: string | undefined;
+  strokes: readonly MarkStroke[];
+  marked: PenMarks | undefined;
   /** The last "does the text hold a glyph the face lacks?" verdict, and the text and face it was found for. */
   lacks: { readonly text: string; readonly atlas: HandAtlas; readonly lacks: boolean } | undefined;
   /** The band asked of the queue and not laid yet (K6b); 0 = nothing asked. */
@@ -471,6 +519,7 @@ export function createWriting(opts: WritingOptions): Writing {
   let blanks = 0;
   let evicted = 0;
   let runsBuilt = 0;
+  let washes = 0;
   /**
    * The latest moment the clock has handed out (a glyph's start + its duration, ms): the pen's time is the clock's `now` up to it and
    * held there after — once every glyph is whole the time no longer matters, so a frame at rest writes no knob.
@@ -478,6 +527,8 @@ export function createWriting(opts: WritingOptions): Writing {
   let horizon = 0;
   const penTime = (): number => Math.min(now, horizon);
   const reach = (moments: readonly PenMoment[]): void => { for (const m of moments) if (m.start > Number.NEGATIVE_INFINITY) horizon = Math.max(horizon, m.start + m.dur); };
+  /** …and the marks' (petition I60): each re-ink's and each stroke's end. */
+  const reachMarks = (m: PenMarks): void => { reach(m.reinks); reach(m.strokes); };
 
   const phaseAt = (t: number): boolean => (focus === undefined ? false : Math.floor(Math.max(0, t - focus.t0) / blinkMs) % 2 === 0);
 
@@ -493,8 +544,53 @@ export function createWriting(opts: WritingOptions): Writing {
   /** Note `e` off the pen's road (or gone): its run's room given back and its moments forgotten — back on it, its first look writes nothing. */
   const dropPen = (e: Entity, en: Entry | undefined): void => {
     if (en !== undefined && en.pen !== null) { opts.runs?.()?.free(e); en.pen = null; }
-    if (en !== undefined) en.looked = undefined;
+    if (en !== undefined) { en.looked = undefined; en.moments = []; en.inked = undefined; en.strokes = []; en.marked = undefined; }
     clock.forget(e);
+  };
+  /** Note `e`'s marks-only run let go (the raster's road: no marks and no selection any more, or off that road). */
+  const dropLines = (e: Entity, en: Entry): void => {
+    if (en.pen !== null && en.pen.road === "raster") { opts.runs?.()?.free(e); en.pen = null; }
+  };
+
+  /** The wash note `e` shows over layout `L`: the selection's spans when it is on `e` (petition I60), else none. */
+  const washOf = (e: Entity, L: HandLayout): readonly ReturnType<typeof spansOf>[number][] => (selection !== undefined && selection.entity === e && selection.to > selection.from ? spansOf(L, selection.from, selection.to) : []);
+  const keyOf = (spans: readonly ReturnType<typeof spansOf>[number][]): string => spans.map((q) => `${q.line}:${q.x0}:${q.x1}:${q.y0}:${q.y1}`).join(",");
+  /**
+   * The run note `e` holds built and written (petition I59, I60): over `L` in `atlas`, with its moments, its ink, its strokes and their
+   * moments, and the selection's wash as it stands. Its base, or −1 (the device holds no more); null when it lays nothing.
+   */
+  const build = (e: Entity, en: Entry, R: NoteRuns, road: "pen" | "raster", atlas: HandAtlas, L: HandLayout, ink: InkValue, marks: string, strokes: readonly MarkStroke[], moments: readonly PenMoment[], marked: PenMarks | undefined): number | null => {
+    const spans = washOf(e, L);
+    // the raster's road: the marks section alone — no glyph laid (its letters are the raster's, in the sheet's pen), every mark at once
+    const over = road === "pen" ? L : { ...L, glyphs: [] };
+    const built = handRun(over, atlas, { moments, epoch: now, bleed, weight, ink, strokes, ...(marked !== undefined ? { marked } : {}), wash: spans });
+    runsBuilt += 1;
+    if (road === "pen" && built.glyphs === 0) {
+      // nothing inked (an empty sheet, a sheet of spaces): no run written — and the clock has seen the sheet, so its first glyph is
+      if (en.pen !== null) { R.free(e); en.pen = null; }
+      return null;
+    }
+    const base = R.write(e, built);
+    if (base < 0) return -1;
+    R.face(atlas);
+    R.at(penTime());
+    en.pen = { road, atlas, layout: L, moments, ink, marks, strokes, marked, run: built, base, wash: undefined, washKey: keyOf(spans) };
+    land(e);
+    return base;
+  };
+  /** The WASH of note `e` rewritten alone in the run it holds (petition I60) — never the run rebuilt — and a frame asked. */
+  const rewash = (e: Entity): void => {
+    const p = entries.get(e)?.pen;
+    if (p === null || p === undefined || p.run.marks === undefined) { if (p === null && entries.get(e)?.road === "raster") dirty = true; return; }
+    const spans = washOf(e, p.layout);
+    const key = keyOf(spans);
+    if (key === p.washKey) return;
+    const w = inkWash(p.run, spans);
+    if (opts.runs?.()?.wash?.(e, w) !== true) { dirty = true; return; }
+    p.wash = w;
+    p.washKey = key;
+    washes += 1;
+    if (redraw !== undefined) redraw(); else dirty = true;
   };
 
   const drawn = opts.drawn;
@@ -634,45 +730,72 @@ export function createWriting(opts: WritingOptions): Writing {
   };
 
   /**
-   * THE PEN's draw (petition I59): the layout by the face's own metrics; the moments asked of the clock and the run built and
-   * written only when the layout is new; the record told the run's base. Undefined: the device holds no more runs — the raster road.
+   * THE PEN's draw (petition I59, I60): the layout by the face's own metrics; the moments asked of the clock when the layout is new,
+   * the marks' moments after them when the layout or the marks are new (`clock.marks`), and the run built from the ink and written only
+   * then; the record told the run's base. Undefined: the device holds no more runs — the raster road.
    */
-  const penDraw = (e: Entity, en: Entry, atlas: HandAtlas, t: string, s: string, seed: number, rect: { readonly w: number; readonly h: number }, how: PenHow, pages: InkPages | undefined): NoteInk | undefined => {
+  const penDraw = (e: Entity, en: Entry, atlas: HandAtlas, t: string, s: string, m: string, seed: number, rect: { readonly w: number; readonly h: number }, how: PenHow, pages: InkPages | undefined): NoteInk | undefined => {
     // off the raster's road: its raster let go, its ask withdrawn, its wipe retired (the pen's moments write a typed glyph)
     release(pages, en);
     unask(e, en);
     wipes.delete(e);
+    if (en.pen !== null && en.pen.road !== "pen") { opts.runs?.()?.free(e); en.pen = null; }
     relay(en, t, s, seed, rect, atlas, () => handMetricsOf(atlas));
     const L = en.layout as HandLayout;
     const caret = caretOn(e, L);
     const R = opts.runs?.();
     if (R === undefined) return caret === undefined ? {} : { caret };   // the pass not made yet: nothing to write into, the sheet waits
+    let fresh = false;
     if (en.looked !== L) {
       en.looked = L;
-      const moments = clock.look(e, { layout: L, seeds: seedsFor(t, s, seed), atlas, now, how });
-      reach(moments);
-      const built = handRun(L, atlas, { moments, epoch: now, bleed, weight });
-      runsBuilt += 1;
-      if (built.glyphs === 0) {
-        // nothing inked (an empty sheet, a sheet of spaces): no run written — and the clock has seen the sheet, so its first glyph is
-        if (en.pen !== null) { R.free(e); en.pen = null; }
-      } else {
-        const base = R.write(e, built);
-        if (base < 0) { dropPen(e, en); return undefined; }
-        R.face(atlas);
-        R.at(penTime());
-        en.pen = { atlas, moments, run: built, base };
-        land(e);
-      }
+      en.moments = clock.look(e, { layout: L, seeds: seedsFor(t, s, seed), atlas, now, how });
+      reach(en.moments);
+      en.inked = undefined;
+      fresh = true;
     }
-    const pen = en.pen === null ? {} : { pen: { base: en.pen.base } };
+    const ink = inkOf({ text: t, seeds: s, marks: m }, seed);
+    const marks = encodeMarks(ink.marks);
+    if (en.inked !== marks) {
+      // THE MARKS' look (petition I60), after the frame's `look`: a mark new to it drawn from now, none at its first
+      en.inked = marks;
+      const strokes = strokesOf(L, ink);
+      en.marked = clock.marks(e, { layout: L, ink, strokes, atlas, now });
+      en.strokes = strokes;
+      reachMarks(en.marked);
+      fresh = true;
+    }
+    if (fresh) {
+      const base = build(e, en, R, "pen", atlas, L, ink, marks, en.strokes, en.moments, en.marked);
+      if (base === -1) { dropPen(e, en); return undefined; }
+    }
+    const pen = en.pen === null ? {} : { pen: { base: en.pen.base, marks: true } };
     return { ...pen, ...(caret !== undefined ? { caret } : {}) };
+  };
+
+  /**
+   * THE RASTER's marks (petition I60): a sheet on the raster road that carries a mark or the selection draws them over its raster from a
+   * run that holds the marks section alone, built against the note's face (none lent: no marks drawn there) — every mark on the paper at
+   * once, rebuilt when its layout or its marks move. Its base for the record, or undefined (nothing to draw, or no room).
+   */
+  const rasterMarks = (e: Entity, en: Entry, L: HandLayout | undefined, t: string, s: string, m: string, seed: number): NotePenInfo["base"] | undefined => {
+    const atlas = faces?.face(face);
+    const R = opts.runs?.();
+    const ink = inkOf({ text: t, seeds: s, marks: m }, seed);
+    const marked = ink.marks.some((v) => v !== 0);
+    const selected = selection !== undefined && selection.entity === e && selection.to > selection.from;
+    if (L === undefined || atlas === undefined || R === undefined || (!marked && !selected)) { dropLines(e, en); return undefined; }
+    const marks = encodeMarks(ink.marks);
+    const p = en.pen;
+    if (p !== null && p.road === "raster" && p.layout === L && p.marks === marks && p.atlas === atlas) return p.base;
+    const base = build(e, en, R, "raster", atlas, L, ink, marks, strokesOf(L, ink), [], undefined);
+    if (base === null || base < 0) { dropLines(e, en); return undefined; }
+    return base;
   };
 
   const entryOf = (e: Entity): Entry => {
     let en = entries.get(e);
     if (en === undefined) {
-      en = { text: "", seeds: "", seed: 0, w: 0, h: 0, by: undefined, layout: undefined, keyed: false, raster: null, pinned: false, road: undefined, pen: null, looked: undefined, lacks: undefined, want: 0, run: undefined, drawnAt: -1, order: 0, geometry: undefined };
+      en = { text: "", seeds: "", seed: 0, w: 0, h: 0, by: undefined, layout: undefined, keyed: false, raster: null, pinned: false, road: undefined, pen: null, looked: undefined, moments: [], inked: undefined, strokes: [], marked: undefined, lacks: undefined, want: 0, run: undefined, drawnAt: -1, order: 0, geometry: undefined };
       entries.set(e, en);
     }
     return en;
@@ -719,7 +842,7 @@ export function createWriting(opts: WritingOptions): Writing {
       // a delete ghost keeps what it has and asks for nothing: after a reset it fades blank, never re-rastered
       if (fading) {
         const q = entries.get(e);
-        if (q?.pen !== null && q?.pen !== undefined) return { pen: { base: q.pen.base } };
+        if (q?.pen !== null && q?.pen !== undefined && q.pen.road === "pen") return { pen: { base: q.pen.base, marks: true } };
         const r = q?.raster;
         return r === null || r === undefined ? {} : { raster: { layer: r.rect.layer, uv: r.uv } };
       }
@@ -731,6 +854,7 @@ export function createWriting(opts: WritingOptions): Writing {
       if (en.pinned) { en.road = "pinned"; return en.raster === null ? {} : { raster: { layer: en.raster.rect.layer, uv: en.raster.uv } }; }
       const t = str(props, "text");
       const s = str(props, "seeds");
+      const m = str(props, "marks");
       const seed = num(props, "seed");
       // the typing's word for this sheet's next look, heard once (petition I59): a glyph typed, else the words arrive
       const how: PenHow = told.get(e) ?? "arrived";
@@ -747,13 +871,14 @@ export function createWriting(opts: WritingOptions): Writing {
         return {};
       }
       if (road === "pen") {
-        const ink = penDraw(e, en, faces?.face(face) as HandAtlas, t, s, seed, rect, how, pages);
+        const ink = penDraw(e, en, faces?.face(face) as HandAtlas, t, s, m, seed, rect, how, pages);
         if (ink !== undefined) { en.road = road; return ink; }
         road = "raster";   // the device holds no more runs: this sheet's raster, honestly
       }
       // THE RASTER — today's road
       en.road = road;
-      dropPen(e, en);
+      if (en.pen !== null && en.pen.road === "pen") dropPen(e, en);
+      else { en.looked = undefined; en.moments = []; en.inked = undefined; en.strokes = []; en.marked = undefined; clock.forget(e); }
       const version = text?.version() ?? 0;
       relay(en, t, s, seed, rect, version, () => text?.metrics(face));
       const L = en.layout;
@@ -780,8 +905,11 @@ export function createWriting(opts: WritingOptions): Writing {
         else wipe = { ...glyphBox(L, g), t: Math.max(0, u) };
       }
       const caret = caretOn(e, L);
+      // its marks and its wash over the raster (petition I60), from a run of the marks alone
+      const lines = far(rect, view.zoom) ? undefined : rasterMarks(e, en, L, t, s, m, seed);
       return {
         ...(en.raster !== null ? { raster: { layer: en.raster.rect.layer, uv: en.raster.uv } } : {}),
+        ...(lines !== undefined ? { pen: { base: lines, marks: true, words: false } } : {}),
         ...(wipe !== undefined ? { wipe } : {}),
         ...(caret !== undefined ? { caret } : {}),
       };
@@ -809,7 +937,7 @@ export function createWriting(opts: WritingOptions): Writing {
     roadOf: (e) => entries.get(e)?.road,
     penOf(e) {
       const p = entries.get(e)?.pen;
-      return p === null || p === undefined ? undefined : { base: p.base, glyphs: p.run.glyphs, length: p.run.length, face, atlas: p.atlas, run: p.run };
+      return p === null || p === undefined ? undefined : { base: p.base, glyphs: p.run.glyphs, length: p.run.length, face, atlas: p.atlas, run: p.run, ...(p.wash !== undefined ? { wash: p.wash } : {}), road: p.road, ink: p.ink, strokes: p.strokes, marked: p.marked };
     },
     penTime,
 
@@ -882,7 +1010,11 @@ export function createWriting(opts: WritingOptions): Writing {
     },
 
     select(e, from = 0, to = from) {
+      const was = selection?.entity;
       selection = e === undefined ? undefined : { entity: e, from: Math.min(from, to), to: Math.max(from, to) };
+      // the WASH rewritten alone where the selection was and where it is (petition I60): never a run built
+      if (was !== undefined) rewash(was);
+      if (e !== undefined && e !== was) rewash(e);
     },
     selectionOf: () => selection,
 
@@ -933,7 +1065,7 @@ export function createWriting(opts: WritingOptions): Writing {
         if (en.want !== 0 && queue?.has(OWNER, e) !== false) queued += 1;
         if (en.road === "pen" || en.road === "raster" || en.road === "waiting") roads[en.road] += 1;
       }
-      return { resident, pinned, layouts, rasters, blanks, evicted, queued, roads, runs: runsBuilt, moving: clock.writing(now) };
+      return { resident, pinned, layouts, rasters, blanks, evicted, queued, roads, runs: runsBuilt, moving: clock.writing(now), washes };
     },
 
     dispose() {
