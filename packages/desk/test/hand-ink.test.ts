@@ -4,7 +4,9 @@
 // atlas texel. THE REVEAL (the brief's law): nothing before the pen sets off; while it writes, a texel shows once the pen's progress
 // has reached its arrival — behind the nib written, ahead of it bare, the front round as the nib — and where a later stroke crosses
 // an earlier one the earlier ink is already there; after its time the glyph is whole. The pen and the pressure; a minified read at
-// a coarser level; the pen's spread; a glyph whose pen origin lies outside its rect (as the bake lays one above the baseline).
+// a coarser level; the pen's spread; how the ink lies, as the raster lays it (the bleed's stroke, the fill over it, every glyph over
+// the ones before: source-over, never only the larger); a glyph whose pen origin lies outside its rect (as the bake lays one above
+// the baseline).
 // And on the desk's own faces as baked: the coarse levels keep to their glyph — up to 4 texels a px a glyph reads the same to the
 // bit with every other glyph of its atlas erased, past that under 2% of coverage, never a neighbour's ink.
 import { readFileSync } from "node:fs";
@@ -100,6 +102,58 @@ describe("the edge (petition I59)", () => {
     const out = handInkAt(spread, face.atlas, ...at(O[0], O[1], 0.18 + L.nib + 0.75 / EM, -0.36), 0, 0.25);
     expect(out.cover).toBeCloseTo(0.45, 1);
     expect(handInkAt(run, face.atlas, ...at(O[0], O[1], 0.18 + L.nib + 0.75 / EM, -0.36), 0, 0.25).cover).toBe(0);
+  });
+});
+
+describe("the pen lays its ink as the raster does (petition I59 — desk/host/ink.ts's model: stroke the bleed, fill, source-over)", () => {
+  // The raster draws each glyph twice, source-over: its outline stroked `bleed` wide at α × its pressure, then the glyph filled at its
+  // pressure — and every glyph over the ones before. So on a glyph's edge, where the fill lays part of a px and the stroke all of
+  // it, the two ADD as paint does — F + S·(1 − F) — and where two glyphs meet (a kerned or a cursive overlap) their inks add the same
+  // way, 1 − (1 − a)(1 − b): never only the larger. The pen and the wet ink are still the glyph's that laid the most.
+  const press = 0.8;
+
+  it("within a glyph the fill lies over its bleed's stroke — a band about the outline, as `strokeText` lays it: on the edge F + S·(1 − F), deep inside the fill alone", () => {
+    const plain = handRun(lone("l", O[0], O[1]), face.atlas);
+    const spread = handRun(lone("l", O[0], O[1], { press }), face.atlas, { bleed: 2, bleedAlpha: 0.45 });
+    for (const ey of [-0.6, -0.36, -0.1]) {
+      const edge = at(O[0], O[1], 0.18 + L.nib, ey);
+      const f = handInkAt(plain, face.atlas, ...edge, 0, 1).cover;   // the fill alone there, at full pressure: part of the px
+      expect(f).toBeGreaterThan(0.3);
+      expect(f).toBeLessThan(0.7);
+      const F = press * f;
+      const S = 0.45 * press;   // the stroke lays its whole there: the bleed's half-width (a unit) is past the edge's one-px ramp
+      expect(handInkAt(spread, face.atlas, ...edge, 0, 1).cover).toBeCloseTo(F + S * (1 - F), 3);
+    }
+    // deep inside the glyph, past the stroke's inner half (the bar's centre line, 3.4 units in), the fill alone: its pressure — the
+    // raster strokes a band about the outline, not the glyph grown, so nothing lies under the fill there
+    expect(handInkAt(spread, face.atlas, ...at(O[0], O[1], 0.18, -0.36), 0, 1).cover).toBeCloseTo(press, 3);
+  });
+
+  it("glyphs lie over one another: where two lay ink, 1 − (1 − a)(1 − b); the pen and the wet ink the glyph's that laid the most", () => {
+    // two bars laid on one another — an overlap at its extreme — at two pressures, two pens
+    const two = (pa: number, pb: number): HandLayout => {
+      const base = lone("l", O[0], O[1]);
+      const a = lone("l", O[0], O[1], { press: pa }).glyphs[0] as HandLayout["glyphs"][number];
+      const b = { ...(lone("l", O[0], O[1], { press: pb }).glyphs[0] as HandLayout["glyphs"][number]), index: 1 };
+      return { ...base, glyphs: [a, b] };
+    };
+    const centre = at(O[0], O[1], 0.18, -0.36);
+    const both = handInkAt(handRun(two(0.5, 0.6), face.atlas, { pens: [3, 5] }), face.atlas, ...centre, 0, 1);
+    expect(both.cover).toBeCloseTo(1 - 0.5 * 0.4, 2);   // 0.8 — the larger alone would be 0.6
+    expect(both.pen).toBe(5);   // the glyph that laid the most names the pen
+    expect(handInkAt(handRun(two(0.6, 0.5), face.atlas, { pens: [3, 5] }), face.atlas, ...centre, 0, 1).pen).toBe(3);
+    // the wet ink is that glyph's too: one bar long dry, the other being written over it now
+    const T0 = 5000;
+    const DUR = 200;
+    const moments: PenMoment[] = [{ start: T0 - 10_000, dur: DUR }, { start: T0, dur: DUR }];
+    const now = T0 + DUR / 2;
+    const nib = -0.72 + handEase(0.5) * pathLength(L);
+    const behind = at(O[0], O[1], 0.18, nib - 0.05);   // just behind the second bar's nib: its ink fresh there
+    const wetter = handInkAt(handRun(two(0.5, 0.9), face.atlas, { moments, epoch: T0 - 40 }), face.atlas, ...behind, now, 1);
+    expect(wetter.wet).toBeGreaterThan(0.5);   // the bar being written laid the most (0.9): its fresh ink
+    expect(wetter.cover).toBeGreaterThan(0.9);   // the two together: more than either
+    const drier = handInkAt(handRun(two(0.5, 0.4), face.atlas, { moments, epoch: T0 - 40 }), face.atlas, ...behind, now, 1);
+    expect(drier.wet).toBe(0);   // the dry bar laid the most (0.5): its ink, dry
   });
 });
 
