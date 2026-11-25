@@ -627,7 +627,8 @@ const PEN_TOL = 0.03;
  * albedo), a pixel of a note the pen writes, against the same still with that note BLANK (the same sheet, the same fibre), gives
  * the coverage the shader laid: `(B − A) / (B − ink)`, on the channel where the paper and the pen differ most. Each is held to
  * `handInkAt` over the very run the note's writing wrote, at the frame's pen time and the pixel's own width (the layout's units),
- * within PEN_TOL — and the sheet must hold ink (where the twin lays more than half, a few hundred px at least).
+ * within PEN_TOL — and the sheet must hold ink (where the twin lays more than half, a few hundred px at least). Beside it, said and
+ * not held: THE PEN'S WEIGHT against the committed raster on the still (the same words, seed and sheet) — the look's question.
  */
 async function penCheck(sc) {
   const s = sc.scene;
@@ -635,7 +636,8 @@ async function penCheck(sc) {
   const { px: A, w, h } = await render(s);
   const { time, notes } = desk.pens();
   const written = notes.filter((n) => n.pen !== undefined);
-  const blank = (n) => (n.asset === undefined && typeof n.text === "string" && n.text.length > 0 ? { ...n, text: "", arrive: undefined } : n);
+  // B: the same still with every note's words taken off its sheet — the pen's and the committed raster's alike (the same sheets)
+  const blank = (n) => ((typeof n.text === "string" && n.text.length > 0) || n.asset !== undefined ? { ...n, asset: undefined, text: "", arrive: undefined } : n);
   const { px: B } = await render({ ...s, notes: s.notes.map(blank) });
   let checked = 0;
   let inked = 0;
@@ -643,32 +645,72 @@ async function penCheck(sc) {
   let over = 0;
   for (const { spec, geometry: G, pen: P } of written) {
     const ink = penInk(spec.pen ?? "felt").map((v) => v * 255);
-    const flat = -G.half[1] + G.glue * 2 * G.half[1];
-    const ext = Math.hypot(G.half[0], G.half[1]);
-    const x0 = Math.max(0, Math.floor((G.centre[0] - ext - s.camX) / k));
-    const x1 = Math.min(w, Math.ceil((G.centre[0] + ext - s.camX) / k));
-    const y0 = Math.max(0, Math.floor((G.centre[1] - ext - s.camY) / k));
-    const y1 = Math.min(h, Math.ceil((G.centre[1] + ext - s.camY) / k));
-    for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
-      const [wx, wy] = worldAt(s, x, y);
-      const [qx, qy] = localOf(G, wx, wy);
-      if (!(qy < flat - 2 && qy > -G.half[1] + 3 && Math.abs(qx) < G.half[0] - 3)) continue;
-      const o = (y * w + x) * 4;
-      let ch = 0;
-      let span = 0;
-      for (let c = 0; c < 3; c++) { const d = B[o + c] - ink[c]; if (Math.abs(d) > Math.abs(span)) { span = d; ch = c; } }
-      const gpu = (B[o + ch] - A[o + ch]) / span;
+    stripOf(s, G, w, h, (o, qx, qy) => {
+      const gpu = coverAt(A, B, o, ink);
       const twin = handInkAt(P.run, P.atlas, (qx + G.half[0]) / G.scale, (qy + G.half[1]) / G.scale, time, k / G.scale).cover;
       checked++;
       if (twin > 0.5) inked++;
       const d = Math.abs(gpu - twin);
       if (d > worst) worst = d;
       if (d > PEN_TOL) over++;
-    }
+    });
   }
   const ok = written.length > 0 && inked > 200 && worst <= PEN_TOL;
   console.log(`  ${ok ? "PASS" : "FAIL"}  pen        ${sc.name.padEnd(24)} ${written.length} note${written.length === 1 ? "" : "s"} written with the pen (pen time ${time} ms): under the flat strip the drawn coverage vs the CPU twin's over ${checked.toLocaleString()} px — max |Δ| ${worst.toFixed(4)} (${over} over ${PEN_TOL}), ${inked.toLocaleString()} px of ink`);
+  // the pen's weight against the committed raster beside it: the ink each lays under its flat strip — at rest, and at ×1 alone, where
+  // the committed bitmap (band 2) is drawn texel for device px as the live raster road draws it there; at another zoom it would be
+  // magnified or minified, which the live road never shows (it rasters again at its rung)
+  const pinned = s.notes.find((n) => n.asset !== undefined);
+  const same = pinned === undefined ? undefined : written.find((n) => n.spec.text === pinned.text && (n.spec.seed ?? 1) === (pinned.seed ?? 1));
+  if (same !== undefined && s.zoom === 1 && !s.notes.some((n) => n.arrive !== undefined)) {
+    const a = weightOf(s, same.geometry, penInk(same.spec.pen ?? "felt").map((v) => v * 255), A, B, w, h);
+    const b = weightOf(s, desk.noteGeometry(pinned), penInk(pinned.pen ?? "felt").map((v) => v * 255), A, B, w, h);
+    const of = (x, y) => `${Math.round(x).toLocaleString()} against ${Math.round(y).toLocaleString()} (${((100 * x) / y).toFixed(0)} %)`;
+    console.log(`  ....  weight     ${sc.name.padEnd(24)} the pen against the committed raster beside it (the same words, seed and sheet), under the flat strip: ink ${of(a.sum, b.sum)} px · over 0.5 ${of(a.half, b.half)} · over 0.85 ${of(a.deep, b.deep)}`);
+  }
   return ok;
+}
+
+/** Each device pixel under sheet `G`'s flat strip (the lamp's shading 1 there): `fn(o, qx, qy)` — its byte offset and sheet point. */
+function stripOf(s, G, w, h, fn) {
+  const k = 1 / (s.zoom * VIEW.dpr);
+  const flat = -G.half[1] + G.glue * 2 * G.half[1];
+  const ext = Math.hypot(G.half[0], G.half[1]);
+  const x0 = Math.max(0, Math.floor((G.centre[0] - ext - s.camX) / k));
+  const x1 = Math.min(w, Math.ceil((G.centre[0] + ext - s.camX) / k));
+  const y0 = Math.max(0, Math.floor((G.centre[1] - ext - s.camY) / k));
+  const y1 = Math.min(h, Math.ceil((G.centre[1] + ext - s.camY) / k));
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    const [wx, wy] = worldAt(s, x, y);
+    const [qx, qy] = localOf(G, wx, wy);
+    if (!(qy < flat - 2 && qy > -G.half[1] + 3 && Math.abs(qx) < G.half[0] - 3)) continue;
+    fn((y * w + x) * 4, qx, qy);
+  }
+}
+
+/**
+ * The coverage a pixel's ink laid, drawn `A` against its blank sheet `B` (no light: the colour is the albedo), in the pen's `ink`
+ * (0–255), on the channel where the paper and the pen differ most.
+ */
+function coverAt(A, B, o, ink) {
+  let ch = 0;
+  let span = 0;
+  for (let c = 0; c < 3; c++) { const d = B[o + c] - ink[c]; if (Math.abs(d) > Math.abs(span)) { span = d; ch = c; } }
+  return (B[o + ch] - A[o + ch]) / span;
+}
+
+/** What a note's words lay under its flat strip: the coverage summed (each px's clamped to 0..1), and the px over half and over 0.85. */
+function weightOf(s, G, ink, A, B, w, h) {
+  let sum = 0;
+  let half = 0;
+  let deep = 0;
+  stripOf(s, G, w, h, (o) => {
+    const c = Math.min(1, Math.max(0, coverAt(A, B, o, ink)));
+    sum += c;
+    if (c > 0.5) half++;
+    if (c > 0.85) deep++;
+  });
+  return { sum, half, deep };
 }
 
 // ---------------------------------------------------------------- the prints and the whiteboards (design-015 D3r-a)
