@@ -38,16 +38,18 @@
 // Where the WRITING LIES (petition I60 — a drag across the words selects them, a second click takes a word, a third a line): the
 // caret index on the sheet under a world point (`indexAt` — none off the sheet), the word or the laid line around an index
 // (`rangeAt`, the pure `wordRange` and `lineRange`), all from what was last drawn. The editor's SELECTION is flux here as the caret is
-// (`select`, `selectionOf`): the platform's field holds it, it is never stored or synced, and the note does not draw it yet.
+// (`select`, `selectionOf`): the platform's field holds it, it is never stored or synced, and the note does not draw it yet. Where a
+// RANGE of the words lies (`rangeBox` — the selection menu comes to the words selected): the union of their glyph boxes, placed on the
+// sheet as last drawn, the box of the turned corners for a sheet at its tilt.
 
 import type { Entity } from "@ice/core";
 import { type KindHost, rasterPriority } from "@ice/desk";
-import { type View, HAND, caretAt, glyphBox, type HandLaw, type HandLayout, layoutText, type TextRange, type TextRaster, type TextUnit, seedsFor } from "@ice/desk/kit";
+import { type View, HAND, caretAt, glyphBox, type HandLaw, type HandLayout, layoutText, type RangeBox, type TextRange, type TextRaster, type TextUnit, seedsFor } from "@ice/desk/kit";
 import { PAPER } from "./theme";
 import type { PaperInstance } from "./layout";
 import type { InkRect, UvRect } from "./pages";
 import { INK_PAGE } from "./paper-pass";
-import { type PaperGeometry, localOf, rasterBand, sdPaper } from "./paper";
+import { type PaperGeometry, localOf, rasterBand, sdPaper, worldOf } from "./paper";
 
 /** The pages a writing allocates in — the root paper pass (paper-pass.ts) satisfies it. */
 export interface InkPages {
@@ -179,6 +181,12 @@ export interface Writing {
   indexAt(e: Entity, wx: number, wy: number): number | undefined;
   /** The WORD (`wordRange`) or the LAID LINE (`lineRange`) around caret index `index` of note `e` as last drawn — undefined before its first draw (petition I60). */
   rangeAt(e: Entity, index: number, unit: TextUnit): TextRange | undefined;
+  /**
+   * Where the words [from, to) of note `e` LIE in the world as last drawn (petition I60 — the selection menu comes to the words): the
+   * union of their glyph boxes (`rangeBoxIn`), placed on the sheet — for a sheet at its tilt, the box of the turned corners. Held in
+   * order (`from` > `to` is the same range); undefined for an empty range, before its first draw, or while the face loads.
+   */
+  rangeBox(e: Entity, from: number, to: number): RangeBox | undefined;
   /** The editor's SELECTION on note `e` (petition I60): its range, held in order (`from` ≤ `to`); `undefined` lifts it. Flux: told with the caret, never stored, not drawn yet. */
   select(e: Entity | undefined, from?: number, to?: number): void;
   /** The selection as told: its note and its range. */
@@ -274,6 +282,39 @@ export function caretIndexIn(L: HandLayout, nx: number, ny: number, length: numb
     if (score < bestScore) { bestScore = score; best = i; }
   }
   return best;
+}
+
+/**
+ * The box the words [from, to) take in a layout, note units from the sheet's top-left (petition I60 — where the selection menu comes
+ * to): the union of their glyph boxes (`glyphBox`, what the ink can reach) and, for a space or a break, which lay no glyph, their own
+ * cell — from the caret's place before it to the next on its line (a break ends its line: no width there), the face's box tall. Held in
+ * order; undefined for an empty range.
+ */
+export function rangeBoxIn(L: HandLayout, from: number, to: number): { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number } | undefined {
+  const length = L.positions.length / 2 - 1;
+  const a = Math.max(0, Math.min(from, to));
+  const b = Math.min(length, Math.max(from, to));
+  if (b <= a) return undefined;
+  let x0 = Number.POSITIVE_INFINITY;
+  let y0 = Number.POSITIVE_INFINITY;
+  let x1 = Number.NEGATIVE_INFINITY;
+  let y1 = Number.NEGATIVE_INFINITY;
+  const take = (l: number, t: number, r: number, d: number): void => { x0 = Math.min(x0, l); y0 = Math.min(y0, t); x1 = Math.max(x1, r); y1 = Math.max(y1, d); };
+  const inked = new Set<number>();
+  for (const g of L.glyphs) {
+    if (g.index < a || g.index >= b) continue;
+    const q = glyphBox(L, g);
+    take(q.x0, q.y0, q.x1, q.y1);
+    inked.add(g.index);
+  }
+  for (let i = a; i < b; i++) {
+    if (inked.has(i)) continue;
+    const x = L.positions[2 * i] as number;
+    const y = L.positions[2 * i + 1] as number;
+    const next = L.positions[2 * i + 2] as number;
+    take(x, y - L.ascent, L.positions[2 * i + 3] === y ? Math.max(next, x) : x, y + L.descent);
+  }
+  return x1 >= x0 ? { x0, y0, x1, y1 } : undefined;
 }
 
 export function createWriting(opts: WritingOptions): Writing {
@@ -571,6 +612,26 @@ export function createWriting(opts: WritingOptions): Writing {
       if (en === undefined || !en.keyed) return undefined;
       if (unit === "word") return wordRange(en.text, index);
       return en.layout === undefined ? undefined : lineRange(en.layout, en.text, index);
+    },
+
+    rangeBox(e, from, to) {
+      const en = entries.get(e);
+      const L = en?.layout;
+      const G = en?.geometry;
+      if (en === undefined || L === undefined || G === undefined) return undefined;
+      const b = rangeBoxIn(L, from, to);
+      if (b === undefined) return undefined;
+      // note units (from the sheet's top-left) → the sheet's own frame (about its centre, at the hold's scale) → the world, turned: the
+      // box of the four corners
+      let x0 = Number.POSITIVE_INFINITY;
+      let y0 = Number.POSITIVE_INFINITY;
+      let x1 = Number.NEGATIVE_INFINITY;
+      let y1 = Number.NEGATIVE_INFINITY;
+      for (const [nx, ny] of [[b.x0, b.y0], [b.x1, b.y0], [b.x1, b.y1], [b.x0, b.y1]] as const) {
+        const [wx, wy] = worldOf(G, (nx - en.w / 2) * G.scale, (ny - en.h / 2) * G.scale);
+        x0 = Math.min(x0, wx); y0 = Math.min(y0, wy); x1 = Math.max(x1, wx); y1 = Math.max(y1, wy);
+      }
+      return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
     },
 
     select(e, from = 0, to = from) {
