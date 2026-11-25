@@ -32,7 +32,8 @@
     "rig:cost": "tsx scripts/cost.mjs",
     "rig:stress": "tsx scripts/stress.mjs",
     "rig:scale": "tsx scripts/scale.mjs",
-    "gen:check": "node tools/make-gobo-plate.mjs --check"
+    "gen:hands": "tsx tools/bake-hand.mjs --desk",
+    "gen:check": "node tools/make-gobo-plate.mjs --check && tsx tools/bake-hand.mjs --desk --check"
   },
   "dependencies": {
     "@ice/core": "workspace:*",
