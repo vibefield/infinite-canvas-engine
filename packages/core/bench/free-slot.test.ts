@@ -1,24 +1,30 @@
 /**
- * resolveFreeSlot at scale (petition I57): what one ask costs when something is placed.
+ * The free slot at scale (petition I57): what one ask costs when something is placed.
  *
- * On the REAL facade (createCanvasEngine, a document, the objects spawned through a transaction as a batch seed
- * does), a board of N objects — 180 × 120 on a 240 × 170 pitch, so no 200 × 100 newcomer fits between two of them
- * with the 24 gutter — in a 1600 × 1000 view at zoom 1 over the field's middle. Four asks per board:
+ * A board of N objects — 180 × 120 on a 240 × 170 pitch, so no 200 × 100 newcomer fits between two of them with the
+ * 24 gutter — in a 1600 × 1000 view at zoom 1 over the field's middle. Four asks per board:
  *
- *   free      a clearing at the view's middle: the anchor itself answers (the first object an agent places).
+ *   free      a clearing at the view's middle: the anchor itself answers (the first object a tool places).
  *   beside    the same clearing with one object where the newcomer wants to be: the nearest side of it.
  *   crowded   no clearing: nothing free within the default reach (one view, one newcomer, the gutter) → undefined.
  *             Every column within the reach is read: the worst the default reach allows.
  *   wide      no clearing, and a reach past the whole field: the slot is at the field's edge. Every incumbent is
  *             within the reach — the kernel's worst case in n.
  *
- * The ask walks the frame's children once (O(N)) whatever the reach; `within` is how many of them can block a
- * position within the reach and so reach the kernel. Medians over ROUNDS asks, µs.
+ * Two tables. THE KERNEL (`freeSlot` over plain rectangles) at 100, 1,000 and 10,000 incumbents: the search alone.
+ * THE WORLD'S READER (`resolveFreeSlot` on the real facade — createCanvasEngine, a document, the objects hung on the
+ * board as a spawn hangs them) at 100 and 1,000: the search plus one walk of the frame's children, O(N) whatever the
+ * reach. The reader's boards stop at 1,000 because SEEDING one is the cost there, not the ask: it grows faster than
+ * N (the last column), and a first form of this file, with three boards of 10,000 alive at once, died of a 4 GB heap
+ * six minutes in (2026-11-24; where the heap went was not measured). `BENCH_SLOT_BOARDS=100,1000,…` names other boards.
  *
- * Guarded by BENCH=1 (package.json "bench" script) — real timed work, not a correctness test. Numbers are recorded
- * in docs/benchmarks.md with the host's load beside them.
+ * `within` is how many incumbents can block a position within the reach, and so reach the search. Medians over
+ * ROUNDS asks (7 at 10,000), µs.
+ *
+ * Guarded by BENCH=1 (package.json "bench" script) — real timed work, not a correctness test.
  */
 import os from "node:os";
+import { freeSlot, type LayoutRect } from "@ice/kernel";
 import { describe, expect, it } from "vitest";
 import { Camera, Viewport, attachSpawnParent, createCanvasEngine, defineWidget, resolveFreeSlot, widgets } from "../src";
 import type { CanvasEngine } from "../src";
@@ -28,49 +34,56 @@ import { widgetSpawnInits } from "../src/widget/spawn";
 const Card = widgets.get("bench-slot-card") ?? defineWidget({ type: "bench-slot-card", defaultSize: { w: 180, h: 120 } });
 
 const SIZE = { w: 200, h: 100 };
+const CARD = { w: 180, h: 120 };
+const GUTTER = 24;
 const VP = { w: 1600, h: 1000, dpr: 1 };
 const PITCH = { x: 240, y: 170 };
-const ROUNDS = 31;
+const REACH_DEFAULT = Math.max(VP.w, VP.h) + Math.max(SIZE.w, SIZE.h) + GUTTER;
 
-interface Board {
-  readonly ce: CanvasEngine;
-  readonly n: number;
+interface Field {
+  readonly rects: readonly LayoutRect[];
   readonly mid: { readonly x: number; readonly y: number };
   readonly span: number;
+  readonly view: LayoutRect;
 }
 
 /** N cards on the lattice, less those within `clearing` of the field's middle; `under` adds one at the middle. */
-function seed(n: number, clearing: number, under: boolean): Board {
-  const ce = createCanvasEngine({ widgets: [Card] });
-  const session = ce.docs.create();
+function field(n: number, clearing: number, under: boolean): Field {
   const cols = Math.ceil(Math.sqrt(n));
   const rows = Math.ceil(n / cols);
   const mid = { x: (cols * PITCH.x) / 2, y: (rows * PITCH.y) / 2 };
+  const rects: LayoutRect[] = [];
+  for (let i = 0; i < n; i++) {
+    const x = (i % cols) * PITCH.x;
+    const y = Math.floor(i / cols) * PITCH.y;
+    if (Math.abs(x + CARD.w / 2 - mid.x) < clearing && Math.abs(y + CARD.h / 2 - mid.y) < clearing) continue;
+    rects.push({ x, y, ...CARD });
+  }
+  if (under) rects.push({ x: mid.x - CARD.w / 2, y: mid.y - CARD.h / 2, ...CARD });
+  return { rects, mid, span: Math.max(cols * PITCH.x, rows * PITCH.y), view: { x: mid.x - VP.w / 2, y: mid.y - VP.h / 2, w: VP.w, h: VP.h } };
+}
+
+/** The field as a real board: every card spawned and hung on the board root, one transaction, as a batch seed does. */
+function board(f: Field): { ce: CanvasEngine; seedMs: number } {
+  const ce = createCanvasEngine({ widgets: [Card] });
+  const session = ce.docs.create();
   ce.world.setResource(Viewport, VP);
-  ce.world.setResource(Camera, { x: mid.x - VP.w / 2, y: mid.y - VP.h / 2, zoom: 1, gesturing: false });
-  let made = 0;
+  ce.world.setResource(Camera, { x: f.view.x, y: f.view.y, zoom: 1, gesturing: false });
+  const t0 = performance.now();
   guardedTransaction(
     session.store,
     ce.world,
     (tx) => {
-      const spawnOne = (x: number, y: number): void => {
-        const { prefab, overrides } = widgetSpawnInits(Card.type, { x, y });
+      for (const r of f.rects) {
+        const { prefab, overrides } = widgetSpawnInits(Card.type, { x: r.x, y: r.y });
         attachSpawnParent(tx, ce.world, tx.spawnPrefab(prefab, overrides));
-        made += 1;
-      };
-      for (let i = 0; i < n; i++) {
-        const x = (i % cols) * PITCH.x;
-        const y = Math.floor(i / cols) * PITCH.y;
-        if (Math.abs(x + 90 - mid.x) < clearing && Math.abs(y + 60 - mid.y) < clearing) continue;
-        spawnOne(x, y);
       }
-      if (under) spawnOne(mid.x - 90, mid.y - 60);
     },
     { undoable: false },
   );
   ce.world.sync();
   ce.step(16);
-  return { ce, n: made, mid, span: Math.max(cols * PITCH.x, rows * PITCH.y) };
+  return { ce, seedMs: performance.now() - t0 };
 }
 
 function median(xs: number[]): number {
@@ -79,12 +92,11 @@ function median(xs: number[]): number {
 }
 
 /** Median µs of one ask, and its answer (the same every round: asserted). */
-function time(board: Board, reach?: number): { us: number; where: string } {
-  const ask = () => resolveFreeSlot(board.ce.world, SIZE, reach === undefined ? {} : { reach });
+function time(rounds: number, ask: () => { readonly where: string } | undefined): { us: number; where: string } {
   const first = ask();
-  for (let i = 0; i < 5; i++) ask(); // warm
+  for (let i = 0; i < 3; i++) ask(); // warm
   const samples: number[] = [];
-  for (let i = 0; i < ROUNDS; i++) {
+  for (let i = 0; i < rounds; i++) {
     const t0 = performance.now();
     const slot = ask();
     samples.push((performance.now() - t0) * 1000);
@@ -93,48 +105,61 @@ function time(board: Board, reach?: number): { us: number; where: string } {
   return { us: median(samples), where: first === undefined ? "none" : first.where };
 }
 
-/** How many of the board's cards can block a position within `reach` of the anchored one (what reaches the kernel). */
-function within(board: Board, reach: number, cards: number): number {
-  const cols = Math.ceil(Math.sqrt(cards));
-  const ax = board.mid.x - SIZE.w / 2;
-  const ay = board.mid.y - SIZE.h / 2;
+/** How many of the field's cards can block a position within `reach` of the anchored one (what reaches the search). */
+function within(f: Field, reach: number): number {
+  const ax = f.mid.x - SIZE.w / 2;
+  const ay = f.mid.y - SIZE.h / 2;
   let k = 0;
-  for (let i = 0; i < cards; i++) {
-    const x = (i % cols) * PITCH.x;
-    const y = Math.floor(i / cols) * PITCH.y;
-    if (x - 24 - SIZE.w < ax + reach && x + 180 + 24 > ax - reach && y - 24 - SIZE.h < ay + reach && y + 120 + 24 > ay - reach) k += 1;
+  for (const r of f.rects) {
+    if (r.x - GUTTER - SIZE.w < ax + reach && r.x + r.w + GUTTER > ax - reach && r.y - GUTTER - SIZE.h < ay + reach && r.y + r.h + GUTTER > ay - reach) k += 1;
   }
   return k;
 }
 
-describe("resolveFreeSlot at scale (BENCH=1 only)", () => {
+const cell = (t: { us: number; where: string }): string => `${t.us.toFixed(0).padStart(8)} ${t.where.padEnd(6)}`;
+
+describe("the free slot at scale (BENCH=1 only)", () => {
   it.runIf(process.env.BENCH === "1")(
-    "one ask on a board of 100, 1,000 and 10,000 objects",
+    "one ask of the kernel at 100, 1,000 and 10,000 incumbents; of the world's reader on boards of 100 and 1,000",
     () => {
-      const lines: string[] = [];
+      console.log(`\nfree-slot (µs, the median ask; load ${os.loadavg()[0]?.toFixed(1)}; node ${process.version})`);
+      console.log("freeSlot, the kernel alone:\n  incumbents |    free µs      |  beside µs      | crowded µs (default reach)       |    wide µs (reach past the field)");
       for (const n of [100, 1_000, 10_000]) {
-        const free = seed(n, 420, false);
-        const beside = seed(n, 420, true);
-        const crowded = seed(n, 0, false);
-        const reachDefault = Math.max(VP.w, VP.h) + Math.max(SIZE.w, SIZE.h) + 24;
-        const a = time(free);
-        const b = time(beside);
-        const c = time(crowded);
-        const d = time(crowded, crowded.span);
+        const rounds = n > 1_000 ? 7 : 31;
+        const open = field(n, 420, false);
+        const beside = field(n, 420, true);
+        const crowded = field(n, 0, false);
+        const ask = (f: Field, reach: number) => () => freeSlot(f.rects, SIZE, { anchor: f.mid, gutter: GUTTER, reach, view: f.view });
+        const a = time(rounds, ask(open, REACH_DEFAULT));
+        const b = time(rounds, ask(beside, REACH_DEFAULT));
+        const c = time(rounds, ask(crowded, REACH_DEFAULT));
+        const d = time(rounds, ask(crowded, crowded.span));
         expect(a.where).toBe("anchor");
         expect(b.where).toBe("view");
-        lines.push(
-          `  ${String(n).padStart(6)} | ${a.us.toFixed(0).padStart(7)} ${a.where.padEnd(6)} | ${b.us.toFixed(0).padStart(7)} ${b.where.padEnd(6)} | ${c.us.toFixed(0).padStart(8)} ${c.where.padEnd(6)} (${String(within(crowded, reachDefault, n)).padStart(5)} within) | ${d.us.toFixed(0).padStart(8)} ${d.where.padEnd(6)} (${String(within(crowded, crowded.span, n)).padStart(5)} within)`,
+        console.log(
+          `  ${String(n).padStart(10)} | ${cell(a)} | ${cell(b)} | ${cell(c)} (${String(within(crowded, REACH_DEFAULT)).padStart(5)} within) | ${cell(d)} (${String(within(crowded, crowded.span)).padStart(5)} within)`,
         );
-        free.ce.dispose();
-        beside.ce.dispose();
-        crowded.ce.dispose();
       }
-      console.log(`
-free-slot (µs = median of ${ROUNDS} asks; load ${os.loadavg()[0]?.toFixed(1)}; node ${process.version}):
-  objects |   free µs        | beside µs        | crowded µs (default reach)        | wide µs (reach past the field)
-${lines.join("\n")}
-`);
+
+      const boards = (process.env.BENCH_SLOT_BOARDS ?? "100,1000").split(",").map(Number);
+      console.log("resolveFreeSlot, the world's reader on a real board:\n     objects |    free µs      |  beside µs      | crowded µs (default reach)       |    wide µs (reach past the field) | seeding one board, ms");
+      for (const n of boards) {
+        const cells: string[] = [];
+        let seedMs = 0;
+        // one board at a time: seeded, asked, disposed
+        for (const [f, reach] of [
+          [field(n, 420, false), undefined],
+          [field(n, 420, true), undefined],
+          [field(n, 0, false), undefined],
+          [field(n, 0, false), -1],
+        ] as const) {
+          const { ce, seedMs: ms } = board(f);
+          seedMs = Math.max(seedMs, ms);
+          cells.push(cell(time(31, () => resolveFreeSlot(ce.world, SIZE, reach === undefined ? {} : { reach: f.span }))));
+          ce.dispose();
+        }
+        console.log(`  ${String(n).padStart(10)} | ${cells[0]} | ${cells[1]} | ${cells[2]}                | ${cells[3]}                | ${seedMs.toFixed(0)}`);
+      }
     },
     600_000,
   );

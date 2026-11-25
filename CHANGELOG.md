@@ -11,7 +11,7 @@ All notable changes to ICE are documented here. The format follows
 <!-- petition I57 — a free slot for an object that comes with no pointer (2026-11-24; VibeField) -->
 - **A FREE SLOT FOR AN OBJECT THAT COMES WITH NO POINTER — `freeSlot`, `resolveFreeSlot`, `FREE_SLOT_DEFAULTS`** (petition I57 —
   VibeField's agents place objects on a person's desk; with no pointer to say where, an object went to the middle of the view, on
-  top of whatever the person had there). THE KERNEL, beside `insertSlot` (`/`, `/kernel`): `freeSlot(incumbents, size, { anchor,
+  top of whatever the person had there). THE KERNEL, beside `insertSlot` (`/kernel`): `freeSlot(incumbents, size, { anchor,
   gutter, reach, view? }) → { x, y, where } | undefined` is the nearest free slot to the anchored position (the newcomer centred
   on `anchor`), free by `insertSlot`'s law: at least the gutter away from every incumbent on either axis. A slot wholly inside the
   `view` is taken before any that is not; none lies farther than `reach` on either axis; nothing free within it answers
@@ -33,7 +33,8 @@ All notable changes to ICE are documented here. The format follows
   not two positive finite numbers and when there is no live frame to place in. ADDITIVE: no op moves. `ops.spawnWidget` and
   `ops.layFromTray` keep the point they are given, and `insertSlot` and the folder drop are untouched. A host composes it:
   `const slot = resolveFreeSlot(world, size); if (slot) ops.spawnWidget(type, { x: slot.x, y: slot.y, parent: slot.frame })`. Its
-  cost is what `packages/core/bench/free-slot.test.ts` measures (`BENCH=1`: one ask on a board of 100, 1,000 and 10,000 objects).
+  cost is what `packages/core/bench/free-slot.test.ts` measures (`BENCH=1`) and `docs/benchmarks.md` records: a few tens of µs for
+  the kernel's ordinary ask at 100 to 10,000 incumbents, and under 1 ms for the reader on a real board of 1,000.
 
 ### Changed
 
