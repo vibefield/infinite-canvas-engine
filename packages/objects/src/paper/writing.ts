@@ -61,7 +61,7 @@
 
 import type { Entity } from "@ice/core";
 import { type KindHost, rasterPriority } from "@ice/desk";
-import { type View, HAND, caretAt, createPenClock, glyphBox, glyphOf, type HandAtlas, type HandFaces, type HandLaw, type HandLayout, handMetricsOf, type HandRun, handRun, layoutText, type PenClock, type PenHow, type PenKey, type PenMoment, type RangeBox, type TextRange, type TextRaster, type TextUnit, seedsFor } from "@ice/desk/kit";
+import { type View, HAND, HAND_WEIGHT, caretAt, createPenClock, glyphBox, glyphOf, type HandAtlas, type HandFaces, type HandLaw, type HandLayout, handMetricsOf, type HandRun, handRun, layoutText, type PenClock, type PenHow, type PenKey, type PenMoment, type RangeBox, type TextRange, type TextRaster, type TextUnit, seedsFor } from "@ice/desk/kit";
 import { PAPER } from "./theme";
 import type { PaperInstance } from "./layout";
 import type { InkRect, UvRect } from "./pages";
@@ -120,6 +120,11 @@ export interface WritingOptions {
   readonly hand?: HandLaw;
   readonly face?: string;
   readonly bleed?: number;
+  /**
+   * The pen's weight, em (petition I59 — the kit's `HAND_WEIGHT`, the desk's: the outline moved outward by it, so the pen lays the
+   * canvas raster's ink); 0, the face's own outline. The pen's road's alone: the raster lays the face as the canvas draws it.
+   */
+  readonly weight?: number;
   /** K7b — the far LOD's low edge (theme.ts `PAPER.far`), CSS px of the sheet's longer side: under it no raster is held or asked (the note greeks). */
   readonly far?: number;
   /** A typed glyph's wipe, ms (theme.ts `HAND.wipeMs`) — the raster road's. */
@@ -433,6 +438,7 @@ export function createWriting(opts: WritingOptions): Writing {
   const law = opts.hand ?? DEFAULT_HAND_LAW;
   const face = opts.face ?? DEFAULT_FACE;
   const bleed = opts.bleed ?? DEFAULT_BLEED;
+  const weight = opts.weight ?? HAND_WEIGHT;
   /** K7b: the note is FAR — under the far LOD's low edge on screen — and holds and asks no raster (its writing is greeked). */
   const far = (rect: { readonly w: number; readonly h: number }, zoom: number): boolean => Math.max(rect.w, rect.h) * zoom < (opts.far ?? 0);
   const wipeMs = Math.max(opts.wipeMs ?? HAND.wipeMs, 1);
@@ -645,7 +651,7 @@ export function createWriting(opts: WritingOptions): Writing {
       en.looked = L;
       const moments = clock.look(e, { layout: L, seeds: seedsFor(t, s, seed), atlas, now, how });
       reach(moments);
-      const built = handRun(L, atlas, { moments, epoch: now, bleed });
+      const built = handRun(L, atlas, { moments, epoch: now, bleed, weight });
       runsBuilt += 1;
       if (built.glyphs === 0) {
         // nothing inked (an empty sheet, a sheet of spaces): no run written — and the clock has seen the sheet, so its first glyph is
