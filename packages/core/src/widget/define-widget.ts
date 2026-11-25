@@ -230,7 +230,9 @@ export interface WidgetDef {
   /**
    * The acts the SELECTION MENU offers for a selection of this type's objects (design-016 §5 · K-L2, K8a — widget/menu-actions.ts):
    * each an id, a label, a glyph and an op; the menu shows one when every selected object's type declares it, and
-   * `ops.runMenuAction` runs it. A kind's own acts live here, never in app code over its type name.
+   * `ops.runMenuAction` runs it. A kind's own acts live here, never in app code over its type name. Petition I60: an act may be for
+   * the WORDS selected while one of these objects is written (`on: "words"`), its state and choices reading the range (`ctx.range`),
+   * and a toggle's state says it `pressed`.
    */
   readonly menu?: readonly MenuActionDef[];
   /**
