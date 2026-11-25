@@ -320,6 +320,59 @@ try {
   await sleep(100);
   check(composing?.text === "に" && composed?.text === "日本" && imeLayout?.glyphs === 2 && imeRoad === "raster" && (await q(`window.__desk.note.raster(${imeId})`)) !== null && (await docNote(imeId))?.text === "日本", `IME text is written as it composes ("${composing?.text}") and as it commits ("${composed?.text}", ${imeLayout?.glyphs} glyphs in the hand, on the ${imeRoad} road — the face has no CJK), and Escape commits it`);
 
+  // --- 8. the press on the lent note's writing is the EDITOR'S under the desk's own select (petition I60): a double click takes a
+  // word, a drag selects a range and leaves the note where it lay, a right press keeps the field and its range. The units hold the
+  // claim on a plain engine and on `DESK_ENGINE` (objects' note-select); this holds it in a browser, on this app's `desk.select`
+  check((await q("window.__desk.note.tool()")) === "desk.select", `the desk runs its own select: ${await q("window.__desk.note.tool()")} in hand`);
+  const selId = await q("window.__desk.spawn('desk.note', { seed: 13, text: 'buy milk today' }, { x: 420, y: 320 })");
+  await settle();
+  const selBox = await sheetBox(selId);
+  await click(selBox.cx, selBox.cy);
+  await settle();
+  /** Text index i of the note on screen (CSS px): before its glyph, a little above its baseline — through the sheet's turn and the camera. */
+  const indexAt = async (i) => {
+    const L = await q(`window.__desk.note.layout(${selId})`);
+    const S = await q(`window.__desk.entity(${selId}).geometry`);
+    const c = await q("window.__desk.camera()");
+    const ix = L.positions[2 * i] + 1 - S.half[0];
+    const iy = L.positions[2 * i + 1] - L.ascent * 0.4 - S.half[1];
+    return { x: (S.centre[0] + S.cos * ix - S.sin * iy - c.x) * c.zoom, y: (S.centre[1] + S.sin * ix + S.cos * iy - c.y) * c.zoom };
+  };
+  check((await q("window.__desk.note.editing()")) === selId && (await q("window.__desk.note.editorFocused()")), "a tap puts the editor on the note to be selected in");
+  // a DOUBLE CLICK on "milk" takes the word
+  const m = await indexAt(5);
+  await mouse("mouseMoved", m.x, m.y);
+  await mouse("mousePressed", m.x, m.y); await mouse("mouseReleased", m.x, m.y);
+  await sleep(40);
+  await mouse("mousePressed", m.x, m.y, { clickCount: 2 }); await mouse("mouseReleased", m.x, m.y, { clickCount: 2 });
+  await sleep(120);
+  const word = await q("window.__desk.note.range()");
+  check(JSON.stringify(word) === "[4,8]" && (await q("window.__desk.note.editing()")) === selId, `a double click on "milk" selects the word: range ${JSON.stringify(word)}`);
+  await sleep(400);   // past the multi-tap window: the next press is a first
+  // a DRAG across "buy milk" selects the range; the note stays where it lay
+  const centre0 = (await q(`window.__desk.entity(${selId}).geometry`)).centre;
+  const a0 = await indexAt(0);
+  const a8 = await indexAt(8);
+  await mouse("mouseMoved", a0.x, a0.y);
+  await mouse("mousePressed", a0.x, a0.y);
+  for (let k = 1; k <= 8; k++) { await mouse("mouseMoved", a0.x + ((a8.x - a0.x) * k) / 8, a0.y + ((a8.y - a0.y) * k) / 8, { buttons: 1 }); await sleep(16); }
+  await mouse("mouseReleased", a8.x, a8.y);
+  await settle();
+  const dragged = await q("window.__desk.note.range()");
+  const centre1 = (await q(`window.__desk.entity(${selId}).geometry`)).centre;
+  check(JSON.stringify(dragged) === "[0,8]" && near(centre1[0], centre0[0], 0.01) && near(centre1[1], centre0[1], 0.01), `a drag across "buy milk" selects it (range ${JSON.stringify(dragged)}) and the note stays where it lay (moved ${(centre1[0] - centre0[0]).toFixed(2)}, ${(centre1[1] - centre0[1]).toFixed(2)})`);
+  // a RIGHT press on the words keeps the field: still editing, still focused, the range as it was
+  const r4 = await indexAt(4);
+  await mouse("mouseMoved", r4.x, r4.y);
+  await mouse("mousePressed", r4.x, r4.y, { button: "right", buttons: 2 });
+  await sleep(30);
+  await mouse("mouseReleased", r4.x, r4.y, { button: "right" });
+  await sleep(120);
+  const kept = await q("window.__desk.note.range()");
+  check((await q("window.__desk.note.editing()")) === selId && (await q("window.__desk.note.editorFocused()")) && JSON.stringify(kept) === "[0,8]", `a right press on the words keeps the field: editing ${await q("window.__desk.note.editing()")}, range ${JSON.stringify(kept)}`);
+  await key("Escape");
+  await sleep(100);
+
   logs.push(...(await faultsOf(tab)));   // the faults the engine CONTAINED — a skipped frame is an error too (D7)
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);
   check(logs.length === 0, "no page errors");

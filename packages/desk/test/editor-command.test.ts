@@ -6,12 +6,15 @@
 // plain words when they are its words, and lays it alone where the page may read no clipboard. A RIGHT press on the lent part's writing
 // keeps the field's focus and range, and nothing else. A lease of the test's own (one line, ten px a letter) over a real engine's world
 // (no layer, no device); the platform's clipboard and its `execCommand` stood in for where happy-dom has none.
-import { ActiveTool, Camera, createCanvasEngine } from "@ice/core";
+import { ActiveTool, Camera, createCanvasEngine, defineTool } from "@ice/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeskEditor, PIECE_FLAVOUR } from "../src/host/editor";
 import type { DeskEditor, EditorLease } from "../src/kit/editor";
 
 const TEXT = "one two three";
+
+/** A select of another id, as a desk preset defines its own (`desk.select`: core's select shape under its own id). */
+const A_SELECT = defineTool({ id: "test.editor-command.select", route: { canvasDrag: "marquee" } });
 
 interface Told { readonly calls: string[]; value: string }
 
@@ -243,6 +246,8 @@ describe("a right press on the writing keeps the field for a host's right-click 
     expect(r.pointer("pointerdown", 55, { button: 2, buttons: 2, type: "touch" }).defaultPrevented).toBe(false);
     r.world.setResource(ActiveTool, { id: "pan" });
     expect(r.pointer("pointerdown", 55, { button: 2, buttons: 2 }).defaultPrevented).toBe(false);
+    r.world.setResource(ActiveTool, { id: A_SELECT.id });
+    expect(r.pointer("pointerdown", 55, { button: 2, buttons: 2 }).defaultPrevented).toBe(true);   // a select of another id (the desk's `desk.select`): kept
     r.world.setResource(ActiveTool, { id: "select" });
     const { indexAt: _where, ...blind } = r.lease;
     r.editor.lend(blind, 0);
