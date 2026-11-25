@@ -10,7 +10,7 @@
 import { ActiveTool, Camera, closeTray, createCanvasEngine, defineWidget, type Entity, NO_MODS, openTray, widgets } from "@ice/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { createDeskEditor } from "../src/host/editor";
-import type { DeskEditor, EditorLease, EditorPaste, TextPart, TextTap } from "../src/kit/editor";
+import type { EditorLease, EditorPaste, TextPart, TextTap } from "../src/kit/editor";
 
 // One widget type per FILE (core's registry is global): an object a press may land on over the lease's part.
 const CARD =
@@ -336,17 +336,15 @@ describe("the field's copy, cut and paste through a lease that lifts and lays (p
     const told: Told = { calls: [], value: TEXT };
     const laid: (EditorPaste & { from: number; to: number })[] = [];
     let take = true;
-    let editor: DeskEditor | undefined;
+    const r = rig();
     const lease = writingLease(told, {
       lay(paste, from, to) {
         laid.push({ ...paste, from, to });
         if (!take) return false;
-        editor?.write(paste.text, from, to);
+        r.editor.write(paste.text, from, to);
         return true;
       },
     });
-    const r = rig();
-    editor = r.editor;
     r.editor.lend(lease, 0);
     r.el.setSelectionRange(4, 7);
     told.calls.length = 0;
