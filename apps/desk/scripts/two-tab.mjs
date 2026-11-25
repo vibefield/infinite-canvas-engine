@@ -118,9 +118,11 @@ try {
   check(gotB !== null && gotB.seeds === docA.seeds && gotB.seeds.length > 0, `with A's seeds — the same hand, glyph for glyph (${gotB?.seeds})`);
   await front(B);
   await B.q("window.__desk.settle(4000)");
-  const rasterB = await B.q(`window.__desk.note.raster(${b})`);
+  // THE PEN (petition I59): the words arrive on B and its pen writes them — its glyph run, the raster's twin on the pen's road
+  const roadB = await B.q(`window.__desk.note.road(${b})`);
+  const penB = await B.q(`window.__desk.note.pen(${b})`);
   const layoutB = await B.q(`window.__desk.note.layout(${b})`);
-  check(rasterB !== null && layoutB?.glyphs === 5, `B draws it: ${layoutB?.glyphs} glyphs in the hand, a ${rasterB?.w}² raster at band ${rasterB?.band}`);
+  check(roadB === "pen" && penB?.glyphs === 5 && layoutB?.glyphs === 5, `B draws it: ${layoutB?.glyphs} glyphs in the hand, written with the pen (road ${roadB}, a run of ${penB?.glyphs} glyphs at base ${penB?.base})`);
 
   // 1 s without input commits the next session — A's editor still on the note
   await front(A);
