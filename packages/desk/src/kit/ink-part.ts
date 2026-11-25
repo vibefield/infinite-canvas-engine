@@ -16,11 +16,13 @@
 // marks the kind keeps only, and writes the field through the editor (`DeskEditor.write`), whose input then changes nothing.
 // DOM-free: the part reads the editor it is handed (its element's value and range), never a global.
 
-import { Active, type Entity, Grab, PrefabId } from "@ice/core";
+import { Active, type Entity, Grab, guardedTransaction, type MenuActionApi, PrefabId, setWidgetProps } from "@ice/core";
+import { writable } from "../docs";
 import type { ObjectDomHost } from "../kinds/world";
 import type { EditorLease, EditorLift, EditorPlace, RangeBox, TextPart } from "./editor";
 import { cleanPiece, decodeMarks, highlightOf, indexIn, type InkPiece, type InkValue, lineAt, penOf, spansOf, strikeOf, underlineOf, wordAt } from "./ink";
-import { type InkField, type InkSink, type InkTyping, inkTyping } from "./ink-typing";
+import { INK_ACTS, inkKeyOf } from "./ink-acts";
+import { INK_FIELDS, type InkField, type InkSink, type InkTyping, inkTyping } from "./ink-typing";
 import { HIGHLIGHTERS, type HandLayout, PENS } from "./text";
 
 /**
@@ -123,6 +125,45 @@ export function inkPart(host: Pick<ObjectDomHost, "world" | "docs" | "editor" | 
   });
   const accepts = opts.accepts ?? ((e: Entity): boolean => world.isAlive(e) && world.get(e, PrefabId)?.id === host.object.type);
   const keep = opts.keep ?? printable;
+  const keeps = new Set<InkField>(opts.marks ?? INK_FIELDS);
+  /**
+   * The act api a MARK'S KEY runs the type's own act with (as `ops.runMenuAction` hands one): the object and the words, its props as
+   * the world holds them, and the document's writer's gate — no document, or a read-only one, writes nothing.
+   */
+  const actApi = (e: Entity, from: number, to: number): MenuActionApi => ({
+    world,
+    entities: [e],
+    range: { entity: e, from, to },
+    props: (x) => Object.assign({}, ...host.object.groups.map((g) => (world.get(x, g.component) as Record<string, unknown> | undefined) ?? {})),
+    setProps(x, props, o) {
+      const s = writable(host.docs);
+      if (s === undefined || !world.isAlive(x)) return false;
+      setWidgetProps(s.store, world, x, props, o?.undoable === false ? { undoable: false } : undefined);
+      return true;
+    },
+    transact(fn, o) {
+      const s = writable(host.docs);
+      if (s === undefined) return false;
+      guardedTransaction(s.store, world, fn, o?.undoable === false ? { undoable: false } : undefined);
+      return true;
+    },
+  });
+  /**
+   * A MARK'S KEY on `e` (`inkKeyOf` — ⇧⌘X, ⌘U, ⇧⌘H): the type's own words act for it run on the field's range — only while words are
+   * selected, the part keeps that mark and the type declares the act; false otherwise, so the platform's own ⌘U and ⌘X stand.
+   */
+  const markKey = (e: Entity, ev: KeyboardEvent): boolean => {
+    const field = inkKeyOf(ev);
+    if (field === undefined || !keeps.has(field)) return false;
+    const el = editor.element;
+    const from = Math.min(el.selectionStart, el.selectionEnd);
+    const to = Math.max(el.selectionStart, el.selectionEnd);
+    if (to <= from || !world.isAlive(e)) return false;
+    const act = host.object.menu.find((a) => a.id === INK_ACTS[field] && a.on === "words");
+    if (act === undefined) return false;
+    act.run(actApi(e, from, to));
+    return true;
+  };
   /** The object being written and ITS lease — one lease an object, so a tap on the same object keeps it and a tap on another hands over. */
   let current: { readonly entity: Entity; readonly lease: EditorLease } | undefined;
 
@@ -179,9 +220,9 @@ export function inkPart(host: Pick<ObjectDomHost, "world" | "docs" | "editor" | 
         typing.input(value, editor.element.selectionEnd);
         tellField();
       },
-      // Escape lets the object go (the keymap's gate 1 stands down; the release is the part's)
+      // Escape lets the object go (the keymap's gate 1 stands down; the release is the part's); a mark's key marks the words selected
       keydown(ev) {
-        if (ev.key !== "Escape") return false;
+        if (ev.key !== "Escape") return markKey(e, ev);
         editor.release(lease);
         return true;
       },

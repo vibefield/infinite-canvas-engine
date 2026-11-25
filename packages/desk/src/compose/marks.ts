@@ -67,8 +67,9 @@ export interface SelectionAnchor {
   /** A gesture is on (a drag, a vellum, a pan, a pinch): the menu steps aside. */
   readonly gesturing: boolean;
   /**
-   * A note is being written (core's `Editing` — the one focused editor, D2c): the menu steps aside as for a gesture — unless it comes to
-   * the words selected there (`words`, petition I60); the brackets stay.
+   * A note is being written (core's `Editing` — the one focused editor, D2c), or the one editor is lent to a part whose lease names an
+   * object of the selection (`EditorLease.entity`, petition I60 — an ink part stamps no `Editing`; the desk layer adds it): the menu
+   * steps aside as for a gesture — unless it comes to the words selected there (`words`, petition I60); the brackets stay.
    */
   readonly editing: boolean;
   /** The view it was placed in, CSS px, and whether the rulers are printed (the menu flips below their band). */

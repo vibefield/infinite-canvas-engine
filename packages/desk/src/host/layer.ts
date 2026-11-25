@@ -948,8 +948,18 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       const reads = menuReadsOf([entity], { entity, from, to });
       return wordsAnchor({ entity, from, to, box, cam, acts: menuActionsFor([entity], menuOf, "words"), ...(reads !== undefined ? { stateOf: reads.state, choicesOf: reads.choices } : {}) });
     };
+    /**
+     * The one editor is lent to a part whose lease NAMES an object of the selection (`EditorLease.entity`, petition I60): it is being
+     * written though no `Editing` is stamped (an ink part's draft) — the menu steps aside for it as for core's claim, and through the
+     * press that selects its words.
+     */
+    const lentToSelected = (): boolean => {
+      const named = editorRef.current?.lease()?.entity;
+      return typeof named === "number" && world.isAlive(named) && selectedEntities(world).includes(named);
+    };
     const anchorOf = (): SelectionAnchor => {
-      const a = builder.anchor();
+      const marked = builder.anchor();
+      const a = marked.editing || !lentToSelected() ? marked : { ...marked, editing: true };
       // the pegboard tray is out (design-017 §4): the desk under it is inert, so the menu has nothing to act on — it steps away
       if (trayOpen(world)) return { ...a, box: null, count: 0 };
       const h = builder.hand();
