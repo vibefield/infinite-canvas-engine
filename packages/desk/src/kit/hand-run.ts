@@ -11,7 +11,8 @@
 //     h0  x0 y0 x1 y1             the grid's box — no glyph's ink reaches outside it
 //     h1  1/cell cols rows n      the grid: its cell's side (inverted), its columns and rows; the glyphs
 //     h2  listAt glyphsAt s ms    where the list and the glyphs start (vec4s from the base); the run's EPOCH as `penNow` splits it
-//     h3  range bleed alpha −     the em the edge byte spans (the atlas's `range`), the pen's spread (units) and its alpha
+//     h3  range bleed alpha weight the em the edge byte spans (the atlas's `range`), the pen's spread (units) and its alpha, and the
+//                                 weight (em: every outline moved outward by it; 0 — the face's own)
 //   the grid's cells, two a vec4: `offset count` into the list (offset from the list's start)
 //   the list: glyph indices (into the glyphs below), four a vec4
 //   the glyphs, HAND_RUN.glyph vec4s each:
@@ -80,6 +81,11 @@ export interface HandRunOptions {
   readonly bleed?: number;
   /** The spread's presence, 0..1 (default 0.45 — the note's raster's). */
   readonly bleedAlpha?: number;
+  /**
+   * The pen's weight, em: every glyph's outline moved outward by it — its strokes that much wider on each side, its ink that much
+   * heavier (default 0 — the face's own outline; the desk's note writes in `HAND_WEIGHT`, kit/text.ts).
+   */
+  readonly weight?: number;
   /** The grid's cell, units (default: the layout's em). */
   readonly cell?: number;
 }
@@ -195,7 +201,7 @@ export function handRun(layout: HandLayout, atlas: HandAtlas, opts: HandRunOptio
   const length = glyphsAt + HAND_RUN.glyph * items.length;
   const data = new Float32Array(length * 4);
   const [es, ems] = penNow(epoch);
-  data.set([x0, y0, x1, y1, inv, cols, rows, items.length, listAt, glyphsAt, es, ems, atlas.range, Math.max(0, opts.bleed ?? 0), opts.bleedAlpha ?? 0.45, 0], 0);
+  data.set([x0, y0, x1, y1, inv, cols, rows, items.length, listAt, glyphsAt, es, ems, atlas.range, Math.max(0, opts.bleed ?? 0), opts.bleedAlpha ?? 0.45, opts.weight ?? 0], 0);
   for (let i = 0; i < cells; i++) { data[4 * HAND_RUN.header + 2 * i] = offset[i] as number; data[4 * HAND_RUN.header + 2 * i + 1] = count[i] as number; }
   for (let i = 0; i < entries; i++) data[4 * listAt + i] = list[i] as number;
   items.forEach((it, n) => {
@@ -343,6 +349,7 @@ export function handInkAt(run: HandRun | Float32Array, atlas: HandAtlas, x: numb
   const range = v(3, 0);
   const bleed = v(3, 1);
   const bleedA = v(3, 2);
+  const weight = v(3, 3);
   const chain = handMips(atlas);
   const top = chain[0] as HandMip;
   const levels = chain.length - 1;
@@ -379,7 +386,8 @@ export function handInkAt(run: HandRun | Float32Array, atlas: HandAtlas, x: numb
     const [r, arrival] = trilinear(chain, (v(g + 2, 0) + qx) / top.w, (v(g + 2, 1) + qy) / top.h, lod);
     samples += 1;
     const size = v(g + 2, 2);
-    const dist = (r - EDGE) * range * size;
+    // the signed distance to the outline, units — the outline moved outward by the run's weight (em)
+    const dist = ((r - EDGE) * range + weight) * size;
     // the ramp never wider than the field's reach (half its range): past it a haze would lie over the glyph's whole rect
     const ramp = Math.min(aa, 0.5 * range * size);
     // the fill at the glyph's pressure, over its bleed's stroke — the band `bleed` wide about the outline, at the alpha × the
