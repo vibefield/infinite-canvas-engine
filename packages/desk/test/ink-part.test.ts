@@ -7,7 +7,7 @@
 // drag, a word, a line, the clipboard's three flavours, a paste of a piece and of plain words, a cut as one input); the acts run
 // through the engine (`ops.runMenuAction`), with and without an open draft and across two desks; and a real desk layer on the fake
 // device, whose words' menu carries them.
-import { Camera, createCanvasEngine, type Entity, NO_MODS, p, Position, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, createCanvasEngine, Editing, type Entity, NO_MODS, p, Position, Viewport, type WidgetType, type World } from "@ice/core";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { TypingDocs } from "../src/docs";
 import { createDeskEditor, PIECE_FLAVOUR } from "../src/host/editor";
@@ -731,6 +731,115 @@ describe("the host's bar and the words' menu carry the ink", () => {
     expect(d.ce.ops.runMenuAction(INK_ACTS.strike, undefined, { range: { entity: w.entity, from: w.from, to: w.to } })).toBe(true);
     d.step();
     expect(d.anchor().words?.menu.find((m) => m.id === INK_ACTS.strike)?.pressed).toBe(true);
+  });
+});
+
+describe("the marks' keys: ⇧⌘X strike, ⌘U underline, ⇧⌘H highlight — the part's, on the words selected", () => {
+  /** A key pressed in the lent field, as the platform sends it there. */
+  const press = (el: HTMLTextAreaElement, key: string, o: KeyboardEventInit = {}): KeyboardEvent => {
+    const ev = new KeyboardEvent("keydown", { key, bubbles: true, cancelable: true, ...o });
+    el.dispatchEvent(ev);
+    return ev;
+  };
+  const strikes = (c: Cell): number[] => inkOf(c, 7).marks.map(strikeOf);
+  const underlines = (c: Cell): number[] => inkOf(c, 7).marks.map(underlineOf);
+
+  it("the acts declare their keys for a host's tip — Strike ⇧⌘X, Underline ⌘U, Highlight ⇧⌘H, Pen and Clear none — and the words' menu slots carry them", () => {
+    expect(SHEET.menu.map((a) => [a.id, a.keys])).toEqual([["ink.pen", undefined], ["ink.highlight", "⇧⌘H"], ["ink.strike", "⇧⌘X"], ["ink.underline", "⌘U"], ["ink.clear", undefined]]);
+  });
+
+  it("with words selected ⇧⌘X strikes them and ⌘U underlines them — the act run on the field's range, ONE undo step each, the key the part's (its default prevented); pressed again it lifts; Ctrl in place of ⌘ does the same; a draft open lands first", () => {
+    const r = rig();
+    const e = r.spawn("one two three");
+    r.part.focus(e, 0);
+    r.el.setSelectionRange(4, 7);
+    expect(press(r.el, "X", { shiftKey: true, metaKey: true }).defaultPrevented).toBe(true);
+    expect(strikes(r.cell(e))).toEqual([0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0]);
+    expect(press(r.el, "u", { ctrlKey: true }).defaultPrevented).toBe(true);
+    expect(underlines(r.cell(e))).toEqual([0, 0, 0, 0, 1, 1, 1, 0, 0, 0, 0, 0, 0]);
+    expect(press(r.el, "x", { shiftKey: true, ctrlKey: true }).defaultPrevented).toBe(true);   // pressed again: lifted
+    expect(strikes(r.cell(e)).every((m) => m === 0)).toBe(true);
+    expect(r.undo()).toBe(true);   // the lift…
+    expect(strikes(r.cell(e))[5]).toBe(1);
+    expect(r.undo()).toBe(true);   // …the underline…
+    expect(underlines(r.cell(e))[5]).toBe(0);
+    expect(r.undo()).toBe(true);   // …the strike
+    expect(r.cell(e).marks).toBe("");
+    // a draft open: landed first, its own step, then the words marked by the draft's indices
+    r.type("XX one two three", 3);
+    r.el.setSelectionRange(7, 10);
+    expect(press(r.el, "U", { metaKey: true }).defaultPrevented).toBe(true);
+    expect([r.part.typing.open(), r.cell(e).text, underlines(r.cell(e)).slice(6, 11)]).toEqual([false, "XX one two three", [0, 1, 1, 1, 0]]);
+  });
+
+  it("⇧⌘H highlights in the highlighter last chosen on this desk — yellow at first — and lifts it where every letter carries one; another desk starts at yellow", () => {
+    const r = rig();
+    const e = r.spawn("one two three four");
+    r.part.focus(e, 0);
+    const hl = (): number[] => inkOf(r.cell(e), 7).marks.map(highlightOf);
+    r.el.setSelectionRange(0, 3);
+    expect(press(r.el, "H", { shiftKey: true, metaKey: true }).defaultPrevented).toBe(true);
+    expect(hl().slice(0, 4)).toEqual([1, 1, 1, 0]);   // yellow
+    expect(r.ce.ops.runMenuAction(INK_ACTS.highlight, { id: "blue" }, { range: { entity: e, from: 4, to: 7 } })).toBe(true);
+    r.el.setSelectionRange(8, 13);
+    press(r.el, "H", { shiftKey: true, metaKey: true });
+    expect(hl().slice(8, 13)).toEqual([4, 4, 4, 4, 4]);   // blue, the last chosen
+    r.el.setSelectionRange(0, 3);
+    press(r.el, "H", { shiftKey: true, metaKey: true });
+    expect(hl().slice(0, 3)).toEqual([0, 0, 0]);   // every letter had one: lifted
+    const o = rig();
+    const f = o.spawn("one two");
+    o.part.focus(f, 0);
+    o.el.setSelectionRange(0, 3);
+    press(o.el, "h", { shiftKey: true, ctrlKey: true });
+    expect(inkOf(o.cell(f), 7).marks.slice(0, 3).map(highlightOf)).toEqual([1, 1, 1]);   // another desk: yellow
+  });
+
+  it("no key without words selected, nor for a mark the kind does not keep, nor a chord that is not one of the three: the platform's own ⌘U and ⌘X stand, nothing written", () => {
+    const r = rig({ part: { marks: ["highlight", "underline"] } });
+    const e = r.spawn("one two three");
+    r.part.focus(e, 0);
+    r.el.setSelectionRange(5, 5);   // a caret
+    expect([press(r.el, "u", { metaKey: true }).defaultPrevented, press(r.el, "X", { shiftKey: true, metaKey: true }).defaultPrevented, press(r.el, "H", { shiftKey: true, metaKey: true }).defaultPrevented]).toEqual([false, false, false]);
+    r.el.setSelectionRange(4, 7);
+    expect(press(r.el, "X", { shiftKey: true, metaKey: true }).defaultPrevented).toBe(false);   // no strike kept
+    expect([press(r.el, "x", { metaKey: true }).defaultPrevented, press(r.el, "u", { metaKey: true, shiftKey: true }).defaultPrevented, press(r.el, "u", { metaKey: true, altKey: true }).defaultPrevented, press(r.el, "u").defaultPrevented]).toEqual([false, false, false, false]);   // ⌘X (cut), ⇧⌘U, ⌥⌘U, a typed u
+    expect(r.cell(e).marks).toBe("");
+    expect(press(r.el, "u", { metaKey: true }).defaultPrevented).toBe(true);   // the underline it keeps
+    expect(underlines(r.cell(e))[5]).toBe(1);
+  });
+});
+
+describe("the anchor's `editing` for a lent part (no `Editing` claim)", () => {
+  it("true while the one editor is lent to a part whose lease names an object of the selection — no `Editing` stamped; the lease gone, false; lent to an object NOT of the selection, as before; core's claim reads as ever", async () => {
+    const d = await mountDesk();
+    const a = d.spawn("one two three");
+    const b = d.spawn("four five");
+    d.step(2);
+    const part = made.get(d.ce.world);
+    if (part === undefined) throw new Error("the desk made no written part");
+    d.ce.ops.setSelection([a], "replace");
+    d.step();
+    expect(d.anchor().editing).toBe(false);
+    expect(part.focus(a, 0)).toBe(true);
+    d.step();
+    expect([d.anchor().editing, d.ce.world.hasTag(a, Editing), d.editor.lease()?.entity]).toEqual([true, false, a]);
+    const lent = d.editor.lease();
+    if (lent === undefined) throw new Error("no lease");
+    d.editor.release(lent);
+    d.step();
+    expect([d.editor.lease(), d.anchor().editing]).toEqual([undefined, false]);
+    expect(part.focus(b, 0)).toBe(true);   // lent to b; the selection is a alone
+    d.step();
+    expect([d.editor.lease()?.entity, d.anchor().editing]).toEqual([b, false]);
+    d.ce.ops.setSelection([a, b], "replace");
+    d.step();
+    expect(d.anchor().editing).toBe(true);   // b is of the selection now
+    const again = d.editor.lease();
+    if (again !== undefined) d.editor.release(again);
+    d.ce.world.addTag(a, Editing);   // a note's claim, no lease
+    d.step();
+    expect([d.editor.lease(), d.anchor().editing]).toEqual([undefined, true]);
   });
 });
 
