@@ -11,9 +11,10 @@ import { carrySeeds, glyphSeed, HIGHLIGHTERS, type HighlighterName, PENS, type P
 // a mark's numbers spelled out once: 3 bits a field, low bits first — pen · highlighter · strike · underline
 const BALL = 2;            // pen 2: PENS[1]
 const RED = 4;             // pen 4: PENS[3]
-const YELLOW = 1 << 3;     // highlighter 1: HIGHLIGHTERS[0]
-const PINK = 2 << 3;
-const GREEN = 3 << 3;
+const YELLOW = 1 << 3;     // highlighter 1: HIGHLIGHTERS[0] — the desk calendar's five, in its order: yellow, green, pink, blue, orange
+const GREEN = 2 << 3;
+const PINK = 3 << 3;
+const ORANGE = 5 << 3;
 const STRUCK = 1 << 6;     // a line through, in the words' own pen
 const STRUCK_RED = 5 << 6; // …in PENS[3]
 const UNDER = 1 << 9;      // a line under, in the words' own pen
@@ -47,9 +48,10 @@ const counter = (from: number): (() => number) => {
 describe("the ink's marks (kit/ink.ts)", () => {
   it("a mark is four fields of 3 bits, low bits first — pen, highlighter, strike, underline — over the kit's names, whose order is stored", () => {
     expect(PENS).toEqual(["felt", "ball", "fountain", "red"]);
-    expect(HIGHLIGHTERS).toEqual(["yellow", "pink", "green"]);
+    expect(HIGHLIGHTERS).toEqual(["yellow", "green", "pink", "blue", "orange"]);   // the desk calendar's five, in its order
     const m = RED | PINK | STRUCK | (3 << 9);
-    expect([penOf(m), highlightOf(m), strikeOf(m), underlineOf(m)]).toEqual([4, 2, 1, 3]);
+    expect([penOf(m), highlightOf(m), strikeOf(m), underlineOf(m)]).toEqual([4, 3, 1, 3]);
+    expect(highlightOf(ORANGE)).toBe(5);
     expect([penOf(0), highlightOf(0), strikeOf(0), underlineOf(0)]).toEqual([0, 0, 0, 0]);
   });
 
@@ -57,7 +59,7 @@ describe("the ink's marks (kit/ink.ts)", () => {
     expect(encodeMarks([])).toBe("");
     expect(encodeMarks([0, 0, 0])).toBe("");
     expect(encodeMarks([0, 0, YELLOW, YELLOW, 0, 0])).toBe("2:0,2:8");
-    expect(encodeMarks(new Array(40).fill(PINK))).toBe("14:g");
+    expect(encodeMarks(new Array(40).fill(PINK))).toBe("14:o");
     expect(encodeMarks([STRUCK_RED])).toBe("1:8w");
     // the prototype's sheet, pinned: the cell's format may never drift
     expect(encodeMarks(sheet().marks)).toBe("d:0,9:8,1:0,e:4,7:0,f:8w,b:0,7:e8");
@@ -74,9 +76,10 @@ describe("the ink's marks (kit/ink.ts)", () => {
     expect(decodeMarks("1:8,", "abc")).toEqual([YELLOW, 0, 0]);
     expect(decodeMarks("not runs at all ✗", "ab")).toEqual([0, 0]);
     expect(decodeMarks("3:8", "a\nb")).toEqual([YELLOW, 0, YELLOW]);   // a newline carries 0, whatever the cell says
-    expect(decodeMarks("2:G", "ab")).toEqual([PINK, PINK]);             // base 36 in either case
-    // a field out of range reads 0 and the fields in range stay: a stranger's pen 7 and highlighter 5 on a strike
-    expect(decodeMarks(`1:${(7 | (5 << 3) | STRUCK).toString(36)}`, "a")).toEqual([STRUCK]);
+    expect(decodeMarks("2:G", "ab")).toEqual([GREEN, GREEN]);           // base 36 in either case
+    // a field out of range reads 0 and the fields in range stay: a stranger's pen 7 and highlighter 6 on a strike
+    expect(decodeMarks(`1:${(7 | (6 << 3) | STRUCK).toString(36)}`, "a")).toEqual([STRUCK]);
+    expect(decodeMarks(`1:${(7 << 3).toString(36)},1:${ORANGE.toString(36)}`, "ab")).toEqual([0, ORANGE]);   // the fifth is the last in range
     // …and no bit past the four fields survives the read
     expect(decodeMarks(`1:${((1 << 12) | YELLOW).toString(36)}`, "a")).toEqual([YELLOW]);
     // the prototype's: the marks survive their own encoding
@@ -185,7 +188,9 @@ describe("the ink's verbs (kit/ink.ts)", () => {
     expect(mark(v, 0, 5, { strike: true }).marks[2]).toBe(0);
     expect(() => mark(v, 0, 1, { pen: "purple" as PenName })).toThrow(`mark: no pen "purple" (the kit's: felt, ball, fountain, red)`);
     expect(() => mark(v, 0, 1, { strike: "teal" as PenName })).toThrow(`mark: no pen "teal"`);
-    expect(() => mark(v, 2, 2, { highlight: "blue" as HighlighterName })).toThrow(`mark: no highlighter "blue" (the kit's: yellow, pink, green)`);
+    expect(() => mark(v, 2, 2, { highlight: "purple" as HighlighterName })).toThrow(`mark: no highlighter "purple" (the kit's: yellow, green, pink, blue, orange)`);
+    expect(mark(v, 0, 2, { highlight: "orange" }).marks.slice(0, 2)).toEqual([ORANGE, ORANGE]);
+    expect(mark(v, 0, 2, { highlight: "blue" }).marks[0]).toBe(4 << 3);
   });
 
   it("replace is splice by its name", () => {
@@ -228,7 +233,7 @@ describe("the ink's verbs (kit/ink.ts)", () => {
     expect(paste(ink, atlas, atlas, { text: "XY", marks: "2:2" }, counter(1)).marks.slice(atlas, atlas + 2)).toEqual([BALL, BALL]);   // a pen the piece names wins
     const friday = where(TEXT, "Friday")[0] + 2;   // inside the yellow highlight
     expect(paste(ink, friday, friday, { text: "XY", marks: "2:4" }, counter(1)).marks.slice(friday, friday + 2)).toEqual([YELLOW | RED, YELLOW | RED]);
-    expect(paste(ink, friday, friday, { text: "XY", marks: "2:g" }, counter(1)).marks.slice(friday, friday + 2)).toEqual([PINK, PINK]);   // its own highlighter wins
+    expect(paste(ink, friday, friday, { text: "XY", marks: "2:o" }, counter(1)).marks.slice(friday, friday + 2)).toEqual([PINK, PINK]);   // its own highlighter wins
   });
 
   it("paste reads a piece as a stranger's: what is not a string reads empty, a newline stays unmarked, a seed on it is never taken", () => {
@@ -244,7 +249,7 @@ describe("the ink's verbs (kit/ink.ts)", () => {
     const piece = (text: string, marks: readonly number[]): InkPiece => ({ text, marks: encodeMarks(marks) });
     expect(cleanPiece({ text: "a\r\nb\rc\td", marks: "" }, all).text).toBe("a\nb\nc d");
     const kept = cleanPiece(piece("aXb", [YELLOW, PINK, GREEN]), (ch) => ch !== "X");
-    expect(kept).toEqual({ text: "ab", marks: "1:8,1:o" });
+    expect(kept).toEqual({ text: "ab", marks: "1:8,1:g" });
     expect(decodeMarks(kept.marks, kept.text)).toEqual([YELLOW, GREEN]);   // the b keeps its green: nothing shifted onto it
     expect(decodeMarks(cleanPiece(piece("a\r\nb", [YELLOW, YELLOW, YELLOW, YELLOW]), all).marks, "a\nb")).toEqual([YELLOW, 0, YELLOW]);
     expect(cleanPiece(piece("a\tb", [YELLOW, PINK, YELLOW]), all)).toEqual(piece("a b", [YELLOW, PINK, YELLOW]));   // a tab is a space, its mark kept
@@ -298,6 +303,7 @@ describe("the ink's verbs (kit/ink.ts)", () => {
     expect(readWriting(mark(v, 9, 15, { underline: "ball" })).runs).toEqual([{ from: 9, to: 12, text: "pen", underline: "ball" }, { from: 13, to: 15, text: "on", underline: "ball" }]);
     const every = mark(mark(mark(v, 0, 4, { pen: "ball" }), 0, 4, { highlight: "pink" }), 0, 4, { strike: true });
     expect(readWriting(every).runs).toEqual([{ from: 0, to: 4, text: "ship", pen: "ball", highlight: "pink", strike: true }]);
+    expect(readWriting(mark(mark(v, 0, 4, { highlight: "blue" }), 5, 8, { highlight: "orange" })).runs).toEqual([{ from: 0, to: 4, text: "ship", highlight: "blue" }, { from: 5, to: 8, text: "the", highlight: "orange" }]);
   });
 
   it("no verb mutates the ink it is handed", () => {
