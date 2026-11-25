@@ -29,14 +29,16 @@ export { type ShaderText, shaderText } from "../shaders";
  *   (`night_mat` — LINEAR in, sRGB out), `mat_colour`, the lattice's lines (mat/mat.wgsl — its header states the conventions);
  * - `ruler` — the rulers' print: `ruler_ink`, `ruler_band` and their glyph arithmetic (mat/ruler.wgsl);
  * - `book` — the 3D kit: the desk eye (`nb_clip`), the PCSS shadow (`nb_shadow`), the colour chain (`nb_colour`), the cloth, the
- *   paper, the cover's designs (kit/book.wgsl), over its records `NbUniforms` and `NbBook`.
+ *   paper, the cover's designs (kit/book.wgsl), over its records `NbUniforms` and `NbBook`;
+ * - `hand` — the desk's PEN (petition I59): `hand_ink`, a sheet's writing read from its glyph run and the face's atlas at a point of
+ *   the run's own units, and its `HandInk` (kit/hand.wgsl — the run store, the atlas and the sampler are the kind's, as parameters).
  *
  * THE CONVENTIONS they share: world units (one is one CSS px at zoom 1), x right and y DOWN; CSS px = (world − `u.cam.xy`) ·
  * zoom, origin the attachment's top-left; device px = CSS px · dpr, a fragment's `@builtin(position).xy`; zoom = `mat_zoom(u)`
  * (CSS px per world unit), dpr = `mat_dpr(u)` (the attachment's device px per CSS px — below 1 for a thumbnail); the lamp's
  * desk in metres, y up (`desk_of`); colours 0..1, sRGB-encoded unless a parameter says LINEAR.
  */
-export type KitWgslPiece = "view" | "portal" | "sdf" | "light" | "ruler" | "book";
+export type KitWgslPiece = "view" | "portal" | "sdf" | "light" | "ruler" | "book" | "hand";
 
 /**
  * A name of the kit's WGSL: a piece, or another name for one (`lamp`, `gobo`, `night`, `noise` and `mat` are `light` — `mat` since
@@ -61,7 +63,9 @@ interface KitPiece {
  *   other, so `lamp`, `gobo`, `night`, `noise` and `mat` are the same piece by other names);
  * - `ruler` — the rulers' glyph lattice (mat/ruler.wgsl: a face that prints the mat's numerals);
  * - `book` — the 3D kit (kit/book.wgsl and its records `NbUniforms`, `NbBook` — kit/book.ts): the desk eye's projection,
- *   the PCSS shadow on an object's own shadow map, the materials of paper and cloth (after `light`, whose chain it grades by).
+ *   the PCSS shadow on an object's own shadow map, the materials of paper and cloth (after `light`, whose chain it grades by);
+ * - `hand` — the desk's PEN (kit/hand.wgsl, petition I59): `hand_ink` over a kind's run store, a face's atlas and a sampler it
+ *   passes (kit/hand-gpu.ts), self-contained — it needs no other piece.
  */
 const PIECES = {
   view: { structs: [MatUniforms] },
@@ -70,6 +74,7 @@ const PIECES = {
   light: { file: "mat/mat.wgsl" },
   ruler: { file: "mat/ruler.wgsl" },
   book: { structs: [NbUniforms, NbBook], file: "kit/book.wgsl" },
+  hand: { file: "kit/hand.wgsl" },
 } as const satisfies Record<KitWgslPiece, KitPiece>;
 
 /** The names a piece also answers to. */

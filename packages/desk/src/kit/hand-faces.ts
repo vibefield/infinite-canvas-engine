@@ -1,0 +1,33 @@
+// THE HAND'S FACES as a desk SERVICE (petition I59 — the desk's pen; K8a's open registry, kit/services.ts): the baked `ice-hand/1`
+// atlases a host lends its kinds by the faces' names (`PEN_FACES` — `caveat`, `caveat-bold`, `kalam`), so every kind that writes —
+// the note, a plugin's pad, the calendar's line — reads the SAME face, and the GPU holds one texture of it a desk
+// (kit/hand-gpu.ts `handAtlasGpu`). A browser lends them by URL, fetched on the first ask (`handFaces`, the desk's host half —
+// `deskLayer({ hand })` lends it and wakes the desk when a face lands); Node, the oracle and the tests lend atlases they hold
+// (`handFacesOf`). A face that has not landed — or that the desk does not lend — answers undefined: a sheet keeps its raster road.
+
+import type { HandAtlas } from "./hand-atlas";
+import { type ServiceKey, serviceKey } from "./services";
+
+export interface HandFaces {
+  /**
+   * The face's atlas by its name (`PEN_FACES`'s), or undefined — while it loads (the first ask starts the load) or when this desk
+   * lends no such face. A sheet in a face that answers undefined keeps its raster road; it never writes in a stand-in.
+   */
+  face(name: string): HandAtlas | undefined;
+  /** Bumped whenever a face lands (or is found missing): every run built from a face is built again. */
+  version(): number;
+  /**
+   * Tell `fn` whenever `version` moves — a face landed between frames (K7a: the desk wakes for it; `deskLayer({ hand })` is told).
+   * Returns an unsubscribe. Absent (the in-memory faces): the version never moves on its own.
+   */
+  onVersion?(fn: () => void): () => void;
+}
+
+/** The hand's faces as a desk SERVICE (K8a): `host.use?.(HAND_FACES)` — lent by `deskLayer({ hand })`, or `service(HAND_FACES, …)`. */
+export const HAND_FACES: ServiceKey<HandFaces> = serviceKey<HandFaces>("hand");
+
+/** Faces a host already holds — Node, the oracle, a test: each name's atlas at once, the version never moving. */
+export function handFacesOf(faces: Readonly<Record<string, HandAtlas>>): HandFaces {
+  const table = new Map(Object.entries(faces));
+  return { face: (name) => table.get(name), version: () => 0 };
+}
