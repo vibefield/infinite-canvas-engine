@@ -316,6 +316,7 @@ export {
   menuActionsFor,
   readMenuActionState,
 } from "./widget/menu-actions";
+export type { MenuActionRange, RunMenuActionOpts } from "./widget/menu-actions";
 
 // --- Canvas SDK: typed frame definitions, engine authority, and placement ---
 export {
