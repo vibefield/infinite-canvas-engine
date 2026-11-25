@@ -180,6 +180,21 @@ export function inkPart(host: Pick<ObjectDomHost, "world" | "docs" | "editor" | 
     const q = L === undefined ? undefined : G.toLayout(e, wx, wy);
     return L === undefined || q === undefined ? undefined : indexIn(L, q[0], q[1], length);
   };
+  /** Where the CARET before `index` stands in the world: its place on the layout (`positions`), the caret's height, both ends through the kind's map — the box of them. */
+  const caretOf = (e: Entity, index: number): RangeBox | undefined => {
+    const L = G.layout(e);
+    if (L === undefined || !Number.isFinite(index)) return undefined;
+    const n = L.positions.length / 2 - 1;
+    const i = Math.max(0, Math.min(n, Math.floor(index)));
+    const x = L.positions[2 * i] as number;
+    const y = L.positions[2 * i + 1] as number;
+    const a = G.toWorld(e, x, y - L.ascent);
+    const b = G.toWorld(e, x, y + L.descent);
+    if (a === undefined || b === undefined) return undefined;
+    const x0 = Math.min(a[0], b[0]);
+    const y0 = Math.min(a[1], b[1]);
+    return { x: x0, y: y0, w: Math.max(a[0], b[0]) - x0, h: Math.max(a[1], b[1]) - y0 };
+  };
   /** Where the words [from, to) lie in the world: their wash's rects (`spansOf`), each corner through the kind's map — the box of them. */
   const boxOf = (e: Entity, from: number, to: number): RangeBox | undefined => {
     const L = G.layout(e);
@@ -240,6 +255,7 @@ export function inkPart(host: Pick<ObjectDomHost, "world" | "docs" | "editor" | 
       },
       // where a range of its words lies: the menu over the words selected is placed by it
       rangeBox: (from, to) => boxOf(e, from, to),
+      caretBox: (index) => caretOf(e, index),
       // a COPY or a CUT: the words, their HTML and the piece — the field's words alone where the cell moved under the field
       lift(from, to): EditorLift | undefined {
         const a = Math.min(from, to);

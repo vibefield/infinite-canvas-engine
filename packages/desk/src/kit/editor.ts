@@ -59,6 +59,12 @@ export interface EditorPaste {
 /** What a host's bar asks of the lent field (petition I60 — `DeskEditor.command`): the clipboard's three, and the whole field selected. */
 export type EditorCommand = "cut" | "copy" | "paste" | "selectAll";
 
+/** What a host hands a command (petition I60): for `paste`, the clipboard's plain words as the HOST read them (a shell that denies the page its read). */
+export interface EditorCommandOptions {
+  /** The words to paste: the editor reads no clipboard; the last lifted piece is laid in their place only when its words are exactly these. */
+  readonly text?: string;
+}
+
 /**
  * Where the textarea stands while lent (container px): its box's top-left and size BEFORE any turn, the size its text is laid
  * at, and — for a turned part (a note stuck at its tilt) — the turn about the box's centre, the padding, the line height and
@@ -139,6 +145,13 @@ export interface EditorLease {
    * recomposed: it reads what the part last drew, and writes nothing.
    */
   rangeBox?(from: number, to: number): RangeBox | undefined;
+  /**
+   * Where the CARET before text index `index` stands, in the world (petition I60): a box no wider than the caret, the line's height —
+   * turned parts as the box of the turned ends — undefined when the part cannot say. A lease that declares it has the anchor carry the
+   * caret's place while it is lent and its range is empty (`SelectionAnchor.caret`), so a host's right-click rows (Paste, Select all)
+   * stand at the caret. Asked as `rangeBox` is: it reads what the part last drew, and writes nothing.
+   */
+  caretBox?(index: number): RangeBox | undefined;
   /** A COPY or a CUT of [from, to) (petition I60): what goes on the clipboard — undefined leaves the platform's own copy. */
   lift?(from: number, to: number): EditorLift | undefined;
   /**
@@ -200,8 +213,12 @@ export interface DeskEditor {
    * `<SelectionMenu>`'s words row does), so a button never takes the focus and the textarea keeps it and its range; the click then
    * calls `command` — inside the click, as a platform grants the clipboard to a user's gesture. A RIGHT press on the lent part's
    * writing keeps the focus too (its default prevented, nothing else), so a host's right-click rows act on the words selected.
+   *
+   * A HOST THAT READS THE CLIPBOARD ITSELF (a desktop shell that denies the page its read) hands the words in:
+   * `command("paste", { text })` reads no clipboard at all, and lays the last lifted piece only when its words are exactly `text` (its
+   * marks come back), else `text` as plain words — through the lease's `lay`, as above. The no-argument form is as described above.
    */
-  command(name: EditorCommand): Promise<boolean>;
+  command(name: EditorCommand, opts?: EditorCommandOptions): Promise<boolean>;
   /** The editor goes with its desk: a lease still held ends first (`ended` — a typing session commits), then the textarea leaves. */
   dispose(): void;
 }

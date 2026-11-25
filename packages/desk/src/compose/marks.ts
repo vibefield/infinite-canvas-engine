@@ -90,6 +90,20 @@ export interface SelectionAnchor {
    * waits for the release), nothing is in hand and the drawer is shut. Absent otherwise.
    */
   readonly words?: WordsAnchor;
+  /**
+   * A CARET's place while a part is written and NO words are selected (petition I60 — a host's right-click rows at a caret: Paste,
+   * Select all): present while the one editor is lent to an object's part (as for `words`), the range is empty, the lease says where
+   * its caret stands (`EditorLease.caretBox`), no press the editor claimed is down, nothing is in hand and the drawer is shut. Never
+   * together with `words`. Absent otherwise.
+   */
+  readonly caret?: CaretAnchor;
+}
+
+/** A caret's place on screen (petition I60): its box through the camera (CSS px, as `box` — as wide as the part said, the line's height), its object, its text index. */
+export interface CaretAnchor {
+  readonly box: MarkBox;
+  readonly entity: Entity;
+  readonly at: number;
 }
 
 /**
@@ -220,6 +234,15 @@ export function wordsAnchor(input: {
     entity: input.entity, from: input.from, to: input.to,
     menu: menuSlots(input.acts, input.stateOf, input.choicesOf),
   };
+}
+
+/** A caret's place as the anchor carries it (petition I60): the part's world box through the camera — undefined for none, or one that is not a finite box. */
+export function caretAnchor(input: { readonly entity: Entity; readonly at: number; readonly box: RangeBox | undefined; readonly cam: { readonly x: number; readonly y: number; readonly zoom: number } }): CaretAnchor | undefined {
+  const b = input.box;
+  if (b === undefined || ![b.x, b.y, b.w, b.h].every(Number.isFinite) || b.w < 0 || b.h < 0) return undefined;
+  const { cam } = input;
+  const z = cam.zoom;
+  return { box: { x0: (b.x - cam.x) * z, y0: (b.y - cam.y) * z, x1: (b.x + b.w - cam.x) * z, y1: (b.y + b.h - cam.y) * z }, entity: input.entity, at: input.at };
 }
 
 /**

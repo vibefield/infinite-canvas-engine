@@ -54,7 +54,7 @@
 import { ActiveTool, Camera, type Entity, GestureSettings, Grab, type World } from "@ice/core";
 import { clientToScreen } from "@ice/kernel";
 import { tapHit } from "../compose/tap";
-import type { DeskEditor, EditorCommand, EditorLease, EditorLift, EditorPaste, TextPart, TextRange, TextUnit } from "../kit/editor";
+import type { DeskEditor, EditorCommand, EditorCommandOptions, EditorLease, EditorLift, EditorPaste, TextPart, TextRange, TextUnit } from "../kit/editor";
 import { PEN_FACES } from "../kit/text";
 
 /** design-007's claim marker (`@ice/dom` KEYBOARD_CLAIM_ATTR — the desk may not import dom): the keymap cedes to a focused claim. */
@@ -643,9 +643,12 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     } catch { /* the read refused (no permission, no gesture): the page reads nothing */ }
     return undefined;
   };
-  /** A bar's PASTE (`command`'s module doc): the clipboard's words — the kept piece when they are its — or, unread, the kept piece itself. */
-  const pasteFromBar = async (l: EditorLease): Promise<boolean> => {
-    const read = await readClipboard();
+  /**
+   * A bar's PASTE (`command`'s module doc): the clipboard's words — the kept piece when they are its — or, unread, the kept piece
+   * itself. Words the HOST read (`given`): no clipboard read at all, the kept piece only when they are exactly its words.
+   */
+  const pasteFromBar = async (l: EditorLease, given?: string): Promise<boolean> => {
+    const read = typeof given === "string" ? given : await readClipboard();
     if (lent !== l || composing) return false;
     const kept = lastLifted;
     const text = read?.replace(/\r\n?/g, "\n");
@@ -658,7 +661,7 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     return true;
   };
   /** The host's ITEMS (kit/editor.ts `DeskEditor.command`). Everything up to the platform's own command runs inside the caller's gesture. */
-  const command = async (name: EditorCommand): Promise<boolean> => {
+  const command = async (name: EditorCommand, o?: EditorCommandOptions): Promise<boolean> => {
     const l = lent;
     if (l === undefined || composing) return false;
     if (name === "selectAll") {
@@ -666,7 +669,7 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
       select(l, 0, el.value.length);
       return true;
     }
-    if (name === "paste") return pasteFromBar(l);
+    if (name === "paste") return pasteFromBar(l, o?.text);
     const from = el.selectionStart;
     const to = el.selectionEnd;
     if (from === to) return false;   // a caret: nothing to copy
