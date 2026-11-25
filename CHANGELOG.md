@@ -6,6 +6,16 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.22.0] — 2026-11-25
+
+**A menu act says its state now (petition I61), and an act may be a choice (petition I62), released on `latest`.** A
+selection menu's act may declare `state(ctx)`: disabled, another label or glyph, or a swatch, carried on its slot as plain
+data, and `ops.runMenuAction` does nothing for a type whose act says it is disabled; core reads the desk's state through a
+new seam, `stack.menuState`, which the desk layer fills. A menu act, or a held tool's action, may declare `choices(ctx)`,
+one of which may ask for values first; a host takes one with `ops.runMenuAction(id, taken)` or `ops.useHeldTool(id, taken)`,
+and core runs it only when it is one of the act's choices now with every value fitting its field. Both are additive: an act
+or a tool that declares neither is read as before, and no existing op moves.
+
 ### Added
 
 <!-- petitions I61 and I62 — a menu act says its state, and an act may be a choice (2026-11-25; VibeField) -->

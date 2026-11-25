@@ -14,11 +14,12 @@ an archetype ECS with reactivity and opt-in Loro-CRDT durable + ephemeral
 **docs** <https://vibefield.github.io/infinite-canvas-engine/> ·
 MIT license
 
-> **0.21.0 — a free slot, and a look at an object.** `resolveFreeSlot` answers the nearest free
-> place for an object that comes with no pointer: a slot in view before one that is not, and
-> nothing when nothing is free. `ops.lookAt(entity)` takes the person to an object: the camera
-> flown to it and centred, the object selected, in its own frame wherever it lies. Additive: no
-> existing op moves (`CHANGELOG.md`).
+> **0.22.0 — an act says its state, and may be a choice.** A selection menu's act may say what
+> it is now (disabled, another label or glyph, a swatch), and a menu act or a held tool's
+> action may offer choices, one of which may ask for values first: a host takes one with
+> `ops.runMenuAction(id, taken)` or `ops.useHeldTool(id, taken)`, and core runs it only when it
+> is one of the act's choices now. Additive: an act that declares neither is read as before
+> (`CHANGELOG.md`).
 > Upgrading from before 0.14.0 also replaces the DOM/R3F presentation with the GPU desk;
 > see the 0.14.0 removal list in `CHANGELOG.md`.
 
@@ -204,11 +205,11 @@ drive headless Chrome against the oracle's bytes (`rig:parity`: maxΔ 0 per scen
 
 ## Status
 
-**Current release: 0.21.0.** The free slot and the look at an object build on 0.20.0's soft
-light, 0.19.0's opening print, 0.18.0's pegboard set and 0.17.0's desk interactions and
-presentation. Documents written by 0.1.0 migrate automatically on open (schema 2 — ordered
-`ChildOf` replaces scalar z); a 0.1.0 build opening a migrated document still gets a correct
-read-only view.
+**Current release: 0.22.0.** An act's state and its choices build on 0.21.0's free slot and
+look at an object, 0.20.0's soft light, 0.19.0's opening print, 0.18.0's pegboard set and
+0.17.0's desk interactions and presentation. Documents written by 0.1.0 migrate automatically
+on open (schema 2 — ordered `ChildOf` replaces scalar z); a 0.1.0 build opening a migrated
+document still gets a correct read-only view.
 
 Engine v1 is complete (kernel math, the engine spine, the interaction stack,
 durable documents + per-gesture undo, the node editor, nested canvas, presence +
