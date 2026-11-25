@@ -38,6 +38,7 @@ describe("typing · the claim (design-015 §6.1)", () => {
     const { world, step, note, typing, session } = makeDesk();
     const a = note();
     step();
+    // @ts-expect-error the cell's old two-field shape (petition I60 added `marks`): refused unclaimed whatever its shape
     expect(() => session().liveWriter.set(a, NOTE_INK, { text: "x", seeds: "" })).toThrow(/gesture claim/);
     expect(typing.begin(a)).toBe(true);
     expect(world.hasTag(a, Editing)).toBe(true);
@@ -86,7 +87,7 @@ describe("typing · the session is ONE transaction", () => {
     // ONE undo restores the whole session — text and seeds
     session().store.undo();
     step();
-    expect(live(a)).toEqual({ text: "buy milk", seeds: "" });
+    expect(live(a)).toEqual({ text: "buy milk", seeds: "", marks: "" });
     session().store.redo();
     step();
     expect(live(a)?.text).toBe("buy milk!!!");
@@ -162,6 +163,7 @@ describe("typing · the claimed-cell rule across peers (strata 006 C5)", () => {
     const b = key === undefined ? undefined : B.session().store.resolve(key);
     if (b === undefined) throw new Error("B has no twin of A's note");
     const sync = (from: typeof A, to: typeof A) => { to.session().applyRemote(from.session().exportSnapshot()); to.step(); };
+    // @ts-expect-error a peer writing the cell's old two-field shape (petition I60 added `marks`): its words land, unmarked
     const edit = (P: typeof A, e: Entity, t: string) => { guardedTransaction(P.session().store, P.world, (tx) => { tx.edit(e).set(NOTE_INK, { text: t, seeds: "" }); }); P.step(); };
     return { A, B, a, b, sync, edit };
   }
