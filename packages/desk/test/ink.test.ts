@@ -129,7 +129,7 @@ describe("the ink's verbs (kit/ink.ts)", () => {
     expect(asked).toEqual([50, 51, 52]);
   });
 
-  it("a REPLACEMENT keeps the marks its letters all shared, field by field — else the neighbours' rule stands", () => {
+  it("a REPLACEMENT keeps the value its letters all share, field by field, 0 too — where they disagree, the neighbours' rule", () => {
     // "Friday" → "Monday" inside the highlighted "on Friday": its right neighbour is the newline, and it stays highlighted
     const ink = sheet();
     expect(readWriting(replace(ink, ...where(TEXT, "Friday"), "Monday", counter(1))).runs[0]).toEqual({ from: 13, to: 22, text: "on Monday", highlight: "yellow" });
@@ -142,10 +142,14 @@ describe("the ink's verbs (kit/ink.ts)", () => {
     // a space is not a letter: two red words penned apart, the space between in the sheet's pen, are red words
     const words = mark(mark(inkOf({ text: "a red red pen" }, 1), 2, 5, { pen: "red" }), 6, 9, { pen: "red" });
     expect(readWriting(replace(words, 2, 9, "blue ink", counter(1))).runs).toEqual([{ from: 2, to: 10, text: "blue ink", pen: "red" }]);
-    // no letter replaced (a space), or none that carried a value: the neighbours' rule — inside a highlight, the arrivals join it
-    expect(splice(v, 2, 3, "-", counter(9)).marks[2]).toBe(YELLOW);
+    // the value the replaced letters all share wins, 0 too: a word left unhighlighted inside a highlight stays so, replaced
     const gap: InkValue = { text: "a b c", seeds: [1, 2, 3, 4, 5], marks: [YELLOW, YELLOW, 0, YELLOW, YELLOW] };
-    expect(splice(gap, 2, 3, "x", counter(9)).marks).toEqual([YELLOW, YELLOW, YELLOW, YELLOW, YELLOW]);
+    expect(splice(gap, 2, 3, "x", counter(9)).marks).toEqual([YELLOW, YELLOW, 0, YELLOW, YELLOW]);
+    // …and a word in the sheet's own pen between red words, the spaces red too, stays in the sheet's pen
+    const plainWord: InkValue = { text: "ab cd ef", seeds: [1, 2, 3, 4, 5, 6, 7, 8], marks: [RED, RED, RED, 0, 0, RED, RED, RED] };
+    expect(splice(plainWord, 3, 5, "XY", counter(9)).marks).toEqual([RED, RED, RED, 0, 0, RED, RED, RED]);
+    // the neighbours decide only where the replaced letters disagree (above, "ab cd"'s pen) or where none is replaced: a space
+    expect(splice(v, 2, 3, "-", counter(9)).marks[2]).toBe(YELLOW);
   });
 
   it("a replacement keeps its letters' shared marks through paste and carryInk too — a paste still in the landing sheet's own pen", () => {
