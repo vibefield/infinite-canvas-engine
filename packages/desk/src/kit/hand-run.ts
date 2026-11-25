@@ -21,18 +21,32 @@
 //     g2  ax ay size press        A — the origin's texel in the atlas; units per em; the pen's pressure
 //     g3  x0 y0 x1 y1             the atlas rect, texels from the origin — the exact turned box a sample must lie in
 //     g4  start dur length pen    its moment (ms from the epoch; HAND_RUN.before — written before), how long (ms), the pen's path
-//                                 (units), and its pen: bits 0–3 (0 = the sheet's own); bits 4–23 kept for the marks and a re-ink
+//                                 (units), and its pen: bits 0–3 (0 = the sheet's own); with a RE-INK, bits 8–23 the run's n-th
+//                                 (0 none) and bits 4–7 the pen it had before it (0 without one: the glyph's pen is all its ink)
+//
+// THE MARKS (petition I60 — kit/ink-strokes.ts, the `marks` WGSL piece): the header's fifth vec4 is the marks' head, read first —
+//     k0  at strokes wy0 wy1      where the marks section begins (vec4s from the base; 0 — none), its strokes, and the wash's extent
+//                                 in y (wy1 ≤ wy0: nothing washed) — rewritten with the wash (kit/ink-marks.ts `inkWash`)
+//   after the glyphs, the RE-INKS, two a vec4: `start dur` (ms from the epoch) — a glyph's new pen written over its old along its
+//   own path; then the marks section (kit/ink-strokes.ts says its vec4s), laid when the run is built from an ink (`{ ink }`).
 
 import { glyphOf, HAND_ATLAS_EDGE, type HandAtlas } from "./hand-atlas";
-import type { PenMoment } from "./pen-clock";
-import type { HandLayout } from "./text";
+import { type InkSpan, type InkValue, type MarkStroke, penOf, strokesOf } from "./ink";
+import { INK_MARKS, inkSection } from "./ink-strokes";
+import type { PenMarks, PenMoment } from "./pen-clock";
+import { type HandLayout, PENS } from "./text";
 
 /** A run's shape — the counts `hand.wgsl` reads it by (its `HAND_*` constants are the same numbers). */
 export const HAND_RUN = {
-  /** vec4s of the header at a run's base. */
-  header: 4,
+  /** vec4s of the header at a run's base: the pen's four and the marks' head (`INK_MARKS.head`). */
+  header: 5,
   /** vec4s a glyph. */
   glyph: 5,
+  /** Where a glyph's last float keeps its re-ink (bits 8–23: 0 none, n the run's n-th) and the pen it had before it (bits 4–7; 0 with none). */
+  wasBit: 4,
+  reinkBit: 8,
+  /** The most re-inks a run carries (a glyph past them is written in its new pen at once). */
+  reinks: 0xffff,
   /** Texels a row of a run store: a run's vec4 `i` lives at texel (i & 1023, i >> 10). */
   row: 1024,
   /** The start of a glyph written before (finite: WGSL may assume no infinities). */
@@ -71,7 +85,10 @@ export interface HandRunOptions {
   readonly moments?: readonly PenMoment[];
   /** The run's epoch, ms on the desk's clock: the moments are kept from it (default 0). Build at the look's `now`. */
   readonly epoch?: number;
-  /** Each glyph's pen, by its index in `layout.glyphs`: 0 = the sheet's own (the default), 1–15 the kind's. */
+  /**
+   * Each glyph's pen, by its index in `layout.glyphs`: 0 = the sheet's own (the default — or, with `ink`, the pen its mark names),
+   * 1–15 the kind's.
+   */
   readonly pens?: ArrayLike<number>;
   /**
    * The pen's spread, units: a stroke that wide about each glyph's outline (half of it past the edge), laid at `bleedAlpha` × the
@@ -88,6 +105,33 @@ export interface HandRunOptions {
   readonly weight?: number;
   /** The grid's cell, units (default: the layout's em). */
   readonly cell?: number;
+  /**
+   * The INK the layout was laid from (kit/ink.ts — petition I60): its marks give each glyph its pen where `pens` is absent, and the
+   * run is built with a MARKS SECTION — its strokes as the pen draws them and room for the selection's wash — which the `marks` WGSL
+   * piece reads. Absent: no section (the marks' head reads none, and `ink_marks` reads nothing more).
+   */
+  readonly ink?: InkValue;
+  /** The ink's strokes, `strokesOf(layout, ink)` (with `ink`; absent — worked out from it). */
+  readonly strokes?: readonly MarkStroke[];
+  /** The clock's marks (`PenClock.marks`): each glyph's pen before its re-ink and its re-ink, each stroke's moment. Absent: all on the paper before. */
+  readonly marked?: PenMarks;
+  /** The selection's wash at build (`spansOf(layout, from, to)`, with `ink`): rewritten alone after by `inkWash` and `HandRuns.wash`. */
+  readonly wash?: readonly InkSpan[];
+}
+
+/** Where a run's marks section lies and what it holds (`HandRun.marks`) — what `inkWash` rewrites, and the witnesses'. */
+export interface HandRunMarks {
+  /** The section's start, vec4s from the run's base (the head's `k0.x`). */
+  readonly at: number;
+  /** Its rows (one an em), its strokes, its list's entries, the laid lines (the wash has a vec4 each). */
+  readonly rows: number;
+  readonly strokes: number;
+  readonly entries: number;
+  readonly lines: number;
+  /** Where the wash begins, vec4s from the run's base. */
+  readonly washAt: number;
+  /** The layout's em, units: the rows' height, and what the wash's margins are measured in. */
+  readonly em: number;
 }
 
 /** A run: its vec4s and what it was built from. */
@@ -104,6 +148,10 @@ export interface HandRun {
   readonly grid: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number; readonly cell: number; readonly cols: number; readonly rows: number; readonly entries: number };
   /** The epoch it was built at, ms. */
   readonly epoch: number;
+  /** The glyphs being re-inked: their re-ink entries after the glyphs (petition I60). */
+  readonly reinks?: number;
+  /** Its marks section (built from an ink — `{ ink }`); absent — none. */
+  readonly marks?: HandRunMarks;
 }
 
 interface Item {
@@ -126,6 +174,10 @@ export function handRun(layout: HandLayout, atlas: HandAtlas, opts: HandRunOptio
   const epoch = opts.epoch ?? 0;
   const items: Item[] = [];
   const missing: number[] = [];
+  /** A pen as the kit names pens: 0 the sheet's own, n `PENS[n − 1]` — one this build has no name for is the sheet's own. */
+  const penOfInk = (i: number): number => { const p = opts.ink === undefined ? 0 : penOf(opts.ink.marks[i] ?? 0); return p <= PENS.length ? p : 0; };
+  /** The re-inks being drawn (petition I60): each glyph's moment from the epoch, laid after the glyphs. */
+  const reinks: (readonly [number, number])[] = [];
   let x0 = Number.POSITIVE_INFINITY;
   let y0 = Number.POSITIVE_INFINITY;
   let x1 = Number.NEGATIVE_INFINITY;
@@ -157,13 +209,18 @@ export function handRun(layout: HandLayout, atlas: HandAtlas, opts: HandRunOptio
     x0 = Math.min(x0, bx0); y0 = Math.min(y0, by0); x1 = Math.max(x1, bx1); y1 = Math.max(y1, by1);
     const m = opts.moments?.[j];
     const start = m === undefined || !(m.start > Number.NEGATIVE_INFINITY) ? HAND_RUN.before : m.start - epoch;
-    const pen = Math.max(0, Math.min(15, Math.trunc(opts.pens?.[j] ?? 0)));
+    const pen = Math.max(0, Math.min(15, Math.trunc(opts.pens?.[j] ?? penOfInk(g.index))));
+    // a RE-INK being drawn: the pen it had, and its moment after the glyphs (one past the most is written in its new pen at once)
+    const re = opts.marked?.reinks[j];
+    const inked = re !== undefined && re.start > Number.NEGATIVE_INFINITY && reinks.length < HAND_RUN.reinks;
+    if (inked) reinks.push([re.start - epoch, Math.max(0, re.dur)]);
+    const was = inked ? Math.max(0, Math.min(15, Math.trunc(opts.marked?.was[j] ?? pen))) : 0;
     items.push({
       box: [bx0, by0, bx1, by1],
       g1: [g.x, g.y, c * k, s * k],
       g2: [rx + ox, ry + oy, size, g.press],
       g3: [lx0, ly0, lx1, ly1],
-      g4: [start, m === undefined ? 0 : Math.max(0, m.dur), a.length * size, pen],
+      g4: [start, m === undefined ? 0 : Math.max(0, m.dur), a.length * size, pen + was * 2 ** HAND_RUN.wasBit + (inked ? reinks.length : 0) * 2 ** HAND_RUN.reinkBit],
     });
   });
   const empty = items.length === 0;
@@ -198,7 +255,14 @@ export function handRun(layout: HandLayout, atlas: HandAtlas, opts: HandRunOptio
   });
   const listAt = HAND_RUN.header + Math.ceil(cells / 2);
   const glyphsAt = listAt + Math.ceil(entries / 4);
-  const length = glyphsAt + HAND_RUN.glyph * items.length;
+  // after the glyphs: their re-inks, two a vec4, then the marks section (petition I60) when the run is built from an ink
+  const reinksAt = glyphsAt + HAND_RUN.glyph * items.length;
+  const marksAt = reinksAt + Math.ceil(reinks.length / 2);
+  const section = opts.ink === undefined ? undefined : inkSection({
+    layout, ink: opts.ink, strokes: opts.strokes ?? strokesOf(layout, opts.ink), epoch, before: HAND_RUN.before,
+    ...(opts.marked !== undefined ? { moments: opts.marked.strokes } : {}), ...(opts.wash !== undefined ? { wash: opts.wash } : {}),
+  });
+  const length = marksAt + (section?.length ?? 0);
   const data = new Float32Array(length * 4);
   const [es, ems] = penNow(epoch);
   data.set([x0, y0, x1, y1, inv, cols, rows, items.length, listAt, glyphsAt, es, ems, atlas.range, Math.max(0, opts.bleed ?? 0), opts.bleedAlpha ?? 0.45, opts.weight ?? 0], 0);
@@ -212,7 +276,14 @@ export function handRun(layout: HandLayout, atlas: HandAtlas, opts: HandRunOptio
     data.set(it.g3, at + 12);
     data.set(it.g4, at + 16);
   });
-  return { data, length, glyphs: items.length, missing, grid: { x0, y0, x1, y1, cell, cols, rows, entries }, epoch };
+  reinks.forEach(([start, dur], n) => data.set([start, dur], 4 * reinksAt + 2 * n));
+  // the marks' head: where the section begins (0 — none), its strokes, the wash's extent in y
+  if (section !== undefined) {
+    data.set([marksAt, section.strokes, section.wash[0], section.wash[1]], 4 * INK_MARKS.head);
+    data.set(section.data, 4 * marksAt);
+  }
+  const marks: HandRunMarks | undefined = section === undefined ? undefined : { at: marksAt, rows: section.rows, strokes: section.strokes, entries: section.entries, lines: section.lines, washAt: marksAt + section.washAt, em: layout.em };
+  return { data, length, glyphs: items.length, missing, grid: { x0, y0, x1, y1, cell, cols, rows, entries }, epoch, reinks: reinks.length, ...(marks !== undefined ? { marks } : {}) };
 }
 
 // ---------------------------------------------------------------- the atlas's mips (the GPU's levels and the twin's)
@@ -320,6 +391,10 @@ export interface HandInkAt {
   readonly samples: number;
   /** Run texels the read loaded. */
   readonly loads: number;
+  /** The pen the glyph that laid the most had before its pen changed (petition I60) — its own pen where it did not. */
+  readonly was: number;
+  /** How much of that glyph's ink here its new pen has written over already, 0..1 — 1 wherever no re-ink is drawn. */
+  readonly over: number;
 }
 
 /**
@@ -330,7 +405,7 @@ export function handInkAt(run: HandRun | Float32Array, atlas: HandAtlas, x: numb
   const d = run instanceof Float32Array ? run : run.data;
   const v = (i: number, c: number): number => d[4 * i + c] as number;
   let loads = 1;
-  const none = { cover: 0, wet: 0, pen: 0, samples: 0, loads };
+  const none = { cover: 0, wet: 0, pen: 0, samples: 0, loads, was: 0, over: 1 };
   if (x < v(0, 0) || y < v(0, 1) || x >= v(0, 2) || y >= v(0, 3)) return none;
   const inv = v(1, 0);
   const cols = v(1, 1);
@@ -359,6 +434,10 @@ export function handInkAt(run: HandRun | Float32Array, atlas: HandAtlas, x: numb
   let wet = 0;
   let pen = 0;
   let samples = 0;
+  // that glyph's last float (its pens and its re-ink), its arrival here, and its path (units): its re-ink is read after the loop
+  let topPacked = 0;
+  let topArrival = 0;
+  let topPath = 0;
   for (let k = 0; k < n; k++) {
     const e = first + k;
     if (k === 0 || (e & 3) === 0) loads += 1;
@@ -410,7 +489,19 @@ export function handInkAt(run: HandRun | Float32Array, atlas: HandAtlas, x: numb
     // every glyph over the ones before, source-over, as the raster draws them: where letters meet, their inks add
     const laid = glyph * written;
     bare *= 1 - laid;
-    if (laid > most) { most = laid; pen = Math.trunc(v(g + 4, 3)) & ((1 << HAND_RUN.penBits) - 1); wet = fresh; }
+    if (laid > most) { most = laid; pen = Math.trunc(v(g + 4, 3)) & ((1 << HAND_RUN.penBits) - 1); wet = fresh; topPacked = Math.trunc(v(g + 4, 3)); topArrival = arrival; topPath = v(g + 4, 2); }
   }
-  return { cover: 1 - bare, wet, pen, samples, loads };
+  // THE RE-INK (petition I60): the pen it had in bits 4–7, its re-ink in bits 8–23 (0 none, n the run's n-th, two a vec4 after the glyphs)
+  const re = Math.floor(topPacked / 2 ** HAND_RUN.reinkBit);
+  const was = re > 0 ? (topPacked >>> HAND_RUN.wasBit) & 15 : pen;
+  let over = 1;
+  if (re > 0) {
+    const at = glyphsAt + v(1, 3) * HAND_RUN.glyph + ((re - 1) >> 1);
+    loads += 1;
+    const start = v(at, ((re - 1) & 1) * 2);
+    const dur = v(at, ((re - 1) & 1) * 2 + 1);
+    const since = t - start;
+    over = since >= dur ? 1 : since <= 0 ? 0 : Math.min(1, Math.max(0, 0.5 + ((handEase(since / dur) - topArrival) * topPath) / aa));
+  }
+  return { cover: 1 - bare, wet, pen, samples, loads, was, over };
 }

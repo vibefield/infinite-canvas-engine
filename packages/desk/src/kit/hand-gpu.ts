@@ -14,6 +14,8 @@ import type { BindKind } from "../engine/pipeline";
 import type { CardBinding } from "../kind";
 import type { HandAtlas } from "./hand-atlas";
 import { HAND_RUN, type HandRun, handMips } from "./hand-run";
+import type { InkWash } from "./ink-marks";
+import { INK_MARKS } from "./ink-strokes";
 import type { PenKey } from "./pen-clock";
 
 /** A face's atlas on one device: its texture (every level), the view to bind, and its size. */
@@ -124,6 +126,12 @@ export interface HandRuns {
    * Write in the world half, before the frame's prepares: a growth remakes the texture.
    */
   write(key: PenKey, run: HandRun): number;
+  /**
+   * Object `key`'s selection WASH rewritten in its run (petition I60 — kit/ink-marks.ts `inkWash` of the run it holds): the marks'
+   * head and one texel a laid line, two writes, the rest of the run untouched — so a selection change costs a few texels, never a
+   * run rebuilt. False when `key` holds no run here, or a wash that does not fit its room.
+   */
+  wash(key: PenKey, wash: InkWash): boolean;
   /** Object `key`'s base, or −1. */
   baseOf(key: PenKey): number;
   /** Object `key`'s room given back (it left the desk, or went back to its raster). */
@@ -240,6 +248,14 @@ export function createHandRuns(device: GPUDevice, opts: HandRunsOptions = {}): H
       room.used = n;
       if (n > 0) upload(room.at, run.data, n);
       return room.at;
+    },
+    wash(key, w) {
+      const room = rooms.get(key);
+      const lines = w.lines.length / 4;
+      if (room === undefined || w.at + lines > room.used || INK_MARKS.head >= room.used) return false;
+      upload(room.at + INK_MARKS.head, w.head, 1);
+      if (lines > 0) upload(room.at + w.at, w.lines, lines);
+      return true;
     },
     baseOf: (key) => rooms.get(key)?.at ?? -1,
     free(key) {
