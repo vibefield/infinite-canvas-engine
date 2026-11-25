@@ -20,7 +20,7 @@
  */
 import type { Entity, Resource, World } from "@vibecook/strata-ecs";
 import { createWorld, defineQuery } from "@vibecook/strata-ecs";
-import { fitCamera, zoomAtPoint } from "@ice/kernel";
+import { fitCamera, lookCamera, type Rect, zoomAtPoint } from "@ice/kernel";
 import {
   canvasIdentityOf,
   canvasPackId,
@@ -94,7 +94,7 @@ import {
   Wire,
   ZoomThroughSettings,
 } from "../catalog";
-import { Active, Visible } from "../catalog/camera-derived";
+import { Active, Culled, Visible } from "../catalog/camera-derived";
 import {
   createBehaviorRuntime,
   type BehaviorPresence,
@@ -109,11 +109,14 @@ import type { CommitIntent, CommitSink } from "../engine/commit-sink";
 import { guardedTransaction, retargetTweensToDoc } from "../guards/guarded-tx";
 import { writeRuntimeResource } from "../guards/resource-writer";
 import { installInteractionStack, type InteractionStack } from "../interaction/install";
-import { createNestedCanvas, currentNavFrame, type NavOpts, type NestedCanvas } from "../nav/nested-canvas";
+import { createNestedCanvas, currentNavFrame, navFramesOf, navStackFrames, type NavOpts, type NestedCanvas } from "../nav/nested-canvas";
 import { NavIntent } from "../nav/nav-geometry";
 import { cancelActiveGestures } from "../ops/gestures";
-import { Held, HeldIntent, HeldTool, HeldView, TrayIntent } from "../catalog/desk";
+import { Held, HeldIntent, HeldTool, HeldView, Specimen, TrayIntent } from "../catalog/desk";
 import { heldEntity } from "../systems/held";
+import { CameraInertia } from "../systems/camera-sim";
+import { abortLookFlight, LookFlight, startLookFlight } from "../systems/look-flight";
+import { abortNavFlight, NavTransition } from "../systems/nav-flight";
 import { arrangeWidgets, type ArrangeOpts } from "../ops/arrange";
 import { insertByDrag, type InsertByDragOpts } from "../ops/insert";
 import { cascadeDestroy } from "../ops/cascade";
@@ -253,6 +256,23 @@ export interface CanvasEngineOpts {
   readonly compositorDevice?: EngineGpu;
 }
 
+/** How `ops.lookAt` takes the person to an object (petition I58). */
+export interface LookAtOpts {
+  /** "comfort" (default): keep the current zoom when the object can be read there and fits; otherwise zoom in to at least
+   * the fit band's floor (FIT_DEFAULTS.minZoom, 50%) but never past 100%, or out until it fits. "fit": fit it inside the
+   * FIT_DEFAULTS band. "keep": the current zoom. A number: that zoom. Every result is clamped by CameraLimits. The current
+   * zoom is the camera's, or the one a flight in progress lands at. */
+  readonly zoom?: "comfort" | "fit" | "keep" | number;
+  /** Screen px the host's own chrome covers on each side, so the object is centred in what the person can see (default 0). */
+  readonly inset?: { readonly top?: number; readonly right?: number; readonly bottom?: number; readonly left?: number };
+  /** Room around the object when it must fit, screen px at any zoom (default FIT_DEFAULTS.pad), at most a quarter of the room. */
+  readonly pad?: number;
+  /** "fly" (default; snaps under the OS's reduced motion, as nav flights do) or "none" (snap). */
+  readonly transition?: "fly" | "none";
+  /** Select the object (default true): the selection becomes exactly [entity]. */
+  readonly select?: boolean;
+}
+
 export interface CanvasOps {
   /** cancel active gestures → switch (design-003 §8; the strata-example lesson). */
   setTool(id: string): void;
@@ -315,6 +335,37 @@ export interface CanvasOps {
   frameContent(): boolean;
   zoomTo(zoom: number, anchor?: { x: number; y: number }): void;
   panTo(x: number, y: number): void;
+  /**
+   * TAKE THE PERSON TO AN OBJECT (petition I58 — a host's "show me that one": VibeField's Godview, a sticker clicked): the camera
+   * CENTRED on `entity` in what the person can see (the viewport less `opts.inset`), at the zoom `opts.zoom` gives (kernel
+   * `lookCamera`; "comfort" by default), the object selected — in ITS frame, wherever it lies. Returns false and changes nothing
+   * for an entity that is not alive or no object of the scene (a live widget of a compiled type with `Position` and `Size`; a
+   * retired row, a tray specimen or an insert ghost is none), for one under a frame the nav cannot enter, and while there is no
+   * real viewport (a width or a height of 0). Throws on an option that is no option: a zoom that is neither a policy nor a finite
+   * zoom above 0, a pad or an inset side that is not a finite number of px ≥ 0, a transition that is neither.
+   *  - IN THE CURRENT FRAME it is an ordinary camera move, no portal and no frame switch: the LOOK FLIGHT (systems/look-flight.ts —
+   *    a resource and a simulate-phase tick beside `navFlight`, never a `NavTransition`) flies the camera from where it is to the
+   *    look camera on the nav flight's spring and path (zoom in log space, the response scaled by octave distance), holds its
+   *    first tick, and lands EXACTLY. Gestures always win: an active camera gesture (`Camera.gesturing`) stops it where it is, as
+   *    any other camera write (an op, a host) and any nav switch do; a second lookAt retargets from the camera where it is; a nav
+   *    flight still landing in this frame ends where it is and the look takes over from there.
+   *  - IN ANOTHER FRAME (inside a container, a mini mat, or down another branch of the nav stack) it is the nav ops: out to the
+   *    deepest frame the object's chain shares with the nav stack (`exitTo`), then in, frame by frame (`enterContainer`). Every
+   *    step is a cut (`"none"`) but the last, which flies — the portal zoom — and LANDS on the look camera, computed in the
+   *    object's own frame (`NavOpts.landing`: the cut stays the container's own, only the rest moves). Each step is a whole nav
+   *    switch: the selection cleared, the tool restored or made legal, the insert ghosts gone, the old frame's flight let go.
+   *  - `transition: "none"` snaps, and so does the OS's reduced motion (the presentation coordinator's `reducedMotion()`, which
+   *    makes a nav flight a cut too).
+   *  - THE HAND lets go first, as it does at every nav cut (`putDown`; the nav ops' own `beforeSwitch`): the camera never moves
+   *    under an object in hand. The object in hand itself is put down and framed on the desk. Live gestures cancel at the call,
+   *    as `open`'s do, and the pan's inertia stops.
+   *  - `select` (default true): the selection becomes exactly `[entity]`, made after the last cut, the object stamped a member of
+   *    its frame at once (what the next membership pass computes, as `spawnWidget` stamps). `false` leaves the selection as it
+   *    is, which a cut into another frame has emptied, as every nav op does.
+   * Runtime writes only — the camera, the selection, the hand, the nav stack's session entries, the flight resource: no
+   * transaction and no undo step, and a read-only document is looked at as a writable one is.
+   */
+  lookAt(entity: Entity, opts?: LookAtOpts): boolean;
   enterContainer(container: Entity, opts?: NavOpts): void;
   exitContainer(opts?: NavOpts): void;
   /** Pop several levels in ONE transition (breadcrumb jumps; design-006 §5). */
@@ -592,6 +643,27 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     if (!world.isAlive(entity) || !world.hasTag(entity, Active)) return false;
     const typeId = world.get(entity, PrefabId)?.id;
     return typeof typeId === "string" && catalog.widget(typeId)?.openable === true;
+  };
+  /** A container the nav may enter: live, `Container`-tagged, and its type a compiled container (the nav's own test, below). */
+  const isNavContainer = (entity: Entity): boolean => {
+    if (!world.isAlive(entity) || !world.hasTag(entity, Container)) return false;
+    const typeId = world.get(entity, PrefabId)?.id;
+    return typeof typeId === "string" && catalog.widget(typeId)?.container !== undefined;
+  };
+  /**
+   * What `ops.lookAt` may look at (petition I58): a live object of the scene — a widget of a compiled type with `Position` and
+   * `Size`, never a tray specimen or an insert ghost — its rect in its own frame's units, and the frames it lies in, outermost
+   * first (membership's rule), each one a container the nav enters; undefined for anything else.
+   */
+  const lookTargetOf = (entity: Entity): { readonly rect: Rect; readonly frames: readonly Entity[] } | undefined => {
+    if (!world.isAlive(entity) || world.has(entity, InsertGhost) || world.hasTag(entity, Specimen)) return undefined;
+    const typeId = world.get(entity, PrefabId)?.id;
+    const p = world.get(entity, Position);
+    const s = world.get(entity, Size);
+    if (typeof typeId !== "string" || catalog.widget(typeId) === undefined || p === undefined || s === undefined) return undefined;
+    const frames = navFramesOf(world, entity);
+    if (frames === undefined || !frames.every(isNavContainer)) return undefined;
+    return { rect: { x: p.x, y: p.y, width: s.w, height: s.h }, frames };
   };
   /** The object in hand, or undefined. */
   const heldNow = (): Entity | undefined => heldEntity(world);
@@ -1840,6 +1912,89 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
     panTo(x, y) {
       const cam = world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1, gesturing: false };
       writeRuntimeResource(world, Camera, { x, y, zoom: cam.zoom, gesturing: false });
+    },
+    lookAt(entity, o = {}) {
+      // THE LOOK (petition I58). The options first: one that is no option throws, as `layFromTray`'s point does.
+      const zoom = o.zoom ?? "comfort";
+      if (typeof zoom === "number" ? !(Number.isFinite(zoom) && zoom > 0) : zoom !== "comfort" && zoom !== "fit" && zoom !== "keep") {
+        throw new Error(`ice: ops.lookAt — opts.zoom is ${String(zoom)}: "comfort", "fit", "keep" or a finite zoom above 0.`);
+      }
+      const pad = o.pad ?? FIT_DEFAULTS.pad;
+      const sides = o.inset ?? {};
+      for (const [name, value] of [["pad", pad], ["inset.top", sides.top], ["inset.right", sides.right], ["inset.bottom", sides.bottom], ["inset.left", sides.left]] as const) {
+        if (value !== undefined && !(typeof value === "number" && Number.isFinite(value) && value >= 0)) {
+          throw new Error(`ice: ops.lookAt — opts.${name} is ${String(value)}: a finite number of screen px, 0 or more.`);
+        }
+      }
+      if (o.transition !== undefined && o.transition !== "fly" && o.transition !== "none") {
+        throw new Error(`ice: ops.lookAt — opts.transition is ${String(o.transition)}: "fly" or "none".`);
+      }
+      // What it looks at, and a real view to look through: anything else is false, and nothing has changed.
+      const target = lookTargetOf(entity);
+      if (target === undefined) return false;
+      const vp = world.getResource(Viewport);
+      if (vp === undefined || !(vp.w > 0) || !(vp.h > 0)) return false;
+      // THE WAY THERE: the deepest level of the nav stack whose frame lies on the object's chain (the root always does) is where
+      // the exits stop; the enters are the chain below it, down to the object's own frame. Both empty: it is in this frame.
+      const stack = navStackFrames(world);
+      let shared = stack.length;
+      let below = 0;
+      for (; shared > 0; shared -= 1) {
+        const frame = stack[shared - 1];
+        const at = frame === undefined ? -1 : target.frames.indexOf(frame);
+        if (at >= 0) {
+          below = at + 1;
+          break;
+        }
+      }
+      const enters = target.frames.slice(below);
+      const exits = shared < stack.length;
+      if (shared + enters.length > 64) return false; // past the nav's own maximum depth (createNestedCanvas's)
+      // THE LOOK CAMERA, in the object's own frame. "The current zoom" is the camera's — or, while a flight drives it, the zoom
+      // that flight lands at (the SETTLED pose, as an enter saves a driving flight's arrival): a look into another frame keeps
+      // the number, 100% there as here.
+      const cam = world.getResource(Camera) ?? { x: 0, y: 0, zoom: 1, gesturing: false };
+      const flight = world.getResource(NavTransition);
+      const looking = world.getResource(LookFlight);
+      const settled = flight?.active === true ? flight.c1z : looking?.active === true ? looking.c1z : cam.zoom;
+      const c1 = lookCamera(target.rect, settled, vp.w, vp.h, {
+        zoom,
+        pad,
+        band: FIT_DEFAULTS,
+        limits: world.getResource(CameraLimits) ?? CAMERA_DEFAULTS,
+        ...(o.inset !== undefined ? { inset: o.inset } : {}),
+      });
+      // The hand lets go (the camera never moves under it — every nav cut's put-down), live gestures cancel (`open`'s rule), the
+      // pan coasts no further, and a look still flying stops where it is: this one starts from there.
+      cancelActiveGestures(world);
+      putDown();
+      const inertia = world.getResource(CameraInertia);
+      if (inertia !== undefined && (inertia.vx !== 0 || inertia.vy !== 0)) writeRuntimeResource(world, CameraInertia, { vx: 0, vy: 0 });
+      abortLookFlight(world);
+      const fly = o.transition !== "none" && !transitions.reducedMotion();
+      if (!exits && enters.length === 0) {
+        // IN THE FRAME: an ordinary camera move. A nav flight still landing here ends where it is (as a gesture's yield ends it).
+        if (flight?.active === true) abortNavFlight(world);
+        const there = cam.x === c1.x && cam.y === c1.y && cam.zoom === c1.zoom;
+        if (fly && !there) startLookFlight(world, c1);
+        else if (!there || cam.gesturing) writeRuntimeResource(world, Camera, { x: c1.x, y: c1.y, zoom: c1.zoom, gesturing: false });
+      } else {
+        // ANOTHER FRAME: the nav ops. Every step a cut but the last, which flies (or snaps) and lands on the look camera.
+        const cut: NavOpts = { transition: "none" };
+        const last: NavOpts = { transition: fly ? "zoom" : "none", landing: c1 };
+        if (exits) nav.exitTo(shared, enters.length === 0 ? last : cut);
+        enters.forEach((container, i) => nav.enterContainer(container, i === enters.length - 1 ? last : cut));
+      }
+      if (o.select !== false) {
+        // After the last cut, which left every widget out of the frame until the next membership pass: the object is stamped the
+        // member that pass makes it (membership's own write, as `spawnWidget` stamps a spawn), so `Selected ⇒ Active` holds now.
+        if (!world.hasTag(entity, Active)) {
+          world.addTag(entity, Active);
+          if (world.hasTag(entity, Culled)) world.removeTag(entity, Culled);
+        }
+        setSelection(world, [entity], "replace");
+      }
+      return true;
     },
     enterContainer: (c, opts) => nav.enterContainer(c, opts),
     exitContainer: (opts) => nav.exitContainer(opts),

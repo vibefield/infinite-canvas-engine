@@ -8,7 +8,8 @@
  *    after its release, a drag, a pinch, a wheel gesture's end silence (`wheelEndSilenceMs`) — each reaped once it ended;
  *  - the camera gesturing, or its inertia still moving (systems/camera-sim.ts `cameraInertia`);
  *  - a transform tween running (`TransformTween`, camera-sim.ts `tweenSystem`);
- *  - a nav flight (`NavTransition.active`, systems/nav-flight.ts);
+ *  - a nav flight (`NavTransition.active`, systems/nav-flight.ts), or a look flight (`LookFlight.active`, systems/look-flight.ts
+ *    — `ops.lookAt`'s camera move in the frame, petition I58);
  *  - the pegboard's band stretched (systems/tray.ts: it lets go `letGoMs` after the last wheel);
  *  - ports materialized (systems/l3-ports.ts: staged over frames, reaped `portReapGraceMs` after their trigger lapsed).
  * The one-tick protocols after an input (the tags `oneTickClear` clears, a recognizer reaped a tick after it ended) are the
@@ -22,6 +23,7 @@ import { Drag, LongPress, Pinch, Tap, TransformTween, WheelPan, WheelZoom } from
 import { Port } from "../catalog/graph";
 import type { InputQueue } from "../input/queue";
 import { CameraInertia } from "../systems/camera-sim";
+import { LookFlight } from "../systems/look-flight";
 import { NavTransition } from "../systems/nav-flight";
 
 const recognizersQ = defineQuery([Any(Tap, LongPress, Drag, Pinch, WheelPan, WheelZoom)]);
@@ -38,6 +40,7 @@ export function interactionPending(world: World, queue: InputQueue): string | un
   const inertia = world.getResource(CameraInertia);
   if (inertia !== undefined && (inertia.vx !== 0 || inertia.vy !== 0)) return "inertia";
   if (world.getResource(NavTransition)?.active === true) return "flight";
+  if (world.getResource(LookFlight)?.active === true) return "look";
   if (world.firstOf(tweensQ) !== undefined) return "tween";
   const tray = world.firstOf(traysQ);
   if (tray !== undefined && (world.get(tray, Tray)?.stretch ?? 0) !== 0) return "band";

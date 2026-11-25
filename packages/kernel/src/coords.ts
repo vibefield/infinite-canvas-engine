@@ -120,5 +120,85 @@ export function fitCamera(
   };
 }
 
+/** Screen px a host's own chrome covers on each side of the viewport; an absent side covers none. */
+export interface ScreenInset {
+  readonly top?: number;
+  readonly right?: number;
+  readonly bottom?: number;
+  readonly left?: number;
+}
+
+/** A zoom band, [minZoom, maxZoom]. */
+export interface ZoomBand {
+  readonly minZoom: number;
+  readonly maxZoom: number;
+}
+
+/** What the look camera frames by (`lookCamera`). */
+export interface LookCameraOpts {
+  /** The zoom policy: `"comfort"`, `"fit"`, `"keep"` or a zoom (see `lookCamera`). */
+  readonly zoom: "comfort" | "fit" | "keep" | number;
+  /** Screen px of room on every side of the target when it must fit (at most a quarter of the room on an axis). */
+  readonly pad: number;
+  /** The natural band the fit lands in and the comfort zooms in to (engine default: FIT_DEFAULTS). */
+  readonly band: ZoomBand;
+  /** The hard clamp every result honours (the session's CameraLimits). */
+  readonly limits: ZoomBand;
+  /** The viewport's edges the host's chrome covers: the target is centred in what is left. */
+  readonly inset?: ScreenInset;
+}
+
+/**
+ * The LOOK camera (petition I58, `ops.lookAt`): the camera that CENTRES `target` (a world rect) in what
+ * the person can see — the viewport less `opts.inset` — at the zoom `opts.zoom` gives, from `from`, the
+ * zoom the camera is at:
+ *  - `"comfort"`: `from` when the target can be read there (`from` ≥ the band's floor) and fits (with
+ *    `pad` round it); below the floor it zooms in to the floor — never past the band's ceiling — or only
+ *    as far as the target still fits; too big at `from`, it zooms out until the target fits;
+ *  - `"fit"`: the target fitted with `pad` round it, clamped into the band (`fitCamera`'s band rule);
+ *  - `"keep"`: `from`;
+ *  - a number: that zoom.
+ * The pad is SCREEN px at every zoom (`fitCamera` adds its pad to the content in world units, so its
+ * margin is px only at 100%), cut to a quarter of the room on an axis where it would leave less than
+ * half of it. The band is first intersected with `limits` (on no overlap the limit wins: `frameContent`'s
+ * rule), and every result is clamped by `limits`. Insets that leave no room on an axis are ignored: the
+ * target is centred in the whole viewport. Pure math; callers pass a real viewport and finite numbers.
+ */
+export function lookCamera(target: Rect, from: number, vpW: number, vpH: number, opts: LookCameraOpts): CameraState {
+  const inset = opts.inset ?? {};
+  const left = inset.left ?? 0;
+  const top = inset.top ?? 0;
+  const roomW = vpW - left - (inset.right ?? 0);
+  const roomH = vpH - top - (inset.bottom ?? 0);
+  const roomy = roomW > 0 && roomH > 0;
+  const x0 = roomy ? left : 0;
+  const y0 = roomy ? top : 0;
+  const w = roomy ? roomW : vpW;
+  const h = roomy ? roomH : vpH;
+  const { limits, band } = opts;
+  const floor = Math.min(Math.max(band.minZoom, limits.minZoom), limits.maxZoom);
+  const ceiling = Math.max(Math.min(band.maxZoom, limits.maxZoom), limits.minZoom);
+  /** The zoom at which the target, `pad` screen px round it, just fits what is left of the view. */
+  const fits = Math.min(
+    (w - 2 * Math.min(opts.pad, w / 4)) / target.width,
+    (h - 2 * Math.min(opts.pad, h / 4)) / target.height,
+  );
+  const policy = opts.zoom;
+  let zoom: number;
+  if (typeof policy === "number") zoom = policy;
+  else if (policy === "keep") zoom = from;
+  else if (policy === "fit") zoom = Math.min(ceiling, Math.max(floor, fits));
+  else if (from >= floor && from <= fits) zoom = from;
+  // in to the floor (≤ the ceiling, by the intersection above) — or less, where the target would not fit there
+  else if (from < floor) zoom = Math.min(floor, fits);
+  else zoom = fits;
+  zoom = Math.min(limits.maxZoom, Math.max(limits.minZoom, zoom));
+  return {
+    x: target.x + target.width / 2 - (x0 + w / 2) / zoom,
+    y: target.y + target.height / 2 - (y0 + h / 2) / zoom,
+    zoom,
+  };
+}
+
 // (`planeCssTransform` — the per-plane CSS transform of the retired DOM/GL planes — left at design-015 D7: the DOM
 // lives in screen space, and no element carries a camera transform, §2.2.)
