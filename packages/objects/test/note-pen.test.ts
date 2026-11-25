@@ -19,7 +19,7 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { createCanvasEngine, type Entity } from "@ice/core";
 import { createDeskEditor, handFaces, MAT_GRID } from "@ice/desk";
-import { carrySeeds, createPenClock, encodeSeeds, glyphBox, type HandAtlas, type HandFaces, handFacesOf, type HandLayout, type HandMetrics, type HandRun, type InkBitmap, type PenKey, readHandAtlas, seedsFor, type TextPart, type TextRaster } from "@ice/desk/kit";
+import { carrySeeds, createPenClock, encodeSeeds, glyphBox, HAND_WEIGHT, type HandAtlas, type HandFaces, handFacesOf, type HandLayout, type HandMetrics, type HandRun, type InkBitmap, type PenKey, readHandAtlas, seedsFor, type TextPart, type TextRaster } from "@ice/desk/kit";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createNoteBody, NOTE_INK, NOTE_PROPS, Note, type PaperDriver } from "../src";
 import { Paper, paperValues } from "../src/paper/layout";
@@ -27,7 +27,7 @@ import { InkShelves, uvOf } from "../src/paper/pages";
 import { DEFAULT_PAPER_LAW, lampOf, resolvePaper } from "../src/paper/paper";
 import { PAPER } from "../src/paper/theme";
 import { createNoteTyping } from "../src/paper/typing";
-import { createWriting, type InkPages, type NoteRuns, type Writing } from "../src/paper/writing";
+import { createWriting, DEFAULT_BLEED, type InkPages, type NoteRuns, type Writing } from "../src/paper/writing";
 
 const E = (n: number) => n as Entity;
 const lamp = lampOf(MAT_GRID.plane);
@@ -430,6 +430,15 @@ describe("forget and the record (petition I59)", () => {
     expect(w.penOf(E(1))).toBeUndefined();
     frame([{ e: E(1), text: "milk" }]);
     expect(startsOf(w, E(1)).every((s) => s === BEFORE)).toBe(true);
+  });
+
+  it("the note writes in the desk's weight: its run's header carries `HAND_WEIGHT`, so the pen is as dark as the raster it replaces", () => {
+    const { w, frame } = desk();
+    frame([{ e: E(1), text: "buy milk" }]);
+    const d = w.penOf(E(1))?.run.data as Float32Array;
+    expect(HAND_WEIGHT).toBeGreaterThan(0);
+    expect(d[4 * 3 + 3]).toBe(Math.fround(HAND_WEIGHT));   // h3.w: the outline moved outward by it, em
+    expect(d[4 * 3 + 1]).toBe(Math.fround(DEFAULT_BLEED));   // beside the raster's own bleed
   });
 
   it("the record carries the run's base and the held scale to the pass; a sheet off the pen carries none", () => {
