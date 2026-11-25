@@ -7,11 +7,11 @@
 //
 // The VERBS are pure — an ink in, a new ink out, the one handed never touched — and they are what the editor, a menu's act and an
 // agent's tool all call: `splice` (every edit comes down to it: arrivals join a mark they land inside, and a replacement keeps the
-// marks its letters shared), `carryInk` (the platform's edit, carried), `mark`, `replace`,
-// `lift` and `paste` (the clipboard: the words travel with their marks and are written again in a fresh hand — the seeds never
-// travel), `cleanPiece`, `findQuote` (an agent says where by quoting) and `readWriting` (what it reads). The GEOMETRY reads a laid
-// `HandLayout` (text.ts) in its note units: the caret index nearest a point, the word and the laid line around an index, a range as
-// one rect a line (the selection's wash), and every mark as the strokes a hand makes.
+// marks its letters shared), `carryInk` (the platform's edit, carried — to its caret when the platform says where), `mark`,
+// `replace`, `lift` and `paste` (the clipboard: the words travel with their marks and are written again in a fresh hand — the
+// seeds never travel), `cleanPiece`, `findQuote` (an agent says where by quoting) and `readWriting` (what it reads). The GEOMETRY
+// reads a laid `HandLayout` (text.ts) in its note units: the caret index nearest a point, the word and the laid line around an
+// index, a range as one rect a line (the selection's wash), and every mark as the strokes a hand makes.
 //
 // A MARK is one integer, 3 bits a field, low bits first: the PEN (0 the sheet's own, n `PENS[n − 1]`) · the HIGHLIGHTER (0 none,
 // n `HIGHLIGHTERS[n − 1]`) · the STRIKE (0 none, 1 in the words' own pen, n ≥ 2 `PENS[n − 2]`) · the UNDERLINE (as the strike). A
@@ -231,16 +231,26 @@ export function splice(ink: InkValue, from: number, to: number, words: string, f
 /**
  * The platform's edit CARRIED (the textarea's new value — what typing gives): the common prefix and suffix of the ink's text and
  * `text` keep their seeds and their marks, and the run between them is `splice`d — `carrySeeds` (text.ts) carried to the marks,
- * agreeing with it seed for seed; a selection typed over is a replacement, and keeps the marks its letters shared. The new ink,
- * and the arrived range [from, to).
+ * agreeing with it seed for seed; a selection typed over is a replacement, and keeps the marks its letters shared. With the
+ * platform's `caret` after the edit (`selectionStart`), the split is the one whose arrivals END at the caret — all after it is the
+ * old text's own tail — so a letter typed beside its twin lands where it was typed, not after the twin (and joins a mark it was
+ * typed inside), and a backspace between twins takes the one before the caret. A caret no reading of the edit ends at, or no
+ * index at all, is no hint: the greedy split above, as `carrySeeds` makes it. The new ink, and the arrived range [from, to).
  */
-export function carryInk(ink: InkValue, text: string, fresh: () => number): { readonly ink: InkValue; readonly from: number; readonly to: number } {
+export function carryInk(ink: InkValue, text: string, fresh: () => number, caret?: number): { readonly ink: InkValue; readonly from: number; readonly to: number } {
   const old = ink.text;
   const max = Math.min(old.length, text.length);
   let pre = 0;
   while (pre < max && old[pre] === text[pre]) pre += 1;
   let suf = 0;
-  while (suf < max - pre && old[old.length - 1 - suf] === text[text.length - 1 - suf]) suf += 1;
+  const c = caret ?? -1;
+  if (Number.isInteger(c) && c >= 0 && c <= text.length && text.length - c <= old.length && old.endsWith(text.slice(c))) {
+    // the caret's reading: the text after it is the old text's tail, and the arrivals start where the two still agree before it
+    suf = text.length - c;
+    pre = Math.min(pre, c, old.length - suf);
+  } else {
+    while (suf < max - pre && old[old.length - 1 - suf] === text[text.length - 1 - suf]) suf += 1;
+  }
   const words = text.slice(pre, text.length - suf);
   return { ink: splice(ink, pre, old.length - suf, words, fresh), from: pre, to: pre + words.length };
 }
