@@ -1,8 +1,12 @@
 // The NOTE (STICKY.md) as an OBJECT — the desk's first reference kind through `defineObject`
-// (design-015 §6): a sheet of paper on the mat. Durable props: its writing — `text`, and `seeds`, each
-// glyph's own hand (paper/seeds.ts; D-D13: the seeds persist or a reload re-draws the hand) — in ONE
-// conflict group, `ink`, so the two are one cell written in one transaction and a concurrent edit can
-// never pair one peer's text with another's seeds (D2c); its pen and its paper by name (the product's
+// (design-015 §6): a sheet of paper on the mat. Durable props: its writing — `text`, `seeds`, each
+// glyph's own hand (paper/seeds.ts; D-D13: the seeds persist or a reload re-draws the hand), and `marks`,
+// each glyph's mark (petition I60 — kit/ink.ts: its pen, a highlighter under it, a line through it, one
+// under it; runs in base 36, "" unmarked) — in ONE conflict group, `ink`, so the three are one cell written
+// in one transaction and a concurrent edit can never pair one peer's words with another's seeds or marks
+// (D2c). A note stored before the marks reads unmarked: the group's component keeps its name and a cell
+// that lacks a field projects with that field's default (core doc/migrate.ts, the field tolerance), so the
+// type's `version` stays 1 and no migration runs. Its pen and its paper by name (the product's
 // colours through the palette, kinds/paper.ts `PaperPalette`), and its `seed` — the tilt it is stuck
 // at, never square (`tiltOf`), and the hand of a glyph with no stored seed. Things, movable,
 // selectable, snapping both ways; it offers itself to the desk, a mini mat (D2b's drop-into) and a calendar's day by what it
@@ -32,11 +36,12 @@ export const Note = defineObject({
   props: {
     text: p.string({ default: "" }),
     seeds: p.string({ default: "" }),
+    marks: p.string({ default: "" }),
     pen: p.enum(PENS, { default: "fountain" }),
     paper: p.enum(PAPERS, { default: "yellow" }),
     seed: p.number({ default: 0 }),
   },
-  groups: { ink: ["text", "seeds"] },
+  groups: { ink: ["text", "seeds", "marks"] },
   size: { w: PAPER.size, h: PAPER.size },
   kind: paperKind(),
   // on the pegboard tray (design-017 §8): a pad of notes on two hooks
@@ -67,8 +72,8 @@ export const Note = defineObject({
   },
 });
 
-/** The note's writing as a cell (`desk.note:ink` — `{ text, seeds }`): what a typing session live-writes and commits whole. */
-export const NOTE_INK = groupOf("ink") as Component<{ text: string; seeds: string }>;
+/** The note's writing as a cell (`desk.note:ink` — `{ text, seeds, marks }`): what its typing live-writes and commits whole. */
+export const NOTE_INK = groupOf("ink") as Component<{ text: string; seeds: string; marks: string }>;
 /** The note's other props (`desk.note:props` — `{ pen, paper, seed }`). */
 export const NOTE_PROPS = groupOf("props") as Component<{ pen: string; paper: string; seed: number }>;
 

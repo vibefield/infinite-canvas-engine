@@ -18,6 +18,7 @@ import { createHandRuns, type FadeIn, HAND_BINDINGS, type HandAtlas, type HandRu
 import { MAX_PAPERS, Paper, PaperUniforms, type PaperInstance, paperValues } from "./layout";
 import { InkShelves, type InkRect, uvOf, type UvRect } from "./pages";
 import { DEFAULT_PAPER_LAW, type PaperLaw } from "./paper";
+import { PAPER } from "./theme";
 import type { PaperShaders } from "./shaders";
 import type { NoteRuns } from "./writing";
 
@@ -95,6 +96,8 @@ export class PaperPass {
     shared.slots += 1;
     this.runs = {
       write: (key, run) => shared.runs.write(key, run),
+      // the selection's wash rewritten alone in the run the store holds (petition I60): two writes, never the run again
+      wash: (key, w) => shared.runs.wash(key, w),
       free: (key) => { shared.runs.free(key); },
       face: (atlas) => {
         if (shared.face.atlas === atlas) return;
@@ -212,7 +215,8 @@ export class PaperPass {
     const far = this.law.far;
     // the pen's time (petition I59): the writing holds it at the last moment written once nothing moves, so at rest the knobs stand
     const [ps, pms] = penNow(this.shared.penMs);
-    this.knobs.set({ knobs: [this.chain ? 1 : 0, this.wipeSoft, this.law.caret.width, this.law.ring], select: [select[0], select[1], select[2], 1], far: [far.px[0], far.px[1], far.weight, far.alpha], pen: [ps, pms, 0, 0] });
+    // …and the selection's wash: the pencil's presence (petition I60)
+    this.knobs.set({ knobs: [this.chain ? 1 : 0, this.wipeSoft, this.law.caret.width, this.law.ring], select: [select[0], select[1], select[2], 1], far: [far.px[0], far.px[1], far.weight, far.alpha], pen: [ps, pms, this.law.wash ?? PAPER.wash, 0] });
     writeChanged(this.device.queue, this.knobBuf, this.knobs, this.knobsSent);
     return n;
   }

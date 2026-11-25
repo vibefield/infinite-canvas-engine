@@ -27,6 +27,8 @@ export interface PaperLaw {
   readonly ring: number;
   readonly caret: { readonly width: number; readonly blinkMs: number };
   readonly far: { readonly px: readonly [number, number]; readonly weight: number; readonly alpha: number };
+  /** The selection's wash: the pencil's presence over the words selected (petition I60); absent — `PAPER.wash`. */
+  readonly wash?: number;
 }
 export const DEFAULT_PAPER_LAW: PaperLaw = PAPER;
 

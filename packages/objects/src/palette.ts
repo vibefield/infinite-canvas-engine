@@ -293,12 +293,13 @@ export type DeskPalette = PaperPalette & MiniMatPalette & BoardPalette & Noteboo
 
 /**
  * THE DEFAULT PALETTE (D-D7-C.1) — complete for `DESK_OBJECTS`: the roles, the note's one paper (`yellow` — the product's
- * `--vf-note-surface`), its pens, the mini mats' vinyls, the whiteboard's materials and markers (BOARD.md), the notebooks' page,
+ * `--vf-note-surface`), its pens and the highlighters its words are marked in (petition I60 — the calendar's five; the selection's
+ * wash in the roles' `select`, the palette naming no `pencil`), the mini mats' vinyls, the whiteboard's materials and markers (BOARD.md), the notebooks' page,
  * ruling and covers (NOTEBOOK.md §4), the calendar's paper, print, tapes and presences (CALENDAR.md §4). `deskLayer({ palette })`
  * takes it as it is; an app with its own tokens hands its own (the kinds read only what `theme()` is given).
  */
 export const deskPalette = (name: ThemeName): DeskPalette => ({
-  ...PALETTE[name], papers: { yellow: SURFACES.note }, pens: PENS, vinyls: VINYLS,
+  ...PALETTE[name], papers: { yellow: SURFACES.note }, pens: PENS, highlighters: CALENDAR_LOOK.highlighters, vinyls: VINYLS,
   board: BOARD_LOOK, markers: MARKERS,
   notebooks: { ...NOTEBOOK_LOOK, rule: notebookRuleInk()[3] },
   calendars: CALENDAR_LOOK,

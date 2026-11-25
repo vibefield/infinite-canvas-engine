@@ -1,7 +1,9 @@
 // The paper pass's GPU records, declared once. `Paper` is one note as drawn —
 // what `resolvePaper` returns, the paper's and the pen's colours, where its
 // ink lives (the raster's pages, or the pen's run — petition I59), the
-// writing head (the raster's wipe) and the caret. `PaperUniforms` is the
+// writing head (the raster's wipe), the caret, and the inks its MARKS are drawn
+// in (petition I60: the desk's pens, its highlighters and the pencil, the
+// host's colours, packed a colour a float). `PaperUniforms` is the
 // pass's own knobs (the pen's time among them); the camera, the light, the gobo
 // and the portal chain arrive through the mat's block (`MatUniforms`), which
 // the pass fills for itself so a note is lit like the mat whether or not the
@@ -13,6 +15,8 @@ import type { UvRect } from "./pages";
 import type { PaperGeometry } from "./paper";
 
 // vec2s first, then scalars, then vec4s: tight under the alignment rules.
+/** The vec4s of a record's marks' inks (petition I60): the four pens, the five highlighters and the pencil, a colour a float. */
+export const MARK_INKS = 3;
 /** The most lines of a note's writing its far LOD greeks (K7b) — a mini mat's chip greeks as many (minimat.ts `CHIP_LINES`). */
 export const GREEK_LINES = 6;
 
@@ -32,15 +36,16 @@ export const Paper = defineStruct("Paper", [
   ["caret", "vec4f"],   // the caret: x, baseline y (note units), its reach above and below
   ["marks", "vec4f"],   // the wipe's progress, the caret on (0/1), unused ×2
   ["greek", "vec4f"],   // K7b — the writing GREEKED (the far LOD): the text's left edge and em (note units), how many lines, unused
-  ["pen", "vec4f"],     // petition I59 — THE PEN: the run's base in the kind's run store, 1 on the pen's road (else 0), the held scale it is laid at, unused
+  ["pen", "vec4f"],     // petition I59 — THE PEN: the run's base in the kind's run store, 1 on the pen's road (else 0), the held scale it is laid at, 1 when the run carries the marks (petition I60)
   ["glines", `array<vec4f, ${GREEK_LINES / 2}>`],   // …each line's baseline and width (note units), two lines a vec4
+  ["inks", `array<vec4f, ${MARK_INKS}>`],   // petition I60 — the marks' inks, a colour a float (`packInk`): PENS[0..3]; HIGHLIGHTERS[0..3]; HIGHLIGHTERS[4], the pencil, unused ×2
 ] as const);
 
 export const PaperUniforms = defineStruct("PaperUniforms", [
   ["knobs", "vec4f"],   // the mat's chain on the paper (0 = a lit byte is the token's byte, 1 = the mat's double gamma), the wipe's softness (note units), the caret's width (CSS px), the ring's width (CSS px)
   ["select", "vec4f"],  // --vf-select, the ring's colour
   ["far", "vec4f"],     // K7b — the far LOD (theme.ts `PAPER.far`): its band's low and high edges (CSS px of the sheet's longer side), the greek's weight and alpha
-  ["pen", "vec4f"],     // petition I59 — the pen's time (`penNow`): whole seconds and the ms past them, unused ×2
+  ["pen", "vec4f"],     // petition I59 — the pen's time (`penNow`): whole seconds and the ms past them; the selection's wash presence (petition I60); unused
 ] as const);
 
 export const MAX_PAPERS = 1024;
@@ -59,15 +64,38 @@ export interface PaperInstance {
   readonly raster?: { readonly layer: number; readonly uv: UvRect } | undefined;
   /**
    * THE PEN (petition I59): where the sheet's glyph run lives in the kind's run store — its base, the texel index `hand_ink` reads
-   * it from; absent, the sheet is not on the pen's road (its ink is the raster's, or it has none).
+   * it from; absent, the sheet has no run (its ink is the raster's, or it has none). `marks` (petition I60): the run carries the marks
+   * section `ink_marks` reads; `words` false: a raster-road sheet's run of its marks alone (its letters are the raster's).
    */
-  readonly pen?: { readonly base: number } | undefined;
+  readonly pen?: { readonly base: number; readonly marks?: boolean; readonly words?: boolean } | undefined;
   /** The newest glyph's box and how far the pen has got through it. */
   readonly wipe?: { readonly x0: number; readonly y0: number; readonly x1: number; readonly y1: number; readonly t: number } | undefined;
   /** The caret, when the note is being written. */
   readonly caret?: { readonly x: number; readonly y: number; readonly above: number; readonly below: number; readonly on: boolean } | undefined;
   /** K7b — its writing GREEKED (the far LOD): the text's left edge and em, each line's baseline and width (note units); absent = unwritten. */
   readonly greek?: { readonly x0: number; readonly em: number; readonly lines: readonly { readonly y: number; readonly width: number }[] } | undefined;
+  /**
+   * The inks its MARKS are drawn in (petition I60 — the host's colours, the note's palette: `PaperPalette`): each of the desk's pens
+   * (kit/text.ts `PENS`, in order), each highlighter (`HIGHLIGHTERS`, in order) and the pencil the selection's wash is laid in. Absent —
+   * a pen in the sheet's own ink, a highlighter and the wash in nothing (a host that names none: its notes draw no mark's colour).
+   */
+  readonly marks?: PaperMarkInks | undefined;
+}
+
+/** A note's marks' inks (`PaperInstance.marks`): the kit numbers pens and highlighters, the host names the colours. */
+export interface PaperMarkInks {
+  readonly pens: readonly RGB[];
+  readonly highlighters: readonly RGB[];
+  readonly pencil: RGB;
+}
+
+/**
+ * A colour a FLOAT (petition I60): its three bytes as one integer, red the most significant — below 2^24, exact in an f32, so a record
+ * carries the marks' ten inks in three vec4s; the WGSL's `paper_rgb` unpacks it.
+ */
+export function packInk(c: RGB): number {
+  const b = (v: number): number => Math.min(255, Math.max(0, Math.round(v * 255)));
+  return (b(c[0]) * 256 + b(c[1])) * 256 + b(c[2]);
 }
 
 export function paperValues(p: PaperInstance, grain: number) {
@@ -76,7 +104,15 @@ export function paperValues(p: PaperInstance, grain: number) {
   const w = p.wipe;
   const c = p.caret;
   const gk = p.greek;
+  const mk = p.marks;
   const gl = new Array<number>(2 * GREEK_LINES).fill(0);
+  // the marks' inks, a colour a float: the four pens, the five highlighters, the pencil (0 — none named)
+  const inks = new Array<number>(4 * MARK_INKS).fill(0);
+  if (mk !== undefined) {
+    for (let i = 0; i < 4; i++) { const c = mk.pens[i]; if (c !== undefined) inks[i] = packInk(c); }
+    for (let i = 0; i < 5; i++) { const c = mk.highlighters[i]; if (c !== undefined) inks[4 + i] = packInk(c); }
+    inks[9] = packInk(mk.pencil);
+  }
   const gn = gk === undefined ? 0 : Math.min(gk.lines.length, GREEK_LINES);
   for (let i = 0; i < gn; i++) { const L = gk?.lines[i] as { readonly y: number; readonly width: number }; gl[2 * i] = L.y; gl[2 * i + 1] = L.width; }
   return {
@@ -92,8 +128,10 @@ export function paperValues(p: PaperInstance, grain: number) {
     caret: c ? [c.x, c.y, c.above, c.below] : [0, 0, 0, 0],
     marks: [w ? w.t : 1, c?.on ? 1 : 0, 0, 0],
     greek: [gk?.x0 ?? 0, gk?.em ?? 0, gn, 0],
-    // the run's base (an f32 is exact below 2^24 texels), on the pen's road, at the sheet's held scale (the run is laid at rest)
-    pen: p.pen !== undefined ? [p.pen.base, 1, G.scale, 0] : [0, 0, 1, 0],
+    // the run's base (an f32 is exact below 2^24 texels), on the pen's road (its words), at the sheet's held scale (the run is laid at
+    // rest), and whether it carries the marks (petition I60 — a raster-road sheet's run carries them alone)
+    pen: p.pen !== undefined ? [p.pen.base, p.pen.words === false ? 0 : 1, G.scale, p.pen.marks === true ? 1 : 0] : [0, 0, 1, 0],
     glines: gl,
+    inks,
   };
 }
