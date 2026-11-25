@@ -6,6 +6,15 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.21.0] — 2026-11-25
+
+**A free slot for an object that comes with no pointer (petition I57) and a look at an object (petition I58), released on
+`latest`; and the rigs' browser can be named.** `freeSlot` (`/kernel`) and `resolveFreeSlot` answer the nearest free place
+for a new object: a slot in view before one that is not, and nothing when nothing is free. `ops.lookAt(entity, opts?)`
+takes the person to an object: the camera flown to it and centred at a zoom it reads at, the object selected, in its own
+frame wherever it lies; `NavOpts.landing` and the kernel's `lookCamera` come with it. Both are additive: no existing op
+moves. The rigs' `DESK_CHROME` is repository tooling (`### Changed`): nothing in the package moves with it.
+
 ### Added
 
 <!-- petition I57 — a free slot for an object that comes with no pointer (2026-11-24; VibeField) -->

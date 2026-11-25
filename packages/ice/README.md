@@ -18,10 +18,10 @@ an archetype ECS with reactivity and opt-in Loro-CRDT durable + presence layers.
 > `./desk`, `./desk/engine`, `./desk/objects` are new. The full list is the changelog's
 > `### Removed` under the 0.14.0 release.
 
-**0.20.0** adds a soft light (petition I56): a second gobo model, `"soft"`, lays the plate flat
-over the lamp's frame in two soft-edged layers, and a night may take a `contrast` from what its
-day shows. A host chooses it once, `setLightText("soft")`; one that asks for nothing draws as
-before.
+**0.21.0** adds two calls for a host that acts with no pointer (petitions I57 and I58):
+`resolveFreeSlot` answers the nearest free place for a new object, a slot in view first, and
+`ops.lookAt(entity)` takes the person to an object: the camera flown to it and centred, the
+object selected, in its own frame. Both are additions: no existing op moves.
 
 ```sh
 pnpm add @vibecook/ice react react-dom     # react/react-dom are optional peers

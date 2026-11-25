@@ -14,11 +14,11 @@ an archetype ECS with reactivity and opt-in Loro-CRDT durable + ephemeral
 **docs** <https://vibefield.github.io/infinite-canvas-engine/> ·
 MIT license
 
-> **0.20.0 — soft light.** A second gobo model, `"soft"`, lays the plate flat over the lamp's
-> frame in two soft-edged layers, its shade tinted by the sky, and a night may take a `contrast`
-> and a `fromDay` step from what its day shows. A host chooses it once (`setLightText("soft")`);
-> one that asks for nothing draws the bytes it drew. Additive: `MatUniforms` grows at its end,
-> every earlier field where it was (`CHANGELOG.md`).
+> **0.21.0 — a free slot, and a look at an object.** `resolveFreeSlot` answers the nearest free
+> place for an object that comes with no pointer: a slot in view before one that is not, and
+> nothing when nothing is free. `ops.lookAt(entity)` takes the person to an object: the camera
+> flown to it and centred, the object selected, in its own frame wherever it lies. Additive: no
+> existing op moves (`CHANGELOG.md`).
 > Upgrading from before 0.14.0 also replaces the DOM/R3F presentation with the GPU desk;
 > see the 0.14.0 removal list in `CHANGELOG.md`.
 
@@ -204,10 +204,11 @@ drive headless Chrome against the oracle's bytes (`rig:parity`: maxΔ 0 per scen
 
 ## Status
 
-**Current release: 0.20.0.** The soft light builds on 0.19.0's opening print, 0.18.0's
-pegboard set and 0.17.0's desk interactions and presentation. Documents written by 0.1.0
-migrate automatically on open (schema 2 — ordered `ChildOf` replaces scalar z); a 0.1.0
-build opening a migrated document still gets a correct read-only view.
+**Current release: 0.21.0.** The free slot and the look at an object build on 0.20.0's soft
+light, 0.19.0's opening print, 0.18.0's pegboard set and 0.17.0's desk interactions and
+presentation. Documents written by 0.1.0 migrate automatically on open (schema 2 — ordered
+`ChildOf` replaces scalar z); a 0.1.0 build opening a migrated document still gets a correct
+read-only view.
 
 Engine v1 is complete (kernel math, the engine spine, the interaction stack,
 durable documents + per-gesture undo, the node editor, nested canvas, presence +
