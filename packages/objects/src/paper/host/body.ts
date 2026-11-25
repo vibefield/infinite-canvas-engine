@@ -155,6 +155,8 @@ export function createNoteBody(opts: NoteBodyOptions): NoteBody | undefined {
     rangeAt(index, unit) { return writing()?.rangeAt(e, index, unit); },
     // where a range of the words lies (petition I60): the menu over the words selected is placed by it
     rangeBox(from, to) { return writing()?.rangeBox(e, from, to); },
+    // where the caret stands (petition I60): the anchor's caret while the range is empty — a host's Paste and Select all stand there
+    caretBox(index) { return writing()?.caretBox(e, index); },
     // a COPY or a CUT: the words, their HTML and the piece with their marks — the field's words alone where the cell moved under the field
     lift(from, to) {
       const a = Math.min(from, to);

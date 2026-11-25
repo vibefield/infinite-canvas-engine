@@ -303,6 +303,13 @@ export interface Writing {
    */
   rangeBox(e: Entity, from: number, to: number): RangeBox | undefined;
   /**
+   * Where the CARET before text index `index` of note `e` stands in the world as last drawn (petition I60 — the anchor's caret while the
+   * range is empty, a host's Paste and Select all there): the layout's place, from the face's ascent above its baseline to its descent
+   * below, placed on the sheet — for a sheet at its tilt, the box of the turned ends. Clamped to the text; undefined before its first
+   * draw, or while the face loads.
+   */
+  caretBox(e: Entity, index: number): RangeBox | undefined;
+  /**
    * The editor's SELECTION on note `e` (petition I60): its range, held in order (`from` ≤ `to`); `undefined` lifts it. Flux: told with the
    * caret, never stored; drawn as the WASH, rewritten alone in the run the note holds (`NoteRuns.wash`) and a frame asked (`redraw`).
    */
@@ -1007,6 +1014,20 @@ export function createWriting(opts: WritingOptions): Writing {
         x0 = Math.min(x0, wx); y0 = Math.min(y0, wy); x1 = Math.max(x1, wx); y1 = Math.max(y1, wy);
       }
       return { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    },
+
+    caretBox(e, index) {
+      const en = entries.get(e);
+      const L = en?.layout;
+      const G = en?.geometry;
+      if (en === undefined || L === undefined || G === undefined || !Number.isFinite(index)) return undefined;
+      const i = Math.max(0, Math.min(L.positions.length / 2 - 1, Math.floor(index)));
+      const nx = L.positions[2 * i] as number;
+      const ny = L.positions[2 * i + 1] as number;
+      // the caret's two ends (note units) → the sheet's own frame, at the hold's scale → the world, turned: the box of them
+      const [ax, ay] = worldOf(G, (nx - en.w / 2) * G.scale, (ny - L.ascent - en.h / 2) * G.scale);
+      const [bx, by] = worldOf(G, (nx - en.w / 2) * G.scale, (ny + L.descent - en.h / 2) * G.scale);
+      return { x: Math.min(ax, bx), y: Math.min(ay, by), w: Math.abs(bx - ax), h: Math.abs(by - ay) };
     },
 
     select(e, from = 0, to = from) {
