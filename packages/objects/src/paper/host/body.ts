@@ -19,40 +19,26 @@
 // digits and apostrophes, the laid line without its break) — so the editor claims a press on the writing and turns a drag and the
 // clicks into the field's range, which the writing keeps as flux (`select`) and draws as the selection's WASH. Every input hands the
 // typing the field's caret (`carryInk` finds the edit by it), and a selection change tells the typing (`moved`: a word typed over a
-// selection keeps its marks while the caret stays at its end). A copy lifts the words with their MARKS — the plain words, and the piece
-// `{ text, marks }` under the desk's private flavour (`PIECE_FLAVOUR`); a paste lays a piece (else the plain words) through the typing
-// in a fresh hand (`paste`), cleaned as any written part's (`cleanPiece`), and the field is written to match.
+// selection keeps its marks while the caret stays at its end). A copy lifts the words with their MARKS in the three flavours every
+// written part writes (the kit's `inkPart`): the plain words, `text/html` styled by the marks (`inkHtml`, in the note's palette's inks:
+// the swatch roles the words' menu names) and the piece `{ text, marks }` under the desk's private flavour (`PIECE_FLAVOUR`); a paste
+// lays a piece (else the plain words, `readPiece`) through the typing in a fresh hand (`paste`), cleaned as any written part's
+// (`cleanPiece`, `printable`), and the field is written to match. A MARK'S KEY (the kit's `inkKeyOf` — ⇧⌘X, ⌘U, ⇧⌘H) runs the note's
+// own words act on the words selected.
 // Where a range of them LIES (`rangeBox`, from the writing as last drawn, turned with the sheet): the selection menu comes to the
 // words selected, as the words of the note the lease names (`entity`) — the note's words acts (object.ts, the kit's `inkActs`).
 
-import { Active, Camera, type Entity, Grab, type World } from "@ice/core";
+import { Active, Camera, type Entity, Grab, guardedTransaction, type MenuActionApi, setWidgetProps, type WidgetType, type World } from "@ice/core";
+import { type TypingDocs, writable } from "@ice/desk";
 import type { PaperDriver } from "../object";
-import { cleanPiece, PEN_FACES, type HandLaw, type DeskEditor, type EditorLease, type InkPiece, type TextPart } from "@ice/desk/kit";
+import { cleanPiece, HIGHLIGHTERS, INK_ACTS, inkHtml, inkKeyOf, PEN_FACES, PENS, printable, readPiece, type HandLaw, type DeskEditor, type EditorLease, type TextPart } from "@ice/desk/kit";
+import type { RGB } from "@ice/desk";
+import type { PaperLook } from "../kind";
 import type { PaperGeometry } from "../paper";
 import { DEFAULT_FACE, DEFAULT_HAND_LAW, type Writing } from "../writing";
 
 /** The note's text part's name — what the editor's lease carries while a note is being written (`DeskEditor.lease().part`). */
 export const NOTE_BODY = "note.body";
-
-/**
- * A character a paste lays: any but a control character — the C0 controls below 32, DEL and the C1 controls, 127 to 159
- * (`cleanPiece` has made every break a "\n" and every tab a space).
- */
-const printable = (ch: string): boolean => {
-  const c = ch.charCodeAt(0);
-  return ch === "\n" || !(c < 32 || (c >= 127 && c <= 159));
-};
-
-/** The private PIECE a paste hands back (`EditorPaste.piece`), read as a stranger's: `{ text, marks }` with words, else undefined. */
-function readPiece(json: string | undefined): InkPiece | undefined {
-  if (typeof json !== "string" || json === "") return undefined;
-  let v: unknown;
-  try { v = JSON.parse(json); } catch { return undefined; }
-  if (typeof v !== "object" || v === null) return undefined;
-  const { text, marks } = v as { readonly text?: unknown; readonly marks?: unknown };
-  if (typeof text !== "string" || text === "") return undefined;
-  return { text, marks: typeof marks === "string" ? marks : "" };
-}
 
 export interface NoteBodyOptions {
   /** The desk's ONE editor (the desk makes it — `ObjectDomHost.editor`). */
@@ -67,7 +53,15 @@ export interface NoteBodyOptions {
   readonly hand?: Pick<HandLaw, "size" | "lineHeight" | "pad">;
   /** The clock the writing's flux runs on (`performance.now`). */
   readonly now?: () => number;
+  /** The note's look as the desk composed it (`ObjectDomHost.look` — its pens and highlighters): the copy's `text/html` colours (petition I60). */
+  readonly look?: () => unknown;
+  /** The note's compiled object and the document's doors (`ObjectDomHost.object`, `.docs`): a mark's key runs its words act (petition I60). */
+  readonly object?: WidgetType;
+  readonly docs?: TypingDocs;
 }
+
+/** An RGB as CSS (the HTML's colour — the palette's own value, never a literal). */
+const cssOf = (c: RGB): string => `rgb(${Math.round(c[0] * 255)} ${Math.round(c[1] * 255)} ${Math.round(c[2] * 255)})`;
 
 /** The note's body: its text part (the desk routes taps to it) and the doors a rig and the keys use. */
 export interface NoteBody extends TextPart {
@@ -88,6 +82,48 @@ export function createNoteBody(opts: NoteBodyOptions): NoteBody | undefined {
   const writing = (): Writing | undefined => paper.writing();
   /** The note being written and ITS lease — one lease a note, so a tap on the same note keeps it and a tap on another hands over. */
   let current: { readonly entity: Entity; readonly lease: EditorLease } | undefined;
+  /** A swatch ROLE's colour (`pen.<name>`, `highlight.<name>`) from the note's look, for the copy's `text/html` (petition I60). */
+  const colour = (role: string): string | undefined => {
+    const look = opts.look?.() as Partial<PaperLook> | undefined;
+    const [kind, name] = role.split(".");
+    if (name === undefined) return undefined;
+    const c = kind === "pen" && (PENS as readonly string[]).includes(name) ? look?.pens?.[name] : kind === "highlight" && (HIGHLIGHTERS as readonly string[]).includes(name) ? look?.highlighters?.[name] : undefined;
+    return c === undefined ? undefined : cssOf(c);
+  };
+  /** The act api a MARK'S KEY runs the note's words act with (as `ops.runMenuAction` hands one): the note and its words, its props, the writer's gate. */
+  const actApi = (object: WidgetType, docs: TypingDocs, e: Entity, from: number, to: number): MenuActionApi => ({
+    world,
+    entities: [e],
+    range: { entity: e, from, to },
+    props: (x) => Object.assign({}, ...object.groups.map((g) => (world.get(x, g.component) as Record<string, unknown> | undefined) ?? {})),
+    setProps(x, props, o) {
+      const into = writable(docs);
+      if (into === undefined || !world.isAlive(x)) return false;
+      setWidgetProps(into.store, world, x, props, o?.undoable === false ? { undoable: false } : undefined);
+      return true;
+    },
+    transact(fn, o) {
+      const into = writable(docs);
+      if (into === undefined) return false;
+      guardedTransaction(into.store, world, fn, o?.undoable === false ? { undoable: false } : undefined);
+      return true;
+    },
+  });
+  /** A MARK'S KEY on note `e` (`inkKeyOf`): its words act run on the field's range — only while words are selected; else the platform's. */
+  const markKey = (e: Entity, ev: KeyboardEvent): boolean => {
+    const field = inkKeyOf(ev);
+    const object = opts.object;
+    const docs = opts.docs;
+    if (field === undefined || object === undefined || docs === undefined || !world.isAlive(e)) return false;
+    const el = editor.element;
+    const from = Math.min(el.selectionStart, el.selectionEnd);
+    const to = Math.max(el.selectionStart, el.selectionEnd);
+    if (to <= from) return false;
+    const act = object.menu.find((a) => a.id === INK_ACTS[field] && a.on === "words");
+    if (act === undefined) return false;
+    act.run(actApi(object, docs, e, from, to));
+    return true;
+  };
 
   const leaseFor = (e: Entity): EditorLease => {
     const lease: EditorLease = {
@@ -107,8 +143,8 @@ export function createNoteBody(opts: NoteBodyOptions): NoteBody | undefined {
       }
       writing()?.caret(e, editor.element.selectionStart, clock());
     },
-    // Escape lets the note go (the keymap's gate 1 stands down; the release is ours)
-    keydown(ev) { if (ev.key !== "Escape") return false; editor.release(lease); return true; },
+    // Escape lets the note go (the keymap's gate 1 stands down; the release is ours); a mark's key marks the words selected
+    keydown(ev) { if (ev.key !== "Escape") return markKey(e, ev); editor.release(lease); return true; },
     caret(index) { writing()?.caret(e, index, clock()); },
     selection(from, to) {
       typing.moved(from, to);   // a word typed over a selection ends where the caret leaves it
@@ -119,14 +155,14 @@ export function createNoteBody(opts: NoteBodyOptions): NoteBody | undefined {
     rangeAt(index, unit) { return writing()?.rangeAt(e, index, unit); },
     // where a range of the words lies (petition I60): the menu over the words selected is placed by it
     rangeBox(from, to) { return writing()?.rangeBox(e, from, to); },
-    // a COPY or a CUT: the words and the piece with their marks — the field's words alone where the cell moved under the field
+    // a COPY or a CUT: the words, their HTML and the piece with their marks — the field's words alone where the cell moved under the field
     lift(from, to) {
       const a = Math.min(from, to);
       const b = Math.max(from, to);
       const text = editor.element.value.slice(a, b);
       if (text === "") return undefined;
       const piece = typing.editing() === e && typing.ink(e)?.text === editor.element.value ? typing.lift(a, b) : undefined;
-      return piece === undefined ? { text } : { text: piece.text, piece: JSON.stringify({ text: piece.text, marks: piece.marks }) };
+      return piece === undefined ? { text } : { text: piece.text, html: inkHtml(piece, colour), piece: JSON.stringify({ text: piece.text, marks: piece.marks }) };
     },
     // a PASTE: the piece (else the plain words) cleaned, laid by the typing in a fresh hand — the words ARRIVE — and the field written to
     // match (its input then changes nothing); no plain words, nothing laid — a piece alone cannot delete the selection (the platform's
