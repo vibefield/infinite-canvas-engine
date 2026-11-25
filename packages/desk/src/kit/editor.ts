@@ -130,7 +130,8 @@ export interface EditorLease {
   selection?(from: number, to: number): void;
   /**
    * The text index nearest world point (wx, wy) ON the lent part — undefined off it (petition I60). A lease that declares it has the
-   * editor CLAIM a primary press there (mouse or pen, the select tool, no ⌘/ctrl/⌥ — no carry, marquee or pan starts from it) and turn
+   * editor CLAIM a primary press there (mouse or pen, a select — a tool whose drag on an object carries it: core's `select`, a desk's
+   * `desk.select` —, no ⌘/ctrl/⌥ — no carry, marquee or pan starts from it) and turn
    * a drag, a double and a third click and a Shift+click into the textarea's range; a release within the drag slop is still a tap.
    * `hit` is the interaction stack's exact hit under a PRESS when the stack knows the pointer — a press on another object lying over
    * the part is that object's (answer undefined); absent for a drag's moving point, which the part answers from its geometry alone.
