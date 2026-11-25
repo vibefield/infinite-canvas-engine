@@ -38,6 +38,10 @@
 // takes it prevents the platform's paste. Without them the platform's own, untouched. WebKit needs no `beforecopy`/`beforecut`/
 // `beforepaste` gate here: the field is a focused textarea holding a real range, so the platform enables its own commands (the
 // prototype's field was a focused div with no platform selection, and needed it).
+//
+// THE WORDS' MENU (petition I60 — "the selection bar comes to the words"): while a press the editor claimed is down (`pressing`), the
+// range it makes is not settled, and the desk's anchor leaves the words out until the release; a lease that says where its words lie
+// (`rangeBox`) has the desk asked for a frame at the press and at the release, so the menu over them steps away and comes back.
 
 import { ActiveTool, Camera, type Entity, GestureSettings, Grab, type World } from "@ice/core";
 import { clientToScreen } from "@ice/kernel";
@@ -88,6 +92,8 @@ interface Press {
   selecting: boolean;
   /** The pointer is captured (once it selects by dragging). */
   captured: boolean;
+  /** Its button is still down (petition I60): the range it makes is not settled, so the words' menu waits for its release. */
+  down: boolean;
 }
 
 export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
@@ -436,7 +442,7 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     ev.preventDefault();   // the adapter, hearing the press next, lands it `surfaceHandled`; no focus fixup moves the focus off the field
     if (doc.activeElement !== el) el.focus({ preventScroll: true });
     const index = clampIndex(at);
-    const base = { lease: l, id: ev.pointerId, x: ev.clientX, y: ev.clientY, index, captured: false };
+    const base = { lease: l, id: ev.pointerId, x: ev.clientX, y: ev.clientY, index, captured: false, down: true };
     if (ev.shiftKey) {
       const anchor = anchorOf();
       press = { ...base, anchor, unit: undefined, origin: undefined, selecting: true };
@@ -447,6 +453,14 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
       press = { ...base, anchor: origin.from, unit, origin, selecting: true };
       select(l, origin.from, origin.to);
     } else press = { ...base, anchor: index, unit: undefined, origin: undefined, selecting: false };
+    // a lease whose words have a menu (petition I60 — `rangeBox`): the desk is asked for a frame, so the words' anchor steps away
+    if (l.rangeBox !== undefined) opts.wake();
+  };
+  /** The press's button is up, or its release lost (petition I60): a lease whose words have a menu asks a frame, the anchor back. */
+  const settle = (p: Press): void => {
+    if (!p.down) return;
+    p.down = false;
+    if (p.lease.rangeBox !== undefined) opts.wake();
   };
   /** The range follows the press's pointer to (clientX, clientY) — by its unit after a second or a third click. */
   const drag = (p: Press, clientX: number, clientY: number): void => {
@@ -472,7 +486,9 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
   // ---- the press (DOM-at-event-time): the tap's, read on the container — and the range's, claimed before the adapter hears it
   const onDown = (ev: PointerEvent): void => {
     down = ev.isPrimary && ev.button === 0 ? { id: ev.pointerId, type: ev.pointerType, x: ev.clientX, y: ev.clientY } : null;
+    const was = press;
     press = null;
+    if (was !== null) settle(was);   // a press whose release never came (petition I60): no longer down
     // a mouse's or a pen's primary press is counted, and claimed when it lands on the lent part's writing; touch is a tap only
     if (down !== null && ev.pointerType !== "touch") claim(ev, countOf(ev));
   };
@@ -483,7 +499,7 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     const p = press;
     if (p === null || ev.pointerId !== p.id) return;
     // the lease went, or the release was lost (no primary button held): the press is over
-    if (lent !== p.lease || (ev.buttons & 1) === 0) { press = null; return; }
+    if (lent !== p.lease || (ev.buttons & 1) === 0) { press = null; settle(p); return; }
     if (!p.selecting) {
       const slop = world.getResource(GestureSettings)?.dragSlopPx ?? 10;
       if (Math.hypot(ev.clientX - p.x, ev.clientY - p.y) <= slop) return;
@@ -498,6 +514,7 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     if (p === null || ev.pointerId !== p.id) return;
     if (p.selecting && lent === p.lease) drag(p, ev.clientX, ev.clientY);   // a release away from the last move ends where it is
     if (p.captured) { p.captured = false; uncapture(ev.pointerId); }
+    settle(p);
     // the press stays for its click: whether it was a tap
   };
   const onCancel = (ev: PointerEvent): void => {
@@ -505,6 +522,7 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     if (p === null || ev.pointerId !== p.id) return;
     press = null;
     if (p.captured) uncapture(ev.pointerId);
+    settle(p);
   };
   const onClick = (ev: MouseEvent): void => {
     const d = down;
@@ -567,6 +585,7 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     },
     placement: () => placed,
     write,
+    pressing: () => press?.down === true && press.lease === lent,
     dispose() {
       // a lease still held ends with the editor (petition I25 — a desk unmounted mid-typing, a remount among them): its `ended` is told,
       // so a typing session commits and lifts its claim, never left open with its idle commit cleared below

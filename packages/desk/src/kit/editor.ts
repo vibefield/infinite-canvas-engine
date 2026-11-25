@@ -9,6 +9,10 @@
 // press on it and turns a drag, a double or a third click and Shift into the textarea's own range, told to the lease with the caret
 // (`selection`; never stored, never synced) — and may lift and lay its words (`lift`, `lay`) for the field's copy, cut and paste. A
 // lease that declares none of them behaves exactly as before.
+//
+// WHERE A RANGE LIES (petition I60 — "the selection bar comes to the words"): a lease may say where a range of its words is in the
+// world (`rangeBox`) — the desk then places the selection menu's anchor over the words selected (`SelectionAnchor.words`), with the
+// object's words acts. A lease that declares none has no words' menu.
 
 import type { Entity } from "@ice/core";
 
@@ -19,6 +23,17 @@ export type TextUnit = "word" | "line";
 export interface TextRange {
   readonly from: number;
   readonly to: number;
+}
+
+/**
+ * Where a range of the lent text LIES (petition I60): a WORLD box, axis-aligned — `x`, `y` its top-left, `w`, `h` its size, world units
+ * — the union of the range's glyph boxes as the part lays them; on a turned part, the box of their turned corners.
+ */
+export interface RangeBox {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
 }
 
 /** What a COPY or a CUT takes to the clipboard (petition I60): the words, and what the lease adds to them. */
@@ -104,6 +119,13 @@ export interface EditorLease {
   indexAt?(wx: number, wy: number, hit?: Entity): number | undefined;
   /** The word or the laid line around text index `index` (a double click, a third) — undefined: the editor puts a caret there. */
   rangeAt?(index: number, unit: TextUnit): TextRange | undefined;
+  /**
+   * Where the words [from, to) LIE, in the world (petition I60 — `RangeBox`: the union of their glyph boxes, turned parts included as
+   * the box of the turned corners) — undefined when the part cannot say (an empty range, a part not drawn yet). A lease that declares it
+   * has the selection menu come to the words selected while it is lent (`SelectionAnchor.words`), asked each time the anchor is
+   * recomposed: it reads what the part last drew, and writes nothing.
+   */
+  rangeBox?(from: number, to: number): RangeBox | undefined;
   /** A COPY or a CUT of [from, to) (petition I60): what goes on the clipboard — undefined leaves the platform's own copy. */
   lift?(from: number, to: number): EditorLift | undefined;
   /**
@@ -143,6 +165,11 @@ export interface DeskEditor {
    * one step), the idle re-armed, the caret after the text. Nothing while the editor is lent to nothing or an IME composition runs.
    */
   write(text: string, from: number, to: number): void;
+  /**
+   * A press the editor CLAIMED on the lent part's writing is down (petition I60): the range it makes is not settled — its release may
+   * leave a caret (a tap) or a new range (a drag, a second or a third click) — so the selection menu's words wait for the release.
+   */
+  pressing(): boolean;
   /** The editor goes with its desk: a lease still held ends first (`ended` — a typing session commits), then the textarea leaves. */
   dispose(): void;
 }
