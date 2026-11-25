@@ -36,8 +36,12 @@ const WORDS: SelectionMenuWords = {
     { id: "clear", label: "Clear" },
   ],
 };
-/** The anchor while a note is written and four of its words are selected (the note itself selected too). */
-const anchorOf = (over: Partial<SelectionMenuAnchor> = {}): SelectionMenuAnchor => ({ box: { x0: 400, y0: 200, x1: 700, y1: 420 }, count: 1, locked: false, gesturing: false, editing: true, view: VIEW, rulers: null, words: WORDS, ...over });
+/** The anchor while a note is written and four of its words are selected (the note itself selected too) — `words: undefined`: none. */
+const anchorOf = (over: Omit<Partial<SelectionMenuAnchor>, "words"> & { readonly words?: SelectionMenuWords | undefined } = {}): SelectionMenuAnchor => {
+  const { words, ...rest } = over;
+  const w = "words" in over ? words : WORDS;
+  return { box: { x0: 400, y0: 200, x1: 700, y1: 420 }, count: 1, locked: false, gesturing: false, editing: true, view: VIEW, rulers: null, ...rest, ...(w !== undefined ? { words: w } : {}) };
+};
 
 function fakeSource(first: SelectionMenuAnchor): SelectionMenuSource & { set(a: SelectionMenuAnchor): void } {
   let anchor = first;
