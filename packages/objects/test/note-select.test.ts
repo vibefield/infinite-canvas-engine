@@ -41,12 +41,6 @@ function rig(words = WORDS) {
   const shelves = new InkShelves(2048, 2);
   const writing: Writing = createWriting({ pages: () => ({ alloc: (w, h) => shelves.alloc(w, h), free: (r) => shelves.free(r), write: (r) => uvOf(r.x, r.y, r.w, r.h, 2048, 2048), reset: () => shelves.reset() }), text: TEXT_RASTER });
   const driver: PaperDriver = { typing, writing: () => writing, isNote: (e) => world.get(e, NOTE_INK) !== undefined, body: undefined, follow: () => {}, idle: () => true };
-  const parts: TextPart[] = [];
-  const editor = createDeskEditor({ container, world, parts: () => parts, wake: () => {} });
-  let G: PaperGeometry | undefined;
-  const body = createNoteBody({ editor, world, driver, geometryOf: () => G });
-  if (body === undefined) throw new Error("no body");
-  parts.push(body);
   const note = ce.ops.spawnWidget("desk.note", { x: 100, y: 100, props: { seed: 7, text: words }, undoable: false }) as Entity;
   world.sync();
   let now = 1000;
@@ -55,8 +49,14 @@ function rig(words = WORDS) {
   const pos = world.get(note, Position) ?? { x: 0, y: 0 };
   const size = world.get(note, Size) ?? { w: 0, h: 0 };
   const rect = { cx: pos.x + size.w / 2, cy: pos.y + size.h / 2, w: size.w, h: size.h };
-  // the note drawn ONCE, unturned, as the paper kind draws it: its layout and its geometry in the writing
-  G = resolvePaper({ ...rect, angle: 0 }, { held: 0, ring: 0, fade: 1 }, DEFAULT_PAPER_LAW, lampOf(MAT_GRID.plane));
+  // the note's geometry as the paper kind draws it, unturned — the body places the field by it, the writing hits by it
+  const G: PaperGeometry = resolvePaper({ ...rect, angle: 0 }, { held: 0, ring: 0, fade: 1 }, DEFAULT_PAPER_LAW, lampOf(MAT_GRID.plane));
+  const parts: TextPart[] = [];
+  const editor = createDeskEditor({ container, world, parts: () => parts, wake: () => {} });
+  const body = createNoteBody({ editor, world, driver, geometryOf: () => G });
+  if (body === undefined) throw new Error("no body");
+  parts.push(body);
+  // the note drawn ONCE: its layout and its geometry in the writing
   writing.tick(16);
   writing.draw(note, { text: words, seeds: "", seed: 7 }, rect, { camX: 0, camY: 0, zoom: 1, width: 1200, height: 800, dpr: 1 }, G);
   const L = writing.layoutOf(note);
@@ -70,7 +70,8 @@ function rig(words = WORDS) {
    */
   const pointer = (type: "pointerdown" | "pointermove" | "pointerup", [x, y]: [number, number], o: { at?: number; feed?: boolean } = {}): PointerEvent => {
     const ev = new PointerEvent(type, { bubbles: true, cancelable: true, isPrimary: true, button: type === "pointermove" ? -1 : 0, buttons: type === "pointerup" ? 0 : 1, pointerId: 1, pointerType: "mouse", clientX: x, clientY: y });
-    Object.defineProperty(ev, "timeStamp", { value: o.at ?? (clock += 40) });
+    clock += 40;
+    Object.defineProperty(ev, "timeStamp", { value: o.at ?? clock });
     container.dispatchEvent(ev);
     if (o.feed !== false) {
       const kind = type === "pointerdown" ? "down" : type === "pointerup" ? "up" : "move";
@@ -234,6 +235,10 @@ describe("the note's copy, cut and paste (petition I60)", () => {
       expect(r.typing.open()).toBe(true);
       r.el.setSelectionRange(0, 3);
       r.clip("paste", board({ "text/plain": "a" }));
+      expect(r.el.value).toBe("a big\nred quick brown fox jumps\ndog's 2nd bone");
+      // a piece with no plain words beside it: nothing the note can lay yet — the platform's paste stands, the selection kept
+      r.el.setSelectionRange(0, 1);
+      expect(r.clip("paste", board({ "application/x-ice-ink+json": "{}" })).defaultPrevented).toBe(false);
       expect(r.el.value).toBe("a big\nred quick brown fox jumps\ndog's 2nd bone");
       r.key("Escape");
       expect(r.doc()).toBe("a big\nred quick brown fox jumps\ndog's 2nd bone");
