@@ -20,7 +20,7 @@ import { HIGHLIGHTERS, type HighlighterName, PENS, type PenName } from "./text";
 export const INK_ACTS = { pen: "ink.pen", highlight: "ink.highlight", strike: "ink.strike", underline: "ink.underline", clear: "ink.clear" } as const;
 
 /** The highlighter act's choice that lifts the highlight. */
-export const NO_HIGHLIGHT = "none";
+export const NO_HIGHLIGHT = "none" as const;
 
 export interface InkActsOptions {
   /** The fields the words may take — an act each, Clear with any (`INK_FIELDS` by default). Give the part (`inkPart`) the same. */
@@ -72,6 +72,10 @@ function wordsOf(api: MenuActionStateContext, e: Entity, ink: string): InkValue 
   return inkOf({ text: str(p.text), seeds: str(p.seeds), marks: str(p.marks) }, typeof p.seed === "number" ? p.seed : 0);
 }
 
+// ---------------------------------------------------------------------------------- what the acts read: an ink and a range
+// Plain functions of an ink and a range, apart from the act definitions below that call them (and an agent's tool alike), so the
+// acts' shape can move without them.
+
 /** The range's LETTERS' marks — every unit but a space or a break (a mark is the letters'); for a range of spaces alone, its units'. */
 function lettersOf(ink: InkValue, from: number, to: number): number[] {
   const n = ink.text.length;
@@ -89,6 +93,31 @@ function shared<T>(values: readonly T[]): T | undefined {
   return first !== undefined && values.every((v) => v === first) ? first : undefined;
 }
 
+/** The field readers by name. */
+const FIELD_OF: Readonly<Record<InkField, (m: number) => number>> = { pen: penOf, highlight: highlightOf, strike: strikeOf, underline: underlineOf };
+
+/**
+ * The PEN the letters of [from, to) share (petition I60 — the Pen act's `current` choice): its name, a letter in the sheet's own pen
+ * named by `own` (the sheet's pen; absent, such a letter names none) — undefined when they write in two, or there is no letter.
+ */
+export function inkCommonPen(ink: InkValue, from: number, to: number, own?: PenName): PenName | undefined {
+  return shared(lettersOf(ink, from, to).map((m) => (penOf(m) === 0 ? own : PENS[penOf(m) - 1])));
+}
+
+/** The HIGHLIGHTER the letters of [from, to) share (the Highlight act's `current` choice): its name, `none` when none carries one — undefined when they differ, or there is no letter. */
+export function inkCommonHighlighter(ink: InkValue, from: number, to: number): HighlighterName | typeof NO_HIGHLIGHT | undefined {
+  return shared(lettersOf(ink, from, to).map((m) => (highlightOf(m) === 0 ? NO_HIGHLIGHT : (HIGHLIGHTERS[highlightOf(m) - 1] as HighlighterName))));
+}
+
+/** Does EVERY letter of [from, to) carry `field` (a toggle's state, its `pressed` — Strike, Underline)? False for no letter at all. */
+export function inkEveryLetter(ink: InkValue, from: number, to: number, field: InkField): boolean {
+  const ms = lettersOf(ink, from, to);
+  const of = FIELD_OF[field];
+  return ms.length > 0 && ms.every((m) => of(m) !== 0);
+}
+
+// ------------------------------------------------------------------------------------------------ the act definitions
+
 /**
  * THE INK ACTS (module doc) for a type whose words take `marks`: PEN ▾ (`ink.pen`), HIGHLIGHT ▾ (`ink.highlight`), STRIKE
  * (`ink.strike`), UNDERLINE (`ink.underline`) — the ones `marks` names, in that order — and CLEAR (`ink.clear`) with any of them; none
@@ -105,11 +134,6 @@ export function inkActs(opts: InkActsOptions = {}): MenuActionDef[] {
   const swatchOf = (role: string): { readonly swatch?: string } => {
     const c = opts.colour?.(role);
     return c === undefined ? {} : { swatch: c };
-  };
-  /** The words' letters' marks for the context's range (none without one). */
-  const letters = (ctx: MenuActionStateContext): number[] => {
-    const r = ctx.range;
-    return r === undefined ? [] : lettersOf(wordsOf(ctx, r.entity, ink), r.from, r.to);
   };
   /**
    * ONE step on the cell: an open draft on the object landed first (its own step — the range is the draft's indices), then the change
@@ -129,15 +153,14 @@ export function inkActs(opts: InkActsOptions = {}): MenuActionDef[] {
     if (next !== was) api.setProps(r.entity, { marks: next });
   };
   /** A toggle: on when every letter carries the field; pressed, the field set (in the words' own pen) or, when on, lifted. */
-  const toggle = (field: "strike" | "underline", label: string, of: (m: number) => number): MenuActionDef => ({
+  const toggle = (field: "strike" | "underline", label: string): MenuActionDef => ({
     id: INK_ACTS[field],
     label,
     glyph: glyph(field),
     on: "words",
-    state: (ctx) => { const ms = letters(ctx); return ctx.range === undefined ? undefined : { pressed: ms.length > 0 && ms.every((m) => of(m) !== 0) }; },
+    state: (ctx) => (ctx.range === undefined ? undefined : { pressed: inkEveryLetter(wordsOf(ctx, ctx.range.entity, ink), ctx.range.from, ctx.range.to, field) }),
     run: (api) => marking(api, (words, from, to) => {
-      const ms = lettersOf(words, from, to);
-      const on = ms.length > 0 && ms.every((m) => of(m) !== 0);
+      const on = inkEveryLetter(words, from, to, field);
       return field === "strike" ? { strike: !on } : { underline: !on };
     }),
   });
@@ -152,8 +175,7 @@ export function inkActs(opts: InkActsOptions = {}): MenuActionDef[] {
       // the desk's pens, the letters' common one current — the sheet's own named by the sheet's pen
       choices: (ctx): ActChoice[] => {
         const r = ctx.range;
-        const own = r === undefined ? undefined : sheetPen(ctx.props(r.entity));
-        const now = r === undefined ? undefined : shared(letters(ctx).map((m) => (penOf(m) === 0 ? own : PENS[penOf(m) - 1])));
+        const now = r === undefined ? undefined : inkCommonPen(wordsOf(ctx, r.entity, ink), r.from, r.to, sheetPen(ctx.props(r.entity)));
         return PENS.map((name) => ({ id: name, label: `${titled(name)} pen`, ...swatchOf(`pen.${name}`), ...(name === now ? { current: true } : {}) }));
       },
       // the sheet's own pen clears the pen field; any other is the letters' own; a key's press (no choice) chooses nothing
@@ -172,7 +194,7 @@ export function inkActs(opts: InkActsOptions = {}): MenuActionDef[] {
       on: "words",
       // the desk's highlighters and None, the letters' common one current — `none` when none carries one
       choices: (ctx): ActChoice[] => {
-        const now = ctx.range === undefined ? undefined : shared(letters(ctx).map((m) => (highlightOf(m) === 0 ? NO_HIGHLIGHT : (HIGHLIGHTERS[highlightOf(m) - 1] as string))));
+        const now = ctx.range === undefined ? undefined : inkCommonHighlighter(wordsOf(ctx, ctx.range.entity, ink), ctx.range.from, ctx.range.to);
         const cur = (id: string): { readonly current?: true } => (id === now ? { current: true } : {});
         return [...HIGHLIGHTERS.map((name) => ({ id: name, label: titled(name), ...swatchOf(`highlight.${name}`), ...cur(name) })), { id: NO_HIGHLIGHT, label: "None", ...cur(NO_HIGHLIGHT) }];
       },
@@ -181,13 +203,12 @@ export function inkActs(opts: InkActsOptions = {}): MenuActionDef[] {
         const choice = taken?.id;
         if (choice === NO_HIGHLIGHT) return { highlight: null };
         if (choice !== undefined) return { highlight: choice as HighlighterName };
-        const ms = lettersOf(words, from, to);
-        return ms.length > 0 && ms.every((m) => highlightOf(m) !== 0) ? { highlight: null } : { highlight: HIGHLIGHTERS[0] };
+        return inkEveryLetter(words, from, to, "highlight") ? { highlight: null } : { highlight: HIGHLIGHTERS[0] };
       }),
     });
   }
-  if (allowed.has("strike")) acts.push(toggle("strike", "Strike", strikeOf));
-  if (allowed.has("underline")) acts.push(toggle("underline", "Underline", underlineOf));
+  if (allowed.has("strike")) acts.push(toggle("strike", "Strike"));
+  if (allowed.has("underline")) acts.push(toggle("underline", "Underline"));
   if (acts.length > 0) acts.push({ id: INK_ACTS.clear, label: "Clear", glyph: glyph("clear"), on: "words", run: (api) => marking(api, () => ({ clear: true })) });
   return acts;
 }
