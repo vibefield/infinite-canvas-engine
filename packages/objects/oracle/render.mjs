@@ -796,7 +796,8 @@ async function orderCheck(sc) {
  * K7b (design-016 §6 K7) — THE FAR LOD's handover, as pixels: one written note (the committed raster, its writing's greeked lines
  * stated) alone on the desk. Over the band's HIGH edge (66 CSS px) it draws exactly as without its greek — the full look, byte for
  * byte; under its LOW edge (46 px) exactly as without its raster — so the raster let go there shows nothing (no pop); within the
- * band (56 px) it is neither — the crossfade.
+ * band (56 px) it is neither — the crossfade. "Without its raster" is the sheet with its greek lines and NO WORDS: a note with words
+ * and no committed raster is written with the pen (petition I59), which is not what this check weighs.
  */
 async function farCheck() {
   const lines = [[36, 96], [64, 150], [92, 168]];
@@ -806,10 +807,11 @@ async function farCheck() {
     return { camX: -600 / zoom, camY: -400 / zoom, zoom, theme: "light", things: [{ ...note, ...extra }] };
   };
   const diff = (A, B) => { let n = 0; for (let o = 0; o < A.length; o += 4) if (delta(A, B, o) > 0 || A[o + 3] !== B[o + 3]) n++; return n; };
+  const lined = { greek: lines, asset: undefined, text: "" };   // the greek lines alone: no raster, no words for the pen
   const top = diff((await render(at(66, { greek: lines }))).px, (await render(at(66, {}))).px);
-  const low = diff((await render(at(46, { greek: lines }))).px, (await render(at(46, { greek: lines, asset: undefined }))).px);
+  const low = diff((await render(at(46, { greek: lines }))).px, (await render(at(46, lined))).px);
   const midRaster = diff((await render(at(56, { greek: lines }))).px, (await render(at(56, {}))).px);
-  const midGreek = diff((await render(at(56, { greek: lines }))).px, (await render(at(56, { greek: lines, asset: undefined }))).px);
+  const midGreek = diff((await render(at(56, { greek: lines }))).px, (await render(at(56, lined))).px);
   const ok = top === 0 && low === 0 && midRaster > 0 && midGreek > 0;
   console.log(`  ${ok ? "PASS" : "FAIL"}  far        a written note across the far band: at 66 px with its greek lines vs without them ${top} px differ · at 46 px with its raster vs without it ${low} px differ · at 56 px (the band) it is neither — ${midRaster} px from the raster alone, ${midGreek} from the lines alone`);
   return ok;
