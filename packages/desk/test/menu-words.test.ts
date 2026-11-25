@@ -233,6 +233,25 @@ describe("the selection menu's anchor comes to the words (petition I60)", () => 
     off();
   });
 
+  it("a press on the words TELLS the menu at once — the editor asks a frame, the words away — and its release tells it again, the words back (a tap the part routes nowhere leaves the range as it was)", async () => {
+    const d = await mountDesk();
+    d.lend();
+    d.select(4, 7);
+    const heard: (number | undefined)[] = [];
+    const off = d.handle.selection.subscribe(() => { heard.push(d.anchor().words?.to); });
+    d.pointer("pointerdown", 5);
+    d.step();
+    expect(heard).toEqual([undefined]);   // the press asked the frame that told it: no move, no new range, yet the words went
+    d.pointer("pointerup", 5);
+    d.step();
+    expect(heard).toEqual([undefined, 7]);   // …and the release asked the one that brought them back
+    d.click(5);   // the part declares no tap: the caret stays where it was, the range with it
+    d.step();
+    expect(heard).toEqual([undefined, 7]);
+    expect(d.anchor().words).toMatchObject({ from: 4, to: 7 });
+    off();
+  });
+
   it("the words' box follows a pan and a zoom: the part's world box through the camera, CSS px", async () => {
     const d = await mountDesk();
     d.lend();
