@@ -123,7 +123,12 @@ function rig() {
   const wheel = (dx: number, dy: number): void => {
     ce.stack.queue.enqueue({ kind: "wheel", pointerId: "mouse", device: "mouse", screenX: 400, screenY: 300, buttons: 0, mods: NO_MODS, wheel: { dx, dy, pinch: 0 } });
   };
-  return { ce, world, step, cam, look, nav, settle, lookOf, selection, wheel, ...e };
+  /** The host loop as dom/loop.ts drives it (frame-sleep.test.ts's): a step, then the gate's word on the next — ≤ now is the next frame. */
+  const loopStep = (): { due: number; now: number } => {
+    step();
+    return { due: ce.frame.nextStep(now), now };
+  };
+  return { ce, world, step, cam, look, nav, settle, lookOf, selection, wheel, loopStep, clock: () => now, ...e };
 }
 
 describe("ops.lookAt — in the frame", () => {
@@ -190,6 +195,31 @@ describe("ops.lookAt — in the frame", () => {
     r.ce.dispose();
   });
 
+  it("a sleeping loop wakes for it, steps every frame to its landing, then sleeps again", () => {
+    const r = rig();
+    let asleep = false;
+    for (let n = 0; n < 60 && !asleep; n++) asleep = r.loopStep().due > r.clock();
+    expect(asleep).toBe(true);
+    const woken = r.ce.frame.sleepStats().wakes.world ?? 0;
+    r.ce.ops.lookAt(r.book); // writes outside a step: the world's outside door wakes the loop
+    expect(r.ce.frame.sleepStats().wakes.world ?? 0).toBeGreaterThan(woken);
+    let frames = 0;
+    while (r.look()?.active === true && frames < 200) {
+      const s = r.loopStep();
+      if (r.look()?.active === true) expect(s.due).toBeLessThanOrEqual(s.now); // due every frame while it flies
+      frames += 1;
+    }
+    expect(r.look()?.active).toBe(false);
+    expect(r.cam()).toEqual(r.lookOf(r.book, 1));
+    let slept = false;
+    for (let n = 0; n < 20 && !slept; n++) {
+      const s = r.loopStep();
+      slept = s.due > s.now;
+    }
+    expect(slept).toBe(true);
+    r.ce.dispose();
+  });
+
   it("a camera gesture mid-way stops it without touching the camera — and it stays stopped", () => {
     const r = rig();
     const c1 = r.lookOf(r.book, 1);
@@ -205,6 +235,26 @@ describe("ops.lookAt — in the frame", () => {
     r.step(40);
     expect(r.look()?.active).toBe(false);
     expect(r.cam()).toEqual(after);
+    r.ce.dispose();
+  });
+
+  it("a camera gesture that has not moved the camera yet stops it all the same (Camera.gesturing), on the frame it goes Active", () => {
+    const r = rig();
+    r.ce.ops.lookAt(r.book);
+    r.step(5);
+    const press = (kind: "down" | "move", x: number, buttons: number): void => {
+      r.ce.stack.queue.enqueue({ kind, pointerId: "mouse", device: "mouse", screenX: x, screenY: 10, buttons, mods: NO_MODS });
+    };
+    // a middle-button drag on the bare canvas (no object under (790, 10) on the way): a pan
+    press("down", 790, 4);
+    r.step(); // pressed, not yet a pan: the flight flies on
+    expect(r.look()?.active).toBe(true);
+    const before = r.cam();
+    press("move", 815, 4); // past the slop: the pan goes Active this tick, its claim frame moves nothing
+    r.step();
+    expect(r.world.getResource(Camera)?.gesturing).toBe(true);
+    expect(r.look()?.active).toBe(false);
+    expect(r.cam()).toEqual(before);
     r.ce.dispose();
   });
 
