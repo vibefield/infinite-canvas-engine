@@ -170,10 +170,9 @@ export function inkPart(host: Pick<ObjectDomHost, "world" | "docs" | "editor" | 
       label: opts.label,
       // between drafts the cell's words reach the field (a peer, an undo); while a draft is open the field is the truth
       value: () => (typing.open() ? null : (typing.committed(e)?.text ?? "")),
-      // the platform's value, the edit anchored by the caret after it (a collapsed selection is one)
+      // the platform's value, the edit found by the caret after it (the field's `selectionEnd`)
       input(value) {
-        const el = editor.element;
-        typing.input(value, el.selectionStart === el.selectionEnd ? el.selectionStart : undefined);
+        typing.input(value, editor.element.selectionEnd);
         tellField();
       },
       // Escape lets the object go (the keymap's gate 1 stands down; the release is the part's)
@@ -183,7 +182,10 @@ export function inkPart(host: Pick<ObjectDomHost, "world" | "docs" | "editor" | 
         return true;
       },
       caret(index) { sink?.caret?.(e, index); },
-      selection(from, to) { sink?.selection?.(e, from, to); },
+      selection(from, to) {
+        typing.moved(from, to);   // a run typed over a selection ends where the caret leaves it
+        sink?.selection?.(e, from, to);
+      },
       // where its writing lies: on the part as the kind drew it — a press on another object over it is that object's
       indexAt(wx, wy, hit) { return hit !== undefined && hit !== e ? undefined : indexNear(e, wx, wy, field().length); },
       rangeAt(index, unit) {
