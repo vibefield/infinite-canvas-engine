@@ -4,10 +4,12 @@
 // bytes; the moments are kept from the run's epoch (a glyph written before is the far past), the epoch split as `penNow` splits the
 // clock; the place, turn and size are packed so the atlas rect's corners land on the glyph's box; a glyph the face lacks is named
 // and left out; an empty sheet is a header that every point lies outside; the WGSL's constants are the run's; the atlas's mips
-// halve exactly and are a rounded 2×2 box. And the cost of building a 2,000-glyph sheet, measured.
+// stop where a texel is the bake's pad wide, halve exactly and are a rounded 2×2 box. And the cost of building a 2,000-glyph
+// sheet, measured.
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { EDGE_TEXELS, PAD_TEXELS } from "../src/bake/derive";
 import { compose } from "../src/engine/shader";
 import { handMetricsOf, readHandAtlas } from "../src/kit/hand-atlas";
 import { HAND_RUN, type HandRun, handLevels, handMips, handRun, penNow } from "../src/kit/hand-run";
@@ -202,11 +204,20 @@ describe("the hand piece's WGSL keeps the run's numbers (petition I59)", () => {
 });
 
 describe("the atlas's mips (petition I59): made on the CPU, every level exactly half the one above", () => {
+  it("stops where a texel is the bake's pad wide — four levels at any em — its half within the field's reach", () => {
+    // a coarser level's texel would reach past a rect's pad into its neighbour's ink (kit/hand-run.ts `handLevels`)
+    const levels = handLevels({ width: 776, height: 724 });
+    expect(levels).toBe(4);
+    expect(2 ** (levels - 1)).toBe(PAD_TEXELS);
+    // a block across an edge averages true distances: its half is within the ±EDGE_TEXELS the edge byte spans before it saturates
+    expect(2 ** (levels - 2)).toBeLessThanOrEqual(EDGE_TEXELS);
+    expect(handLevels(face.atlas)).toBe(4);   // the tests' own face, 32 texels an em: the same four
+    expect(handLevels({ width: 6, height: 3 })).toBe(3);   // an atlas smaller than that stops at its own size
+  });
+
   it("pads level 0 to a multiple of 2^(levels − 1), the atlas at its top-left, and boxes each level from the one above, rounded", () => {
     const chain = handMips(face.atlas);
     expect(chain.length).toBe(handLevels(face.atlas));
-    expect(handLevels({ em: 64, width: 520, height: 512 })).toBe(5);
-    expect(handLevels(face.atlas)).toBe(4);   // 32 texels an em: 32, 16, 8, 4
     const top = chain[0] as (typeof chain)[number];
     const pad = 2 ** (chain.length - 1);
     expect(top.w % pad).toBe(0);
