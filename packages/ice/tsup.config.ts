@@ -10,7 +10,8 @@ import { defineConfig } from "tsup";
  * design-015 §3 (D5b): the entries are `.` · `/kernel` · `/dom` · `/desk` ·
  * `/desk/engine` · `/desk/objects` · `/react` · `/devtools`; design-016 §5 (K4a)
  * adds `/desk/kit` (the render kit a kind is written against), and K4b moves `/desk/objects` to a
- * package of its own (`@ice/objects` — the six kinds, built on the public entries alone). `./r3f`,
+ * package of its own (`@ice/objects` — the six kinds, built on the public entries alone); petition I59
+ * adds `/desk/bake` (the hand's baker: a face's TrueType bytes in, its `ice-hand/1` atlas out). `./r3f`,
  * `./r3f/webgpu` and the four `./ground*` entries left with their packages, and
  * with them the `three`, `@react-three` and `stats-gl` externals: the whole
  * graph is three-free (`tools/audit-pack.mjs` measures it).
@@ -24,6 +25,7 @@ export default defineConfig({
     "desk-engine": "src/desk-engine.ts",
     "desk-objects": "src/desk-objects.ts",
     "desk-kit": "src/desk-kit.ts",
+    "desk-bake": "src/desk-bake.ts",
     react: "src/react.ts",
     devtools: "src/devtools.ts",
   },
