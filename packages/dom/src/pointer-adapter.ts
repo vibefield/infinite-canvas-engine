@@ -85,6 +85,17 @@
  * a stopped event never reaches the container listener, so it never becomes a
  * canvas fact at all — that is the design, not a gap.
  *
+ * A press CLAIMED ahead of the adapter (petition I60 — design-007's Stage-1 rule,
+ * `defaultPrevented` = handled, carried to the press): a `pointerdown` whose
+ * default a listener before this one prevented — the desk's one editor, in the
+ * capture phase on the container, taking a press on the writing it holds — is
+ * flagged `surfaceHandled` too: the fact lands, the recognizers skip it, so no
+ * carry, marquee or pan starts from it. Its hover verdict stays the DOM's own
+ * (a claimed press lies on the desk, not on chrome). The focus driver's cancel
+ * of a press inside a keyboard claim (its native focus fixup suppressed,
+ * widget-focus.ts) is focus bookkeeping, not a claim: that press stays the
+ * canvas's, as ever.
+ *
  * Hover-time amendment (design-002 §8, 2026-07-18): down/move facts ALSO carry
  * `overInteractive` — the same `crossesInteractive` check, run at hover time —
  * so the world can telegraph the opt-out BEFORE a down (cursor affordances).
@@ -217,7 +228,11 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
     live.set(id, { device, x, y, downX: x, downY: y, native, captured: false });
     atRest.delete(id);
     if (id === "mouse") mouseBack();
-    const surfaceHandled = native;
+    // …and a press a listener AHEAD of this one already took (petition I60, module
+    // doc): the desk's editor claiming a press on its writing. The focus driver's
+    // own cancel inside a keyboard claim is not a claim.
+    const claimed = e.defaultPrevented && !keyboardClaimOf(e.target).claimed;
+    const surfaceHandled = native || claimed;
     enqueue({
       kind: "down",
       pointerId: id,
@@ -229,8 +244,9 @@ export function attachPointerAdapter(host: CanvasHost, queue: InputQueue): () =>
       tMs: e.timeStamp,
       ...(surfaceHandled ? { surfaceHandled: true } : {}),
       // The down IS a hover-bearing fact: a touch's first event must seed the
-      // pointer's OverInteractive truth (no prior moves exist to).
-      overInteractive: surfaceHandled,
+      // pointer's OverInteractive truth (no prior moves exist to). The DOM's own
+      // verdict: a claimed press is no chrome (its release's tap reads the hit).
+      overInteractive: native,
     });
   };
 
