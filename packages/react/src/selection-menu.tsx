@@ -229,6 +229,12 @@ export const SELECTION_GLYPHS: Readonly<Record<string, ReactNode>> = {
   redo: stroke(<><path d="M15.5 7.5H9a4.5 4.5 0 0 0 0 9h8" /><path d="M13 4.5l3.5 3-3.5 3" /></>),
   today: stroke(<><rect x="4.5" y="6" width="15" height="13.5" rx="2.5" /><path d="M4.5 10.5h15M8.5 4v3.5M15.5 4v3.5" /><circle cx="12" cy="15" r="1.4" /></>),
   check: stroke(<path d="M5 12.5l4.5 4.5L19 7.5" />),
+  // the ink acts' (petition I60 — `inkActs`' default names): a highlighter's chisel over its stripe, a line through an S, a line under a
+  // U, a T with the x of its marks taken off
+  highlighter: stroke(<path d="M5 20h14M8.5 16.5l-1.5-1.5 8-8a1.8 1.8 0 0 1 2.5 0l.5.5a1.8 1.8 0 0 1 0 2.5l-8 8z" />),
+  strike: stroke(<path d="M5 12h14M16 7.5C15.3 6 13.8 5 12 5c-2.2 0-4 1.3-4 3.1 0 1.3.9 2.3 2.4 2.9M8 16.5c.7 1.5 2.2 2.5 4 2.5 2.2 0 4-1.3 4-3.1 0-.7-.3-1.4-.8-1.9" />),
+  underline: stroke(<path d="M7.5 4.5v6a4.5 4.5 0 0 0 9 0v-6M5.5 20h13" />),
+  "clear-marks": stroke(<path d="M4.5 5h11M10 5v14M14.5 14.5l5 5M19.5 14.5l-5 5" />),
 };
 function Glyph({ glyph, size = 16 }: { readonly glyph: string | ReactNode; readonly size?: number }): ReactElement {
   const body = typeof glyph === "string" ? SELECTION_GLYPHS[glyph] : glyph;

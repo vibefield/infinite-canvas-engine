@@ -45,7 +45,7 @@ import type { RecordStoreStats } from "../engine/records";
 import { HOLD, type HoldOptions, type HoldReserves } from "../hold/pose";
 import { createHeldFold } from "../hold/told";
 import { HOLD_SHADER_FILES, holdShaders } from "../hold/shaders";
-import { heldSlots, type SelectionAnchor, type WordsAnchor, withKindActs, wordsAnchor } from "../compose/marks";
+import { type CaretAnchor, caretAnchor, heldSlots, type SelectionAnchor, type WordsAnchor, withKindActs, wordsAnchor } from "../compose/marks";
 import { createPickSource } from "../compose/pick";
 import { createDeskReflector, type DeskReflector, type DeskReflectorStats, type DeskWakes, looksOf } from "../compose/reflector";
 import { acquire, adopt, type Gpu, type GpuOptions } from "../engine/device";
@@ -948,6 +948,21 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       const reads = menuReadsOf([entity], { entity, from, to });
       return wordsAnchor({ entity, from, to, box, cam, acts: menuActionsFor([entity], menuOf, "words"), ...(reads !== undefined ? { stateOf: reads.state, choicesOf: reads.choices } : {}) });
     };
+    // A CARET's place (petition I60 — a host's right-click rows at a caret): as the words are found, but for an EMPTY range, from the
+    // lease's `caretBox`; one that throws is caught and said once, as `rangeBox`
+    const caretOf = (): CaretAnchor | undefined => {
+      const ed = editorRef.current;
+      const lease = ed?.lease();
+      if (ed === undefined || lease?.caretBox === undefined || ed.pressing()) return undefined;
+      const at = ed.element.selectionStart;
+      if (ed.element.selectionEnd !== at) return undefined;
+      const entity = typeof lease.entity === "number" ? lease.entity : world.firstOf(editingQ);
+      const cam = world.getResource(Camera);
+      if (entity === undefined || !world.isAlive(entity) || cam === undefined) return undefined;
+      let box: RangeBox | undefined;
+      try { box = lease.caretBox(at); } catch (err) { tellRangeBox(lease.part ?? "(unnamed)", err); return undefined; }
+      return caretAnchor({ entity, at, box, cam });
+    };
     /**
      * The one editor is lent to a part whose lease NAMES an object of the selection (`EditorLease.entity`, petition I60): it is being
      * written though no `Editing` is stamped (an ink part's draft) — the menu steps aside for it as for core's claim, and through the
@@ -969,7 +984,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         const kinds = withKindActs(a, selected, menuOf, reads?.state, reads?.choices);
         // I60: the WORDS selected while a part is written, with the object's words acts
         const words = wordsOf();
-        return words === undefined ? kinds : { ...kinds, words };
+        if (words !== undefined) return { ...kinds, words };
+        const caret = caretOf();
+        return caret === undefined ? kinds : { ...kinds, caret };
       }
       const kind = builder.kindOf(h.entity);
       const swatches = swatchesOf(kind);

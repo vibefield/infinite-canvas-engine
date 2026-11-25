@@ -78,13 +78,17 @@ export interface InkActsOptions {
   readonly colour?: (role: string) => string | undefined;
 }
 
-/** The kit's glyphs: the bar's own `pen` and `eraser`, and drawings for the rest (SVG path data, the bar's 24-unit box, stroked). */
+/**
+ * The kit's glyphs: NAMES of a host bar's set — `pen`, `highlighter`, `strike`, `underline`, `clear-marks` (ICE's React bar draws all
+ * five), so a host with a set of its own gives them its look. Pen's and Highlight's are a pen's and a highlighter's, so a host draws a
+ * choice act's swatches as a pen's dots or a highlighter's stripes by the act's glyph, never by its id.
+ */
 const GLYPHS: Readonly<Record<InkField | "clear", HeldGlyph>> = {
   pen: "pen",
-  highlight: { path: "M5 20h14M8.5 16.5l-1.5-1.5 8-8a1.8 1.8 0 0 1 2.5 0l.5.5a1.8 1.8 0 0 1 0 2.5l-8 8z" },
-  strike: { path: "M5 12h14M16 7.5C15.3 6 13.8 5 12 5c-2.2 0-4 1.3-4 3.1 0 1.3.9 2.3 2.4 2.9M8 16.5c.7 1.5 2.2 2.5 4 2.5 2.2 0 4-1.3 4-3.1 0-.7-.3-1.4-.8-1.9" },
-  underline: { path: "M7.5 4.5v6a4.5 4.5 0 0 0 9 0v-6M5.5 20h13" },
-  clear: "eraser",
+  highlight: "highlighter",
+  strike: "strike",
+  underline: "underline",
+  clear: "clear-marks",
 };
 
 /** A name as a label: its first letter raised ("felt" → "Felt"). */
