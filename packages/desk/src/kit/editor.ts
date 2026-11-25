@@ -14,6 +14,9 @@
 // world (`rangeBox`) — the desk then places the selection menu's anchor over the words selected (`SelectionAnchor.words`), with the
 // object's words acts: the object the lease names (`entity`), else the one core's `Editing` marks. A lease that declares no
 // `rangeBox` has no words' menu.
+//
+// THE HOST'S ITEMS (petition I60 — the words bar's More and its right-click rows): `DeskEditor.command` cuts, copies, pastes and
+// selects all on the lent field as the keys do, so a host's bar writes the same clipboard flavours the keys write.
 
 import type { Entity } from "@ice/core";
 
@@ -52,6 +55,9 @@ export interface EditorPaste {
   readonly text: string;
   readonly piece?: string;
 }
+
+/** What a host's bar asks of the lent field (petition I60 — `DeskEditor.command`): the clipboard's three, and the whole field selected. */
+export type EditorCommand = "cut" | "copy" | "paste" | "selectAll";
 
 /**
  * Where the textarea stands while lent (container px): its box's top-left and size BEFORE any turn, the size its text is laid
@@ -177,6 +183,25 @@ export interface DeskEditor {
    * leave a caret (a tap) or a new range (a drag, a second or a third click) — so the selection menu's words wait for the release.
    */
   pressing(): boolean;
+  /**
+   * The HOST'S ITEMS (petition I60 — a words bar's Cut, Copy, Paste and Select all, its More and its right-click rows): what the keys
+   * do, on the lent field's range. `copy` and `cut` write the clipboard in the very flavours the keys write: the platform's own command
+   * first while the field has the focus (its event is this editor's own handler — the lease's `lift`), else the platform's async
+   * clipboard (the words and their `text/html`: that API carries no private flavour); a cut deletes as ONE input, and only once its
+   * words reached a clipboard. `paste` lays what the system clipboard holds where the platform lets a page read it
+   * (`navigator.clipboard.readText`, else `read`) — the editor's LAST LIFTED piece in its place when its words are the clipboard's
+   * (every copy and cut is kept, the keys' too), so their marks come back — and where the platform lets a page read NOTHING (no such
+   * API, or the read refused), the last lifted piece itself: that is the LIMIT — a paste from a bar then lays only what was last copied
+   * or cut on this desk, never another app's words. It is laid through the lease's `lay` (else written as the platform's paste would
+   * write it). `selectAll` selects every word of the lent part. Resolves true when it did something — false with nothing lent, an IME
+   * composition running, a caret where words are wanted, or nothing to lay.
+   *
+   * A host's BAR keeps the field's focus through its press: it prevents the default of its buttons' `pointerdown` and `mousedown` (as
+   * `<SelectionMenu>`'s words row does), so a button never takes the focus and the textarea keeps it and its range; the click then
+   * calls `command` — inside the click, as a platform grants the clipboard to a user's gesture. A RIGHT press on the lent part's
+   * writing keeps the focus too (its default prevented, nothing else), so a host's right-click rows act on the words selected.
+   */
+  command(name: EditorCommand): Promise<boolean>;
   /** The editor goes with its desk: a lease still held ends first (`ended` — a typing session commits), then the textarea leaves. */
   dispose(): void;
 }

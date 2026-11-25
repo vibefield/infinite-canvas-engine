@@ -42,11 +42,19 @@
 // THE WORDS' MENU (petition I60 — "the selection bar comes to the words"): while a press the editor claimed is down (`pressing`), the
 // range it makes is not settled, and the desk's anchor leaves the words out until the release; a lease that says where its words lie
 // (`rangeBox`) has the desk asked for a frame at the press and at the release, so the menu over them steps away and comes back.
+//
+// THE HOST'S ITEMS (petition I60 — a words bar's Cut, Copy, Paste and Select all): `command` does on the lent field what the keys do.
+// A copy or a cut runs the platform's own command first, so its event reaches the clipboard handler above and the bar writes the very
+// flavours the keys write; where the platform refuses, the async clipboard takes the words and their HTML, and a cut deletes only once
+// they are there. Every copy and cut is KEPT (the last lifted piece): a bar's paste lays it again in place of the clipboard's plain
+// words when they are its words — the piece's marks come back, which the async clipboard cannot carry — and lays it alone where the
+// platform lets the page read no clipboard. A RIGHT press on the lent part's writing has its default prevented and nothing else, so
+// the focus — and the range — survive it for a host's right-click rows (the stack makes no gesture of a secondary press: I28).
 
 import { ActiveTool, Camera, type Entity, GestureSettings, Grab, type World } from "@ice/core";
 import { clientToScreen } from "@ice/kernel";
 import { tapHit } from "../compose/tap";
-import type { DeskEditor, EditorLease, TextPart, TextRange, TextUnit } from "../kit/editor";
+import type { DeskEditor, EditorCommand, EditorLease, EditorLift, EditorPaste, TextPart, TextRange, TextUnit } from "../kit/editor";
 import { PEN_FACES } from "../kit/text";
 
 /** design-007's claim marker (`@ice/dom` KEYBOARD_CLAIM_ATTR — the desk may not import dom): the keymap cedes to a focused claim. */
@@ -144,6 +152,12 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
   let press: Press | null = null;
   /** The last primary press of a mouse or a pen: where and when, and its click count (petition I60). */
   let last: { at: number; x: number; y: number; count: number } | undefined;
+  /** A right press on the lent part's writing had its default prevented (petition I60): its compatibility mousedown's is too. */
+  let secondary = false;
+  /** The words a copy or a cut last LIFTED — the keys' or a command's (petition I60): what a bar's paste lays where the clipboard cannot say more. */
+  let lastLifted: EditorPaste | undefined;
+  /** A copy or a cut reached this editor's own handler with a range (a command knows its platform command was heard). */
+  let heard = false;
   let lastTransform = "";
   let lastBox = "";
   let placed: { cx: number; cy: number; w: number; h: number; angle: number } | null = null;
@@ -312,15 +326,20 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
   const flavour = (data: DataTransfer, type: string): string => {
     try { return data.getData(type); } catch { return ""; }
   };
-  /** A copy or a cut the lease lifts: its flavours written, the platform's own prevented — the range it lifted, or undefined (the platform's). */
+  /**
+   * A copy or a cut the lease lifts: its flavours written, the platform's own prevented — the range it lifted, or undefined (the
+   * platform's). Either way the words are KEPT (`lastLifted`: the lease's, or the field's the platform's own copy takes).
+   */
   const lift = (ev: ClipboardEvent): TextRange | undefined => {
     const l = lent;
     const data = ev.clipboardData;
-    if (l?.lift === undefined || data === null || composing) return undefined;
+    if (l === undefined || data === null || composing) return undefined;
     const from = el.selectionStart;
     const to = el.selectionEnd;
     if (from === to) return undefined;   // a caret: the platform's own (it copies nothing)
-    const words = l.lift(from, to);
+    heard = true;
+    const words = l.lift?.(from, to);
+    lastLifted = words === undefined ? { text: el.value.slice(from, to) } : { text: words.text, ...(words.piece !== undefined ? { piece: words.piece } : {}) };
     if (words === undefined) return undefined;
     data.setData("text/plain", words.text);
     if (words.html !== undefined) data.setData("text/html", words.html);
@@ -456,6 +475,23 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     // a lease whose words have a menu (petition I60 — `rangeBox`): the desk is asked for a frame, so the words' anchor steps away
     if (l.rangeBox !== undefined) opts.wake();
   };
+  /**
+   * A RIGHT press on the lent part's writing (petition I60 — a host's right-click rows act on the words selected): the claim's own
+   * tests — a mouse's or a pen's, the select tool, off DOM chrome, the stack's hit the part's own or none known, `indexAt` answering —
+   * and then its default prevented and NOTHING else: no range, no capture, no count. The platform's focus fixup then leaves the field
+   * its focus and its range; the stack makes no gesture of a secondary press (I28), so nothing on the canvas moves for it.
+   */
+  const keep = (ev: PointerEvent): void => {
+    const l = lent;
+    if (l?.indexAt === undefined || (world.getResource(ActiveTool)?.id ?? "select") !== "select" || onChrome(ev.target)) return;
+    const p = worldAt(ev.clientX, ev.clientY);
+    if (p === undefined) return;
+    const t = tapHit(world, ev.pointerType === "pen" ? "pen" : "mouse");
+    if (t.found && (t.hit === undefined || world.has(t.hit, Grab))) return;
+    if (l.indexAt(p.wx, p.wy, t.hit) === undefined) return;
+    ev.preventDefault();
+    secondary = true;
+  };
   /** The press's button is up, or its release lost (petition I60): a lease whose words have a menu asks a frame, the anchor back. */
   const settle = (p: Press): void => {
     if (!p.down) return;
@@ -488,13 +524,16 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     down = ev.isPrimary && ev.button === 0 ? { id: ev.pointerId, type: ev.pointerType, x: ev.clientX, y: ev.clientY } : null;
     const was = press;
     press = null;
+    secondary = false;
     if (was !== null) settle(was);   // a press whose release never came (petition I60): no longer down
     // a mouse's or a pen's primary press is counted, and claimed when it lands on the lent part's writing; touch is a tap only
     if (down !== null && ev.pointerType !== "touch") claim(ev, countOf(ev));
+    // …and its right press keeps the field's focus there (petition I60), for a host's right-click rows
+    else if (ev.button === 2 && ev.pointerType !== "touch") keep(ev);
   };
   // a platform that still sends a claimed press's compatibility mousedown (Pointer Events' PREVENT MOUSE EVENT flag unhonoured) would
-  // move the focus off the field with its default: that default is the claim's to prevent too
-  const onMouseDown = (ev: MouseEvent): void => { if (press !== null && ev.button === 0) ev.preventDefault(); };
+  // move the focus off the field with its default: that default is the claim's to prevent too — and a kept right press's
+  const onMouseDown = (ev: MouseEvent): void => { if ((press !== null && ev.button === 0) || (secondary && ev.button === 2)) ev.preventDefault(); };
   const onMove = (ev: PointerEvent): void => {
     const p = press;
     if (p === null || ev.pointerId !== p.id) return;
@@ -565,6 +604,85 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
   container.addEventListener("pointercancel", onCancel, { capture: true });
   container.addEventListener("click", onClick, { capture: true });
 
+  // ---- the host's items (petition I60): a bar's Cut, Copy, Paste and Select all, done as the keys do them
+  /** The platform's async clipboard, where it has one. */
+  const clipboard = (): Clipboard | undefined => (typeof navigator === "undefined" ? undefined : (navigator as Navigator & { clipboard?: Clipboard }).clipboard);
+  /**
+   * The platform's OWN copy or cut on the focused field: its event reaches `lift` above (the lease's flavours, the cut's one input), so
+   * true only when the platform answered AND its event was heard here; false where it refuses (no command, the field not focused).
+   */
+  const platformClip = (name: "copy" | "cut"): boolean => {
+    if (typeof doc.execCommand !== "function" || doc.activeElement !== el) return false;
+    heard = false;
+    let ok = false;
+    try { ok = doc.execCommand(name, false); } catch { ok = false; }
+    return ok && heard;
+  };
+  /** The words to the async clipboard — their HTML beside them where the platform takes a clipboard item; whether they landed. */
+  const writeClipboard = async (words: EditorLift): Promise<boolean> => {
+    const c = clipboard();
+    if (c === undefined) return false;
+    if (words.html !== undefined && typeof c.write === "function" && typeof ClipboardItem === "function") {
+      try {
+        await c.write([new ClipboardItem({ "text/plain": new Blob([words.text], { type: "text/plain" }), "text/html": new Blob([words.html], { type: "text/html" }) })]);
+        return true;
+      } catch { /* a platform that refuses the item may still take the words alone */ }
+    }
+    if (typeof c.writeText !== "function") return false;
+    try { await c.writeText(words.text); return true; } catch { return false; }
+  };
+  /** The system clipboard's plain words where the platform lets the page read them ("" for none) — undefined where it lets it read nothing. */
+  const readClipboard = async (): Promise<string | undefined> => {
+    const c = clipboard();
+    try {
+      if (typeof c?.readText === "function") return await c.readText();
+      if (typeof c?.read === "function") {
+        for (const item of await c.read()) if (item.types.includes("text/plain")) return await (await item.getType("text/plain")).text();
+        return "";
+      }
+    } catch { /* the read refused (no permission, no gesture): the page reads nothing */ }
+    return undefined;
+  };
+  /** A bar's PASTE (`command`'s module doc): the clipboard's words — the kept piece when they are its — or, unread, the kept piece itself. */
+  const pasteFromBar = async (l: EditorLease): Promise<boolean> => {
+    const read = await readClipboard();
+    if (lent !== l || composing) return false;
+    const kept = lastLifted;
+    const text = read?.replace(/\r\n?/g, "\n");
+    const paste = text === undefined ? kept : text === "" ? undefined : kept !== undefined && kept.text === text ? kept : { text };
+    if (paste === undefined || paste.text === "") return false;
+    const from = el.selectionStart;
+    const to = el.selectionEnd;
+    if (l.lay?.(paste, from, to) === true) { opts.wake(); return true; }
+    write(paste.text, from, to);   // a lease that lays nothing: the words written as the platform's paste would write them
+    return true;
+  };
+  /** The host's ITEMS (kit/editor.ts `DeskEditor.command`). Everything up to the platform's own command runs inside the caller's gesture. */
+  const command = async (name: EditorCommand): Promise<boolean> => {
+    const l = lent;
+    if (l === undefined || composing) return false;
+    if (name === "selectAll") {
+      if (doc.activeElement !== el) el.focus({ preventScroll: true });
+      select(l, 0, el.value.length);
+      return true;
+    }
+    if (name === "paste") return pasteFromBar(l);
+    const from = el.selectionStart;
+    const to = el.selectionEnd;
+    if (from === to) return false;   // a caret: nothing to copy
+    if (platformClip(name)) return true;
+    // the platform refused its own: the lease's words (else the field's) to the async clipboard, kept — and a cut deletes once there
+    const value = el.value;
+    const words = l.lift?.(from, to) ?? { text: value.slice(from, to) };
+    lastLifted = { text: words.text, ...(words.piece !== undefined ? { piece: words.piece } : {}) };
+    if (!(await writeClipboard(words))) return false;
+    if (name === "cut") {
+      if (lent !== l || composing || el.value !== value) return false;   // the field moved while the clipboard was written: nothing cut
+      write("", from, to);
+    }
+    return true;
+  };
+
   return {
     element: el,
     lend,
@@ -586,6 +704,7 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
     placement: () => placed,
     write,
     pressing: () => press?.down === true && press.lease === lent,
+    command,
     dispose() {
       // a lease still held ends with the editor (petition I25 — a desk unmounted mid-typing, a remount among them): its `ended` is told,
       // so a typing session commits and lifts its claim, never left open with its idle commit cleared below
@@ -593,6 +712,7 @@ export function createDeskEditor(opts: DeskEditorOptions): DeskEditor {
       if (idle !== undefined) clearTimeout(idle);
       lent = undefined;
       press = null;
+      lastLifted = undefined;
       el.removeEventListener("input", onInput);
       el.removeEventListener("keydown", onKeyDown);
       el.removeEventListener("blur", onBlur);
