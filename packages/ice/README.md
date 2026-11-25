@@ -18,10 +18,10 @@ an archetype ECS with reactivity and opt-in Loro-CRDT durable + presence layers.
 > `./desk`, `./desk/engine`, `./desk/objects` are new. The full list is the changelog's
 > `### Removed` under the 0.14.0 release.
 
-**0.21.0** adds two calls for a host that acts with no pointer (petitions I57 and I58):
-`resolveFreeSlot` answers the nearest free place for a new object, a slot in view first, and
-`ops.lookAt(entity)` takes the person to an object: the camera flown to it and centred, the
-object selected, in its own frame. Both are additions: no existing op moves.
+**0.22.0** lets an act say what it is now and offer choices (petitions I61 and I62): a selection
+menu's act may be disabled, take another label or glyph, or show a swatch, and a menu act or a
+held tool's action may be a list of choices, one of which may ask for values first. Both are
+additions: an act that declares neither is read as before, and no existing op moves.
 
 ```sh
 pnpm add @vibecook/ice react react-dom     # react/react-dom are optional peers
