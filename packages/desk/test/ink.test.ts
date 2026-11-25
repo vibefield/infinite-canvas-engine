@@ -129,6 +129,39 @@ describe("the ink's verbs (kit/ink.ts)", () => {
     expect(asked).toEqual([50, 51, 52]);
   });
 
+  it("a REPLACEMENT keeps the marks its letters all shared, field by field — else the neighbours' rule stands", () => {
+    // "Friday" → "Monday" inside the highlighted "on Friday": its right neighbour is the newline, and it stays highlighted
+    const ink = sheet();
+    expect(readWriting(replace(ink, ...where(TEXT, "Friday"), "Monday", counter(1))).runs[0]).toEqual({ from: 13, to: 22, text: "on Monday", highlight: "yellow" });
+    expect(readWriting(replace(ink, ...where(TEXT, "on Friday"), "next week", counter(1))).runs[0]).toEqual({ from: 13, to: 22, text: "next week", highlight: "yellow" });
+    // field by field: "ab" is yellow and red, the space yellow, "cd" yellow and struck
+    const v: InkValue = { text: "ab cd ef", seeds: [1, 2, 3, 4, 5, 6, 7, 8], marks: [YELLOW | RED, YELLOW | RED, YELLOW, YELLOW | STRUCK, YELLOW | STRUCK, 0, 0, 0] };
+    expect(splice(v, 0, 2, "XYZ", counter(9)).marks.slice(0, 3)).toEqual([YELLOW | RED, YELLOW | RED, YELLOW | RED]);
+    expect(splice(v, 0, 5, "Q", counter(9))).toEqual({ text: "Q ef", seeds: [9, 6, 7, 8], marks: [YELLOW, 0, 0, 0] });   // the pen and the line not shared: dropped
+    expect(splice(v, 0, 2, "X\nY", counter(9)).marks.slice(0, 3)).toEqual([YELLOW | RED, 0, YELLOW | RED]);   // a newline still arrives unmarked
+    // a space is not a letter: two red words penned apart, the space between in the sheet's pen, are red words
+    const words = mark(mark(inkOf({ text: "a red red pen" }, 1), 2, 5, { pen: "red" }), 6, 9, { pen: "red" });
+    expect(readWriting(replace(words, 2, 9, "blue ink", counter(1))).runs).toEqual([{ from: 2, to: 10, text: "blue ink", pen: "red" }]);
+    // no letter replaced (a space), or none that carried a value: the neighbours' rule — inside a highlight, the arrivals join it
+    expect(splice(v, 2, 3, "-", counter(9)).marks[2]).toBe(YELLOW);
+    const gap: InkValue = { text: "a b c", seeds: [1, 2, 3, 4, 5], marks: [YELLOW, YELLOW, 0, YELLOW, YELLOW] };
+    expect(splice(gap, 2, 3, "x", counter(9)).marks).toEqual([YELLOW, YELLOW, YELLOW, YELLOW, YELLOW]);
+  });
+
+  it("a replacement keeps its letters' shared marks through paste and carryInk too — a paste still in the landing sheet's own pen", () => {
+    const ink = sheet();
+    // pasted plain over the highlighted "Friday": highlighted still
+    expect(readWriting(paste(ink, ...where(TEXT, "Friday"), { text: "Monday", marks: "" }, counter(1))).runs[0]).toEqual({ from: 13, to: 22, text: "on Monday", highlight: "yellow" });
+    // over "atlas", in the red pen: replaced, the words stay red; pasted plain, they are the landing sheet's own pen
+    const [a, b] = where(TEXT, "atlas");
+    expect(replace(ink, a, b, "globe", counter(1)).marks.slice(a, b)).toEqual([RED, RED, RED, RED, RED]);
+    expect(paste(ink, a, b, { text: "globe", marks: "" }, counter(1)).marks.slice(a, b)).toEqual([0, 0, 0, 0, 0]);
+    // the platform's edit over a selection: "Friday" selected and an M typed
+    const typed = carryInk(ink, TEXT.replace("Friday", "M"), counter(1));
+    expect([typed.from, typed.to]).toEqual([16, 17]);
+    expect(readWriting(typed.ink).runs[0]).toEqual({ from: 13, to: 17, text: "on M", highlight: "yellow" });
+  });
+
   it("carryInk is carrySeeds generalised: seed for seed and range for range the same, through every kind of edit", () => {
     const edits: readonly (readonly [string, string])[] = [["", "abc"], ["abc", ""], ["abc", "abc"], ["hello", "heXllo"], ["heXllo", "helo"], ["buy milk", "buy oat milk"], ["aaa", "aa"], ["abc", "xyz"], ["ab\ncd", "ab\n\ncd"], ["on Friday", "on Saturday"]];
     for (const [was, now] of edits) {
