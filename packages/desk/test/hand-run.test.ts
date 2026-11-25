@@ -14,7 +14,7 @@ import { compose } from "../src/engine/shader";
 import { handMetricsOf, readHandAtlas } from "../src/kit/hand-atlas";
 import { HAND_RUN, type HandRun, handLevels, handMips, handRun, penNow } from "../src/kit/hand-run";
 import { WRITTEN } from "../src/kit/pen-clock";
-import { HAND, type HandLayout, layoutText } from "../src/kit/text";
+import { HAND, HAND_WEIGHT, type HandLayout, layoutText } from "../src/kit/text";
 import { kitWgsl } from "../src/kit/wgsl";
 import { fixtureFace } from "./hand-fixture";
 
@@ -124,8 +124,10 @@ describe("the glyph run and its grid (petition I59)", () => {
     expect(glyphAt(at, 2)[4]?.[3]).toBe(3);
     expect(glyphAt(at, 0)[4]?.[0]).toBe(Math.fround(HAND_RUN.before));
     expect(glyphAt(at, 0)[4]?.[3]).toBe(0);
-    // the edge's range is the face's, the pen's spread and its alpha the options'
+    // the edge's range is the face's, the pen's spread and its alpha the options' — and the weight none unless asked (the face's own
+    // outline), else the header's spare slot carries it, em (the outline moved outward by it)
     expect(vec(handRun(L, face.atlas, { bleed: 0.3 }), 3)).toEqual([0.5, Math.fround(0.3), Math.fround(0.45), 0]);
+    expect(vec(handRun(L, face.atlas, { bleed: 0.3, weight: HAND_WEIGHT }), 3)).toEqual([0.5, Math.fround(0.3), Math.fround(0.45), Math.fround(0.007)]);
   });
 
   it("names the glyphs the face lacks and leaves them out (the sheet keeps its raster road); the inkless space is neither", () => {

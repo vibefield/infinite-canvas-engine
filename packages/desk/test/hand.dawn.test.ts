@@ -23,7 +23,7 @@ import { type HandAtlas, handMetricsOf, readHandAtlas } from "../src/kit/hand-at
 import { createHandRuns, HAND_BINDINGS, type HandRuns, handAtlasGpu, handSampler } from "../src/kit/hand-gpu";
 import { HAND_RUN, type HandRun, handInkAt, handRun, penNow } from "../src/kit/hand-run";
 import type { PenMoment } from "../src/kit/pen-clock";
-import { HAND, type HandLayout, layoutText } from "../src/kit/text";
+import { HAND, HAND_WEIGHT, type HandLayout, layoutText } from "../src/kit/text";
 import { kitWgsl } from "../src/kit/wgsl";
 import { fixtureFace, penProgram } from "./hand-fixture";
 
@@ -278,14 +278,14 @@ describe("hand_ink on Dawn over the desk's own face: Caveat 500, as baked (apps/
     }
   });
 
-  it("with the pen's spread, as the raster lays it (the bleed's stroke, the fill over it, glyphs over one another): GPU against twin", async () => {
+  it("with the pen's spread, as the raster lays it (the bleed's stroke, the fill over it, glyphs over one another), and in the desk's weight: GPU against twin", async () => {
     // the note's own bleed (0.3 units) and a wide one (2 units: the stroke's band spans px at a crisp zoom), at the hand's pressures,
-    // over Caveat's kerned and joined letters — crisp and minified
-    for (const bleed of [0.3, 2]) {
-      const run = handRun(L, caveat, { pens: pens(L), bleed, bleedAlpha: 0.45 });
+    // over Caveat's kerned and joined letters — crisp and minified; and the note's own run, in the desk's weight (`HAND_WEIGHT`)
+    for (const [bleed, weight] of [[0.3, 0], [2, 0], [0.3, HAND_WEIGHT]] as const) {
+      const run = handRun(L, caveat, { pens: pens(L), bleed, bleedAlpha: 0.45, weight });
       for (const view of [{ origin: [run.grid.x0, run.grid.y0] as const, scale: 0.5 }, { origin: [run.grid.x0 - 20, run.grid.y0 - 20] as const, scale: 3 }]) {
         const d = compare(await draw(run, 7, view, 0, caveat), run, view, 0, caveat);
-        console.log(`[hand.dawn] Caveat 500, bleed ${bleed} at ${view.scale} units a px: cover max |GPU − twin| ${d.cover.toFixed(4)}; pen differs at ${d.pens} of ${d.inked} inked px; counts differ at ${d.counts} px`);
+        console.log(`[hand.dawn] Caveat 500, bleed ${bleed}, weight ${weight} at ${view.scale} units a px: cover max |GPU − twin| ${d.cover.toFixed(4)}; pen differs at ${d.pens} of ${d.inked} inked px; counts differ at ${d.counts} px`);
         expect(d.cover).toBeLessThan(TOLERANCE);
         expect(d.inked).toBeGreaterThan(100);
         expect(d.pens / d.inked).toBeLessThan(0.01);

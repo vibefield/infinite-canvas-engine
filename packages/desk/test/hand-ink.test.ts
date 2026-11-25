@@ -4,9 +4,9 @@
 // atlas texel. THE REVEAL (the brief's law): nothing before the pen sets off; while it writes, a texel shows once the pen's progress
 // has reached its arrival — behind the nib written, ahead of it bare, the front round as the nib — and where a later stroke crosses
 // an earlier one the earlier ink is already there; after its time the glyph is whole. The pen and the pressure; a minified read at
-// a coarser level; the pen's spread; how the ink lies, as the raster lays it (the bleed's stroke, the fill over it, every glyph over
-// the ones before: source-over, never only the larger); a glyph whose pen origin lies outside its rect (as the bake lays one above
-// the baseline).
+// a coarser level; the run's weight (the outline moved outward); the pen's spread; how the ink lies, as the raster lays it (the
+// bleed's stroke, the fill over it, every glyph over the ones before: source-over, never only the larger); a glyph whose pen origin
+// lies outside its rect (as the bake lays one above the baseline).
 // And on the desk's own faces as baked: the coarse levels keep to their glyph — up to 4 texels a px a glyph reads the same to the
 // bit with every other glyph of its atlas erased, past that under 2% of coverage, never a neighbour's ink.
 import { readFileSync } from "node:fs";
@@ -95,6 +95,20 @@ describe("the edge (petition I59)", () => {
     expect(corner.cover).toBe(0);   // without the cap: 0.5 − 12/40 = 0.2 of ink over the whole rect
     // …while the stroke is still there, faded: at the coarsest level it is under a texel wide
     expect(ink(0.18, -0.36, 40).cover).toBeGreaterThan(0.2);
+  });
+
+  it("the run's weight moves the outline outward by its em: the stroke that much wider on each side, its centre as it was", () => {
+    const w = 0.02;   // em: about a device px at this size (48 units an em, a unit a px)
+    const heavy = handRun(lone("l", O[0], O[1]), face.atlas, { weight: w });
+    for (const ey of [-0.6, -0.36, -0.1]) {
+      // where the bare bar's edge is half inked, w em further out the weighted bar's is — on either side of the bar
+      const bare = handInkAt(run, face.atlas, ...at(O[0], O[1], 0.18 + L.nib, ey), 0, 1).cover;
+      expect(handInkAt(heavy, face.atlas, ...at(O[0], O[1], 0.18 + L.nib + w, ey), 0, 1).cover).toBeCloseTo(bare, 1);
+      expect(handInkAt(heavy, face.atlas, ...at(O[0], O[1], 0.18 - L.nib - w, ey), 0, 1).cover).toBeCloseTo(handInkAt(run, face.atlas, ...at(O[0], O[1], 0.18 - L.nib, ey), 0, 1).cover, 1);
+      // a device px past the moved edge, nothing; the centre line inked whole, as it was
+      expect(handInkAt(heavy, face.atlas, ...at(O[0], O[1], 0.18 + L.nib + w + 1.2 / EM, ey), 0, 1).cover).toBe(0);
+      expect(handInkAt(heavy, face.atlas, ...at(O[0], O[1], 0.18, ey), 0, 1).cover).toBeCloseTo(1, 2);
+    }
   });
 
   it("the pen's spread widens the edge by half its width at its alpha", () => {
