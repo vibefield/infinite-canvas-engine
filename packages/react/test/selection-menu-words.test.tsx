@@ -12,7 +12,7 @@ import { createCanvasEngine, type CanvasEngine, type Entity } from "@ice/core";
 import { act, createElement } from "react";
 import { createRoot, type Root } from "react-dom/client";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultSelectionActions, EngineProvider, placeSelectionMenu, SELECTION_MENU, SelectionMenu, type SelectionMenuAnchor, type SelectionMenuSource, type SelectionMenuWords } from "../src";
+import { defaultSelectionActions, EngineProvider, placeSelectionMenu, SELECTION_GLYPHS, SELECTION_MENU, SelectionMenu, type SelectionMenuAnchor, type SelectionMenuSource, type SelectionMenuWords } from "../src";
 
 (globalThis as Record<string, unknown>).IS_REACT_ACT_ENVIRONMENT = true;
 
@@ -70,6 +70,10 @@ const click = (el: Element | null | undefined): void => { if (el === null || el 
 const cells = (menu: HTMLElement): string[] => Array.from(menu.querySelectorAll<HTMLElement>(".ice-sm-bar button"), (b) => b.dataset.act ?? b.dataset.choice ?? "?");
 
 describe("placeSelectionMenu over the words (petition I60)", () => {
+  it("the bar's set draws the ink acts' default names — `pen`, `highlighter`, `strike`, `underline`, `clear-marks` — so ICE's own bar wears them, never a missing name's initial", () => {
+    expect(["pen", "highlighter", "strike", "underline", "clear-marks"].filter((n) => !(n in SELECTION_GLYPHS))).toEqual([]);
+  });
+
   it("the words' box places the bar by the rules over objects — centred, 10 above, below under the top ruler's band — while words carry acts; the hand wins", () => {
     const size = { w: 200, h: 40 };
     expect(placeSelectionMenu(anchorOf(), size)).toEqual({ x: 460, y: 300 - 10 - 40, below: false });
