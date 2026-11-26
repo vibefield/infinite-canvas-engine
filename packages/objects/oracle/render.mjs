@@ -43,7 +43,14 @@ import { insideView } from "../src/minimat/inside.ts";
 import { arrivalCamera, FIT } from "../../desk/src/nav/flight.ts";
 import { PORTAL_GATE } from "../../desk/src/nav/portal.ts";
 import { DRAWER, SHADOW_REACH } from "../../desk/src/tray/drawer.ts";
-import { THEMES, surface } from "./fixtures/vf-theme.ts";
+import { THEMES, pen as penInk, surface } from "./fixtures/vf-theme.ts";
+import { readHandAtlas } from "../../desk/src/kit/hand-atlas.ts";
+import { handFacesOf } from "../../desk/src/kit/hand-faces.ts";
+import { handInkAt } from "../../desk/src/kit/hand-run.ts";
+import { inkMarksAt, washRun } from "../../desk/src/kit/ink-marks.ts";
+import { markInksOf, paperKind } from "../src/paper/kind.ts";
+import { deskPalette } from "../src/palette.ts";
+import { PAPER } from "../src/paper/theme.ts";
 import { DAY_LIGHT, linearToSrgb, srgbToLinear } from "../../desk/src/mat/night.ts";
 import { sdRoundBox, unproject } from "../src/photo/photo.ts";
 import { sdBoard, sdSurface } from "../src/board/board.ts";
@@ -80,6 +87,18 @@ const inkMetaPath = resolve(root, "oracle/fixtures/assets/ink-note-1.json");
 const inkMeta = existsSync(inkMetaPath) ? JSON.parse(readFileSync(inkMetaPath, "utf8")) : null;
 const photoMetaPath = resolve(root, "oracle/fixtures/assets/photo-1.json");
 const photoMeta = existsSync(photoMetaPath) ? JSON.parse(readFileSync(photoMetaPath, "utf8")) : null;
+// THE PEN (petition I59): the desk's three faces as apps/desk bakes and ships them (assets/hand — held to the bake by its gen:check),
+// lent by the names the note asks (`PEN_FACES`'). Read from the app's own folder, not copied: one home for the files, and a read is
+// no import (the package walls hold imports); apps/desk's parity page lends the same files by URL.
+const handDir = resolve(root, "../../apps/desk/assets/hand");
+const HAND_FILES = { caveat: "caveat-500", "caveat-bold": "caveat-600", kalam: "kalam-400" };
+const handAtlases = {};
+for (const [name, file] of Object.entries(HAND_FILES)) {
+  const read = readHandAtlas(JSON.parse(readFileSync(resolve(handDir, `${file}.hand.json`), "utf8")), bytesOf(handDir, `${file}.hand.bin`));
+  if ("error" in read) throw new Error(`oracle: the hand's face ${file} (apps/desk/assets/hand) does not read — ${read.error}`);
+  handAtlases[name] = read;
+}
+const hand = handFacesOf(handAtlases);
 // the desk calendars' committed prints (D3t-c — prints.mjs): the live print's tiles, read back from the world in Chrome
 const prints = {};
 for (const name of PRINT_FIXTURES) {
@@ -102,7 +121,7 @@ const scoped = async (what, fn) => {
 };
 // The desk both hosts draw (frame.mjs), on Dawn's device, composed from the .wgsl files on disk.
 const desk = await scoped("creation", () => createOracleDesk({
-  device, format: FORMAT, text: texts, objects: [...DESK_CLOCK_OBJECTS, DeskClockBroken],
+  device, format: FORMAT, text: texts, hand, objects: [...DESK_CLOCK_OBJECTS, DeskClockBroken],
   // (the kinds' creation window — petition I24 — holds what a kind does after its first await: an error there no kind raises alone is
   // the probe's, as its own scope would have counted it; a kind's own refuses that kind — the broken clock's compile error, held here)
   onError: (e) => { probe.errors.push(`creation (no kind's alone): ${e.message}`); },
@@ -603,6 +622,161 @@ async function paperCheck(sc) {
   return ok;
 }
 
+/** The pen's tolerance against its CPU twin (petition I59 — the kit's Dawn unit holds `hand_ink` to `handInkAt` within it). */
+const PEN_TOL = 0.03;
+
+/**
+ * THE PEN (petition I59), as pixels — the note's own shader draws what the kit's CPU twin says the pen laid. With no light on the
+ * desk, under a sheet's flat strip (the lamp's shading is 1 there and the day's chain the identity, so the drawn colour IS the
+ * albedo), a pixel of a note the pen writes, against the same still with that note BLANK (the same sheet, the same fibre), gives
+ * the coverage the shader laid: `(B − A) / (B − ink)`, on the channel where the paper and the pen differ most. Each is held to
+ * `handInkAt` over the very run the note's writing wrote, at the frame's pen time and the pixel's own width (the layout's units),
+ * within PEN_TOL — and the sheet must hold ink (where the twin lays more than half, a few hundred px at least). Beside it, said and
+ * not held: THE PEN'S WEIGHT against the committed raster on the still (the same words, seed and sheet) — the look's question.
+ * A MARKED sheet (petition I60 — its run's ink carries a mark, or the selection's wash is on it) is held as COLOUR instead: each pixel
+ * against the paper's order laid on the CPU over its blank sheet `B` — the highlighter's multiply, the pencil's wash, the ink in each
+ * glyph's pen (a re-ink's new pen over the old), the lines over it — from the twins (`inkMarksAt` over the run with its wash laid in,
+ * `handInkAt`) in the palette's inks: every channel within PEN_TOL of 255. A re-ink's front where the arrival field jumps between two
+ * texels may lie a fraction of a px off the twin's (the desk's Dawn unit `marks.dawn` says so and allows it): a still being re-inked
+ * allows such seams at up to 0.2 % of its inked px, none past 0.25.
+ */
+async function penCheck(sc) {
+  const s = sc.scene;
+  const k = 1 / (s.zoom * VIEW.dpr);
+  const { px: A, w, h } = await render(s);
+  const { time, notes } = desk.pens();
+  const written = notes.filter((n) => n.pen !== undefined);
+  // B: the same still with every note's words taken off its sheet — the pen's and the committed raster's alike (the same sheets)
+  const blank = (n) => ((typeof n.text === "string" && n.text.length > 0) || n.asset !== undefined ? { ...n, asset: undefined, text: "", arrive: undefined, marks: undefined, inked: undefined, wash: undefined } : n);
+  const { px: B } = await render({ ...s, notes: s.notes.map(blank) });
+  let checked = 0;
+  let inked = 0;
+  let worst = 0;
+  let over = 0;
+  const marked = [];
+  for (const { spec, geometry: G, pen: P } of written) {
+    const ink = penInk(spec.pen ?? "felt").map((v) => v * 255);
+    if (P.ink.marks.some((v) => v !== 0) || spec.wash !== undefined) { marked.push({ spec, G, P }); continue; }
+    stripOf(s, G, w, h, (o, qx, qy) => {
+      const gpu = coverAt(A, B, o, ink);
+      const twin = handInkAt(P.run, P.atlas, (qx + G.half[0]) / G.scale, (qy + G.half[1]) / G.scale, time, k / G.scale).cover;
+      checked++;
+      if (twin > 0.5) inked++;
+      const d = Math.abs(gpu - twin);
+      if (d > worst) worst = d;
+      if (d > PEN_TOL) over++;
+    });
+  }
+  const plain = written.length - marked.length;
+  let ok = written.length > 0 && (plain === 0 || inked > 200) && worst <= PEN_TOL;
+  if (plain > 0) console.log(`  ${ok ? "PASS" : "FAIL"}  pen        ${sc.name.padEnd(24)} ${plain} note${plain === 1 ? "" : "s"} written with the pen (pen time ${time} ms): under the flat strip the drawn coverage vs the CPU twin's over ${checked.toLocaleString()} px — max |Δ| ${worst.toFixed(4)} (${over} over ${PEN_TOL}), ${inked.toLocaleString()} px of ink`);
+  if (marked.length > 0 && !inkMarksCheck(sc, s, marked, time, k, A, B, w, h)) ok = false;
+  // the pen's weight against the committed raster beside it: the ink each lays under its flat strip — at rest, and at ×1 alone, where
+  // the committed bitmap (band 2) is drawn texel for device px as the live raster road draws it there; at another zoom it would be
+  // magnified or minified, which the live road never shows (it rasters again at its rung)
+  const pinned = s.notes.find((n) => n.asset !== undefined);
+  const same = pinned === undefined ? undefined : written.find((n) => n.spec.text === pinned.text && (n.spec.seed ?? 1) === (pinned.seed ?? 1));
+  if (same !== undefined && s.zoom === 1 && !s.notes.some((n) => n.arrive !== undefined)) {
+    const a = weightOf(s, same.geometry, penInk(same.spec.pen ?? "felt").map((v) => v * 255), A, B, w, h);
+    const b = weightOf(s, desk.noteGeometry(pinned), penInk(pinned.pen ?? "felt").map((v) => v * 255), A, B, w, h);
+    const of = (x, y) => `${Math.round(x).toLocaleString()} against ${Math.round(y).toLocaleString()} (${((100 * x) / y).toFixed(0)} %)`;
+    console.log(`  ....  weight     ${sc.name.padEnd(24)} the pen against the committed raster beside it (the same words, seed and sheet), under the flat strip: ink ${of(a.sum, b.sum)} px · over 0.5 ${of(a.half, b.half)} · over 0.85 ${of(a.deep, b.deep)}`);
+  }
+  return ok;
+}
+
+/** The note's marks' inks (petition I60): the palette's pens, highlighters and pencil — the kind's `markInksOf`, as the oracle desk lays them. */
+const NOTE_LOOK = paperKind().theme(deskPalette("light"), "light");
+
+/**
+ * THE MARKS, as colour (petition I60 — `penCheck`'s doc): each marked sheet's flat strip against the paper's order laid on the CPU from
+ * the twins over its blank sheet.
+ */
+function inkMarksCheck(sc, s, marked, time, k, A, B, w, h) {
+  let checked = 0;
+  let laid = 0;
+  let inked = 0;
+  let worst = 0;
+  let seams = 0;
+  let reinked = 0;
+  let reinking = false;
+  const mixed = (a, b, t) => a.map((v, i) => v + (b[i] - v) * t);
+  for (const { spec, G, P } of marked) {
+    const sheet = penInk(spec.pen ?? "felt");
+    const inks = markInksOf(NOTE_LOOK, sheet);
+    const penOfN = (n) => (n >= 1 && n <= inks.pens.length ? inks.pens[n - 1] : sheet);
+    const hlOfN = (n) => (n >= 1 && n <= inks.highlighters.length ? inks.highlighters[n - 1] : inks.pencil);
+    const run = P.wash !== undefined ? washRun(P.run, P.wash) : P.run;
+    if ((P.run.reinks ?? 0) > 0) reinking = true;
+    stripOf(s, G, w, h, (o, qx, qy) => {
+      const x = (qx + G.half[0]) / G.scale;
+      const y = (qy + G.half[1]) / G.scale;
+      const aa = k / G.scale;
+      const m = inkMarksAt(run, x, y, time, aa);
+      const hi = handInkAt(run, P.atlas, x, y, time, aa);
+      let c = [B[o] / 255, B[o + 1] / 255, B[o + 2] / 255];
+      if (m.marker > 0) c = c.map((v, i) => v * (1 + (hlOfN(m.tint)[i] - 1) * m.marker));
+      if (m.wash > 0) c = mixed(c, inks.pencil, m.wash * PAPER.wash);
+      const ic = hi.pen !== 0 || hi.was !== 0 ? mixed(penOfN(hi.was), penOfN(hi.pen), hi.over) : sheet;
+      c = mixed(c, ic, hi.cover);
+      if (m.line > 0) c = mixed(c, penOfN(m.pen), m.line);
+      const d = Math.max(Math.abs(c[0] * 255 - A[o]), Math.abs(c[1] * 255 - A[o + 1]), Math.abs(c[2] * 255 - A[o + 2])) / 255;
+      checked++;
+      if (m.marker > 0.05 || m.line > 0.05 || m.wash > 0.05) laid++;
+      if (hi.cover > 0.05) inked++;
+      if (hi.cover > 0.05 && hi.was !== hi.pen && hi.over < 0.95) reinked++;   // ink its new pen has not written over yet
+      if (d > worst) worst = d;
+      if (d > PEN_TOL) seams++;
+    });
+  }
+  // the sheet must hold what it is checked for: marks laid (a highlight, a line, the wash), or a re-ink's front on the paper
+  const ok = (reinking ? reinked > 20 : laid > 200) && inked > 200 && (reinking ? seams <= 0.002 * inked && worst <= 0.25 : worst <= PEN_TOL);
+  console.log(`  ${ok ? "PASS" : "FAIL"}  marks      ${sc.name.padEnd(24)} ${marked.length} marked note${marked.length === 1 ? "" : "s"} (pen time ${time} ms): under the flat strip the drawn colour vs the paper's order from the twins over ${checked.toLocaleString()} px — max |Δ| ${worst.toFixed(4)} (${seams} over ${PEN_TOL}${reinking ? `, a re-ink's seams allowed at 0.2 % of ${inked.toLocaleString()} inked px` : ""}), ${laid.toLocaleString()} px of marks, ${inked.toLocaleString()} px of ink${reinking ? `, ${reinked.toLocaleString()} px still in the pen they had` : ""}`);
+  return ok;
+}
+
+/** Each device pixel under sheet `G`'s flat strip (the lamp's shading 1 there): `fn(o, qx, qy)` — its byte offset and sheet point. */
+function stripOf(s, G, w, h, fn) {
+  const k = 1 / (s.zoom * VIEW.dpr);
+  const flat = -G.half[1] + G.glue * 2 * G.half[1];
+  const ext = Math.hypot(G.half[0], G.half[1]);
+  const x0 = Math.max(0, Math.floor((G.centre[0] - ext - s.camX) / k));
+  const x1 = Math.min(w, Math.ceil((G.centre[0] + ext - s.camX) / k));
+  const y0 = Math.max(0, Math.floor((G.centre[1] - ext - s.camY) / k));
+  const y1 = Math.min(h, Math.ceil((G.centre[1] + ext - s.camY) / k));
+  for (let y = y0; y < y1; y++) for (let x = x0; x < x1; x++) {
+    const [wx, wy] = worldAt(s, x, y);
+    const [qx, qy] = localOf(G, wx, wy);
+    if (!(qy < flat - 2 && qy > -G.half[1] + 3 && Math.abs(qx) < G.half[0] - 3)) continue;
+    fn((y * w + x) * 4, qx, qy);
+  }
+}
+
+/**
+ * The coverage a pixel's ink laid, drawn `A` against its blank sheet `B` (no light: the colour is the albedo), in the pen's `ink`
+ * (0–255), on the channel where the paper and the pen differ most.
+ */
+function coverAt(A, B, o, ink) {
+  let ch = 0;
+  let span = 0;
+  for (let c = 0; c < 3; c++) { const d = B[o + c] - ink[c]; if (Math.abs(d) > Math.abs(span)) { span = d; ch = c; } }
+  return (B[o + ch] - A[o + ch]) / span;
+}
+
+/** What a note's words lay under its flat strip: the coverage summed (each px's clamped to 0..1), and the px over half and over 0.85. */
+function weightOf(s, G, ink, A, B, w, h) {
+  let sum = 0;
+  let half = 0;
+  let deep = 0;
+  stripOf(s, G, w, h, (o) => {
+    const c = Math.min(1, Math.max(0, coverAt(A, B, o, ink)));
+    sum += c;
+    if (c > 0.5) half++;
+    if (c > 0.85) deep++;
+  });
+  return { sum, half, deep };
+}
+
 // ---------------------------------------------------------------- the prints and the whiteboards (design-015 D3r-a)
 
 /** A device pixel's centre in the scene's world. */
@@ -686,7 +860,8 @@ async function orderCheck(sc) {
  * K7b (design-016 §6 K7) — THE FAR LOD's handover, as pixels: one written note (the committed raster, its writing's greeked lines
  * stated) alone on the desk. Over the band's HIGH edge (66 CSS px) it draws exactly as without its greek — the full look, byte for
  * byte; under its LOW edge (46 px) exactly as without its raster — so the raster let go there shows nothing (no pop); within the
- * band (56 px) it is neither — the crossfade.
+ * band (56 px) it is neither — the crossfade. "Without its raster" is the sheet with its greek lines and NO WORDS: a note with words
+ * and no committed raster is written with the pen (petition I59), which is not what this check weighs.
  */
 async function farCheck() {
   const lines = [[36, 96], [64, 150], [92, 168]];
@@ -696,10 +871,11 @@ async function farCheck() {
     return { camX: -600 / zoom, camY: -400 / zoom, zoom, theme: "light", things: [{ ...note, ...extra }] };
   };
   const diff = (A, B) => { let n = 0; for (let o = 0; o < A.length; o += 4) if (delta(A, B, o) > 0 || A[o + 3] !== B[o + 3]) n++; return n; };
+  const lined = { greek: lines, asset: undefined, text: "" };   // the greek lines alone: no raster, no words for the pen
   const top = diff((await render(at(66, { greek: lines }))).px, (await render(at(66, {}))).px);
-  const low = diff((await render(at(46, { greek: lines }))).px, (await render(at(46, { greek: lines, asset: undefined }))).px);
+  const low = diff((await render(at(46, { greek: lines }))).px, (await render(at(46, lined))).px);
   const midRaster = diff((await render(at(56, { greek: lines }))).px, (await render(at(56, {}))).px);
-  const midGreek = diff((await render(at(56, { greek: lines }))).px, (await render(at(56, { greek: lines, asset: undefined }))).px);
+  const midGreek = diff((await render(at(56, { greek: lines }))).px, (await render(at(56, lined))).px);
   const ok = top === 0 && low === 0 && midRaster > 0 && midGreek > 0;
   console.log(`  ${ok ? "PASS" : "FAIL"}  far        a written note across the far band: at 66 px with its greek lines vs without them ${top} px differ · at 46 px with its raster vs without it ${low} px differ · at 56 px (the band) it is neither — ${midRaster} px from the raster alone, ${midGreek} from the lines alone`);
   return ok;
@@ -1430,6 +1606,7 @@ for (const sc of scenes) if (sc.light) { if (!(await lightCheck(sc))) failed += 
 for (const sc of scenes) if (sc.night) { if (!(await nightCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.ruler) { if (!(await rulerCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.paper) { if (!(await paperCheck(sc))) failed += 1; }
+for (const sc of scenes) if (sc.pen) { if (!(await penCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.photo) { if (!(await photoCheck(sc))) failed += 1; }
 for (const sc of scenes) if (sc.order) { if (!(await orderCheck(sc))) failed += 1; }
 if (!(await cardCheck())) failed += 1;

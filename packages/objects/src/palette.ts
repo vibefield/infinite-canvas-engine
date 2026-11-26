@@ -21,6 +21,7 @@
 // magnet grid retired with the cards and the dot and needle grids on 2026-09-25.
 
 import { cssColor, type GroundTheme, type Palette, type RGB, type RGBA, rgb, themeFrom, type ThemeName } from "@ice/desk";
+import type { HighlighterName } from "@ice/desk/kit";
 import type { BoardPalette } from "./board/kind";
 import type { CalendarPalette } from "./calendar/kind";
 import type { MiniMatPalette } from "./minimat/kind";
@@ -257,7 +258,10 @@ export const CALENDAR_LOOK = {
 } as const;
 export type CalendarTape = keyof typeof CALENDAR_LOOK.tapes;
 export const CALENDAR_TAPES = Object.keys(CALENDAR_LOOK.tapes) as CalendarTape[];
-export type HighlighterName = keyof typeof CALENDAR_LOOK.highlighters;
+// the highlighters' names are the kit's own (`HIGHLIGHTERS`, the ink's marks keep one by its place): this table holds an ink for
+// each, in the kit's order — a kit name the table lacks is a type error in `calendarPrint`'s lookup below, and a row holds the two
+// lists equal (test/calendar-print.test.ts)
+export type { HighlighterName };
 export const HIGHLIGHTER_NAMES = Object.keys(CALENDAR_LOOK.highlighters) as HighlighterName[];
 /** A colour as the Canvas 2D takes it, with a presence. */
 const cssOf = (c: RGB, a = 1): string => `rgba(${Math.round(c[0] * 255)}, ${Math.round(c[1] * 255)}, ${Math.round(c[2] * 255)}, ${a})`;
@@ -289,12 +293,13 @@ export type DeskPalette = PaperPalette & MiniMatPalette & BoardPalette & Noteboo
 
 /**
  * THE DEFAULT PALETTE (D-D7-C.1) — complete for `DESK_OBJECTS`: the roles, the note's one paper (`yellow` — the product's
- * `--vf-note-surface`), its pens, the mini mats' vinyls, the whiteboard's materials and markers (BOARD.md), the notebooks' page,
+ * `--vf-note-surface`), its pens and the highlighters its words are marked in (petition I60 — the calendar's five; the selection's
+ * wash in the roles' `select`, the palette naming no `pencil`), the mini mats' vinyls, the whiteboard's materials and markers (BOARD.md), the notebooks' page,
  * ruling and covers (NOTEBOOK.md §4), the calendar's paper, print, tapes and presences (CALENDAR.md §4). `deskLayer({ palette })`
  * takes it as it is; an app with its own tokens hands its own (the kinds read only what `theme()` is given).
  */
 export const deskPalette = (name: ThemeName): DeskPalette => ({
-  ...PALETTE[name], papers: { yellow: SURFACES.note }, pens: PENS, vinyls: VINYLS,
+  ...PALETTE[name], papers: { yellow: SURFACES.note }, pens: PENS, highlighters: CALENDAR_LOOK.highlighters, vinyls: VINYLS,
   board: BOARD_LOOK, markers: MARKERS,
   notebooks: { ...NOTEBOOK_LOOK, rule: notebookRuleInk()[3] },
   calendars: CALENDAR_LOOK,

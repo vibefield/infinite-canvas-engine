@@ -1,20 +1,23 @@
 // rig:sticky — the sticky note's TEXT through a real headless Chrome, FROM THE WORLD (D2c; the prototype's
 // test/harness/sticky.mjs ported onto `window.__desk`, and design-015 §6.1's witnesses). Page-level CDP input
-// only (nothing reaches the OS). The checks:
-//   · the text raster seam IS the prototype's ink: the committed ink-note-1.r8, byte for byte;
-//   · a note written LIVE draws the frame its committed still draws, maxΔ 0;
-//   · stills — four written notes by day, by night, at 2.5 and 0.4, one held — every note with its raster at its band;
+// only (nothing reaches the OS). THE PEN (petition I59): the app lends its baked hands, so a note whose glyphs
+// the face holds is written WITH THE PEN (its glyph run read in the note's shader) and one with a glyph it lacks
+// (CJK, an emoji) keeps the text raster — the checks read each road's own witness. The checks:
+//   · the text raster seam IS the prototype's ink: the committed ink-note-1.r8, byte for byte; the baked hand lands;
+//   · a note written LIVE writes with the pen: its run in the store, no raster — the committed raster beside it pinned,
+//     the two differing only inside the sheet (the pen's own stills are the oracle's, held to Chrome by rig:parity);
+//   · stills — four written notes by day, by night, at 2.5 and 0.4, one held — every drawn note written with the pen;
 //   · a TAP puts the editor on the note: the one screen-space textarea, its rect the sheet's screen rect;
-//   · keys through the platform land in the note LIVE (the document untouched until the session ends), the pen's
-//     wipe runs 110 ms and ends, the caret stands after the glyph and blinks — and nothing else draws;
+//   · keys through the platform land in the note LIVE (the document untouched until the typing commits), the pen
+//     writes the typed glyph and is done, the caret stands after the glyph and blinks — and nothing else draws;
 //   · a tap between two glyphs puts the caret between them; the editor follows a pan and a pinch zoom;
 //   · the hand-off: the sheet before the focus and after the blur (its text put back) differs on 0 px;
 //   · typing is a GESTURE: 1 s without input commits the session (the focus stays), Escape commits it,
 //     ⌘Z takes a session back in ONE step, ⇧⌘Z redoes it;
-//   · the band ladder re-rasters at a rung crossing only (never on a pan or a wobble);
-//   · delete while editing ends the session and the claim; the ghost gone, the note's page rect is back
-//     (no leak over delete/undo cycles); the undo brings it back as last committed, re-rastered;
-//   · IME text enters as handwriting while it composes (the prototype's behaviour, kept);
+//   · the pen's road reads no zoom: a pan, zooms across every rung and a wobble build no run;
+//   · delete while editing ends the typing and the claim; the ghost gone, the note's run is given back
+//     (no leak over delete/undo cycles); the undo brings it back as last committed, written again;
+//   · IME text enters as handwriting while it composes (the prototype's behaviour, kept — CJK: the raster's road);
 //   · the editor owns the keys: `w` types, it does not stick a note; ⌫ erases a glyph, not the note.
 // DESK_SHOTS=<dir> writes the stills and the typing frames for the eye. Exit 0 = every check passed.
 import { spawn } from "node:child_process";
@@ -106,8 +109,11 @@ try {
   let inkDiff = 0;
   for (let i = 0; i < ref.length; i++) if (ref[i] !== mine[i]) inkDiff++;
   check(mine.length === ref.length && inkDiff === 0, `the OffscreenCanvas text raster draws the prototype's committed ink-note-1.r8 byte for byte (${mine.length} of ${ref.length} bytes, ${inkDiff} differ)`);
+  for (let i = 0; i < 50 && !(await q("window.__desk.note.handReady()")); i++) await sleep(100);
+  check(await q("window.__desk.note.handReady()"), "the hand's baked face (Caveat 500, apps/desk/assets/hand — petition I59) has landed: the notes write with the pen");
 
-  // --- 2. written LIVE, the note draws the frame its committed still draws (the paper-z1 scene: the pages carved afresh, the same texels)
+  // --- 2. written LIVE, the note writes with THE PEN (petition I59): its run in the store, no raster — the committed raster beside it
+  // pinned (the paper-z1 scene), the two frames differing only inside the sheet (the pen's own stills are the oracle's paper-pen-*)
   const NOTES3 = [{ x: 300, y: 250, text: INK_TEXT, seed: 7, w: 200, h: 200 }, { x: 560, y: 330, seed: 11, text: "" }, { x: 830, y: 240, seed: 5, text: "", selected: true }];
   const paper = { ...base, camX: 13.7, camY: -21.3, zoom: 1, notes: NOTES3 };
   // (the ids are setScene's own: until the next sync the previous scene's notes are still alive, despawning)
@@ -116,12 +122,16 @@ try {
   const pinnedAt = await q(`window.__desk.note.raster(${P.notes[0]})`);
   const Lv = await q(`window.__desk.setScene(${JSON.stringify(paper)})`);
   const liveShot = await shot("live");
-  const liveAt = await q(`window.__desk.note.raster(${Lv.notes[0]})`);
+  const livePen = await q(`window.__desk.note.pen(${Lv.notes[0]})`);
+  const liveRoad = await q(`window.__desk.note.road(${Lv.notes[0]})`);
+  const liveRaster = await q(`window.__desk.note.raster(${Lv.notes[0]})`);
   const dPL = await diff(pinned, liveShot);
-  check(pinnedAt?.pinned === true && liveAt?.pinned === false && liveAt.band === 2 && liveAt.x === pinnedAt.x && liveAt.y === pinnedAt.y && liveAt.layer === pinnedAt.layer, `the live raster lands where the committed one did: band ${liveAt?.band}, ${liveAt?.w}² at layer ${liveAt?.layer} (${liveAt?.x},${liveAt?.y})`);
-  check(dPL.n === 0, `the note written live draws its committed still's frame: ${dPL.n} px differ (maxΔ ${dPL.max})`);
+  const sheet0 = await sheetBox(Lv.notes[0]);
+  const inSheet0 = dPL.box !== null && dPL.box[0] >= sheet0.x * 2 - 4 && dPL.box[2] <= (sheet0.x + sheet0.width) * 2 + 4 && dPL.box[1] >= sheet0.y * 2 - 4 && dPL.box[3] <= (sheet0.y + sheet0.height) * 2 + 4;
+  check(pinnedAt?.pinned === true && liveRoad === "pen" && livePen?.glyphs === 32 && liveRaster === null, `the committed raster is pinned and the live note writes with the pen: road ${liveRoad}, its run ${livePen?.glyphs} glyphs (${livePen?.length} vec4s at base ${livePen?.base}), raster ${JSON.stringify(liveRaster)}`);
+  check(dPL.n > 0 && inSheet0, `the pen's ink and the committed raster's differ only inside the sheet: ${dPL.n} px (maxΔ ${dPL.max}) in ${JSON.stringify(dPL.box)}`);
 
-  // --- 3. stills: four written notes (three pens), one selected — each drawn with its raster at its band
+  // --- 3. stills: four written notes (three pens), one selected — each drawn note written with the pen
   const NOTES4 = [
     { x: 300, y: 250, seed: 3, text: INK_TEXT },
     { x: 560, y: 330, seed: 11, pen: "ball", text: "the desk is where thinking gets arranged" },
@@ -135,12 +145,13 @@ try {
     ["day-z0.4", { ...base, zoom: 0.4, camX: -900, camY: -700, notes: NOTES4 }, 1],
     ["held-z1.6", { ...base, zoom: 1.6, camX: 150, camY: 120, notes: NOTES4.map((n, i) => (i === 1 ? { ...n, held: true } : n)) }, 4],
   ];
-  for (const [name, s, band] of stills) {
+  for (const [name, s] of stills) {
     const S = await q(`window.__desk.setScene(${JSON.stringify(s)})`);
     await shot(name);
-    const rs = await q(`${JSON.stringify(S.notes)}.map((id) => window.__desk.note.raster(id))`);
-    const visible = rs.filter((r) => r !== null);
-    check(visible.length >= 3 && visible.every((r) => r.band === band), `${name.padEnd(10)} ${visible.length} written notes drawn with rasters · ${visible.map((r) => `${r.w}²@${r.band.toFixed(2)}`).join(" ")}`);
+    // the notes the builder drew: each on the pen's road, its run written (the raster's band ladder no longer applies to them)
+    const ws = await q(`${JSON.stringify(S.notes)}.map((id) => ({ road: window.__desk.note.road(id), pen: window.__desk.note.pen(id), raster: window.__desk.note.raster(id) }))`);
+    const drawn = ws.filter((w) => w.road !== null);
+    check(drawn.length >= 2 && drawn.every((w) => w.road === "pen" && w.pen !== null && w.pen.glyphs > 0 && w.raster === null), `${name.padEnd(10)} ${drawn.length} written notes drawn with the pen · ${drawn.map((w) => `${w.road} ${w.pen?.glyphs ?? 0} glyphs`).join(" · ")}`);
   }
 
   // --- 4. the editor: a TAP puts the one screen-space textarea on the note, its rect the sheet's
@@ -160,21 +171,25 @@ try {
   const f0 = await q("window.__desk.submits().total");
   await key("h"); await key("i");
   const live1 = await note(id);
+  // THE PEN (petition I59): a typed glyph is written by the pen's clock in 100–190 ms from the frame that looked at it — the
+  // raster's 110 ms wipe is retired on the pen's road (`wipe` stays null there); `writing().moving` counts the sheets it is writing
+  const moving1 = await until(async () => (await q("window.__desk.note.writing()"))?.moving ?? 0, 150);
   const wipe1 = await q(`window.__desk.note.wipe(${id})`);
   const doc1 = await docNote(id);
   check(live1?.text === "hi" && doc1?.text === "" && (await q("window.__desk.note.sessionOpen()")), `two keys land in the note LIVE ("${live1?.text}") while the document still holds "${doc1?.text}" — a session is open`);
-  check(wipe1 !== null && wipe1.index === 1, `the pen is still writing the last glyph (the wipe at index ${wipe1?.index})`);
-  // conditions, not sleeps (D7): the wipe draws frames while it runs, then ends; the idle commit lands when it lands
+  check(moving1 === 1 && wipe1 === null && (await q(`window.__desk.note.road(${id})`)) === "pen", `the pen is still writing the typed glyph (${moving1} sheet moving, no wipe: ${JSON.stringify(wipe1)})`);
+  // conditions, not sleeps (D7): the pen draws frames while it writes, then rests; the idle commit lands when it lands
   const fMid = await until(async () => { const n = await q("window.__desk.submits().total"); return n > f0 ? n : 0; }, 2000);
-  const wipeOver = await until(async () => (await q(`window.__desk.note.wipe(${id})`)) === null, 2000);
-  check(fMid > f0 && wipeOver, `the wipe drew frames while it ran (${fMid - f0} submits) and is over`);
+  const penDone = await until(async () => (await q("window.__desk.note.writing()"))?.moving === 0, 2000);
+  check(fMid > f0 && penDone, `the pen drew frames while it wrote (${fMid - f0} submits) and is done`);
   const doc2 = await until(async () => { const d = await docNote(id); return d?.text === "hi" ? d : null; }, 5000) ?? (await docNote(id));   // past the 1 s idle: the session commits, the focus stays
   check(doc2?.text === "hi" && !(await q("window.__desk.note.sessionOpen()")) && (await q("window.__desk.note.editing()")) === id && (await q("window.__desk.note.editorFocused()")), `1 s without input commits the session ("${doc2?.text}" in the document) and the editor stays on the note`);
   const blinks = await submitsIn(1100);
   check(blinks >= 1 && blinks <= 4, `at rest with the caret blinking the desk submits ${blinks} frames in 1.1 s — the blink and nothing else`);
   const caret2 = await q("window.__desk.note.caret()");
   const lay2 = await q(`window.__desk.note.layout(${id})`);
-  check(caret2?.index === 2 && caret2.entity === id && lay2?.glyphs === 2 && (await q(`window.__desk.note.raster(${id})`)) !== null, `the caret stands after the second glyph (index ${caret2?.index}) and the raster holds ${lay2?.glyphs} glyphs`);
+  const pen2 = await q(`window.__desk.note.pen(${id})`);
+  check(caret2?.index === 2 && caret2.entity === id && lay2?.glyphs === 2 && pen2?.glyphs === 2, `the caret stands after the second glyph (index ${caret2?.index}) and the pen's run holds ${pen2?.glyphs} glyphs (the layout ${lay2?.glyphs})`);
   await shot("type-hi");
 
   // a tap BETWEEN the glyphs puts the caret there (the layout's own positions → the screen)
@@ -242,21 +257,23 @@ try {
   check((await q("window.__desk.entities()")).length === count0 && afterKeys?.text === "hi" && (await q("window.__desk.note.editing()")) === id, `while writing, \`w\` types instead of sticking a note and ⌫ erases it again ("${afterKeys?.text}", ${count0} object)`);
   await key("Escape");
 
-  // --- 5. the band ladder re-rasters at a rung crossing only — never on a pan or a wobble
-  const bandAt = async (camera) => { await q(`window.__desk.setCamera(${JSON.stringify(camera)})`); await settle(); return { r: await q(`window.__desk.note.raster(${id})`), n: (await q("window.__desk.note.writing()")).rasters }; };
-  const L0 = await bandAt({ x: 150, y: 120, zoom: 1.6 });
-  const Lpan = await bandAt({ x: 190, y: 90, zoom: 1.6 });
-  const L1 = await bandAt({ x: 150, y: 120, zoom: 1 });
-  const Lwob = await bandAt({ x: 150, y: 120, zoom: 1.9 });
-  const L4 = await bandAt({ x: 400, y: 280, zoom: 4 });
-  const L05 = await bandAt({ x: -200, y: -200, zoom: 0.5 });
-  check(L0.r.band === 4 && Lpan.n === L0.n && L1.r.band === 4 && L1.n === L0.n && Lwob.n === L0.n, `a pan, a zoom out to 1 (kept by the hysteresis) and a wobble to 1.9 re-raster nothing (band ${L0.r.band}, ${L0.n} rasters throughout)`);
-  check(L4.r.band === 8 && L4.r.w === 1600 && L4.n === L0.n + 1 && L05.r.band === 1 && L05.r.w === 200 && L05.n === L0.n + 2, `the raster follows the zoom one rung crossing at a time: band 4 → ${L4.r.band} (${L4.r.w}²) → ${L05.r.band} (${L05.r.w}²), ${L05.n - L0.n} re-rasters`);
+  // --- 5. the pen's road reads no zoom (petition I59 — the band ladder is the raster road's alone, for a sheet the face cannot
+  // write): a pan, zooms out to 1 and in to 4, a wobble to 1.9 and out to 0.5 build no run and lay no raster
+  const zoomAt = async (camera) => {
+    await q(`window.__desk.setCamera(${JSON.stringify(camera)})`); await settle();
+    const w = await q("window.__desk.note.writing()");
+    return { road: await q(`window.__desk.note.road(${id})`), pen: await q(`window.__desk.note.pen(${id})`), runs: w.runs, rasters: w.rasters };
+  };
+  const Z = [];
+  for (const camera of [{ x: 150, y: 120, zoom: 1.6 }, { x: 190, y: 90, zoom: 1.6 }, { x: 150, y: 120, zoom: 1 }, { x: 150, y: 120, zoom: 1.9 }, { x: 400, y: 280, zoom: 4 }, { x: -200, y: -200, zoom: 0.5 }]) Z.push(await zoomAt(camera));
+  check(Z.every((z) => z.road === "pen" && z.pen?.glyphs === 2 && z.pen.base === Z[0].pen?.base && z.runs === Z[0].runs && z.rasters === Z[0].rasters), `a pan and zooms to 1, 1.9, 4 and 0.5 build no run and lay no raster — the note on the pen's road throughout, its run at base ${Z[0].pen?.base} (roads ${Z.map((z) => z.road).join(" ")} · runs built ${Z.map((z) => z.runs).join(" ")} · rasters ${Z.map((z) => z.rasters).join(" ")})`);
 
-  // --- 6. delete while editing ends the session and the claim; the note's page rect goes back; undo brings it back as committed
+  // --- 6. delete while editing ends the typing and the claim; the note's run is given back (the pen's twin of the page rect,
+  // petition I59); undo brings it back as committed, written again
   await q(`window.__desk.setCamera(${JSON.stringify(cam)})`);
   await settle();
-  const used0 = (await q("window.__desk.note.pages()")).used;
+  const runs0 = await q("window.__desk.note.runs()");
+  const pen0 = await q(`window.__desk.note.pen(${id})`);
   await click(box0.cx, box0.cy);
   await key("End");
   await typeKeys(" and more");
@@ -265,13 +282,14 @@ try {
   await sleep(500);
   check(mid?.text === "hi and more" && (await q("window.__desk.note.editing()")) === -1 && !(await q("window.__desk.note.editorFocused()")) && (await q("window.__desk.note.claimed()")).length === 0 && (await q(`window.__desk.entity(${id})`)) === null, "a delete while writing ends the session: the note gone, no editor, no claim");
   await settle();
-  const usedGone = (await q("window.__desk.note.pages()")).used;
-  check(used0 > 0 && usedGone === 0, `the ghost faded, the note's page rect is given back: ${used0} texels in use → ${usedGone}`);
+  const runsGone = await q("window.__desk.note.runs()");
+  check(pen0?.glyphs === 2 && runs0 !== null && runsGone !== null && runsGone.runs === runs0.runs - 1 && runsGone.used === runs0.used - pen0.length, `the ghost faded, the note's run is given back: ${runs0?.runs} run(s), ${runs0?.used} texels in use → ${runsGone?.runs}, ${runsGone?.used} (its run ${pen0?.length})`);
   await key("z", META);
   await settle();
   const back = await q("window.__desk.entities()");
   const backId = back[0]?.id;
-  check(back.length === 1 && (await note(backId))?.text === "hi" && (await q(`window.__desk.note.raster(${backId})`)) !== null && (await q("window.__desk.note.pages()")).used === used0, `⌘Z brings the note back as last committed ("${(await note(backId))?.text}" — the interrupted run is gone) and it re-rasters (${(await q("window.__desk.note.pages()")).used} texels)`);
+  const runsBack = await q("window.__desk.note.runs()");
+  check(back.length === 1 && (await note(backId))?.text === "hi" && (await q(`window.__desk.note.road(${backId})`)) === "pen" && (await q(`window.__desk.note.pen(${backId})`))?.glyphs === 2 && runsBack?.used === runs0?.used, `⌘Z brings the note back as last committed ("${(await note(backId))?.text}" — the interrupted run is gone) and the pen writes it again (${runsBack?.runs} run(s), ${runsBack?.used} texels)`);
   const cycles = [];
   for (let i = 0; i < 4; i++) {
     const cur = (await q("window.__desk.entities()"))[0].id;
@@ -279,11 +297,12 @@ try {
     await settle();
     await key("z", META);
     await settle();
-    cycles.push((await q("window.__desk.note.pages()")).used);
+    cycles.push((await q("window.__desk.note.runs()"))?.used);
   }
-  check(cycles.every((u) => u === used0), `four more delete → undo cycles leak no page slot (${cycles.join(", ")} texels in use)`);
+  check(cycles.every((u) => u === runs0?.used), `four more delete → undo cycles leak no run (${cycles.join(", ")} texels in use)`);
 
-  // --- 7. IME text enters as handwriting while it composes (the prototype's behaviour, kept)
+  // --- 7. IME text enters as handwriting while it composes (the prototype's behaviour, kept) — the face lacks CJK, so the
+  // sheet takes the raster's road (petition I59): its raster witness stands, beside the road's
   const imeId = await q("window.__desk.spawn('desk.note', { seed: 9 }, { x: 350, y: 300 })");
   await settle();
   const imeBox = await sheetBox(imeId);
@@ -296,9 +315,63 @@ try {
   const composed = await note(imeId);
   await settle();
   const imeLayout = await q(`window.__desk.note.layout(${imeId})`);
+  const imeRoad = await q(`window.__desk.note.road(${imeId})`);
   await key("Escape");
   await sleep(100);
-  check(composing?.text === "に" && composed?.text === "日本" && imeLayout?.glyphs === 2 && (await q(`window.__desk.note.raster(${imeId})`)) !== null && (await docNote(imeId))?.text === "日本", `IME text is written as it composes ("${composing?.text}") and as it commits ("${composed?.text}", ${imeLayout?.glyphs} glyphs in the hand), and Escape commits it`);
+  check(composing?.text === "に" && composed?.text === "日本" && imeLayout?.glyphs === 2 && imeRoad === "raster" && (await q(`window.__desk.note.raster(${imeId})`)) !== null && (await docNote(imeId))?.text === "日本", `IME text is written as it composes ("${composing?.text}") and as it commits ("${composed?.text}", ${imeLayout?.glyphs} glyphs in the hand, on the ${imeRoad} road — the face has no CJK), and Escape commits it`);
+
+  // --- 8. the press on the lent note's writing is the EDITOR'S under the desk's own select (petition I60): a double click takes a
+  // word, a drag selects a range and leaves the note where it lay, a right press keeps the field and its range. The units hold the
+  // claim on a plain engine and on `DESK_ENGINE` (objects' note-select); this holds it in a browser, on this app's `desk.select`
+  check((await q("window.__desk.note.tool()")) === "desk.select", `the desk runs its own select: ${await q("window.__desk.note.tool()")} in hand`);
+  const selId = await q("window.__desk.spawn('desk.note', { seed: 13, text: 'buy milk today' }, { x: 420, y: 320 })");
+  await settle();
+  const selBox = await sheetBox(selId);
+  await click(selBox.cx, selBox.cy);
+  await settle();
+  /** Text index i of the note on screen (CSS px): before its glyph, a little above its baseline — through the sheet's turn and the camera. */
+  const indexAt = async (i) => {
+    const L = await q(`window.__desk.note.layout(${selId})`);
+    const S = await q(`window.__desk.entity(${selId}).geometry`);
+    const c = await q("window.__desk.camera()");
+    const ix = L.positions[2 * i] + 1 - S.half[0];
+    const iy = L.positions[2 * i + 1] - L.ascent * 0.4 - S.half[1];
+    return { x: (S.centre[0] + S.cos * ix - S.sin * iy - c.x) * c.zoom, y: (S.centre[1] + S.sin * ix + S.cos * iy - c.y) * c.zoom };
+  };
+  check((await q("window.__desk.note.editing()")) === selId && (await q("window.__desk.note.editorFocused()")), "a tap puts the editor on the note to be selected in");
+  // a DOUBLE CLICK on "milk" takes the word
+  const m = await indexAt(5);
+  await mouse("mouseMoved", m.x, m.y);
+  await mouse("mousePressed", m.x, m.y); await mouse("mouseReleased", m.x, m.y);
+  await sleep(40);
+  await mouse("mousePressed", m.x, m.y, { clickCount: 2 }); await mouse("mouseReleased", m.x, m.y, { clickCount: 2 });
+  await sleep(120);
+  const word = await q("window.__desk.note.range()");
+  check(JSON.stringify(word) === "[4,8]" && (await q("window.__desk.note.editing()")) === selId, `a double click on "milk" selects the word: range ${JSON.stringify(word)}`);
+  await sleep(400);   // past the multi-tap window: the next press is a first
+  // a DRAG across "buy milk" selects the range; the note stays where it lay
+  const centre0 = (await q(`window.__desk.entity(${selId}).geometry`)).centre;
+  const a0 = await indexAt(0);
+  const a8 = await indexAt(8);
+  await mouse("mouseMoved", a0.x, a0.y);
+  await mouse("mousePressed", a0.x, a0.y);
+  for (let k = 1; k <= 8; k++) { await mouse("mouseMoved", a0.x + ((a8.x - a0.x) * k) / 8, a0.y + ((a8.y - a0.y) * k) / 8, { buttons: 1 }); await sleep(16); }
+  await mouse("mouseReleased", a8.x, a8.y);
+  await settle();
+  const dragged = await q("window.__desk.note.range()");
+  const centre1 = (await q(`window.__desk.entity(${selId}).geometry`)).centre;
+  check(JSON.stringify(dragged) === "[0,8]" && near(centre1[0], centre0[0], 0.01) && near(centre1[1], centre0[1], 0.01), `a drag across "buy milk" selects it (range ${JSON.stringify(dragged)}) and the note stays where it lay (moved ${(centre1[0] - centre0[0]).toFixed(2)}, ${(centre1[1] - centre0[1]).toFixed(2)})`);
+  // a RIGHT press on the words keeps the field: still editing, still focused, the range as it was
+  const r4 = await indexAt(4);
+  await mouse("mouseMoved", r4.x, r4.y);
+  await mouse("mousePressed", r4.x, r4.y, { button: "right", buttons: 2 });
+  await sleep(30);
+  await mouse("mouseReleased", r4.x, r4.y, { button: "right" });
+  await sleep(120);
+  const kept = await q("window.__desk.note.range()");
+  check((await q("window.__desk.note.editing()")) === selId && (await q("window.__desk.note.editorFocused()")) && JSON.stringify(kept) === "[0,8]", `a right press on the words keeps the field: editing ${await q("window.__desk.note.editing()")}, range ${JSON.stringify(kept)}`);
+  await key("Escape");
+  await sleep(100);
 
   logs.push(...(await faultsOf(tab)));   // the faults the engine CONTAINED — a skipped frame is an error too (D7)
   if (logs.length) console.log(`page errors:\n  ${logs.slice(0, 6).join("\n  ")}`);

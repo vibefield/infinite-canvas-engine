@@ -8,6 +8,7 @@
     ".": "./src/index.ts",
     "./engine": "./src/engine/index.ts",
     "./kit": "./src/kit/index.ts",
+    "./bake": "./src/bake/index.ts",
     "./assets/*": "./assets/*"
   },
   "scripts": {

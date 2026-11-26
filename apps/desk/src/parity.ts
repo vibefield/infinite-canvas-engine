@@ -26,6 +26,7 @@ import { PRINT_FIXTURES, type PrintMeta, printSheetOf } from "@ice/objects/oracl
 // WGSL does not compile, registered on the one desk as the Node oracle registers it (its kind refused at create; the rest made)
 import { DESK_CLOCK_OBJECTS, DeskClockBroken } from "@ice-examples/desk-clock";
 import { bytesOf, fetchRetry, jsonOf } from "./rig/fetch-retry";   // the rigs' fetches, retried (K-H)
+import { deskHand } from "./faces";   // the desk's baked hands (petition I59): the faces the oracle lends from assets/hand on disk
 
 /** The page's door for the rig (and a person at the console). */
 export interface DeskParity {
@@ -109,8 +110,11 @@ async function boot(): Promise<void> {
     const bytes = new Uint8Array(await new Response((await binRes.blob()).stream().pipeThrough(new DecompressionStream("deflate-raw"))).arrayBuffer());
     prints[name] = printSheetOf((await metaRes.json()) as PrintMeta, bytes);
   }
+  // THE PEN (petition I59): the note's face landed before the first still — a still never draws a sheet waiting for its face
+  const hand = deskHand();
+  if (!(await hand.load("caveat"))) throw new Error(`the hand's face "caveat" did not load: ${hand.failed("caveat") ?? "no reason given"}`);
   const desk = await scope("creation", () => createOracleDesk({
-    device, format: surf.format, text: shaderText, objects: [...DESK_CLOCK_OBJECTS, DeskClockBroken],
+    device, format: surf.format, text: shaderText, hand, objects: [...DESK_CLOCK_OBJECTS, DeskClockBroken],
     // an error the kinds' creation window held that no kind raises alone (petition I24) is the probe's, as its own scope would have counted it
     onError: (e) => { errors.push(`creation (no kind's alone): ${e.message}`); fail(`GPU error: ${e.message}`); },
     assets: { noise: blueNoise(), goboC, goboB, glyphMeta, glyphs, inkMeta, ink, photoMeta, photo, prints },

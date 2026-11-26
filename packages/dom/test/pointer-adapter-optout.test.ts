@@ -4,11 +4,15 @@
  * explicit `[data-canvas-interactive]` flags the down fact `surfaceHandled: true`
  * (fact still lands; recognizers skip). A `stopPropagation()` before the container
  * is the OTHER boundary: the event never reaches the adapter, so no fact is made.
+ * A down whose default a listener AHEAD of the adapter prevented (the desk's editor
+ * claiming a press on its writing — petition I60) is flagged the same way; the focus
+ * driver's own cancel inside a keyboard claim is focus bookkeeping, not a claim.
  */
 import { createInputQueue } from "@ice/core";
 import { describe, expect, it } from "vitest";
 import { createCanvasHost } from "../src/host";
 import { attachPointerAdapter } from "../src/pointer-adapter";
+import { attachWidgetFocus } from "../src/widget-focus";
 
 function setup() {
   const container = document.createElement("div");
@@ -87,6 +91,46 @@ describe("pointer adapter — widget opt-out", () => {
     fire(widget, "pointerdown", DOWN);
     expect(queue.size()).toBe(0); // the container listener never ran
     detach();
+  });
+
+  it("flags a down whose default a listener AHEAD of the adapter prevented — the desk's editor claiming a press on its writing, in the capture phase (petition I60); its hover verdict stays the DOM's own, and the move after it is a plain fact", () => {
+    const { container, host, queue, detach } = setup();
+    const plain = document.createElement("div");
+    host.container.appendChild(plain);
+    const claim = (e: Event): void => { e.preventDefault(); };
+    container.addEventListener("pointerdown", claim, { capture: true });
+
+    const ev = fire(plain, "pointerdown", DOWN);
+    fire(plain, "pointermove", { ...DOWN, clientX: 40 });
+    const [down, move] = queue.drain();
+    container.removeEventListener("pointerdown", claim, { capture: true });
+    detach();
+    expect(ev.defaultPrevented).toBe(true);
+    expect(down?.kind).toBe("down");
+    expect(down?.surfaceHandled).toBe(true);
+    // the claim is no chrome: the pointer is not over an interactive, so the stack's exact hit stands for the release's tap
+    expect(down?.overInteractive).toBe(false);
+    expect(move?.kind).toBe("move");
+    expect(move?.surfaceHandled).toBeUndefined();
+  });
+
+  it("leaves the focus driver's own cancel alone: a press on plain content inside a keyboard claim has its focus fixup suppressed (prevented), and its down still lands unflagged, as ever (petition I60's gate is a claim, not focus bookkeeping)", () => {
+    const { host, queue, detach } = setup();
+    const focus = attachWidgetFocus(host);
+    const claimHost = document.createElement("div");
+    claimHost.setAttribute("data-canvas-keyboard", "");
+    claimHost.tabIndex = -1;
+    const body = document.createElement("div");
+    claimHost.appendChild(body);
+    host.container.appendChild(claimHost);
+
+    const ev = fire(body, "pointerdown", DOWN);
+    const down = queue.drain()[0];
+    focus.detach();
+    detach();
+    expect(ev.defaultPrevented).toBe(true);   // the driver took the focus choice
+    expect(down?.kind).toBe("down");
+    expect(down?.surfaceHandled).toBeUndefined();
   });
 
   it("only opts out on down — a move over a button is still a normal fact", () => {

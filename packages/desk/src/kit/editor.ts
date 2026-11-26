@@ -4,8 +4,66 @@
 // kind declares its text parts with its object (`defineObject({ host: { text } })`): a part the desk routes a TAP to (the note's
 // body — a tap on the sheet), or a part its own DOM half leases at event time (the calendar's day line — a day selected). The
 // kit's since K4a, so a borrower names no other kind's folder. Types only: the DOM stays in desk/host.
+//
+// THE RANGE AND THE CLIPBOARD (petition I60): a lease may say where its writing lies (`indexAt`, `rangeAt`) — the editor then claims a
+// press on it and turns a drag, a double or a third click and Shift into the textarea's own range, told to the lease with the caret
+// (`selection`; never stored, never synced) — and may lift and lay its words (`lift`, `lay`) for the field's copy, cut and paste. A
+// lease that declares none of them behaves exactly as before.
+//
+// WHERE A RANGE LIES (petition I60 — "the selection bar comes to the words"): a lease may say where a range of its words is in the
+// world (`rangeBox`) — the desk then places the selection menu's anchor over the words selected (`SelectionAnchor.words`), with the
+// object's words acts: the object the lease names (`entity`), else the one core's `Editing` marks. A lease that declares no
+// `rangeBox` has no words' menu.
+//
+// THE HOST'S ITEMS (petition I60 — the words bar's More and its right-click rows): `DeskEditor.command` cuts, copies, pastes and
+// selects all on the lent field as the keys do, so a host's bar writes the same clipboard flavours the keys write.
 
 import type { Entity } from "@ice/core";
+
+/** What a double click takes (a WORD around an index) and a third (the LINE as laid) — petition I60. */
+export type TextUnit = "word" | "line";
+
+/** A range of the lent text: `from` ≤ `to`, text indices — `from` = `to` is a caret. */
+export interface TextRange {
+  readonly from: number;
+  readonly to: number;
+}
+
+/**
+ * Where a range of the lent text LIES (petition I60): a WORLD box, axis-aligned — `x`, `y` its top-left, `w`, `h` its size, world units
+ * — the union of the range's glyph boxes as the part lays them; on a turned part, the box of their turned corners.
+ */
+export interface RangeBox {
+  readonly x: number;
+  readonly y: number;
+  readonly w: number;
+  readonly h: number;
+}
+
+/** What a COPY or a CUT takes to the clipboard (petition I60): the words, and what the lease adds to them. */
+export interface EditorLift {
+  /** The words as plain text — the clipboard's `text/plain`, always written. */
+  readonly text: string;
+  /** The words for other apps (`text/html`), as the kind draws them. */
+  readonly html?: string;
+  /** The kind's own PIECE — its words and marks as the kind writes them (JSON text), under `application/x-ice-ink+json`; handed back to a paste as written, never read by the editor. */
+  readonly piece?: string;
+}
+
+/** What a PASTE hands the lease (petition I60): the clipboard's plain words, and the kind's piece when a copy put one there. */
+export interface EditorPaste {
+  readonly text: string;
+  readonly piece?: string;
+}
+
+/** What a host's bar asks of the lent field (petition I60 — `DeskEditor.command`): the clipboard's three, and the whole field selected. */
+export type EditorCommand = "cut" | "copy" | "paste" | "selectAll";
+
+/** What a host hands a command (petition I60): for `paste`, the clipboard's plain words as the HOST read them (a shell that denies the page its read). */
+export interface EditorCommandOptions {
+  /** The words to paste: the editor reads no clipboard; the last lifted piece is laid in their place only when its words are exactly these. */
+  readonly text?: string;
+}
 
 /**
  * Where the textarea stands while lent (container px): its box's top-left and size BEFORE any turn, the size its text is laid
@@ -38,6 +96,12 @@ export interface EditorPlace {
 export interface EditorLease {
   /** The TEXT PART this lease writes — its kind's declared `TextPart.part` ("note.body", "calendar.line"): what `lease()` names. */
   readonly part?: string;
+  /**
+   * The OBJECT this lease writes (petition I60): the selection menu's words are this object's — their `entity`, its type's words acts —
+   * whether or not its kind stamps core's `Editing` (a plugin's part that keeps its draft in its own state never does). Absent: the
+   * object `Editing` marks, when one is.
+   */
+  readonly entity?: Entity;
   /** The textarea's accessible name while lent ("write on the note"). */
   readonly label?: string;
   /**
@@ -59,6 +123,43 @@ export interface EditorLease {
   keydown(ev: KeyboardEvent): boolean;
   /** The caret moved (a selection change, a tap, a value the world moved): its index. */
   caret(index: number): void;
+  /**
+   * The SELECTION (petition I60): told with `caret`, on every selection change — the range the textarea holds, `from` ≤ `to` (`from` =
+   * `to` is a caret). The platform's field holds it, as it holds the caret: never stored, never synced; a kind draws its wash from it.
+   */
+  selection?(from: number, to: number): void;
+  /**
+   * The text index nearest world point (wx, wy) ON the lent part — undefined off it (petition I60). A lease that declares it has the
+   * editor CLAIM a primary press there (mouse or pen, a select — a tool whose drag on an object carries it: core's `select`, a desk's
+   * `desk.select` —, no ⌘/ctrl/⌥ — no carry, marquee or pan starts from it) and turn
+   * a drag, a double and a third click and a Shift+click into the textarea's range; a release within the drag slop is still a tap.
+   * `hit` is the interaction stack's exact hit under a PRESS when the stack knows the pointer — a press on another object lying over
+   * the part is that object's (answer undefined); absent for a drag's moving point, which the part answers from its geometry alone.
+   */
+  indexAt?(wx: number, wy: number, hit?: Entity): number | undefined;
+  /** The word or the laid line around text index `index` (a double click, a third) — undefined: the editor puts a caret there. */
+  rangeAt?(index: number, unit: TextUnit): TextRange | undefined;
+  /**
+   * Where the words [from, to) LIE, in the world (petition I60 — `RangeBox`: the union of their glyph boxes, turned parts included as
+   * the box of the turned corners) — undefined when the part cannot say (an empty range, a part not drawn yet). A lease that declares it
+   * has the selection menu come to the words selected while it is lent (`SelectionAnchor.words`), asked each time the anchor is
+   * recomposed: it reads what the part last drew, and writes nothing.
+   */
+  rangeBox?(from: number, to: number): RangeBox | undefined;
+  /**
+   * Where the CARET before text index `index` stands, in the world (petition I60): a box no wider than the caret, the line's height —
+   * turned parts as the box of the turned ends — undefined when the part cannot say. A lease that declares it has the anchor carry the
+   * caret's place while it is lent and its range is empty (`SelectionAnchor.caret`), so a host's right-click rows (Paste, Select all)
+   * stand at the caret. Asked as `rangeBox` is: it reads what the part last drew, and writes nothing.
+   */
+  caretBox?(index: number): RangeBox | undefined;
+  /** A COPY or a CUT of [from, to) (petition I60): what goes on the clipboard — undefined leaves the platform's own copy. */
+  lift?(from: number, to: number): EditorLift | undefined;
+  /**
+   * A PASTE over [from, to) (petition I60): the clipboard's piece when it holds one, else its plain words. True — the lease laid it (the
+   * editor prevents the platform's own paste; `DeskEditor.write` is the field's path); false leaves the platform's paste alone.
+   */
+  lay?(paste: EditorPaste, from: number, to: number): boolean;
   /** Where the textarea stands — null keeps it where it was. */
   place(): EditorPlace | null;
   /** 1 s without input (never mid-IME): a session's end; the focus stays. */
@@ -84,6 +185,41 @@ export interface DeskEditor {
   follow(): void;
   /** Where the editor's box stands on screen (container px): its centre, size and turn — null while hidden. */
   placement(): { readonly cx: number; readonly cy: number; readonly w: number; readonly h: number; readonly angle: number } | null;
+  /**
+   * Write `text` over [from, to) of the field AS AN INPUT WOULD (petition I60 — a cut's delete, a lease's paste): through the platform's
+   * own editing where it allows, so the field's history keeps the step (⌘Z in the field undoes it, as it undoes a typed edit), else the
+   * value set and the input path run as for a key — either way the lease is told `input` with the new value (its typing records it as
+   * one step), the idle re-armed, the caret after the text. Nothing while the editor is lent to nothing or an IME composition runs.
+   */
+  write(text: string, from: number, to: number): void;
+  /**
+   * A press the editor CLAIMED on the lent part's writing is down (petition I60): the range it makes is not settled — its release may
+   * leave a caret (a tap) or a new range (a drag, a second or a third click) — so the selection menu's words wait for the release.
+   */
+  pressing(): boolean;
+  /**
+   * The HOST'S ITEMS (petition I60 — a words bar's Cut, Copy, Paste and Select all, its More and its right-click rows): what the keys
+   * do, on the lent field's range. `copy` and `cut` write the clipboard in the very flavours the keys write: the platform's own command
+   * first while the field has the focus (its event is this editor's own handler — the lease's `lift`), else the platform's async
+   * clipboard (the words and their `text/html`: that API carries no private flavour); a cut deletes as ONE input, and only once its
+   * words reached a clipboard. `paste` lays what the system clipboard holds where the platform lets a page read it
+   * (`navigator.clipboard.readText`, else `read`) — the editor's LAST LIFTED piece in its place when its words are the clipboard's
+   * (every copy and cut is kept, the keys' too), so their marks come back — and where the platform lets a page read NOTHING (no such
+   * API, or the read refused), the last lifted piece itself: that is the LIMIT — a paste from a bar then lays only what was last copied
+   * or cut on this desk, never another app's words. It is laid through the lease's `lay` (else written as the platform's paste would
+   * write it). `selectAll` selects every word of the lent part. Resolves true when it did something — false with nothing lent, an IME
+   * composition running, a caret where words are wanted, or nothing to lay.
+   *
+   * A host's BAR keeps the field's focus through its press: it prevents the default of its buttons' `pointerdown` and `mousedown` (as
+   * `<SelectionMenu>`'s words row does), so a button never takes the focus and the textarea keeps it and its range; the click then
+   * calls `command` — inside the click, as a platform grants the clipboard to a user's gesture. A RIGHT press on the lent part's
+   * writing keeps the focus too (its default prevented, nothing else), so a host's right-click rows act on the words selected.
+   *
+   * A HOST THAT READS THE CLIPBOARD ITSELF (a desktop shell that denies the page its read) hands the words in:
+   * `command("paste", { text })` reads no clipboard at all, and lays the last lifted piece only when its words are exactly `text` (its
+   * marks come back), else `text` as plain words — through the lease's `lay`, as above. The no-argument form is as described above.
+   */
+  command(name: EditorCommand, opts?: EditorCommandOptions): Promise<boolean>;
   /** The editor goes with its desk: a lease still held ends first (`ended` — a typing session commits), then the textarea leaves. */
   dispose(): void;
 }

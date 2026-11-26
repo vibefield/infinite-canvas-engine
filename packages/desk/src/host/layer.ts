@@ -34,7 +34,7 @@
 // source a screen-space selection menu is placed from — the marks' box around the selection as drawn,
 // published after every frame it changed.
 
-import { Camera, closeTray, type Entity, focusTray, frameParent, heldEntity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type HeldToolDef, type HeldToolState, type MarqueeBuffer, type MenuActionDef, type MenuActionState, type MenuStateSlot, type MenuStateSource, type NavFace, type NavGeometrySlot, NavTransition, NO_ENTITY, openTray, type PointPick, PrefabId, type PresentationTransitionAdapter, readActChoices, readHeldToolState, readMenuActionState, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, setTrayHidden, setTrayOnly, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayFocus, type TrayFocusMove, trayHidden, trayOnly, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
+import { Camera, closeTray, defineQuery, Editing, type Entity, focusTray, frameParent, heldEntity, InsertGhost, type FramePickSlot, type HeldPoseSlot, type HeldPoseSource, HeldTool, type HeldToolDef, type HeldToolState, type MarqueeBuffer, type MenuActionDef, type MenuActionRange, type MenuActionState, menuActionsFor, type MenuStateSlot, type MenuStateSource, type NavFace, type NavGeometrySlot, NavTransition, NO_ENTITY, openTray, type PointPick, PrefabId, type PresentationTransitionAdapter, readActChoices, readHeldToolState, readMenuActionState, type ReflectorDef, scrollTray, selectedEntities, setTrayCategory, setTrayHidden, setTrayOnly, toggleTray, Tray, trayCategories, trayCategory, type TrayCategory, trayEntity, trayEntryCount, trayFocus, type TrayFocusMove, trayHidden, trayOnly, trayOpen, type TrayPoseSlot, type TrayPoseSource, type TrayScreenFrame, Viewport, type WidgetType, type World } from "@ice/core";
 import { screenToWorld } from "@ice/kernel";
 import { flightCamera } from "../nav/flight";
 import { type Ambient, type AmbientMode, type AmbientPin, createAmbient } from "../compose/ambient";
@@ -45,7 +45,7 @@ import type { RecordStoreStats } from "../engine/records";
 import { HOLD, type HoldOptions, type HoldReserves } from "../hold/pose";
 import { createHeldFold } from "../hold/told";
 import { HOLD_SHADER_FILES, holdShaders } from "../hold/shaders";
-import { heldSlots, type SelectionAnchor, withKindActs } from "../compose/marks";
+import { type CaretAnchor, caretAnchor, heldSlots, type SelectionAnchor, type WordsAnchor, withKindActs, wordsAnchor } from "../compose/marks";
 import { createPickSource } from "../compose/pick";
 import { createDeskReflector, type DeskReflector, type DeskReflectorStats, type DeskWakes, looksOf } from "../compose/reflector";
 import { acquire, adopt, type Gpu, type GpuOptions } from "../engine/device";
@@ -67,7 +67,8 @@ import { createServices, type Lent, service } from "../kit/services";
 import { decodePicture } from "./picture";
 import { NO_DOCS, type TypingDocs } from "../docs";
 import { TEXT_RASTER, type TextRaster } from "../kit/raster";
-import type { DeskEditor, TextPart } from "../kit/editor";
+import { HAND_FACES, type HandFaces } from "../kit/hand-faces";
+import type { DeskEditor, RangeBox, TextPart } from "../kit/editor";
 import { createDeskEditor } from "./editor";
 import type { InsideView } from "../kit/inside";
 import { shaderText } from "../shaders";
@@ -132,6 +133,12 @@ export interface DeskLayerOptions {
   readonly name?: string;
   /** The app's text raster (`inkRaster({ faces: penFaces({ … }) })`, D2c): absent, no note is written live — the pinned rasters only. */
   readonly text?: TextRaster;
+  /**
+   * The app's hand FACES (petition I59 — the desk's pen: `handFaces({ faces: { caveat: { json, bin }, … } })`, the baked `ice-hand/1`
+   * atlases by URL): lent to every kind as `HAND_FACES`, and the desk woken whenever one lands (its `onVersion`, as `text`'s). Absent,
+   * no kind writes with the pen: every sheet keeps its raster road.
+   */
+  readonly hand?: HandFaces;
   /** The document a note's typing session commits into — the facade's `engine.docs` (D2c); absent, typing stays runtime-only. */
   readonly docs?: TypingDocs;
   /** A typing session ends after this long without input, ms (1000). */
@@ -695,6 +702,16 @@ function tellChoices(kind: string, act: string, err: unknown): void {
   console.error(`[ice] desk: the kind "${kind}"'s act "${act}" threw in its \`choices\` — it stands as one op (petition I62); said once a page`, err);
 }
 
+/** …and a lease's `rangeBox` (petition I60): the menu does not come to that part's words while it throws; said once a part a page. */
+function tellRangeBox(part: string, err: unknown): void {
+  const key = `rangeBox ${part}`;
+  if (toldAnchor.has(key)) return;
+  toldAnchor.add(key);
+  console.error(`[ice] desk: the lease on the text part "${part}" threw in its \`rangeBox\` — the selection menu does not come to its words (petition I60); said once a page`, err);
+}
+/** The one object being written (core's `Editing` — the one focused editor's claim, D2c). */
+const editingQ = defineQuery([Editing]);
+
 /** A host's length or time for the desk's chrome (I20, I21): a finite number ≥ 0, or the mount refuses it by its name. */
 function hostNumber(name: string, v: number | undefined): number | undefined {
   if (v === undefined) return undefined;
@@ -791,6 +808,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // every DOM half `use`s any of them by key. A name lent twice throws here, at the mount, naming both lenders
     const services = createServices([
       ...(opts.text !== undefined ? [service(TEXT_RASTER, opts.text)] : []),
+      ...(opts.hand !== undefined ? [service(HAND_FACES, opts.hand)] : []),
       service(PICTURE_DECODER, decodePicture),
       ...(opts.blobs !== undefined ? [service(BLOB_STORE, opts.blobs)] : []),
       ...(opts.services ?? []),
@@ -885,8 +903,9 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // is now — disabled, another glyph, another label
     // what the kind says of a menu act NOW (I61): its `state`, read over the selected objects of the type whose declaration names the
     // act (core's `menuActionsFor` keeps the first type's), their props and the kind's desk state — each time the anchor is recomposed,
-    // and when core runs the act (the menu state seam); a throw is caught and said once — the act as declared
-    const menuReadsOf = (selected: readonly Entity[]) => {
+    // and when core runs the act (the menu state seam); a throw is caught and said once — the act as declared. I60: a WORDS act is read
+    // over the object being written alone (`selected` = [it]) and the range selected (`range`, on its context)
+    const menuReadsOf = (selected: readonly Entity[], range?: MenuActionRange) => {
       const first = selected[0];
       if (first === undefined) return undefined;
       const kind = builder.kindOf(first);
@@ -894,7 +913,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       const own = selected.filter((e) => world.get(e, PrefabId)?.id === typeId);
       const local = kind === undefined ? undefined : locals.get(kind.name);
       const name = kind?.name ?? String(typeId);
-      const ctx = { world, entities: own, props: (e: Entity) => propsOf(e), local };
+      const ctx = { world, entities: own, props: (e: Entity) => propsOf(e), local, ...(range !== undefined ? { range } : {}) };
       return {
         state: (act: MenuActionDef): MenuActionState | undefined => readMenuActionState(act, ctx, (err) => { tellMenuState(name, act.id, err); }),
         // …and its choices now (I62), read over the same objects with the same desk state; a throw is said once — one op
@@ -906,15 +925,68 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
       if (kind === undefined || tool.choices === undefined) return undefined;
       return readActChoices(tool, { world, entity: e, props: () => propsOf(e), local: locals.get(kind.name) }, (err) => { tellChoices(kind.name, tool.id, err); });
     };
+    /** The ONE editor, once it is made (below, after the drivers): until then there are no words. */
+    const editorRef: { current?: DeskEditor } = {};
+    // THE WORDS (petition I60 — "the selection bar comes to the words"): while the one editor is lent to an object's part — the object
+    // its lease names (`entity`), else the one being written (core's `Editing`: a plugin's part may keep its draft in its own state and
+    // never stamp it) — no press the editor claimed is down, the range is not empty and the part says where it lies (its lease's
+    // `rangeBox`), the anchor carries them: their box through the camera, the object's words acts as slots, each read for the range now
+    // through the menu's own door (`menuReadsOf`: its state and its choices, I61 and I62). A `rangeBox` that throws is caught here and
+    // said once (no words), never a strike
+    const wordsOf = (): WordsAnchor | undefined => {
+      const ed = editorRef.current;
+      const lease = ed?.lease();
+      if (ed === undefined || lease?.rangeBox === undefined || ed.pressing()) return undefined;
+      const from = Math.min(ed.element.selectionStart, ed.element.selectionEnd);
+      const to = Math.max(ed.element.selectionStart, ed.element.selectionEnd);
+      const named = typeof lease.entity === "number" ? lease.entity : undefined;
+      const entity = to > from ? (named ?? world.firstOf(editingQ)) : undefined;
+      const cam = world.getResource(Camera);
+      if (entity === undefined || !world.isAlive(entity) || cam === undefined) return undefined;
+      let box: RangeBox | undefined;
+      try { box = lease.rangeBox(from, to); } catch (err) { tellRangeBox(lease.part ?? "(unnamed)", err); return undefined; }
+      const reads = menuReadsOf([entity], { entity, from, to });
+      return wordsAnchor({ entity, from, to, box, cam, acts: menuActionsFor([entity], menuOf, "words"), ...(reads !== undefined ? { stateOf: reads.state, choicesOf: reads.choices } : {}) });
+    };
+    // A CARET's place (petition I60 — a host's right-click rows at a caret): as the words are found, but for an EMPTY range, from the
+    // lease's `caretBox`; one that throws is caught and said once, as `rangeBox`
+    const caretOf = (): CaretAnchor | undefined => {
+      const ed = editorRef.current;
+      const lease = ed?.lease();
+      if (ed === undefined || lease?.caretBox === undefined || ed.pressing()) return undefined;
+      const at = ed.element.selectionStart;
+      if (ed.element.selectionEnd !== at) return undefined;
+      const entity = typeof lease.entity === "number" ? lease.entity : world.firstOf(editingQ);
+      const cam = world.getResource(Camera);
+      if (entity === undefined || !world.isAlive(entity) || cam === undefined) return undefined;
+      let box: RangeBox | undefined;
+      try { box = lease.caretBox(at); } catch (err) { tellRangeBox(lease.part ?? "(unnamed)", err); return undefined; }
+      return caretAnchor({ entity, at, box, cam });
+    };
+    /**
+     * The one editor is lent to a part whose lease NAMES an object of the selection (`EditorLease.entity`, petition I60): it is being
+     * written though no `Editing` is stamped (an ink part's draft) — the menu steps aside for it as for core's claim, and through the
+     * press that selects its words.
+     */
+    const lentToSelected = (): boolean => {
+      const named = editorRef.current?.lease()?.entity;
+      return typeof named === "number" && world.isAlive(named) && selectedEntities(world).includes(named);
+    };
     const anchorOf = (): SelectionAnchor => {
-      const a = builder.anchor();
+      const marked = builder.anchor();
+      const a = marked.editing || !lentToSelected() ? marked : { ...marked, editing: true };
       // the pegboard tray is out (design-017 §4): the desk under it is inert, so the menu has nothing to act on — it steps away
       if (trayOpen(world)) return { ...a, box: null, count: 0 };
       const h = builder.hand();
       if (h === undefined) {
         const selected = selectedEntities(world);
         const reads = menuReadsOf(selected);
-        return withKindActs(a, selected, menuOf, reads?.state, reads?.choices);
+        const kinds = withKindActs(a, selected, menuOf, reads?.state, reads?.choices);
+        // I60: the WORDS selected while a part is written, with the object's words acts
+        const words = wordsOf();
+        if (words !== undefined) return { ...kinds, words };
+        const caret = caretOf();
+        return caret === undefined ? kinds : { ...kinds, caret };
       }
       const kind = builder.kindOf(h.entity);
       const swatches = swatchesOf(kind);
@@ -1021,6 +1093,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     // every kind that takes text; a tap is routed to the text parts the objects declare, in registration order
     const textParts: TextPart[] = [];
     const editor = createDeskEditor({ container: host.container, world, parts: () => textParts, wake: () => compose.wake("ink"), ...(opts.idleMs !== undefined ? { idleMs: opts.idleMs } : {}) });
+    editorRef.current = editor;   // the anchor's words read its lease, its range and its press (petition I60)
     // THE OBJECTS' DOM HALVES (K4b, `defineObject({ host })`), in screen space: each object declared its own and the host builds them
     // from what it lends, never naming a kind — their TEXT PARTS first (K8a: the note's body, the calendar's day line), then every
     // half that mounts (the calendar's days and pen lease the editor, D3t-c)
@@ -1146,6 +1219,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
     };
     const stopWake = frame?.wakeWhen("desk", deskDue);
     const stopText = opts.text?.onVersion?.(() => frame?.wake("desk:text"));
+    const stopHand = opts.hand?.onVersion?.(() => frame?.wake("desk:hand"));
 
     /**
      * A kind gone MISSING (petition I24) STOPS COSTING, not merely drawing (design-009 §16.7's word for a suspended behavior): its desk
@@ -1534,6 +1608,7 @@ export function deskLayer(opts: DeskLayerOptions): DeskLayerFactory {
         disposed = true;
         stopWake?.();
         stopText?.();
+        stopHand?.();
         listeners.clear();
         trayListeners.clear();
         statusHeard.clear();

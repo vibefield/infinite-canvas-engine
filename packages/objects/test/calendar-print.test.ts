@@ -13,11 +13,11 @@ import { CALENDAR } from "../src/calendar/law";
 import { dayOfKey, monthGrid, monthIndex, phasesBetween } from "../src/calendar/month";
 import { printSheet, type PrintInputs, type SheetPrint } from "../src/calendar/print";
 import { contentOf, type PinnedSheet, type PrintPass, PrintTiles } from "../src/calendar/printing";
-import { type PrintRaster, type TileSource, encodeSeeds, type HandMetrics, HAND } from "@ice/desk/kit";
+import { type PrintRaster, type TileSource, encodeSeeds, type HandMetrics, HAND, HIGHLIGHTERS } from "@ice/desk/kit";
 import { cellAt, sheetOf } from "../src/calendar/sheet";
 import { EMPTY, entryOf, levelFor, MISSING, TILE_TEX, tileGrid, tilesIn } from "../src/calendar/tiles";
 import { calendarKind } from "../src/calendar/kind";
-import { CALENDAR_LOOK, calendarPrint, PALETTE, PENS } from "../oracle/fixtures/vf-theme";
+import { CALENDAR_LOOK, calendarPrint, HIGHLIGHTER_NAMES, PALETTE, PENS } from "../oracle/fixtures/vf-theme";
 import { must } from "../../desk/test/must";
 import { kindPalette } from "@ice/desk";
 
@@ -288,5 +288,10 @@ describe("the product's print inks through the kind's theme = the fixture's `cal
     const palette = { ...PALETTE.light, calendars: CALENDAR_LOOK, pens: PENS };
     const look = must(kind.theme)(kindPalette(palette), "light");
     expect(look.print).toEqual(calendarPrint());
+  });
+
+  it("the highlighters are the kit's own: HIGHLIGHTER_NAMES is HIGHLIGHTERS name for name, in its order (an ink's mark keeps a highlighter by its place)", () => {
+    expect(HIGHLIGHTER_NAMES).toEqual([...HIGHLIGHTERS]);
+    expect(Object.keys(calendarPrint().highlighters)).toEqual([...HIGHLIGHTERS]);
   });
 });

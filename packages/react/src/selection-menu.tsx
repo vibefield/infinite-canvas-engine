@@ -13,9 +13,16 @@
  * page's six, inline SVG, currentColor. The ink is the whiteboard tray's (94 % ink, cream glyphs, brass
  * hairlines, the lamp's shadow falling lower left) — CSS custom properties an app may re-point.
  *
+ * THE WORDS' ROW (petition I60 — "the selection bar comes to the words"): while the anchor carries words selected in a part being
+ * written, with acts for them (`words`), the bar is their row — placed over the words by the same rules, not stepped aside for the
+ * writing, a press on it keeping the editor's focus. A words act is a cell, dim while its kind says it is disabled (I61); a TOGGLE is
+ * shown pressed — on or off (`aria-pressed`); a CHOICE act's cell swaps the row for its choices (I62's), Back first, the current one
+ * marked, a rule where the group changes. A words act runs through the engine with the words as the anchor says them at the press
+ * (`ops.runMenuAction(id, taken?, { range })`). The selection's kind acts show a toggle pressed too.
+ *
  * `@ice/react` never imports the desk: the source is read structurally, as the ground layer is.
  */
-import { heldEntity, Locked, PrefabId, selectedEntities, type CanvasEngine } from "@ice/core";
+import { heldEntity, Locked, PrefabId, selectedEntities, type CanvasEngine, type Entity } from "@ice/core";
 import { type ReactElement, type ReactNode, useEffect, useLayoutEffect, useMemo, useRef, useState } from "react";
 import { useCanvasEngine } from "./engine-context";
 
@@ -49,6 +56,11 @@ export interface SelectionMenuAnchor {
    * declares (`defineObject({ menu })`); the menu shows them first among its acts and runs one through `ops.runMenuAction`.
    */
   readonly menu?: readonly SelectionMenuAct[];
+  /**
+   * The WORDS selected in a part being written (petition I60 — the desk's `WordsAnchor`, mirrored structurally): with acts for them
+   * (`words.menu` not empty) the bar is their row, placed over `words.box`; absent — or with none — the menu is as before.
+   */
+  readonly words?: SelectionMenuWords;
 }
 
 /** A kind's act as the desk publishes it (its `MenuSlot`, mirrored structurally — K8a): plain data; the op stays on the widget type. */
@@ -63,7 +75,24 @@ export interface SelectionMenuAct {
   readonly enabled?: false;
   /** The act is a CHOICE (petition I62): pressed, it lists these; taking one runs the act with it. */
   readonly choices?: readonly SelectionMenuChoice[];
+  /** A TOGGLE's state (petition I60): shown pressed (`aria-pressed`, on in cream) when true, off when false; absent — not a toggle. */
+  readonly pressed?: boolean;
 }
+
+/** The WORDS the menu comes to (petition I60 — the desk's `WordsAnchor`, mirrored structurally): their box, the object, the range, its words acts. */
+export interface SelectionMenuWords {
+  /** The words' box on screen, CSS px (as `box`). */
+  readonly box: SelectionMenuBox;
+  /** The object being written — what a words act's run names (`ops.runMenuAction(id, taken?, { range: { entity, from, to } })`). */
+  readonly entity: Entity;
+  readonly from: number;
+  readonly to: number;
+  /** The object's words acts, each as it stands for the range. */
+  readonly menu: readonly SelectionMenuAct[];
+}
+
+/** The words' row is the bar's (petition I60): words with acts for them, and nothing in hand (the hand wins). */
+const wordsRowOf = (a: SelectionMenuAnchor): SelectionMenuWords | undefined => (a.held === undefined && a.words !== undefined && a.words.menu.length > 0 ? a.words : undefined);
 
 /**
  * One choice of an act or a tool that is a choice (petition I62 — core's `ActChoice`, mirrored structurally): a row of the list, the
@@ -155,7 +184,8 @@ const clamp = (x: number, a: number, b: number): number => Math.min(Math.max(x, 
  * Where the menu goes (desk.js `positionMenu`, number for number): centred on the anchor, `gap` above it; below it when
  * there is no room above (under the top ruler's band) and more below; `margin` from the sides, `edge` from the top and foot.
  * `sheet` = the height of an open sheet that must fit too. Null when there is nothing to anchor to. With an object IN HAND
- * (D4b) the bar sits centred in the band at the foot of the view, whatever the selection's box.
+ * (D4b) the bar sits centred in the band at the foot of the view, whatever the selection's box. With WORDS that carry acts (petition
+ * I60) it is placed over the words' box by the same rules, whatever is selected.
  */
 export function placeSelectionMenu(anchor: SelectionMenuAnchor, size: { readonly w: number; readonly h: number }, sheet = 0): { readonly x: number; readonly y: number; readonly below: boolean } | null {
   const M = SELECTION_MENU;
@@ -163,8 +193,9 @@ export function placeSelectionMenu(anchor: SelectionMenuAnchor, size: { readonly
   if (anchor.held !== undefined && !anchor.held.landing) {
     return { x: clamp(W / 2 - size.w / 2, M.margin, W - size.w - M.margin), y: H - M.foot + (M.foot - size.h) / 2, below: false };
   }
-  const b = anchor.box;
-  if (b === null || anchor.count === 0) return null;
+  const words = wordsRowOf(anchor);
+  const b = words !== undefined ? words.box : anchor.box;
+  if (b === null || (words === undefined && anchor.count === 0)) return null;
   let x = (b.x0 + b.x1) / 2 - size.w / 2;
   let y = b.y0 - M.gap - size.h;
   const top = anchor.rulers !== null ? anchor.rulers.margin + anchor.rulers.band + M.edge : M.edge;
@@ -198,6 +229,12 @@ export const SELECTION_GLYPHS: Readonly<Record<string, ReactNode>> = {
   redo: stroke(<><path d="M15.5 7.5H9a4.5 4.5 0 0 0 0 9h8" /><path d="M13 4.5l3.5 3-3.5 3" /></>),
   today: stroke(<><rect x="4.5" y="6" width="15" height="13.5" rx="2.5" /><path d="M4.5 10.5h15M8.5 4v3.5M15.5 4v3.5" /><circle cx="12" cy="15" r="1.4" /></>),
   check: stroke(<path d="M5 12.5l4.5 4.5L19 7.5" />),
+  // the ink acts' (petition I60 — `inkActs`' default names): a highlighter's chisel over its stripe, a line through an S, a line under a
+  // U, a T with the x of its marks taken off
+  highlighter: stroke(<path d="M5 20h14M8.5 16.5l-1.5-1.5 8-8a1.8 1.8 0 0 1 2.5 0l.5.5a1.8 1.8 0 0 1 0 2.5l-8 8z" />),
+  strike: stroke(<path d="M5 12h14M16 7.5C15.3 6 13.8 5 12 5c-2.2 0-4 1.3-4 3.1 0 1.3.9 2.3 2.4 2.9M8 16.5c.7 1.5 2.2 2.5 4 2.5 2.2 0 4-1.3 4-3.1 0-.7-.3-1.4-.8-1.9" />),
+  underline: stroke(<path d="M7.5 4.5v6a4.5 4.5 0 0 0 9 0v-6M5.5 20h13" />),
+  "clear-marks": stroke(<path d="M4.5 5h11M10 5v14M14.5 14.5l5 5M19.5 14.5l-5 5" />),
 };
 function Glyph({ glyph, size = 16 }: { readonly glyph: string | ReactNode; readonly size?: number }): ReactElement {
   const body = typeof glyph === "string" ? SELECTION_GLYPHS[glyph] : glyph;
@@ -217,6 +254,15 @@ const missingSaid = new Set<string>();
 function actGlyph(k: SelectionMenuAct): ReactNode {
   return toolGlyph({ id: k.id, label: k.label, ...(k.glyph !== undefined ? { glyph: k.glyph } : {}) }).node;
 }
+
+/** A words choice as its cell draws it (petition I60, over I62's choice): its swatch as a dot in the kind's colour, else its initial. */
+function choiceFace(c: SelectionMenuChoice): ReactNode {
+  if (c.swatch !== undefined) return <i data-swatch={c.swatch} style={{ background: c.swatch }} />;
+  return <Glyph glyph={toolGlyph({ id: c.id, label: c.label }).node} />;
+}
+
+/** An act as the bar draws it: the app's or ICE's — or a kind's (its slot kept: petition I60's toggle). */
+type BarAction = SelectionAction & { readonly slot?: SelectionMenuAct };
 
 /** A held tool's glyph as the bar draws it — and whether a NAME it gave is missing from the set. */
 function toolGlyph(t: SelectionMenuTool): { readonly node: ReactNode; readonly missing: string | undefined } {
@@ -295,7 +341,9 @@ export interface SelectionMenuProps {
   readonly engine?: CanvasEngine;
 }
 
-interface Shown { readonly count: number; readonly locked: boolean; readonly visible: boolean; readonly gesturing: boolean; readonly held: boolean; readonly tools: string; readonly active: string; readonly menu: string }
+/** Which row the bar is: the held bar (D4b), the words' (petition I60), or the selection's. */
+type Row = "held" | "words" | "objects";
+interface Shown { readonly count: number; readonly locked: boolean; readonly visible: boolean; readonly gesturing: boolean; readonly held: boolean; readonly tools: string; readonly active: string; readonly menu: string; readonly row: Row; readonly words: string }
 const shownOf = (a: SelectionMenuAnchor): Shown => {
   const held = a.held !== undefined && !a.held.landing;
   // flying home the bar steps aside as for a gesture — and comes back 200 ms after the landing
@@ -303,14 +351,26 @@ const shownOf = (a: SelectionMenuAnchor): Shown => {
   // (I49: a slot is drawn again when its kind says another state of it — disabled, another label, another glyph)
   const tools = held ? (a.held?.tools ?? []).map((t) => `${t.id}:${t.kind ?? ""}:${t.swatch ?? ""}:${t.enabled === false ? "off" : ""}:${choicesKey(t.choices)}:${t.label}:${typeof t.glyph === "object" ? `${t.glyph.path}${t.glyph.fill === true ? "#" : ""}` : (t.glyph ?? "")}`).join("|") : "";
   // (I61: an act is drawn again when its kind says another state of it — disabled, another label, another glyph, a swatch)
-  const menu = (a.menu ?? []).map((m) => `${m.id}:${m.label}:${m.swatch ?? ""}:${m.enabled === false ? "off" : ""}:${typeof m.glyph === "object" ? `${m.glyph.path}${m.glyph.fill === true ? "#" : ""}` : (m.glyph ?? "")}:${choicesKey(m.choices)}`).join("|");
-  return { count: a.count, locked: a.locked, visible: (a.count > 0 && a.box !== null) || held, gesturing: a.gesturing || a.editing === true || landing, held, tools, active: held ? (a.held?.active ?? "") : "", menu };
+  // (I60: …and a toggle's pressed)
+  const menu = (a.menu ?? []).map(actKey).join("|");
+  // the words' row (I60): words selected in the part being written, with acts for them — the bar comes to them, never aside for the writing
+  const wordsRow = wordsRowOf(a);
+  const words = wordsRow === undefined ? "" : wordsRow.menu.map(actKey).join("|");
+  const row: Row = held ? "held" : wordsRow !== undefined ? "words" : "objects";
+  return {
+    count: a.count, locked: a.locked, visible: (a.count > 0 && a.box !== null) || held || wordsRow !== undefined,
+    gesturing: a.gesturing || (a.editing === true && wordsRow === undefined) || landing, held, tools, active: held ? (a.held?.active ?? "") : "", menu, row, words,
+  };
 };
+/** A kind's act's key (I61, I62; I60's pressed and keys): drawn again when what it shows moves. */
+function actKey(m: SelectionMenuAct): string {
+  return `${m.id}:${m.label}:${m.swatch ?? ""}:${m.enabled === false ? "off" : ""}:${typeof m.glyph === "object" ? `${m.glyph.path}${m.glyph.fill === true ? "#" : ""}` : (m.glyph ?? "")}:${choicesKey(m.choices)}:${m.pressed === undefined ? "" : String(m.pressed)}:${m.keys ?? ""}`;
+}
 /** A list's key (I62): each choice's id, label, hint, swatch, group and mark, so a list is drawn again when what it says changes. */
 function choicesKey(choices: readonly SelectionMenuChoice[] | undefined): string {
   return (choices ?? []).map((c) => `${c.id}=${c.label}/${c.hint ?? ""}/${c.swatch ?? ""}/${c.group ?? ""}/${c.current === true ? "*" : ""}`).join(",");
 }
-const sameShown = (a: Shown, b: Shown): boolean => a.count === b.count && a.locked === b.locked && a.visible === b.visible && a.gesturing === b.gesturing && a.held === b.held && a.tools === b.tools && a.active === b.active && a.menu === b.menu;
+const sameShown = (a: Shown, b: Shown): boolean => a.count === b.count && a.locked === b.locked && a.visible === b.visible && a.gesturing === b.gesturing && a.held === b.held && a.tools === b.tools && a.active === b.active && a.menu === b.menu && a.row === b.row && a.words === b.words;
 /** The one element's transitions: the opacity's, and — while the bar travels between the selection and the foot (M1), over `travelMs` — the transform's. */
 const transitionOf = (away: boolean, visible: boolean, traveling: boolean, travelMs: number = SELECTION_MENU.travelMs): string => {
   const M = SELECTION_MENU;
@@ -326,12 +386,17 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
   const [shown, setShown] = useState<Shown>(() => shownOf(source.anchor()));
   const [away, setAway] = useState(false);
   const [open, setOpen] = useState(false);
-  /** The act or tool whose CHOICES are listed (petition I62), or null — one list at a time, More's or a choice's. */
-  const [choosing, setChoosing] = useState<{ readonly of: "act" | "tool"; readonly id: string } | null>(null);
+  /**
+   * The act or tool whose CHOICES are listed (petition I62), or null — one list at a time, More's or a choice's. A words act's (I60:
+   * `of: "words"`) take the words' row itself, Back first.
+   */
+  const [choosing, setChoosing] = useState<{ readonly of: "act" | "tool" | "words"; readonly id: string } | null>(null);
   const [below, setBelow] = useState(false);
   const [traveling, setTraveling] = useState(false);
   const tools = useRef<readonly SelectionMenuTool[]>(source.anchor().held?.tools ?? []);
   const kindActs = useRef<readonly SelectionMenuAct[]>(source.anchor().menu ?? []);
+  /** The words as the anchor last said them (petition I60): a words act runs on these at its press, never on the words a render saw. */
+  const wordsRef = useRef<SelectionMenuWords | undefined>(wordsRowOf(source.anchor()));
   const heldRef = useRef(shown.held);
   const travelTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   /** The travel the anchor last told while something was in hand (I20) — the way back keeps it after the hand is gone. */
@@ -346,6 +411,7 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
     if (next.held) tools.current = a.held?.tools ?? [];
     if (a.held !== undefined) travel.current = a.held.travelMs ?? SELECTION_MENU.travelMs;
     kindActs.current = a.menu ?? [];
+    wordsRef.current = wordsRowOf(a);
     setShown((prev) => (sameShown(prev, next) ? prev : next));
     if (el === null) return;
     // THE TRAVEL (M1, D4b): the bar changes place and role — the transform's transition must be on BEFORE the new place is
@@ -373,9 +439,13 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
     run();
     return source.subscribe(run);
   }, [source]);
-  // re-place after the bar's contents change size (a taped selection drops Duplicate; More opens; the bar becomes the held bar)
+  // re-place after the bar's contents change size (a taped selection drops Duplicate; More opens; the bar becomes the held bar; the
+  // words' row comes, or a words choice act's choices take the row)
   // biome-ignore lint/correctness/useExhaustiveDependencies: the placement follows what was rendered — these are its triggers, not its inputs
-  useLayoutEffect(() => { placeRef.current(); }, [shown.count, shown.locked, shown.visible, shown.held, shown.tools, shown.menu, open]);
+  useLayoutEffect(() => { placeRef.current(); }, [shown.count, shown.locked, shown.visible, shown.held, shown.tools, shown.menu, shown.row, shown.words, choosing, open]);
+  // the choices close when the row changes under them (I60): the words go (a press on the writing), the hand takes the bar
+  // biome-ignore lint/correctness/useExhaustiveDependencies: the row is the trigger, not an input
+  useEffect(() => { setChoosing(null); }, [shown.row]);
 
   // a gesture: away in 90 ms at once; back 200 ms after the hand lets go
   useEffect(() => {
@@ -392,17 +462,19 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
   const visible = shown.visible;
   // the selection's KIND ACTS (K8a) first among the main acts: each runs its op through the engine, on the types that declare it
   // (I61: each as its kind says it is now — its swatch for its glyph, dim and inert while disabled)
-  const kinds: SelectionAction[] = kindActs.current.map((k) => ({
+  // (I60: a toggle shown pressed, on or off)
+  const kinds: BarAction[] = kindActs.current.map((k) => ({
     id: `kind.${k.id}`, label: k.label,
     glyph: k.swatch !== undefined ? <circle cx="12" cy="12" r="6" fill={k.swatch} /> : actGlyph(k),
     ...(k.keys !== undefined ? { keys: k.keys } : {}),
     ...(k.enabled === false ? { disabled: () => true } : {}),
+    ...(k.pressed !== undefined ? { slot: k, on: () => k.pressed === true } : {}),
     // a choice act (I62) lists its choices; one op runs at once
     run: (e) => { if (k.choices !== undefined) setChoosing({ of: "act", id: k.id }); else e.ops.runMenuAction(k.id); },
   }));
-  const listed = [...kinds, ...acts].filter((a) => a.when === undefined || a.when(state));
+  const listed: BarAction[] = [...kinds, ...acts].filter((a) => a.when === undefined || a.when(state));
   const at = (place: "lead" | "main" | "end") => listed.filter((a) => (a.place ?? "main") === place);
-  const button = (a: SelectionAction): ReactElement => {
+  const button = (a: BarAction): ReactElement => {
     const label = labelOf(a, state);
     const tip = a.keys !== undefined ? `${label} (${a.keys})` : label;
     const off = a.disabled?.(state) === true;
@@ -417,7 +489,7 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
       );
     }
     return (
-      <button key={a.id} type="button" className={`ice-sm-btn${off ? " is-dim" : ""}`} aria-disabled={off ? "true" : undefined} data-act={a.id} data-on={a.on?.(state) === true ? "true" : undefined} data-tone={a.tone} data-glyph={typeof glyphOf(a, state) === "string" ? (glyphOf(a, state) as string) : undefined} aria-label={label} title={tip} aria-haspopup={a.id === "more" ? "menu" : undefined} aria-expanded={a.id === "more" ? open : undefined} onClick={run}>
+      <button key={a.id} type="button" className={`ice-sm-btn${off ? " is-dim" : ""}`} aria-disabled={off ? "true" : undefined} data-act={a.id} data-on={a.on?.(state) === true ? "true" : undefined} data-tone={a.tone} data-glyph={typeof glyphOf(a, state) === "string" ? (glyphOf(a, state) as string) : undefined} aria-label={label} title={tip} aria-pressed={a.slot?.pressed} aria-haspopup={a.id === "more" ? "menu" : undefined} aria-expanded={a.id === "more" ? open : undefined} onClick={run}>
         <Glyph glyph={glyphOf(a, state)} />
       </button>
     );
@@ -461,6 +533,49 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
       <span>Done</span>
     </button>
   );
+  // THE WORDS' ROW (petition I60): the words' acts, each a cell — dim while disabled (I61), a toggle pressed, a choice act opening its
+  // choices in the row (I62's) — run through the engine on the words as the anchor says them at the press
+  const runWords = (id: string, taken?: { readonly id: string }): void => {
+    const w = wordsRef.current;
+    if (w === undefined) return;
+    engine.ops.runMenuAction(id, taken, { range: { entity: w.entity, from: w.from, to: w.to } });
+  };
+  const wordsActs = shown.row === "words" ? (wordsRef.current?.menu ?? []) : [];
+  const cell = (k: SelectionMenuAct): ReactElement => {
+    const off = k.enabled === false;
+    return (
+      <button
+        key={k.id} type="button" className={`ice-sm-btn${off ? " is-dim" : ""}`} data-act={`word.${k.id}`} data-on={k.pressed === true ? "true" : undefined} aria-pressed={k.pressed}
+        aria-disabled={off ? "true" : undefined} aria-haspopup={k.choices !== undefined ? "true" : undefined} aria-label={k.label} title={k.keys !== undefined ? `${k.label} (${k.keys})` : k.label}
+        onClick={() => { if (off) return; if (k.choices !== undefined) { setChoosing({ of: "words", id: k.id }); return; } runWords(k.id); }}
+      >
+        {k.swatch !== undefined ? <Glyph glyph={<circle cx="12" cy="12" r="6" fill={k.swatch} />} /> : <Glyph glyph={actGlyph(k)} />}
+      </button>
+    );
+  };
+  // A WORDS CHOICE ACT'S ROW (I60, over I62's choices): Back first, then its choices as the anchor last said them — the current one
+  // marked, a rule where the group changes; a choice runs the act with it on the words, and the row's own acts come back
+  const chooser = choosing?.of === "words" ? wordsActs.find((k) => k.id === choosing.id && k.choices !== undefined) : undefined;
+  const choiceRow = (k: SelectionMenuAct): ReactElement => {
+    const list = k.choices ?? [];
+    return (
+      <>
+        <button key="back" type="button" className="ice-sm-btn" data-act="back" aria-label="Back" title="Back" onClick={() => { setChoosing(null); }}>
+          <Glyph glyph="chevron-left" />
+        </button>
+        <span className="ice-sm-rule" aria-hidden="true" />
+        {list.map((c, i) => (
+          <button
+            key={c.id} type="button" className={c.swatch !== undefined ? "ice-sm-ink" : "ice-sm-btn"} data-choice={c.id} data-group-start={i > 0 && list[i - 1]?.group !== c.group ? "true" : undefined}
+            data-on={c.current === true ? "true" : undefined} aria-pressed={c.current === true} aria-label={c.label} title={c.hint !== undefined ? `${c.label} (${c.hint})` : c.label}
+            onClick={() => { setChoosing(null); runWords(k.id, { id: c.id }); }}
+          >
+            {choiceFace(c)}
+          </button>
+        ))}
+      </>
+    );
+  };
   return (
     <div
       ref={root}
@@ -470,9 +585,11 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
       data-visible={String(visible)}
       data-held={String(shown.held)}
       role="toolbar"
-      aria-label={shown.held ? "In hand" : "Selection"}
+      aria-label={shown.held ? "In hand" : shown.row === "words" ? "Words" : "Selection"}
       aria-hidden={!visible}
-      onPointerDown={(e) => e.stopPropagation()}
+      // a press on the words' row keeps the editor's focus (petition I60): no focus moves to a cell, so the field holds the words selected
+      onPointerDown={(e) => { e.stopPropagation(); if (shown.row === "words") e.preventDefault(); }}
+      onMouseDown={shown.row === "words" ? (e) => { e.preventDefault(); } : undefined}
       style={{
         opacity,
         visibility: visible ? "visible" : "hidden",
@@ -480,8 +597,8 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
         transition: transitionOf(away, visible, traveling, travel.current),
       }}
     >
-      <div className="ice-sm-bar">
-        {shown.held ? (
+      <div className="ice-sm-bar" data-row={shown.row}>
+        {chooser !== undefined ? choiceRow(chooser) : shown.row === "words" ? wordsActs.map(cell) : shown.held ? (
           <>
             {lead.map(button)}
             {lead.length > 0 ? <span className="ice-sm-rule" aria-hidden="true" /> : null}
@@ -499,7 +616,7 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
           </>
         )}
       </div>
-      {choosing !== null ? (() => {
+      {choosing !== null && choosing.of !== "words" ? (() => {
         // a choice's list (I62): the act's or the tool's choices as the anchor last said them, the current one checked, a rule where
         // the group changes; taking one runs it through the engine and closes the list
         const of = choosing.of === "act" ? kindActs.current.find((k) => k.id === choosing.id) : tools.current.find((t) => t.id === choosing.id);
@@ -520,7 +637,7 @@ export function SelectionMenu({ source, actions, engine: given }: SelectionMenuP
           </div>
         );
       })() : null}
-      {open && !shown.held ? (
+      {open && shown.row === "objects" ? (
         <div className="ice-sm-sheet" role="menu" style={below ? { top: "calc(100% + 6px)" } : { bottom: "calc(100% + 6px)" }}>
           {listed.filter((a) => a.id !== "more").map((a) => (
             <button key={a.id} type="button" role="menuitem" className="ice-sm-item" data-act={a.id} data-tone={a.tone} onClick={() => { setOpen(false); a.run(engine, state); }}>

@@ -2523,3 +2523,9 @@ and the design amendments folded in the same commit as the code that earns them.
 - **Benchmarks**: churn budget, pan O(1), pick latency, reactivity tax — tracked per milestone against the M3 baseline.
 - **Risks**: strata pre-1.0 drift (pinned; upgrade PRs re-run the full trace suite) · ~~global tag/rel version over-fire~~ (RESOLVED upstream in 0.3.0 — per-tag/relation observer precision; change-only writes remain stamp-volume hygiene) · access-declaration omissions (DEV throws early by design) · R3F version coupling in the router/islands (isolate in `r3f` package; the synthetic-event dispatcher is the only R3F-internal-adjacent code).
 - **Definition of "engine v1 done"**: M10 exit + the scope fence of design-005 §9 intact (nothing snuck in). *(MET 2026-07-11. M11+ is post-v1 work — the scope fence still binds: the behavior framework is a new AUTHORING surface over existing mechanics, and it adds no layout engine, rich text, comments, or permissions.)*
+  > **The fence crossed once (2026-11-25, petition I60).** The fence's "no rich-text" line was crossed ONCE, for the desk kit's
+  > per-glyph MARKS alone: a closed set — a pen, a highlighter, a strike and an underline for each glyph — kept in `@ice/desk/kit`'s
+  > ink value (`kit/ink.ts`) and the note that writes it (`@ice/objects`' paper). There is no layout engine, no style and no span in
+  > core. The ruling is James's, in his words exactly: "yes, cross that rule, land it in ICE". The rest of the fence stands: no layout
+  > engine, no comments, no permissions, and no rich text beyond these marks. design-005 itself is not tracked in this repository, so
+  > this note is the crossing's record.

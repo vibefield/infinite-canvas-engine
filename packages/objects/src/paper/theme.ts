@@ -44,4 +44,9 @@ export const PAPER = {
    * of paper); under `px[0]` the note is greeked alone: no raster held, none asked, no fibre computed.
    */
   far: { px: [48, 64], weight: 0.3, alpha: 0.42 },
+  /**
+   * The selection's WASH (petition I60, "Editing the Ink"): the presence the pencil is laid at over the words selected — the design
+   * page's (the spike's marksheet.mjs, 0.34), taken as it was. The marks' own presences are the kit's (`INK_STROKES`).
+   */
+  wash: 0.34,
 } as const;

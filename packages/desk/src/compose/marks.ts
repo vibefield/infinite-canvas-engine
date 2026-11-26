@@ -40,6 +40,7 @@ import {
 } from "@ice/core";
 import { assembleMarks, type MarkedObject } from "../marks/assemble";
 import type { HeldToolDef, HeldToolState } from "../kinds/world";
+import type { RangeBox } from "../kit/editor";
 import { laserKey, type WorldBar, type WorldGuide } from "../marks/laser";
 import { type MarkBox, type MarkFrame, type MarksInput, selectionBox } from "../marks/layout";
 import { MARKS } from "../theme";
@@ -65,7 +66,11 @@ export interface SelectionAnchor {
   readonly locked: boolean;
   /** A gesture is on (a drag, a vellum, a pan, a pinch): the menu steps aside. */
   readonly gesturing: boolean;
-  /** A note is being written (core's `Editing` — the one focused editor, D2c): the menu steps aside as for a gesture; the brackets stay. */
+  /**
+   * A note is being written (core's `Editing` — the one focused editor, D2c), or the one editor is lent to a part whose lease names an
+   * object of the selection (`EditorLease.entity`, petition I60 — an ink part stamps no `Editing`; the desk layer adds it): the menu
+   * steps aside as for a gesture — unless it comes to the words selected there (`words`, petition I60); the brackets stay.
+   */
   readonly editing: boolean;
   /** The view it was placed in, CSS px, and whether the rulers are printed (the menu flips below their band). */
   readonly view: { readonly width: number; readonly height: number };
@@ -74,9 +79,50 @@ export interface SelectionAnchor {
   readonly held?: HeldAnchor;
   /**
    * The selection's KIND ACTS (K8a — its types' `defineObject({ menu })`): those every selected object's type declares, as plain data
-   * (the op stays on the type — the menu runs one through `ops.runMenuAction`). Absent: none (nothing selected declares any).
+   * (the op stays on the type — the menu runs one through `ops.runMenuAction`). Absent: none (nothing selected declares any). Never a
+   * words act (petition I60 — those are `words.menu`'s).
    */
   readonly menu?: readonly MenuSlot[];
+  /**
+   * The WORDS selected while a part is written (petition I60 — "the selection bar comes to the words"): present while the one editor is
+   * lent to an object's part — the object its lease names (`EditorLease.entity`), else the one being written (core's `Editing`) — the
+   * range is not empty and the part can say where it lies (its lease's `rangeBox`), and no press the editor claimed is down (the bar
+   * waits for the release), nothing is in hand and the drawer is shut. Absent otherwise.
+   */
+  readonly words?: WordsAnchor;
+  /**
+   * A CARET's place while a part is written and NO words are selected (petition I60 — a host's right-click rows at a caret: Paste,
+   * Select all): present while the one editor is lent to an object's part (as for `words`), the range is empty, the lease says where
+   * its caret stands (`EditorLease.caretBox`), no press the editor claimed is down, nothing is in hand and the drawer is shut. Never
+   * together with `words`. Absent otherwise.
+   */
+  readonly caret?: CaretAnchor;
+}
+
+/** A caret's place on screen (petition I60): its box through the camera (CSS px, as `box` — as wide as the part said, the line's height), its object, its text index. */
+export interface CaretAnchor {
+  readonly box: MarkBox;
+  readonly entity: Entity;
+  readonly at: number;
+}
+
+/**
+ * The words the menu comes to (petition I60): where they are on screen, whose they are, which they are, and what the object's kind
+ * offers for them — plain data; the ops stay on the type (`ops.runMenuAction(id, taken?, { range: { entity, from, to } })`).
+ */
+export interface WordsAnchor {
+  /** The words' box on screen, CSS px (as `box`): the part's world box (`rangeBox`) through the camera — it follows a pan and a zoom. */
+  readonly box: MarkBox;
+  /** The object being written: the one the lease names (`EditorLease.entity`), else the one core's `Editing` marks. */
+  readonly entity: Entity;
+  /** The range selected, text indices of the lent text: `from` < `to`. */
+  readonly from: number;
+  readonly to: number;
+  /**
+   * The object's WORDS acts (`on: "words"`) as slots, each as it stands for the range (its `state` and `choices` read over it, I61 and
+   * I62): disabled, a toggle's `pressed`, its choices now with the current one marked.
+   */
+  readonly menu: readonly MenuSlot[];
 }
 
 /**
@@ -117,6 +163,11 @@ export interface MenuSlot {
    * under a taken row) and takes one through `ops.runMenuAction(id, taken)`. Absent: one op.
    */
   readonly choices?: readonly ActChoice[];
+  /**
+   * A TOGGLE's state now (petition I60 — its kind's `state`, `MenuActionState.pressed`): `true` on, `false` off — present whenever the
+   * kind says it, so a host shows `aria-pressed` and tells a toggle from a plain act. Absent: not a toggle (or nothing said).
+   */
+  readonly pressed?: boolean;
 }
 
 /** A selection's kind acts as the menu's slots (K8a): every act its types all declare (core's `menuActionsFor`), as plain data. */
@@ -138,6 +189,7 @@ export function menuSlots(
       ...(now?.swatch !== undefined ? { swatch: now.swatch } : {}),
       ...(now?.enabled === false ? { enabled: false as const } : {}),
       ...(choices !== undefined ? { choices } : {}),
+      ...(now?.pressed !== undefined ? { pressed: now.pressed } : {}),
     };
   });
 }
@@ -156,6 +208,41 @@ export function withKindActs(
   if (a.count === 0) return a;
   const menu = menuSlots(menuActionsFor(selected, menuOf), stateOf, choicesOf);
   return menu.length === 0 ? a : { ...a, menu };
+}
+
+/**
+ * The WORDS as the anchor carries them (petition I60): the part's world box through the camera — CSS px, as the selection's `box` —
+ * the range, and the object's words acts (`acts`, its type's `on: "words"` ones) as slots, `stateOf` and `choicesOf` reading each for
+ * the range. Undefined when the part says no box for it, or one that is not a finite box.
+ */
+export function wordsAnchor(input: {
+  readonly entity: Entity;
+  readonly from: number;
+  readonly to: number;
+  readonly box: RangeBox | undefined;
+  readonly cam: { readonly x: number; readonly y: number; readonly zoom: number };
+  readonly acts: readonly MenuActionDef[];
+  readonly stateOf?: (act: MenuActionDef) => MenuActionState | undefined;
+  readonly choicesOf?: (act: MenuActionDef) => readonly ActChoice[] | undefined;
+}): WordsAnchor | undefined {
+  const b = input.box;
+  if (b === undefined || ![b.x, b.y, b.w, b.h].every(Number.isFinite) || b.w < 0 || b.h < 0) return undefined;
+  const { cam } = input;
+  const z = cam.zoom;
+  return {
+    box: { x0: (b.x - cam.x) * z, y0: (b.y - cam.y) * z, x1: (b.x + b.w - cam.x) * z, y1: (b.y + b.h - cam.y) * z },
+    entity: input.entity, from: input.from, to: input.to,
+    menu: menuSlots(input.acts, input.stateOf, input.choicesOf),
+  };
+}
+
+/** A caret's place as the anchor carries it (petition I60): the part's world box through the camera — undefined for none, or one that is not a finite box. */
+export function caretAnchor(input: { readonly entity: Entity; readonly at: number; readonly box: RangeBox | undefined; readonly cam: { readonly x: number; readonly y: number; readonly zoom: number } }): CaretAnchor | undefined {
+  const b = input.box;
+  if (b === undefined || ![b.x, b.y, b.w, b.h].every(Number.isFinite) || b.w < 0 || b.h < 0) return undefined;
+  const { cam } = input;
+  const z = cam.zoom;
+  return { box: { x0: (b.x - cam.x) * z, y0: (b.y - cam.y) * z, x1: (b.x + b.w - cam.x) * z, y1: (b.y + b.h - cam.y) * z }, entity: input.entity, at: input.at };
 }
 
 /**

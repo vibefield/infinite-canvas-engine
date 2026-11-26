@@ -128,7 +128,7 @@ import { setWidgetProps } from "../widget/set-props";
 import { trayTakeProps, WidgetEquipped, type WidgetType } from "../widget/define-widget";
 import { type HeldToolApi, readHeldToolState } from "../widget/held-tools";
 import { type ActChoiceTaken, readActChoices, takenChoice } from "../widget/act-choices";
-import { type MenuActionApi, readMenuActionState } from "../widget/menu-actions";
+import { isActOn, type MenuActionApi, type MenuActionStateContext, readMenuActionOpts, readMenuActionState, type RunMenuActionOpts } from "../widget/menu-actions";
 import { registerBuiltinTools, type Tool } from "../tools/define-tool";
 import { PrefabId } from "../schema/prefab";
 import { createDocSession, openDocSession, type DocSession, type DocSessionOpts, type OpenDocResult } from "../doc/doc-kit";
@@ -403,8 +403,13 @@ export interface CanvasOps {
    * I61 — its `state`, read with the kind's desk state through the menu state seam). `taken` (petition I62): the choice a host took of
    * an act that is a choice — each declaring type's `run` is handed it only when it is one of that act's choices now and its values fit
    * their fields; a type for which it is not runs nothing.
+   *
+   * `opts.range` (petition I60): the WORDS — the object being written and the range of its text selected (the desk's
+   * `SelectionAnchor.words`), on which a WORDS act (`on: "words"`) runs: its `run` handed that object alone and the range, its state and
+   * its choices read over the range — never the selection, and an act on the objects is never run on words. A words act named without a
+   * range runs nothing. A malformed option throws (`ice: ops.runMenuAction("id") — …`); one that names nothing to run is false.
    */
-  runMenuAction(id: string, taken?: ActChoiceTaken): boolean;
+  runMenuAction(id: string, taken?: ActChoiceTaken, opts?: RunMenuActionOpts): boolean;
 }
 
 export interface CanvasDocs {
@@ -2081,13 +2086,18 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
       else tool.run?.(api);
       return true;
     },
-    runMenuAction(id, taken) {
-      // THE SELECTION MENU'S ACTS (K8a): each type that declares `id` runs it once over its own selected objects
+    runMenuAction(id, taken, opts) {
+      // THE SELECTION MENU'S ACTS (K8a): each type that declares `id` runs it once over its own selected objects — and (petition I60) a
+      // WORDS act once over the words it is TOLD (`range`: the object being written, never the selection); an act on the objects never
+      // runs on words, a words act never on the selection
+      const { range } = readMenuActionOpts(id, opts);
+      const on = range === undefined ? "objects" : "words";
       const byType = new Map<WidgetType, Entity[]>();
-      for (const e of selectedEntities(world)) {
+      for (const e of range === undefined ? selectedEntities(world) : [range.entity]) {
         const typeId = world.isAlive(e) ? world.get(e, PrefabId)?.id : undefined;
         const type = typeof typeId === "string" ? catalog.widget(typeId) : undefined;
-        if (type === undefined || !type.menu.some((a) => a.id === id)) continue;
+        const declared = type?.menu.find((a) => a.id === id);
+        if (type === undefined || declared === undefined || !isActOn(declared, on)) continue;
         const list = byType.get(type);
         if (list === undefined) byType.set(type, [e]);
         else list.push(e);
@@ -2106,7 +2116,8 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
         const first = entities[0];
         if (act === undefined || first === undefined) continue;
         const local = stack.menuState.current?.local(first);
-        const ctx = { world, entities, props: (e: Entity) => propsOf(e), local };
+        // a words act's state and choices read the letters it is told (I60): the range on its context, as on its api
+        const ctx: MenuActionStateContext = { world, entities, props: (e: Entity) => propsOf(e), local, ...(range !== undefined ? { range } : {}) };
         if (readMenuActionState(act, ctx)?.enabled === false) continue;
         // a choice the host took (petition I62): one of THIS type's choices now, its values within their fields — else this type runs nothing
         const chosen = taken === undefined ? undefined : takenChoice(readActChoices(act, ctx), taken);
@@ -2115,6 +2126,7 @@ export function createCanvasEngine(opts: CanvasEngineOpts = {}): CanvasEngine {
         const api: MenuActionApi = {
           world,
           entities,
+          ...(range !== undefined ? { range } : {}),
           props: (e) => propsOf(e),
           setProps(e, props, o) {
             const s = writable();

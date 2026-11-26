@@ -218,9 +218,26 @@ export const HAND = {
   wipeMs: 110,
 } as const;
 
+/**
+ * The desk's WEIGHT for the pen (petition I59), em: each glyph's outline moved outward by it (`handRun({ weight })`), the weight
+ * that keeps the pen as dark as the canvas raster it replaces. Read from the face's own field the pen lays about four fifths of the
+ * raster's ink on the oracle's note at ×1, a touch thinner where the canvas rounds its coverage up; this much is back to it. The
+ * note writes in it; a run's own default is 0 — the face's outline as baked.
+ */
+export const HAND_WEIGHT = 0.007;
+
 /** The pens a hand writes with (STICKY.md §3) — names; the inks are the host's (the note's, and the desk calendar's lines). */
 export const PENS = ["felt", "ball", "fountain", "red"] as const;
 export type PenName = (typeof PENS)[number];
+
+/**
+ * The highlighters a hand marks its words with (petition I60), the desk calendar's five and in its order — names; the inks are the
+ * host's, as the pens' are (one for each, `highlighter <name>`: the desk calendar bands its runs of days in them). An ink's mark
+ * (kit/ink.ts) holds a highlighter, and a pen, by its place in this list and in `PENS`: both orders are stored, so a name is only
+ * ever added at the end (a mark's field holds two more).
+ */
+export const HIGHLIGHTERS = ["yellow", "green", "pink", "blue", "orange"] as const;
+export type HighlighterName = (typeof HIGHLIGHTERS)[number];
 
 /** A face: its family and weight, and the file it loads from (absent = the platform's own). */
 export interface FaceSpec {

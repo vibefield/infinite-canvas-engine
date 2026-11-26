@@ -7,7 +7,7 @@
 // hit, reach, theme.
 import { STRATUM_BANDS, widgets } from "@ice/core";
 import { describe, expect, it } from "vitest";
-import { CONTAINABLE, DESK_OBJECT, FLUX_REST, isObjectKind, type ObjectContext, PINNABLE, rectOf, DEFAULT_GRID, FIT, PORTAL_GATE, defineObject, driversOf, hostOf, objectKindOf, MAT_GRID, kindPalette } from "@ice/desk";
+import { CONTAINABLE, DESK_OBJECT, FLUX_REST, isObjectKind, type ObjectContext, PINNABLE, rectOf, DEFAULT_GRID, FIT, PORTAL_GATE, defineObject, driversOf, hostOf, objectKindOf, MAT_GRID, kindPalette, rgb } from "@ice/desk";
 import { minimatKind, miniMatReach } from "../src/minimat/kind";
 import { paperKind, paperReach } from "../src/paper/kind";
 import { DEFAULT_MINIMAT_LAW, faceOf, pickMiniMat, resolveMiniMat } from "../src/minimat/minimat";
@@ -49,14 +49,15 @@ describe("defineObject (design-015 §5.2, D-D16)", () => {
     expect(isObjectKind(paperKind())).toBe(true);
   });
 
-  it("Note: desk.note — text · seeds (one `ink` cell, D2c) · pen · paper · seed, 200², things, snapping both ways, offered to a mini mat", () => {
+  it("Note: desk.note — text · seeds · marks (one `ink` cell, D2c; petition I60) · pen · paper · seed, 200², things, snapping both ways, offered to a mini mat", () => {
     expect(Note.type).toBe(NOTE_TYPE);
     expect(Note.stratum).toBe("things");
     expect(Note.defaultSize).toEqual({ w: PAPER.size, h: PAPER.size });
-    expect(Object.keys(Note.propToGroup).sort()).toEqual(["paper", "pen", "seed", "seeds", "text"]);
-    // the writing is ONE conflict group: its text and its hand's seeds are one cell, written in one transaction (D-D13)
+    expect(Object.keys(Note.propToGroup).sort()).toEqual(["marks", "paper", "pen", "seed", "seeds", "text"]);
+    // the writing is ONE conflict group: its text, its hand's seeds and its marks are one cell, written in one transaction (D-D13, I60)
     expect(Note.propToGroup.text).toBe("ink");
     expect(Note.propToGroup.seeds).toBe("ink");
+    expect(Note.propToGroup.marks).toBe("ink");
     expect(Note.propToGroup.pen).toBe("props");
     expect(Note.provides).toEqual([NOTE_TYPE, DESK_OBJECT, CONTAINABLE, PINNABLE]);
     expect(Note.container).toBeUndefined();
@@ -146,10 +147,10 @@ describe("the note's world half (kinds/paper.ts paperKind)", () => {
     expect(kind.stratum).toBe("things");
   });
 
-  it("theme parses the palette's papers and pens; a palette without them gives an empty look", () => {
+  it("theme parses the palette's papers and pens; a palette without them gives an empty look (its pencil the selection's colour — petition I60)", () => {
     expect(look.papers.yellow).toEqual(surface("note"));
     expect(Object.keys(look.pens).sort()).toEqual(["ball", "felt", "fountain", "red"]);
-    expect(must(kind.theme)(kindPalette(PALETTE.dark), "dark")).toEqual({ papers: {}, pens: {} });
+    expect(must(kind.theme)(kindPalette(PALETTE.dark), "dark")).toEqual({ papers: {}, pens: {}, highlighters: {}, pencil: rgb(PALETTE.dark.select.css) });
   });
 });
 

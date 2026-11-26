@@ -763,13 +763,21 @@ try {
     const L = (r, g, b) => 0.2126 * r + 0.7152 * g + 0.0722 * b;
     const word = count("desk.note", { l: 0.08, r: 0.08, t: 0.08, b: 0.08 }, (r, g, b) => b > r + 25 && L(r, g, b) < 150);        // the pen's blue ink on the yellow
     const month = count("desk.calendar", { l: 0.06, r: 0.06, t: 0.16, b: 0.06 }, (r, g, b) => L(r, g, b) < 200);             // the print's ink on the paper (a blank pad has none this dark)
-    // over K6b's frame raster queue: the note specimen's word was ASKED as a desk note's first raster is, and RUN (the queue's `shows` is
-    // the builder's and the tray's) — none let go, and at rest nothing is asked again
+    // THE NOTE SPECIMEN WRITES WITH THE PEN (petition I59 — the desk lends its faces, and "hello" is all Caveat's): its word is a glyph
+    // run in the paper's run store, read in the note's shader at every scale, so it asks K6b's frame raster queue NOTHING — before the
+    // pen its word was a raster asked there as a desk note's first raster is: the 3 runs this row read at ICE main 2248866 were all
+    // the specimen's (the queue's count is the page's since it booted, and before this row the specimen is the one sheet on the page
+    // with words — the desk's two notes are blank — and nothing else asks: the board specimen holds no strokes, the pad prints by
+    // tiles). Held now: no sheet on the raster road, the run written (the store holds one: blank sheets write none), nothing asked of
+    // the queue or let go, and at rest 120 frames on nothing asked again. A specimen fallen back to the raster (its face not lent,
+    // a glyph the face lacks) is red here: it takes the raster road and rides the queue
     const qa0 = await q("window.__desk.handle.rasters()");
+    const roads = await q("window.__desk.note.writing()?.roads ?? null");
+    const held = await q("window.__desk.note.runs()?.runs ?? 0");
     await idle(120);
     const qa1 = await q("window.__desk.handle.rasters()");
-    check(qa0.ran >= 1 && qa0.dropped === 0 && qa1.ran === qa0.ran && qa1.turns === qa0.turns && qa1.waiting === 0 && qa1.held === 0,
-      `the specimens' rasters ride K6b's queue: ${qa0.ran} run, ${qa0.dropped} let go; at rest 120 frames on, ${qa1.ran - qa0.ran} more runs, ${qa1.turns - qa0.turns} turns, ${qa1.waiting} waiting, ${qa1.held} held`);
+    check(roads !== null && roads.raster === 0 && roads.pen >= 1 && held >= 1 && qa0.ran === 0 && qa0.dropped === 0 && qa1.ran === qa0.ran && qa1.turns === qa0.turns && qa1.waiting === 0 && qa1.held === 0,
+      `the note specimen writes with the pen (I59), so its word asks K6b's raster queue nothing: roads ${JSON.stringify(roads)}, ${held} run${held === 1 ? "" : "s"} in the store; the queue ${qa0.ran} run, ${qa0.dropped} let go; at rest 120 frames on, ${qa1.ran - qa0.ran} more runs, ${qa1.turns - qa0.turns} turns, ${qa1.waiting} waiting, ${qa1.held} held`);
     check(word > 60 && month > 150, `the specimens read as the real objects (live — K5a's were blank): the note's word ${word} px of ink, the pad's month ${month} px of print (its tiles ${printed?.drawn ?? "?"} drawn, ${printed?.pending ?? "?"} pending)`);
   }
 

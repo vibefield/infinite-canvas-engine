@@ -1,19 +1,22 @@
 // `window.__desk.note` — the sticky notes' door for the rigs (D2c; the prototype's `__ground.note`):
 // the editor (focus, blur, type as the platform would), the world's writing (text, seeds, the claim),
-// the flux (the caret, the wipe) and the ink (the layout, where the raster lives, the pages, the
-// writing's counters), and the text raster itself (`ink` — r8 bytes for a text, as the prototype's
-// `ink.make` drew the committed raster). Reads the world and the layer; writes only what the editor
-// or the platform would.
+// the flux (the caret, the wipe) and the ink (the layout, the road a sheet takes — petition I59 — where
+// the raster lives or the pen's run, the pages and the run store, the writing's counters), and the text
+// raster itself (`ink` — r8 bytes for a text, as the prototype's `ink.make` drew the committed raster).
+// Reads the world and the layer; writes only what the editor or the platform would.
 
-import { type CanvasEngine, defineQuery, Editing, type Entity } from "@ice/core";
+import { ActiveTool, type CanvasEngine, defineQuery, Editing, type Entity } from "@ice/core";
 import type { DeskLayerHandle } from "@ice/desk";
-import { DEFAULT_BLEED, DEFAULT_HAND_LAW, type NoteRasterInfo, type PaperKind, type WritingStats } from "@ice/objects";
-import { layoutText } from "@ice/desk/kit";
+import { DEFAULT_BLEED, DEFAULT_HAND_LAW, type NoteRasterInfo, type NoteRoad, type PaperKind, type WritingStats } from "@ice/objects";
+import { type HandRunsStats, layoutText } from "@ice/desk/kit";
 import { NOTE_INK, NOTE_TYPE, type PaperDriver } from "@ice/objects";
-import { deskText } from "./faces";
+import { deskHand, deskText } from "./faces";
 
 export interface NoteApi {
+  /** The text raster's face has landed — asked here first, so its load starts even on a desk whose notes the pen writes (no sheet asks it then). */
   fontReady(face?: string): boolean;
+  /** The hand's baked face has landed (petition I59 — the pen's; `fontReady` is the raster's) — asked here first, so its load starts. */
+  handReady(face?: string): boolean;
   focus(id: number, index?: number): boolean;
   blur(): void;
   /** The note the editor is on, or −1. */
@@ -32,10 +35,20 @@ export interface NoteApi {
   editorRect(): { readonly x: number; readonly y: number; readonly width: number; readonly height: number } | null;
   editorPlacement(): { readonly cx: number; readonly cy: number; readonly w: number; readonly h: number; readonly angle: number } | null;
   editorFocused(): boolean;
+  /** The editor's field's range (petition I60 — the words selected; equal ends a caret), or null while it is hidden. */
+  range(): readonly [number, number] | null;
+  /** The tool in hand (core's `ActiveTool`): the desk's own `desk.select` on this app. */
+  tool(): string | null;
   layout(id: number): { readonly glyphs: number; readonly lines: number; readonly positions: number[]; readonly ascent: number } | null;
   raster(id: number): NoteRasterInfo | null;
+  /** The road the note took at its last draw (petition I59): "pen", "raster", "waiting" (its face on its way) or "pinned"; null before. */
+  road(id: number): NoteRoad | null;
+  /** The pen road's twin of `raster` (petition I59): the note's run as last written — its base, its glyphs, its vec4s, its face; null off the pen. */
+  pen(id: number): { readonly base: number; readonly glyphs: number; readonly length: number; readonly face: string } | null;
   writing(): WritingStats | null;
   pages(): { readonly used: number; readonly rows: number; readonly layersUsed: number } | null;
+  /** The pen's run store, the twin of `pages` (petition I59): runs held, texels given and used, its growth and its writes. */
+  runs(): HandRunsStats | null;
   /** The text raster's own bytes for a text (base64 r8), laid by the hand's law with the note seed's glyph seeds. */
   rasterBytes(text: string, w: number, h: number, band: number, face: string, seed: number): string | null;
 }
@@ -49,7 +62,8 @@ export function noteApi(engine: CanvasEngine, handle: DeskLayerHandle): NoteApi 
   const paper = (): PaperDriver | undefined => handle.driver(NOTE_TYPE) as PaperDriver | undefined;
   const editor = () => handle.editor();
   return {
-    fontReady: (face = "caveat") => deskText().ready(face),
+    fontReady(face = "caveat") { const t = deskText(); t.metrics(face); return t.ready(face); },
+    handReady(face = "caveat") { const h = deskHand(); h.face(face); return h.ready(face); },
     // the note's body (K8a — its text part, on its driver) puts the desk's ONE editor on a note; the blur is the editor's own
     focus: (id, index) => paper()?.body?.focus(E(id), index) ?? false,
     blur: () => editor()?.blur(),
@@ -71,10 +85,15 @@ export function noteApi(engine: CanvasEngine, handle: DeskLayerHandle): NoteApi 
     editorRect() { const el = editor()?.element; if (el === undefined || el.hidden) return null; const r = el.getBoundingClientRect(); return { x: r.x, y: r.y, width: r.width, height: r.height }; },
     editorPlacement: () => editor()?.placement() ?? null,
     editorFocused: () => { const el = editor()?.element; return el !== undefined && document.activeElement === el; },
+    range() { const el = editor()?.element; return el === undefined || el.hidden ? null : [el.selectionStart, el.selectionEnd]; },
+    tool: () => world.getResource(ActiveTool)?.id ?? null,
     layout(id) { const L = paper()?.writing()?.layoutOf(E(id)); return L === undefined ? null : { glyphs: L.glyphs.length, lines: L.lines.length, positions: [...L.positions], ascent: L.ascent }; },
     raster: (id) => paper()?.writing()?.rasterOf(E(id)) ?? null,
+    road: (id) => paper()?.writing()?.roadOf(E(id)) ?? null,
+    pen(id) { const p = paper()?.writing()?.penOf(E(id)); return p === undefined ? null : { base: p.base, glyphs: p.glyphs, length: p.length, face: p.face }; },
     writing: () => paper()?.writing()?.stats() ?? null,
     pages: () => (handle.ground()?.pass("paper") as PaperKind | undefined)?.pass.shelves.stats ?? null,
+    runs: () => (handle.ground()?.pass("paper") as PaperKind | undefined)?.pass.penRuns ?? null,
     rasterBytes(text, w, h, band, face, seed) {
       const raster = deskText();
       const metrics = raster.metrics(face);

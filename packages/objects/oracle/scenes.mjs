@@ -48,6 +48,51 @@ export const PAPER_SCENES = [
 ];
 ORACLE_SCENES.push(...PAPER_SCENES.map((s) => ({ ...s, baseline: true })));
 
+// THE PEN (petition I59): sheets written WITH THE PEN — the committed raster's very words, unpinned, in the desk's own baked Caveat
+// (the oracle lends apps/desk's faces), read in the note's shader; beside them that committed raster (the raster's road, pinned) and
+// a sheet in another hand. By day and by night; up close (×3) and far (×0.45 — a minified level of the atlas; ×0.28 — in the far
+// LOD's band, the greek crossfading); mid-writing (the words arriving 600 ms before the still). `pen` runs the twin's check, with no
+// light on the desk (the flat strip's colour is its albedo there).
+const PEN_NOTES = [{ x: 300, y: 250, seed: 7, text: INK.text }, { x: 560, y: 330, ...INK }, { x: 830, y: 240, seed: 5, text: "the pen at\nevery zoom" }];
+const ARRIVING = [{ ...PEN_NOTES[0], arrive: 600 }, PEN_NOTES[2]];
+const noLight = { ...matStill, opacity: 0 };
+export const PEN_SCENES = [
+  { name: "paper-pen-z1", paper: true, scene: { ...paperBase, zoom: 1, notes: PEN_NOTES } },
+  { name: "paper-pen-night-z1", paper: true, scene: { ...paperBase, theme: "dark", zoom: 1, notes: PEN_NOTES } },
+  { name: "paper-pen-z3", scene: { ...paperBase, zoom: 3, camX: 100, camY: 117, notes: PEN_NOTES } },
+  { name: "paper-pen-z0.45", scene: { ...paperBase, zoom: 0.45, camX: -400, camY: -300, notes: PEN_NOTES } },
+  { name: "paper-pen-far-z0.28", scene: { ...paperBase, zoom: 0.28, camX: -1000, camY: -800, notes: PEN_NOTES } },
+  { name: "paper-pen-writing-z1", scene: { ...paperBase, zoom: 1, notes: ARRIVING } },
+  { name: "paper-pen-nolight-z1", pen: true, scene: { ...paperBase, zoom: 1, mat: noLight, notes: PEN_NOTES } },
+  { name: "paper-pen-nolight-z3", pen: true, scene: { ...paperBase, zoom: 3, camX: 100, camY: 117, mat: noLight, notes: PEN_NOTES } },
+  { name: "paper-pen-nolight-z0.45", pen: true, scene: { ...paperBase, zoom: 0.45, camX: -400, camY: -300, mat: noLight, notes: PEN_NOTES } },
+  { name: "paper-pen-nolight-writing-z1", pen: true, scene: { ...paperBase, zoom: 1, mat: noLight, notes: ARRIVING } },
+];
+ORACLE_SCENES.push(...PEN_SCENES);
+
+// THE INK'S MARKS (petition I60 — "Editing the Ink"): the pen's sheet marked — a word highlighted, a word struck through, two
+// underlined, a line in another pen — beside the same words unmarked and the sheet in another hand, through the note's own writing
+// and shader (`ink_marks` beside `hand_ink`). At rest by day and by night; far (×0.28 — in the far LOD's band: the marks fade with the
+// words, the greek has none); its marks being MADE (`inked` — made 90 ms before the still: the highlighter's band and the lines being
+// pulled through; a word being re-inked in its new pen 120 ms in); the selection's WASH over two words. `pen` holds each to the CPU
+// twins (`inkMarksAt`, `handInkAt`) with no light on the desk.
+const MARKS = [["milk", { highlight: "yellow" }], ["mum", { strike: true }], ["desk lamp", { underline: true }], ["back", { pen: "red" }]];
+const INK_NOTES = [{ x: 300, y: 250, seed: 7, text: INK.text, marks: MARKS }, { x: 560, y: 330, seed: 7, text: INK.text }, PEN_NOTES[2]];
+const STROKING = [{ ...INK_NOTES[0], marks: MARKS.slice(0, 3), inked: 90 }, INK_NOTES[1], PEN_NOTES[2]];
+const REINKING = [{ ...INK_NOTES[0], marks: [["buy milk", { pen: "red" }]], inked: 120 }, INK_NOTES[1], PEN_NOTES[2]];
+const WASHED = [{ ...INK_NOTES[0], wash: "call mum" }, INK_NOTES[1], PEN_NOTES[2]];
+export const INK_SCENES = [
+  { name: "paper-ink-z1", scene: { ...paperBase, zoom: 1, notes: INK_NOTES } },
+  { name: "paper-ink-night-z1", scene: { ...paperBase, theme: "dark", zoom: 1, notes: INK_NOTES } },
+  { name: "paper-ink-far-z0.28", scene: { ...paperBase, zoom: 0.28, camX: -1000, camY: -800, notes: INK_NOTES } },
+  { name: "paper-ink-wash-z2", scene: { ...paperBase, zoom: 2, camX: 150, camY: 120, notes: WASHED } },
+  { name: "paper-ink-nolight-z1", pen: true, scene: { ...paperBase, zoom: 1, mat: noLight, notes: INK_NOTES } },
+  { name: "paper-ink-nolight-stroking-z1", pen: true, scene: { ...paperBase, zoom: 1, mat: noLight, notes: STROKING } },
+  { name: "paper-ink-nolight-reinking-z1", pen: true, scene: { ...paperBase, zoom: 1, mat: noLight, notes: REINKING } },
+  { name: "paper-ink-nolight-wash-z1", pen: true, scene: { ...paperBase, zoom: 1, mat: noLight, notes: WASHED } },
+];
+ORACLE_SCENES.push(...INK_SCENES);
+
 export const VIEW = { cssW: 1200, cssH: 800, dpr: 2 };
 
 // ---------------------------------------------------------------- the MINI MATS (MINIMAT.md)

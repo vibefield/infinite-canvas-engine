@@ -17,6 +17,9 @@ override LIT_ELSEWHERE: bool = false;
 @group(0) @binding(7) var paper_ink: texture_2d_array<f32>; // the ink pages: r8 coverage, one layer of rasters per binding
 @group(0) @binding(8) var paper_ink_samp: sampler;
 @group(0) @binding(9) var<storage, read> order: array<u32>;   // the draw list: paint index → the record's slot (persistent records, D6)
+@group(0) @binding(10) var paper_hand_runs: texture_2d<f32>;  // THE PEN (petition I59): the kind's run store — rgba32float, read texel by texel
+@group(0) @binding(11) var paper_hand_atlas: texture_2d<f32>; // …the face's atlas (rg8unorm: the ink's edge, the pen's arrival), every level
+@group(0) @binding(12) var paper_hand_samp: sampler;          // …and its sampler, linear between the levels
 
 struct VSOut {
   @builtin(position) clip: vec4f,
