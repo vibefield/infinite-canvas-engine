@@ -18,10 +18,11 @@ an archetype ECS with reactivity and opt-in Loro-CRDT durable + presence layers.
 > `./desk`, `./desk/engine`, `./desk/objects` are new. The full list is the changelog's
 > `### Removed` under the 0.14.0 release.
 
-**0.22.0** lets an act say what it is now and offer choices (petitions I61 and I62): a selection
-menu's act may be disabled, take another label or glyph, or show a swatch, and a menu act or a
-held tool's action may be a list of choices, one of which may ask for values first. Both are
-additions: an act that declares neither is read as before, and no existing op moves.
+**0.23.0** gives the desk a pen and makes its ink editable (petitions I59 and I60): the
+handwriting is read from a baked atlas in each kind's own shader (`/desk/bake` bakes a face),
+and the words on a written object are selected, copied, pasted, written in another pen,
+highlighted, struck through and underlined. The changelog's `### Changed` under 0.23.0 says
+what a caller of 0.22.0 notices.
 
 ```sh
 pnpm add @vibecook/ice react react-dom     # react/react-dom are optional peers

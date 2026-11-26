@@ -6,6 +6,16 @@ All notable changes to ICE are documented here. The format follows
 
 ## [Unreleased]
 
+## [0.23.0] — 2026-11-26
+
+**The desk has a pen (petition I59), and its ink is edited (petition I60), released on `latest`.** The handwriting is no
+longer a bitmap per object: a face is baked once into an `ice-hand/1` atlas (`@vibecook/ice/desk/bake`, a new entry) and
+read in each kind's own shader, with no raster per zoom rung; the writing moves as it is typed and as writing arrives,
+never when a desk opens. The words on a written object are selected with the pointer and the keys, cut, copied and pasted
+in a fresh hand, written in another of the desk's pens, highlighted, struck through and underlined: from a menu over the
+words, from the keys and from a host's own calls, a mark a glyph in the object's `ink` cell. The note adopts all of it. A
+host that lends no faces draws the raster road as before; `### Changed` below says what a caller of 0.22.0 notices.
+
 ### Added
 
 <!-- petition I59 — the desk's pen: a face baked once into an atlas, read in each kind's own shader (2026-11-25; VibeField) -->
